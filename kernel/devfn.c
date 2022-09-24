@@ -57,6 +57,10 @@ size_t device_ioctl(vnode_t *node, u32 cmd, va_list args) {
   if (dev == NULL) {
     return ret;
   }
+  if(dev->ioctl==NULL){
+    kprintf("device ioctl null\n");
+    return ret;
+  }
   // va_list args;
   // va_start(args, cmd);
   ret = dev->ioctl(dev, cmd, args);

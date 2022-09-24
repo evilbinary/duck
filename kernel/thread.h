@@ -30,8 +30,8 @@
 #endif
 typedef struct thread {
     u32 id;
-    u8* name;
     context_t context;
+    u8* name;
     int priority;
     int counter;
     int state;

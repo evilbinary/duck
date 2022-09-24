@@ -63,7 +63,7 @@ void exception_info(interrupt_context_t *context) {
   if (context->no != 14) {
     thread_t *current = thread_current();
     if (context->no < sizeof exception_msg) {
-      kprintf("exception cpu %d no %d: %s",cpu, context->no, exception_msg[context->no]);
+      kprintf("exception cpu %d no %d: code: %d %s",cpu, context->no,context->code, exception_msg[context->no]);
 
     } else {
       kprintf("interrupt cpu %d %d", cpu,context->no);

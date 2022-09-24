@@ -30,8 +30,8 @@
 
 #define MP_ENABLE 1  //多cpu
 
-#define IDT_NUMBER 512
-#define EXCEPTION_NUMBER 512
+#define IDT_NUMBER 2048
+#define EXCEPTION_NUMBER 2048
 
 #elif defined(STM32F4XX)
 #define ISR_TIMER 50
