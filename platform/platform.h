@@ -21,7 +21,11 @@
 
 #define ISR_TIMER 0x20
 #define ISR_KEYBOARD 0x21
+#ifdef LIBC_POSIX
+#define ISR_SYSCALL 0x80
+#else
 #define ISR_SYSCALL 0x30
+#endif
 #define ISR_MOUSE 0x2c
 
 #define MP_ENABLE 1  //多cpu

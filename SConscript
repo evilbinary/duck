@@ -10,6 +10,7 @@ import platform
 import sys
 
 Import('env')
+    
 
 SConscript(dirs=['libs/libalgorithm'], exports='env')
 SConscript(dirs=['platform'], exports='env')
