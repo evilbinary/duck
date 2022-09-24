@@ -39,7 +39,7 @@ typedef struct exec{
     char **envp;
 }exec_t;
 
-typedef int (*entry_fn)(int, char**,char**);
+typedef int (*entry_fn)(void*);
 
 void run_elf_thread();
 
