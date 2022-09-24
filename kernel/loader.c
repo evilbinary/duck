@@ -102,9 +102,11 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
                 phdr[i].p_memsz);
         break;
       case PT_GNU_STACK:
+      #ifdef LOAD_ELF_DEBUG
         kprintf(" %s %x %x %x\r\n %s %x %x ", "GNU_STACK", phdr[i].p_offset,
                 phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
                 phdr[i].p_memsz);
+      #endif
         break;
       default:
         break;

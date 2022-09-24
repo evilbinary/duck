@@ -70,6 +70,7 @@ void exception_info(interrupt_context_t *context) {
     }
     if (current != NULL) {
       kprintf("\ntid %d %s cpu %d", current->id, current->name,current->cpu_id);
+      thread_stop(current);
     }
     kprintf("\n----------------------------\n");
     context_dump_interrupt(context);
@@ -163,7 +164,6 @@ INTERRUPT_SERVICE
 void general_protection() {
   interrupt_entering(13);
   interrupt_process(exception_info);
-  cpu_halt();
   interrupt_exit();
 }
 
