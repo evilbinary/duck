@@ -128,34 +128,29 @@ void do_shell_thread(void) {
         buf[count++] = ch;
         syscall3(SYS_WRITE, 1, &ch, 1);
       }
-    }else{
-      u32 tv[2] = { 1, 0 };
-      syscall4(SYS_CLOCK_NANOSLEEP,0,0,&tv,&tv);
+    } else {
+      u32 tv[2] = {1, 0};
+      syscall4(SYS_CLOCK_NANOSLEEP, 0, 0, &tv, &tv);
     }
   }
 }
 
-// must init global for armv7-a
-char* scm_argv[] = {"/scheme", "-b", "/scheme.boot", "--verbose", NULL};
-char* lua_argv[] = {"/lua", "/hello.lua", NULL};
-
-char* nes_argv[] = {"infones", "/mario.nes", NULL};
-
-char* mgba_argv[] = {"mgba", "/mario.gba", NULL};
-
-char* cat_argv[] = {"/cat", "hello.lua", NULL};
-
-char* showimg_argv[] = {"/showimage", "/pngtest.png", NULL};
-
-char* gnuboy_argv[] = {"/gnuboy", "/pokemon.gbc", NULL};
-
 void pre_launch() {
+  // must init global for armv7-a
+  char* scm_argv[] = {"/scheme", "-b", "/scheme.boot", "--verbose", NULL};
+  char* lua_argv[] = {"/lua", "/hello.lua", NULL};
+  char* mgba_argv[] = {"mgba", "/mario.gba", NULL};
+  char* cat_argv[] = {"/cat", "hello.lua", NULL};
+  char* showimg_argv[] = {"/showimage", "/pngtest.png", NULL};
+  char* gnuboy_argv[] = {"/gnuboy", "/pokemon.gbc", NULL};
+  char* nes_argv[] = {"infones", "/mario.nes", NULL};
+
 #ifdef X86
   // int fd = syscall2(SYS_OPEN, "/dev/stdin", 0);
-  // syscall2(SYS_EXEC,"/hello",NULL);
+  // syscall2(SYS_EXEC,"/ls",NULL);
   // syscall2(SYS_EXEC,"/gui",NULL);
   // syscall2(SYS_EXEC,"/test-file",NULL);
-    // syscall2(SYS_EXEC,"/test-mem",NULL);
+  // syscall2(SYS_EXEC,"/test-mem",NULL);
   // syscall2(SYS_EXEC,"/test-uncompress",NULL);
   // syscall2(SYS_EXEC,"/test-string",NULL);
   // syscall2(SYS_EXEC,"/test-stdlib",NULL);
@@ -173,14 +168,12 @@ void pre_launch() {
   // syscall2(SYS_EXEC,"/lvgl",NULL);
   // kprintf("fd=>%d\n",fd);
 
-  // syscall2(SYS_EXEC, "/infones", nes_argv);
+  syscall2(SYS_EXEC, "/infones", nes_argv);
   // syscall2(SYS_EXEC, "/mgba", mgba_argv);
   // syscall2(SYS_EXEC, "/scheme", scm_argv);
   // syscall2(SYS_EXEC, "/sdl2", NULL);
   // syscall2(SYS_EXEC, "/showimage", showimg_argv);
   // syscall2(SYS_EXEC, "/gnuboy", gnuboy_argv);
-
-  
 
   // for (;;)
   //   ;

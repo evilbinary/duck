@@ -33,13 +33,13 @@
 #endif
 
 typedef struct exec{
-    char* filename;
     int argc;
     char** argv;
     char **envp;
+    char* filename;
 }exec_t;
 
-typedef int (*entry_fn)(void*);
+typedef int (*entry_fn)(exec_t*);
 
 void run_elf_thread();
 

@@ -185,6 +185,7 @@ void run_elf_thread() {
 #ifdef LOAD_ELF_DEBUG
     kprintf("entry %x\n", entry);
 #endif
-    ret = entry(&exec->argc);
+    exec_t exec_info=*exec;
+    ret = entry(&exec_info);
   }
 }

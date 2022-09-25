@@ -6,7 +6,7 @@
 #include "main.h"
 
 void do_kernel_thread(void) {
-  kprintf("mp init\n");
+  log_info("mp init\n");
   mp_init();
 
   u32 i = 0;
