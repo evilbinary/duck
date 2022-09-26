@@ -1,0 +1,8 @@
+*.lo
+*.o
+*.a
+*.bin
+*.gdb
+*.elf
+*.dbg
+kernel
