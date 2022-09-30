@@ -17,7 +17,12 @@
 #endif
 
 #ifndef fn_free
+#ifdef MALLOC_TRACE
+#define fn_free(size) kfree_trace(size,__FILE__,__LINE__,__FUNCTION__)
+#else
 #define fn_free kfree
+#endif
+
 #endif
 
 

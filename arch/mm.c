@@ -89,13 +89,14 @@ void mm_dump_phy() {
     kprintf("base:%x %x lenght:%x %x type:%d\n", m->baseh, m->basel, m->lengthh,
             m->lengthl, m->type);
   }
-  kprintf("total memory %dm %dk\n", boot_info->total_memory / 1024 / 1024,boot_info->total_memory/1024);
+  kprintf("total memory %dm %dk\n", boot_info->total_memory / 1024 / 1024,
+          boot_info->total_memory / 1024);
 }
-#define debug 
+#define debug
 
 void* mm_alloc(size_t size) {
   mem_block_t* p = block_available;
-  debug("malloc count %d size %d\n",count,size);
+  debug("malloc count %d size %d\n", count, size);
   u32 pre_alloc_size = size + sizeof(mem_block_t);
   pre_alloc_size = (pre_alloc_size + 8) & ~0x3;
   for (; p != NULL; p = p->next) {
@@ -124,7 +125,8 @@ void* mm_alloc(size_t size) {
         block_alloc_tail = new_block;
       }
       count++;
-      //kprintf("alloc count:%d: addr:%x size:%d\n", count, new_block->addr,new_block->size);
+      // kprintf("alloc count:%d: addr:%x size:%d\n", count,
+      // new_block->addr,new_block->size);
       if (new_block->addr == 0) {
         mm_dump();
       }
@@ -149,7 +151,7 @@ void* mm_alloc_zero_align(size_t size, u32 alignment) {
   size_t addr = (size_t)p1 + alignment + sizeof(size_t);
   p2 = (void*)(addr - (addr % alignment));
   *((size_t*)p2 - 1) = (size_t)p1;
-  kmemset(p2,0,size);
+  kmemset(p2, 0, size);
   return p2;
 
   // int offset = alignment + sizeof(void*);
@@ -193,10 +195,10 @@ void mm_dump_print(mem_block_t* p) {
   }
   kprintf("total ");
   if (use >= 0) {
-    kprintf(" use: %dkb %dmb", use / 1024,use/1024/1024);
+    kprintf(" use: %dkb %dmb", use / 1024, use / 1024 / 1024);
   }
   if (free >= 0) {
-    kprintf(" free: %dkb %dmb", free / 1024,free/1024/1024);
+    kprintf(" free: %dkb %dmb", free / 1024, free / 1024 / 1024);
   }
   kprintf("\n");
 }
@@ -211,15 +213,34 @@ void mm_dump() {
   kprintf("dump end\n\n");
 }
 
+ullong mm_get_total() {
+  ullong total=0;
+  mem_block_t* p = block_available;
+  for (; p != NULL; p = p->next) {
+    total += p->size;
+  }
+  return total;
+}
 
-size_t mm_get_size(void* addr){
+ullong mm_get_free() {
+  ullong free = 0;
+  mem_block_t* p = block_alloc_head;
+  for (; p != NULL; p = p->next) {
+    if ((p->type == MEM_FREE)) {
+      free += p->size;
+    }
+  }
+  return free;
+}
+
+size_t mm_get_size(void* addr) {
   if (addr == NULL) return;
   mem_block_t* block = (mem_block_t*)((u32)addr);
   return block->size;
 }
 
 void mm_free(void* addr) {
-  debug("free %x\n",addr);
+  debug("free %x\n", addr);
   if (addr == NULL) return;
   mem_block_t* block = (mem_block_t*)((u32)addr);
   if (block->addr == 0) {

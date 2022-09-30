@@ -34,6 +34,8 @@ void print_help() { print_string("supports help ps cd pwd command\n"); }
 
 void ps_command() { syscall0(SYS_DUMPS); }
 
+void mem_info_command() { syscall0(SYS_MEMINFO); }
+
 int do_exec(char* cmd, int count) {
   char buf[64];
   cmd[count] = 0;
@@ -80,6 +82,8 @@ void do_shell_cmd(char* cmd, int count) {
     pwd_command();
   } else if (kstrncmp(cmd, "ps", 2) == 0) {
     ps_command();
+  } else if (kstrncmp(cmd, "mem", 3) == 0) {
+    mem_info_command();
   } else {
     int ret = do_exec(cmd, count);
     if (ret < 0) {

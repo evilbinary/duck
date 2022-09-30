@@ -8,6 +8,11 @@
 u32 timer_ticks[MAX_CPU] = {0};
 lock_t schedule_lock;
 
+u32 schedule_get_ticks() {
+  int cpu = cpu_get_id();
+  return timer_ticks[cpu];
+}
+
 thread_t* schedule_get_next() {
   thread_t* current = thread_current();
   thread_t* next = NULL;
@@ -33,28 +38,25 @@ thread_t* schedule_get_next() {
   return next;
 }
 
-void schedule_next(){
-
-}
+void schedule_next() {}
 
 void schedule_sleep(u32 nsec) {
   thread_t* current = thread_current();
-  thread_sleep(current,nsec/SCHEDULE_FREQUENCY*1000);
+  thread_sleep(current, nsec / SCHEDULE_FREQUENCY * 1000);
 }
 
-void schedule_state(int cpu){
+void schedule_state(int cpu) {
   thread_t* v = thread_head();
   for (; v != NULL; v = v->next) {
-    if(v->sleep_counter<0){
+    if (v->sleep_counter < 0) {
       thread_wake(v);
     }
-    if(v->state==THREAD_SLEEP){
-      u32 ticks=timer_ticks[cpu];
-      v->sleep_counter-= ticks-v->counter;
+    if (v->state == THREAD_SLEEP) {
+      u32 ticks = timer_ticks[cpu];
+      v->sleep_counter -= ticks - v->counter;
     }
   }
 }
-
 
 void* do_schedule(interrupt_context_t* interrupt_context) {
   int cpu = cpu_get_id();

@@ -12,16 +12,29 @@ queue_pool_t* kernel_pool;
 queue_pool_t* user_pool;
 
 lock_t memory_lock;
+memory_t memory_summary;
 
 void memory_init() {
   lock_init(&memory_lock);
+  memory_summary.total = mm_get_total();
+  memory_summary.free = mm_get_free();
+  memory_summary.kernel_used = 0;
+  memory_summary.user_used = 0;
   kpool_init();
+}
+
+memory_t* memory_info() {
+  memory_summary.free = memory_summary.total - memory_summary.kernel_used -
+                        memory_summary.user_used;
+  return &memory_summary;
 }
 
 #ifdef MALLOC_TRACE
 
 int alloc_count = 0;
 int alloc_total = 0;
+int free_count = 0;
+int free_total = 0;
 
 void* kmalloc_trace(size_t size, void* name, void* no, void* fun) {
   void* addr = NULL;
@@ -39,6 +52,7 @@ void* kmalloc_trace(size_t size, void* name, void* no, void* fun) {
     return addr;
   }
   kmemset(addr, 0, size);
+  memory_static(size, MEMORY_TYPE_USE);
   return addr;
 }
 
@@ -51,9 +65,41 @@ void* kmalloc_alignment_trace(size_t size, int alignment, void* name, void* no,
     tid = current->id;
   }
   alloc_total += size;
-  kprintf("tid:%d kmalloc a count:%d total:%dk size:%d addr:%x %s:%d %s\n", tid,
-          alloc_count++, alloc_total / 1024, size, addr, name, no, fun);
+  kprintf(
+      "tid:%d kmalloc alignment count:%d total:%dk size:%d addr:%x %s:%d %s\n",
+      tid, alloc_count++, alloc_total / 1024, size, addr, name, no, fun);
+  memory_static(size, MEMORY_TYPE_USE);
   return addr;
+}
+
+void kfree_trace(void* ptr, void* name, void* no, void* fun) {
+  size_t size = mm_get_size(ptr);
+  u32 tid = -1;
+  thread_t* current = thread_current();
+  if (current != NULL) {
+    tid = current->id;
+  }
+
+  kprintf("tid:%d kfree count:%d total:%dk size:%d addr:%x %s:%d %s\n", tid,
+          free_count++, free_total / 1024, size, ptr, name, no, fun);
+
+  mm_free(ptr);
+  memory_static(size, MEMORY_TYPE_FREE);
+}
+
+void kfree_alignment_trace(void* ptr, void* name, void* no, void* fun) {
+  size_t size = mm_get_size(ptr);
+  u32 tid = -1;
+  thread_t* current = thread_current();
+  if (current != NULL) {
+    tid = current->id;
+  }
+  kprintf(
+      "tid:%d kfree alignment count:%d total:%dk size:%d addr:%x %s:%d %s\n",
+      tid, free_count++, free_total / 1024, size, ptr, name, no, fun);
+
+  mm_free_align(ptr);
+  memory_static(size, MEMORY_TYPE_FREE);
 }
 
 #else
@@ -69,47 +115,52 @@ void* kmalloc(size_t size) {
     return addr;
   }
   kmemset(addr, 0, size);
-  thread_t* current = thread_current();
-  if (current != NULL) {
-    current->mem_size += size;
-  }
-
+  memory_static(size, MEMORY_TYPE_USE);
   return addr;
 }
 
 void* kmalloc_alignment(size_t size, int alignment) {
   // size=((size+4096)/4096)*4096;
-  // use_kernel_page();
   void* addr = mm_alloc_zero_align(size, alignment);
-  // use_user_page();
-  thread_t* current = thread_current();
-  if (current != NULL) {
-    current->mem_size += size;
-  }
+  memory_static(size, MEMORY_TYPE_USE);
   return addr;
 }
-
-#endif
 
 void kfree(void* ptr) {
   size_t size = mm_get_size(ptr);
   mm_free(ptr);
-  thread_t* current = thread_current();
-  if (current != NULL) {
-    current->mem_size -= size;
-  }
-  // kfree_alignment(ptr);
+  memory_static(size, MEMORY_TYPE_FREE);
 }
 
 void kfree_alignment(void* ptr) {
   size_t size = mm_get_size(ptr);
-  // use_kernel_page();
   mm_free_align(ptr);
+  memory_static(size, MEMORY_TYPE_FREE);
+}
+
+#endif
+
+void memory_static(u32 size, int type) {
   thread_t* current = thread_current();
   if (current != NULL) {
-    current->mem_size -= size;
+    if (type == MEMORY_TYPE_USE) {
+      current->mem_size += size;
+      memory_summary.user_used += size;
+    } else {
+      current->mem_size -= size;
+      memory_summary.user_used -= size;
+    }
+  } else {
+    if (type == MEMORY_TYPE_USE) {
+      kprintf("sub kerenl %lu  + size %d\n", (u32)memory_summary.kernel_used,
+              size);
+      memory_summary.kernel_used += size;
+    } else {
+      kprintf("sub kerenl %lu  - size %d\n", (u32)memory_summary.kernel_used,
+              size);
+      memory_summary.kernel_used -= size;
+    }
   }
-  // use_user_page();
 }
 
 // alloc physic right now on virtual

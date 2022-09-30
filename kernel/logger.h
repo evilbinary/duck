@@ -1,28 +1,22 @@
 #ifndef LOGGER_H
 #define LOGGER_H
 
-#ifdef LOG_DEBUG
-#define log_debug kprintf
-#else
-#define log_debug
-#endif
+#include "kernel/stdarg.h"
 
-#ifdef LOG_INFO
-#define log_info kprintf
-#else
-#define log_info
-#endif
+#define LOG_MSG_BUF 128
 
-#ifdef LOG_WARN
-#define log_warn kprintf
-#else
-#define log_warn
-#endif
+#define LOG_TAG_DEBUG "debug"
+#define LOG_TAG_INFO "info"
+#define LOG_TAG_WARN "warn"
+#define LOG_TAG_ERROR "error"
 
-#ifdef LOG_ERROR
-#define log_error kprintf
-#else
-#define log_error
-#endif
+
+void log_debug(const char* fmt, ...);
+
+void log_info(const char* fmt, ...);
+
+void log_warn(const char* fmt, ...);
+
+void log_error(const char* fmt, ...);
 
 #endif

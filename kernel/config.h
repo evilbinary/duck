@@ -82,6 +82,17 @@
 #define MAX_PATH_BUFFER 256 //最长文件路径
 
 
+#define kdbg kprintf("%s:%d\n",__FILE__,__LINE__)
+#ifdef MALLOC_TRACE
+#define fn_malloc kmalloc_trace
+#define fn_free kfree_trace
+
+#else
+#define fn_malloc kmalloc
+#define fn_free kfree
+#endif
+// #define fn_free kfree
+
 #include "logger.h"
 
 #endif

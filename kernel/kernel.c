@@ -10,6 +10,8 @@ void kernel_init() {
   int cpu=cpu_get_id();
   if(cpu==0){
     kprintf("kernel init\n");
+    kprintf("log init\n");
+    log_init();
     kprintf("exception init\n");
     exception_init();
     kprintf("syscall init\n");

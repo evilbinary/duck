@@ -600,14 +600,28 @@ int sys_self(void* t) {
   return 1;
 }
 
-int sys_clock_nanosleep(int clock, int flag,struct timespec* req,
+int sys_clock_nanosleep(int clock, int flag, struct timespec* req,
                         struct timespec* rem) {
   // kprintf("sys_clock_nanosleep %d %d\n",req->tv_sec,req->tv_nsec);
-  schedule_sleep(req->tv_sec*1000+req->tv_nsec);
+  schedule_sleep(req->tv_sec * 1000 + req->tv_nsec);
   return 0;
 }
 
+int sys_mem_info() {
+  memory_t* mem = memory_info();
+  kprintf("total       %6dk\n", mem->total / 1024);
+  kprintf("free        %6dk\n", mem->free / 1024);
+  kprintf("kernel used %6dk\n", mem->kernel_used / 1024);
+  kprintf("user   used %6dk\n", mem->user_used / 1024);
+}
 
+int sys_info(sysinfo_t* info) {
+  memory_t* mem = memory_info();
+  info->totalram = mem->total;
+  info->freeram = mem->free;
+  info->procs = thread_count();
+  return 0;
+}
 
 void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_READ] = &sys_read;
@@ -671,4 +685,7 @@ void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_SELF] = &sys_self;
 
   syscall_table[SYS_CLOCK_NANOSLEEP] = &sys_clock_nanosleep;
+
+  syscall_table[SYS_SYSINFO] = &sys_info;
+  syscall_table[SYS_MEMINFO] = &sys_mem_info;
 }

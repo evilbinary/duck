@@ -8,7 +8,7 @@ import os
 
 Import('env')
 
-cflags='$CFLAGS '#-DUSE_POOL -finstrument-functions
+cflags='$CFLAGS -finstrument-functions'#-DUSE_POOL -finstrument-functions
 
 include=[
         '../',
@@ -38,7 +38,8 @@ env.Library('yiyiya', [
     'rw_queue.c',
     'pipe.c',
     'mp.c',
-   
+    'trace.c',
+    'logger.c'
     ],
     CPPPATH=include,
     LIBS=libs,

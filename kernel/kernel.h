@@ -18,16 +18,9 @@
 #include "kernel/ioctl.h"
 #include "kernel/vfs.h"
 #include "kernel/stat.h"
+#include "kernel/logger.h"
 
-#define kdbg kprintf("%s:%d\n",__FILE__,__LINE__)
-#ifdef MALLOC_TRACE
-#define fn_malloc kmalloc_trace
-#else
-#define fn_malloc kmalloc
 
-#endif
-
-#define fn_free kfree
 #include "algorithm/circle_queue.h"
 #include "algorithm/queue_pool.h"
 
