@@ -69,6 +69,11 @@ void* kmalloc(size_t size) {
     return addr;
   }
   kmemset(addr, 0, size);
+  thread_t* current = thread_current();
+  if (current != NULL) {
+    current->mem_size += size;
+  }
+
   return addr;
 }
 
@@ -77,19 +82,33 @@ void* kmalloc_alignment(size_t size, int alignment) {
   // use_kernel_page();
   void* addr = mm_alloc_zero_align(size, alignment);
   // use_user_page();
+  thread_t* current = thread_current();
+  if (current != NULL) {
+    current->mem_size += size;
+  }
   return addr;
 }
 
 #endif
 
 void kfree(void* ptr) {
+  size_t size = mm_get_size(ptr);
   mm_free(ptr);
+  thread_t* current = thread_current();
+  if (current != NULL) {
+    current->mem_size -= size;
+  }
   // kfree_alignment(ptr);
 }
 
 void kfree_alignment(void* ptr) {
+  size_t size = mm_get_size(ptr);
   // use_kernel_page();
   mm_free_align(ptr);
+  thread_t* current = thread_current();
+  if (current != NULL) {
+    current->mem_size -= size;
+  }
   // use_user_page();
 }
 

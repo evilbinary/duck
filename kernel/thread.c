@@ -484,7 +484,7 @@ void thread_dumps() {
   char* state_str[7] = {"create",   "running", "runnable", "stopped",
                         "waitting", "sleep",   "unkown"};
   char* str = "unkown";
-  kprintf("id    pid     name                 state     cpu  counter  sleep\n");
+  kprintf("id    pid     name                 state     cpu  counter   sleep      mem\n");
   for (int i = 0; i < MAX_CPU; i++) {
     for (thread_t* p = schedulable_head_thread[i]; p != NULL; p = p->next) {
       if (p->state <= THREAD_SLEEP) {
@@ -498,8 +498,8 @@ void thread_dumps() {
       } else {
         kprintf("   ");
       }
-      kprintf("%-8s %4d   %6d  %6d\n", str, p->cpu_id, p->counter,
-              p->sleep_counter);
+      kprintf("%-8s %4d   %6d  %6d  %6dk\n", str, p->cpu_id, p->counter,
+              p->sleep_counter,p->mem_size/1024);
     }
   }
 }

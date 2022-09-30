@@ -56,6 +56,7 @@ typedef struct thread {
     u32 *entry;
     u32 stack_size;
     u32 cpu_id;
+    u32 mem_size;
 }thread_t;
 
 

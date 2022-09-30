@@ -211,6 +211,13 @@ void mm_dump() {
   kprintf("dump end\n\n");
 }
 
+
+size_t mm_get_size(void* addr){
+  if (addr == NULL) return;
+  mem_block_t* block = (mem_block_t*)((u32)addr);
+  return block->size;
+}
+
 void mm_free(void* addr) {
   debug("free %x\n",addr);
   if (addr == NULL) return;
@@ -225,7 +232,7 @@ void mm_free(void* addr) {
   block_available_tail = block;
 }
 
-u32 mm_get_size(void* addr) {
+u32 mm_get_block_size(void* addr) {
   mem_block_t* p = block_alloc_head;
   for (; p != NULL; p = p->next) {
     if (p->addr == addr) {
