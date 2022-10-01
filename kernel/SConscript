@@ -8,7 +8,10 @@ import os
 
 Import('env')
 
-cflags='$CFLAGS '#-DUSE_POOL -finstrument-functions
+
+# cflags='$CFLAGS -finstrument-functions  -finstrument-functions-exclude-function-list=do_page_fault,syscall_handler,general_protection,syscall1,syscall2,syscall3,syscall4,syscall5,print_string,do_shell_cmd,print_promot -finstrument-functions-exclude-file-list=duck/init,duck/arch,duck/libs,duck/init,duck/modules,duck/kernel/thread.c,duck/kernel/schedule.c,duck/kernel/syscall.c,duck/kernel/sysfn.c,duck/kernel/vfs.c,duck/kernel/devfn.c,duck/kernel/exceptions.c'#-DUSE_POOL -finstrument-functions
+
+cflags='$CFLAGS '
 
 include=[
         '../',

@@ -187,15 +187,15 @@ void page_clone(u32* old_page, u32* new_page) {
   for (int pdpte_index = 0; pdpte_index < 4; pdpte_index++) {
     u64* page_dir_ptr = page[pdpte_index] & ~0xFFF;
     if (page_dir_ptr != NULL) {
-      kprintf("pdpte_index---->%d\n", pdpte_index);
+      // kprintf("pdpte_index---->%d\n", pdpte_index);
       u64* new_page_dir_ptr = kmalloc_alignment(sizeof(u64) * 512, PAGE_SIZE);
       page_dir_ptr_tab[pdpte_index] =
           ((u64)new_page_dir_ptr) | PAGE_P | PAGE_USU | PAGE_RWW;
       for (int pde_index = 0; pde_index < 512; pde_index++) {
         u64* page_tab_ptr = (u64)page_dir_ptr[pde_index] & ~0xFFF;
         if (page_tab_ptr != NULL) {
-          kprintf("pdpte_index---->%d pde_index-> %d\n", pdpte_index,
-                  pde_index);
+          // kprintf("pdpte_index---->%d pde_index-> %d\n", pdpte_index,
+          //         pde_index);
           u64* new_page_tab_ptr =
               kmalloc_alignment(sizeof(u64) * 512, PAGE_SIZE);
           new_page_dir_ptr[pde_index] =
@@ -240,4 +240,30 @@ u32* page_alloc_clone(u32* old_page_dir, u32 level) {
     return page_dir_ptr_tab;
   }
   return NULL;
+}
+
+//回收
+void page_free(u32* old_page, u32 level) {
+  if(old_page==NULL) return;
+  if (level == USER_MODE) {
+    // u64* page = old_page;
+    // for (int pdpte_index = 0; pdpte_index < 4; pdpte_index++) {
+    //   u64* page_dir_ptr = page[pdpte_index] & ~0xFFF;
+    //   if (page_dir_ptr != NULL) {
+    //     kprintf("pdpte_index---->%d\n", pdpte_index);
+    //     for (int pde_index = 0; pde_index < 512; pde_index++) {
+    //       u64* page_tab_ptr = (u64)page_dir_ptr[pde_index] & ~0xFFF;
+    //       if (page_tab_ptr != NULL) {
+    //         kprintf("pdpte_index---->%d pde_index-> %d\n", pdpte_index,
+    //                 pde_index);
+    //         for (int pte_index = 0; pte_index < 512; pte_index++) {
+    //           u64* page_tab_item = page_tab_ptr[pte_index] & ~0xFFF;
+    //           // page_tab_ptr[pte_index]=0;
+    //         }
+    //       }
+    //     }
+    //     page[pdpte_index]=0;
+    //   }
+    // }
+  }
 }

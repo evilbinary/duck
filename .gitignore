@@ -5,4 +5,4 @@
 *.gdb
 *.elf
 *.dbg
-kernel
+init/kernel
