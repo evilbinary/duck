@@ -45,7 +45,7 @@ size_t sys_ioctl(u32 fd, u32 cmd, void* args) {
     // f = find_fd(fd);
   }
   if (f == NULL) {
-    kprintf("ioctl not found fd %d\n", fd);
+    log_error("ioctl not found fd %d\n", fd);
     return 0;
   }
   vnode_t* node = f->data;
@@ -59,12 +59,12 @@ u32 sys_open(char* name, int attr) {
   // mm_dump();
   // kprintf("open %s attr %x\n",name,attr&O_CREAT==O_CREAT);
   if (name == NULL) {
-    kprintf("open name is null\n");
+    log_error("open name is null\n");
     return -1;
   }
   thread_t* current = thread_current();
   if (current == NULL) {
-    kprintf(" cannot find current thread\n");
+    log_error(" cannot find current thread\n");
     return -1;
   }
   int f = thread_find_fd_name(current, name);
