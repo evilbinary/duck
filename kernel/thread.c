@@ -122,7 +122,7 @@ void thread_sleep(thread_t* thread, u32 count) {
 
 void thread_wait(thread_t* thread) {
 #ifdef DEBUG_THREAD
-  kprintf("thread %d wait==============> %d\n", current_thread[cpu_id]->id,
+  log_debug("thread %d wait==============> %d\n", current_thread[cpu_id]->id,
           thread->id);
 #endif
   thread->state = THREAD_WAITING;
@@ -131,7 +131,7 @@ void thread_wait(thread_t* thread) {
 
 void thread_wake(thread_t* thread) {
 #ifdef DEBUG_THREAD
-  kprintf("thread %d wake==============> %d\n", current_thread[cpu_id]->id,
+  log_debug("thread %d wake==============> %d\n", current_thread[cpu_id]->id,
           thread->id);
 #endif
   thread->state = THREAD_RUNNING;
@@ -195,7 +195,7 @@ void thread_add(thread_t* thread) {
   thread->state = THREAD_RUNABLE;
   if (current_thread[cpu_id] == NULL) {
     if (schedulable_head_thread[cpu_id] == NULL) {
-      kprintf("no thread please create a thread\n");
+      log_error("no thread please create a thread\n");
       cpu_halt();
     }
     current_thread[cpu_id] = schedulable_head_thread[cpu_id];
@@ -375,7 +375,7 @@ thread_t* thread_clone(thread_t* thread, u32* vstack3, u32 size) {
   }
 
   // use phy copy direct
-  kprintf("copy_stack0: %x copy_stack3: %x \n", copy_stack0, copy_stack3);
+  log_debug("copy_stack0: %x copy_stack3: %x \n", copy_stack0, copy_stack3);
   context_clone(&copy->context, &thread->context, copy_stack0_top,
                 copy_stack3_top, thread->stack0_top, thread_stack3_top);
 
@@ -387,7 +387,7 @@ thread_t* thread_clone(thread_t* thread, u32* vstack3, u32 size) {
       p_thread_stack3 =
           virtual_to_physic(thread->context.page_dir, p_thread_stack3);
       if (p_thread_stack3 == NULL) {
-        kprintf("thread stack3 is null\n");
+        log_info("thread stack3 is null\n");
         continue;
       }
       // kprintf("copy_stack3 %x p_thread_stack3 %x thread->stack3
@@ -407,7 +407,7 @@ int thread_find_fd_name(thread_t* thread, u8* name) {
     thread_fill_fd(thread);
   }
   if (thread->fd_number > thread->fd_size) {
-    kprintf("thread find fd name limit %d > %d\n", thread->fd_number,
+    log_error("thread find fd name limit %d > %d\n", thread->fd_number,
             thread->fd_size);
     return -1;
   }
@@ -422,7 +422,7 @@ int thread_find_fd_name(thread_t* thread, u8* name) {
 
 int thread_add_fd(thread_t* thread, fd_t* fd) {
   if (thread->fd_number > thread->fd_size) {
-    kprintf("thread add fd limit\n");
+    log_error("thread add fd limit\n");
     return -1;
   }
   thread->fds[thread->fd_number] = fd;
@@ -431,11 +431,11 @@ int thread_add_fd(thread_t* thread, fd_t* fd) {
 
 fd_t* thread_find_fd_id(thread_t* thread, u32 fd) {
   if (thread->fd_number > thread->fd_size) {
-    kprintf("thread find number limit %d\n", fd);
+    log_error("thread find number limit %d\n", fd);
     return NULL;
   }
   if (fd > thread->fd_number) {
-    kprintf("thread find fd limit %d > %d\n", fd, thread->fd_number);
+    log_error("thread find fd limit %d > %d\n", fd, thread->fd_number);
     return NULL;
   }
   return thread->fds[fd];
@@ -443,11 +443,11 @@ fd_t* thread_find_fd_id(thread_t* thread, u32 fd) {
 
 fd_t* thread_set_fd(thread_t* thread, u32 fd, fd_t* nfd) {
   if (thread->fd_number > thread->fd_size) {
-    kprintf("thread set number limit %d\n", fd);
+    log_error("thread set number limit %d\n", fd);
     return NULL;
   }
   if (fd > thread->fd_number) {
-    kprintf("thread set fd limit %d\n", fd);
+    log_error("thread set fd limit %d\n", fd);
     return NULL;
   }
   return thread->fds[fd] = nfd;

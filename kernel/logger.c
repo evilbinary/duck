@@ -19,10 +19,17 @@ void log_default(int tag, const char* message, va_list args) {
   }
   char buf[LOG_MSG_BUF] = {0};
   vsprintf(buf, "[%08d] %s tid: %d ", ticks, log_level_strings[tag], tid);
-  sys_write(log_info_mod.fd, buf, kstrlen(buf));
-  kmemset(buf, 0, LOG_MSG_BUF);
-  vsprintf(buf, message, args);
-  sys_write(log_info_mod.fd, buf, kstrlen(buf));
+  if(log_info_mod.fd<0){
+    kprintf(buf);
+    kmemset(buf, 0, LOG_MSG_BUF);
+    vsprintf(buf, message, args);
+    kprintf(buf);
+  }else{
+    sys_write(log_info_mod.fd, buf, kstrlen(buf));
+    kmemset(buf, 0, LOG_MSG_BUF);
+    vsprintf(buf, message, args);
+    sys_write(log_info_mod.fd, buf, kstrlen(buf));
+  }
 }
 
 void log_format(int tag, const char* message, va_list args) {

@@ -88,7 +88,7 @@ size_t fat_read_bytes(vnode_t *node, u32 offset, size_t nbytes, u8 *buf) {
     kmemmove(buf, small_buf + offset % BYTE_PER_SECTOR, rest);
   }
   if (ret < 0) {
-    kprintf("fat read bytes error\n");
+    log_error("fat read bytes error\n");
     return -1;
   }
   return nbytes;
@@ -167,7 +167,7 @@ uint8_t sd_raw_write_interval(offset_t offset, uint8_t *buffer,
 u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   file_info_t *file_info = node->data;
   if (file_info->fd == NULL) {
-    kprintf("read error fd null\n");
+    log_error("read error fd null\n");
     return -1;
   }
   fat_seek_file(file_info->fd, &offset, FAT_SEEK_SET);
@@ -177,11 +177,11 @@ u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
 u32 fat_op_write(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   file_info_t *file_info = node->data;
   if (file_info == NULL) {
-    kprintf("write file info faild not opend\n");
+    log_error("write file info faild not opend\n");
     return -1;
   }
   if (file_info->fd == NULL) {
-    kprintf("write error fd null\n");
+    log_error("write error fd null\n");
     return -1;
   }
   fat_seek_file(file_info->fd, &offset, FAT_SEEK_SET);
@@ -215,7 +215,7 @@ int open_file_in_dir(struct fat_fs_struct *fs, struct fat_dir_struct *dd,
   }
   u32 ret = find_file_in_dir(fs, dd, name, &file_entry);
   if (!ret) {
-    kprintf("find_file_in_dir failed %s\n", name);
+    log_error("find_file_in_dir failed %s\n", name);
     return 0;
   }
   if (file_entry.attributes & FAT_ATTRIB_DIR) {
@@ -240,7 +240,7 @@ u32 fat_op_open(vnode_t *node, u32 mode) {
   file_info->offset = 0;
   if (((mode & O_CREAT) == O_CREAT) ||
       (file_info->fd == NULL && file_info->dd == NULL)) {
-    kprintf("create new file %s\n", name);
+    log_debug("create new file %s\n", name);
     file_info_t *parent_file_info = node->parent->data;
     file_info_t *new_file_info = kmalloc(sizeof(struct file_info));
     struct fat_dir_struct *dd = kmalloc(sizeof(struct fat_dir_struct));
@@ -249,12 +249,12 @@ u32 fat_op_open(vnode_t *node, u32 mode) {
     node->data = new_file_info;
     uint8_t res = fat_create_file(parent_file_info->dd, name, &dd->dir_entry);
     if (!res) {
-      kprintf("fat_create_file faild\n");
+      log_error("fat_create_file faild\n");
       return -1;
     }
     struct fat_file_struct *fd = fat_open_file(fs, &dd->dir_entry);
     if (!fd) {
-      kprintf("create file bad fd %s\n", name);
+      log_error("create file bad fd %s\n", name);
       return -1;
     }
     new_file_info->fd = fd;
@@ -273,12 +273,12 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
   uint8_t res;
   res = fat_get_dir_entry_of_path(fs, "/", &directory);
   if (!res) {
-    kprintf("bad direc /\n");
+    log_error("bad direc /\n");
     return NULL;
   }
   struct fat_dir_struct *dd = fat_open_dir(fs, &directory);
   if (!dd) {
-    kprintf("bad dd\n");
+    log_error("bad dd\n");
     return NULL;
   }
 
@@ -286,7 +286,7 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
   new_file_info->fs = fs;
   int ret = open_file_in_dir(fs, dd, name, new_file_info);
   if (!ret) {
-    kprintf("bad fd %s\n", name);
+    log_error("bad fd %s\n", name);
     return NULL;
   }
 
@@ -307,7 +307,7 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
 u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
   if (!((node->flags & V_FILE) == V_FILE ||
         (node->flags & V_DIRECTORY) == V_DIRECTORY)) {
-    kprintf("read dir failed for not file flags is %x\n", node->flags);
+    log_debug("read dir failed for not file flags is %x\n", node->flags);
     return 0;
   }
   file_info_t *file_info = node->data;
@@ -400,7 +400,7 @@ void get_datetime(uint16_t* year, uint8_t* month, uint8_t* day, uint8_t* hour, u
   time.year = 1900;
   int ret = sys_read(time_fd, &time, sizeof(rtc_time_t));
   if (ret < 0) {
-    kprintf("erro read time\n");
+    log_error("erro read time\n");
     return ;
   }
   *year=time.year;
@@ -428,7 +428,7 @@ void fat_init(void) {
   vnode_t *node = vfs_find(NULL, "/dev/sda");
   default_node = node;
   if (node == NULL) {
-    kprintf("not found sda\n");
+    log_error("not found sda\n");
   }
   fat_init_op(node);
   struct partition_struct *partition =
@@ -436,12 +436,12 @@ void fat_init(void) {
                      sd_raw_write_interval, -1);
 
   if (!partition) {
-    kprintf("open partition error\n");
+    log_error("open partition error\n");
     return;
   }
   struct fat_fs_struct *fs = fat_open(partition);
   if (!fs) {
-    kprintf("bad fs\n");
+    log_error("bad fs\n");
     return;
   }
   struct fat_dir_entry_struct directory;
@@ -450,7 +450,7 @@ void fat_init(void) {
 
   struct fat_dir_struct *dd = fat_open_dir(fs, &directory);
   if (!dd) {
-    kprintf("bad dd\n");
+    log_error("bad dd\n");
     return NULL;
   }
 
@@ -463,6 +463,6 @@ void fat_init(void) {
   log_info("fat init end\n");
 }
 
-void fat_exit(void) { kprintf("fat exit\n"); }
+void fat_exit(void) { log_info("fat exit\n"); }
 
 module_t fat_module = {.name = "fat", .init = fat_init, .exit = fat_exit};
