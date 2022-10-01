@@ -26,7 +26,7 @@ size_t vioctl(vnode_t *node, u32 cmd, void *args) {
     // va_end(args);
     return ret;
   } else {
-    kprintf("node %s ioctl is null\n", node->name);
+    log_error("node %s ioctl is null\n", node->name);
     return 0;
   }
 }
@@ -35,7 +35,7 @@ u32 vread(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
   if (node->op->read != NULL) {
     return node->op->read(node, offset, size, buffer);
   } else {
-    kprintf("node %s read is null\n", node->name);
+    log_error("node %s read is null\n", node->name);
     return 0;
   }
 }
@@ -44,7 +44,7 @@ u32 vwrite(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
   if (node->op->write != NULL) {
     return node->op->write(node, offset, size, buffer);
   } else {
-    kprintf("node %s write is null\n", node->name);
+    log_error("node %s write is null\n", node->name);
     return 0;
   }
 }
@@ -53,7 +53,7 @@ u32 vopen(vnode_t *node,u32 mode) {
   if (node->op->open != NULL) {
     return node->op->open(node,mode);
   } else {
-    kprintf("node %s open is null \n", node->name);
+    log_error("node %s open is null \n", node->name);
     return -1;
   }
 }
@@ -61,7 +61,7 @@ u32 vclose(vnode_t *node) {
   if (node->op->close != NULL) {
     return node->op->close(node);
   } else {
-    kprintf("node %s close is null\n", node->name);
+    log_error("node %s close is null\n", node->name);
     return -1;
   }
 }
@@ -70,10 +70,10 @@ u32 vreaddir(vnode_t *node, vdirent_t *dirent, u32 count) {
     if ((node->flags & V_DIRECTORY) == V_DIRECTORY) {
       return node->op->readdir(node, dirent, count);
     } else {
-      kprintf("node readdir is not dir\n");
+      log_error("node readdir is not dir\n");
     }
   } else {
-    kprintf("node readdir is null\n");
+    log_error("node readdir is null\n");
     return 0;
   }
 }
@@ -82,10 +82,10 @@ vnode_t *vfinddir(vnode_t *node, char *name) {
     if ((node->flags & V_DIRECTORY) == V_DIRECTORY) {
       return node->op->finddir(node, name);
     } else {
-      kprintf("node finddir is not dir\n");
+      log_error("node finddir is not dir\n");
     }
   } else {
-    kprintf("node finddir is null\n");
+    log_error("node finddir is null\n");
     return 0;
   }
 }
@@ -97,7 +97,7 @@ vnode_t *vfind(vnode_t *node, char *name) {
   if (node->op->find != NULL) {
     return node->op->find(node, name);
   } else {
-    kprintf("node find is null\n");
+    log_error("node find is null\n");
     return 0;
   }
 }
@@ -106,7 +106,7 @@ void vmount(vnode_t *root, u8 *path, vnode_t *node) {
   if (root->op->mount != NULL) {
     return node->op->mount(root, path, node);
   } else {
-    kprintf("node mount is null\n");
+    log_error("node mount is null\n");
     return;
   }
 }
@@ -134,7 +134,7 @@ void vfs_add_child(vnode_t *parent, vnode_t *child) {
     vfs_exten_child(parent);
   }
   if (parent->child == NULL) {
-    kprintf("child alloc error\n");
+    log_error("child alloc error\n");
     return;
   }
   child->parent = parent;
@@ -201,7 +201,7 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
 
     vnode_t *find_node = vfind(parent->super, token);
     if (find_node == NULL) {
-      kprintf("open find %s failed \n", path);
+      log_error("open find %s failed \n", path);
       return NULL;
     }
     node = find_node;
@@ -220,7 +220,7 @@ void vfs_mount(vnode_t *root, u8 *path, vnode_t *node) {
   if (parent != NULL) {
     vfs_add_child(parent, node);
   } else {
-    kprintf("mount on %s error\n", path);
+    log_error("mount on %s error\n", path);
   }
 }
 
@@ -304,14 +304,14 @@ vnode_t *vfs_open_attr(vnode_t *root, u8 *name, u32 attr) {
   } else {
     vnode_t *node = vfs_find(root, name);
     if (node == NULL) {
-      kprintf("open file %s failed \n", name);
+      log_error("open file %s failed \n", name);
       return NULL;
     }
     file = node;
   }
   u32 ret = vfs_open(file,attr);
   if (ret < 0) {
-    kprintf("open third %s failed \n", name);
+    log_error("open third %s failed \n", name);
     return NULL;
   }
   return file;
@@ -319,7 +319,7 @@ vnode_t *vfs_open_attr(vnode_t *root, u8 *name, u32 attr) {
 
 int vfs_close(vnode_t *node) {
   if (node == NULL) {
-    kprintf("close node is nul\n");
+    log_error("close node is nul\n");
     return -1;
   }
   if (node->super != NULL) {

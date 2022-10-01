@@ -107,7 +107,7 @@ void* kmalloc(size_t size) {
   void* addr = NULL;
 #ifdef X86
   // size = ((size + PAGE_SIZE) / PAGE_SIZE) * PAGE_SIZE;
-  size = ((size + 1024) / 1024) * 1024;
+  // size = ((size + 1024) / 1024) * 1024;
 #endif
   addr = mm_alloc(size);
   if (addr == NULL) {

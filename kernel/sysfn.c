@@ -76,18 +76,18 @@ u32 sys_open(char* name, int attr) {
   }
   vnode_t* file = vfs_open_attr(NULL, name, attr);
   if (file == NULL) {
-    kprintf("sys open file %s error, attr %x \n", name, attr);
+    log_error("sys open file %s error, attr %x \n", name, attr);
     return -1;
   }
   fd_t* fd = fd_new(file, DEVICE_TYPE_FILE, name);
   if (fd == NULL) {
-    kprintf(" new fd error\n");
+    log_error(" new fd error\n");
     return -1;
   }
   fd->offset = 0;
   f = thread_add_fd(current, fd);
   if (f < 0) {
-    kprintf("sys open %s error\n", name);
+    log_error("sys open %s error\n", name);
     return -1;
   }
   log_debug("sys open new name: %s fd:%d fd->id:%d ptr:%x tid:%d\n", name, f,
@@ -99,12 +99,12 @@ int sys_close(u32 fd) {
   thread_t* current = thread_current();
   fd_t* f = thread_find_fd_id(current, fd);
   if (f == NULL) {
-    kprintf("close not found fd %d tid %d\n", fd, current->id);
+    log_error("close not found fd %d tid %d\n", fd, current->id);
     return 0;
   }
   vnode_t* node = f->data;
   if (node == NULL) {
-    kprintf("sys close node is null tid %d \n", current->id);
+    log_error("sys close node is null tid %d \n", current->id);
     return -1;
   }
   // reset offset
@@ -117,13 +117,13 @@ size_t sys_write(u32 fd, void* buf, size_t nbytes) {
   thread_t* current = thread_current();
   fd_t* f = thread_find_fd_id(current, fd);
   if (f == NULL) {
-    kprintf("write not found fd %d tid %d\n", fd, current->id);
+    log_error("write not found fd %d tid %d\n", fd, current->id);
     thread_dump_fd(current);
     return 0;
   }
   vnode_t* node = f->data;
   if (node == NULL) {
-    kprintf("sys write node is null tid %d \n", current->id);
+    log_error("sys write node is null tid %d \n", current->id);
     return -1;
   }
   // kprintf("sys write %d %s fd:%s\n",current->id,buf,f->name);
@@ -135,12 +135,12 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
   thread_t* current = thread_current();
   fd_t* f = thread_find_fd_id(current, fd);
   if (f == NULL) {
-    kprintf("read not found fd %d tid %d\n", fd, current->id);
+    log_error("read not found fd %d tid %d\n", fd, current->id);
     return 0;
   }
   vnode_t* node = f->data;
   if (node == NULL) {
-    kprintf("sys read node is null\n");
+    log_error("sys read node is null\n");
     return -1;
   }
   u32 ret = vread(node, f->offset, nbytes, buf);
@@ -151,7 +151,7 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
 size_t sys_seek(u32 fd, ulong offset, int whence) {
   fd_t* f = thread_find_fd_id(thread_current(), fd);
   if (f == NULL) {
-    kprintf("seek not found fd %d\n", fd);
+    log_error("seek not found fd %d\n", fd);
     return 0;
   }
   // set start offset
@@ -165,7 +165,7 @@ size_t sys_seek(u32 fd, ulong offset, int whence) {
       f->offset = file->length + offset;
     }
   } else {
-    kprintf("seek whence error %d\n", whence);
+    log_error("seek whence error %d\n", whence);
     return -1;
   }
   return f->offset;
@@ -214,13 +214,13 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   int fd = sys_open(filename, 0);
   if (fd < 0) {
     sys_close(fd);
-    kprintf("sys exec file not found %s\n", filename);
+    log_error("sys exec file not found %s\n", filename);
     return -1;
   }
   thread_t* current = thread_current();
   fd_t* f = thread_find_fd_id(current, fd);
   if (f == NULL) {
-    kprintf("read not found fd %d tid %d\n", fd, current->id);
+    log_error("read not found fd %d tid %d\n", fd, current->id);
     return 0;
   }
   sys_close(fd);
@@ -238,7 +238,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   // init pwd
   vnode_t* node = f->data;
   if (node == NULL) {
-    kprintf("sys exec node is null pwd\n");
+    log_error("sys exec node is null pwd\n");
     return -1;
   }
   if (node->parent != NULL) {
@@ -280,7 +280,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
 int sys_fork() {
   thread_t* current = thread_current();
   if (current == NULL) {
-    kprintf("current is null\n");
+    log_error("current is null\n");
     return -1;
   }
   thread_t* copy_thread = thread_clone(current, STACK_ADDR, THREAD_STACK_SIZE);
@@ -326,12 +326,12 @@ int sys_dup(int oldfd) {
   thread_t* current = thread_current();
   fd_t* fd = thread_find_fd_id(current, oldfd);
   if (fd == NULL) {
-    kprintf("dup not found fd %d\n", oldfd);
+    log_error("dup not found fd %d\n", oldfd);
     return 0;
   }
   int newfd = thread_add_fd(current, fd);
 #ifdef DEBUG_SYS_FN
-  kprintf("sys dup %d %s\n", newfd, fd->name);
+  log_debug("sys dup %d %s\n", newfd, fd->name);
 #endif
   return newfd;
 }
@@ -340,12 +340,12 @@ int sys_dup2(int oldfd, int newfd) {
   thread_t* current = thread_current();
   fd_t* fd = thread_find_fd_id(current, oldfd);
   if (fd == NULL) {
-    kprintf("dup not found fd %d\n", fd);
+    log_error("dup not found fd %d\n", fd);
     return 0;
   }
   fd_t* nfd = thread_find_fd_id(current, newfd);
   if (nfd == NULL) {
-    kprintf("dup not found nfd %d\n", nfd);
+    log_error("dup not found nfd %d\n", nfd);
     return 0;
   }
   fd_close(fd);
@@ -357,7 +357,7 @@ int sys_readdir(int fd, int index, void* dirent) {
   thread_t* current = thread_current();
   fd_t* findfd = thread_find_fd_id(current, fd);
   if (fd == NULL) {
-    kprintf("readdir not found fd %d\n", fd);
+    log_error("readdir not found fd %d\n", fd);
     return 0;
   }
   u32 ret = vreaddir(findfd->data, dirent, index);
@@ -370,7 +370,7 @@ int sys_brk(int addr) {
 
   vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
   if (vm == NULL) {
-    kprintf("sys brk not found vm\n");
+    log_error("sys brk not found vm\n");
     return 0;
   }
   if (addr == 0) {
@@ -378,7 +378,7 @@ int sys_brk(int addr) {
       vm->vend = vm->vaddr + addr;
     }
     addr = vm->vend;
-    kprintf("sys sbrk return first addr:%x\n", addr);
+    log_error("sys sbrk return first addr:%x\n", addr);
     return addr;
   }
   vm->vend = addr;
@@ -429,7 +429,7 @@ void* sys_mmap2(void* addr, int length, int prot, int flags, int fd,
   int ret = 0;
   ret = addr;
   if (fd >= 0 || pgoffset > 0) {
-    kprintf("mmap2 system call : fd = %d, prot = %x, pgoffset = %d\n", fd, prot,
+    log_error("mmap2 system call : fd = %d, prot = %x, pgoffset = %d\n", fd, prot,
             pgoffset);
     return -1;
   }
@@ -439,34 +439,34 @@ void* sys_mmap2(void* addr, int length, int prot, int flags, int fd,
 
 int sys_mprotect(const void* start, size_t len, int prot) {
   int ret = 0;
-  kprintf("sys mprotect not impl\n");
+  log_debug("sys mprotect not impl\n");
 
   return ret;
 }
 
 int sys_rt_sigprocmask(int h, void* set, void* old_set) {
-  kprintf("sys sigprocmask not impl\n");
+  log_debug("sys sigprocmask not impl\n");
   return 0;
 }
 
 unsigned int sys_alarm(unsigned int seconds) {
-  kprintf("sys alarm not impl\n");
+  log_debug("sys alarm not impl\n");
   return -1;
 }
 
 int sys_unlink(const char* pathname) {
-  kprintf("sys unlink not impl %s\n", pathname);
+  log_debug("sys unlink not impl %s\n", pathname);
   return -1;
 }
 
 int sys_rename(const char* old, const char* new) {
-  kprintf("sys rename not impl %s\n", old);
+  log_debug("sys rename not impl %s\n", old);
 
   return -1;
 }
 
 int sys_set_thread_area(void* set) {
-  kprintf("sys set thread area not impl \n");
+  log_debug("sys set thread area not impl \n");
   return 1;
 }
 
@@ -474,7 +474,7 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
   thread_t* current = thread_current();
   fd_t* findfd = thread_find_fd_id(current, fd);
   if (fd == NULL) {
-    kprintf("getdents64 not found fd %d\n", fd);
+    log_error("getdents64 not found fd %d\n", fd);
     return 0;
   }
   u32 ret = vreaddir(findfd->data, dir, count);
@@ -482,12 +482,12 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
 }
 
 int sys_munmap(void* addr, size_t size) {
-  kprintf("sys munmap not impl addr: %x size: %d\n", addr, size);
+  log_debug("sys munmap not impl addr: %x size: %d\n", addr, size);
   return 1;
 }
 
 int sys_fcntl64(int fd, int cmd, void* arg) {
-  kprintf("sys fcntl64 not impl fd: %d cmd: %x\n", fd, cmd);
+  log_debug("sys fcntl64 not impl fd: %d cmd: %x\n", fd, cmd);
 
   return 1;
 }
@@ -495,7 +495,7 @@ int sys_fcntl64(int fd, int cmd, void* arg) {
 int sys_getcwd(char* buf, size_t size) {
   thread_t* current = thread_current();
   if (current == NULL) {
-    kprintf("current is null\n");
+    log_error("current is null\n");
     return -1;
   }
   int ret = 0;
@@ -516,14 +516,14 @@ int sys_fchdir(int fd) {
   thread_t* current = thread_current();
   fd_t* f = thread_find_fd_id(current, fd);
   if (f == NULL) {
-    kprintf("read not found fd %d tid %d\n", fd, current->id);
+    log_error("read not found fd %d tid %d\n", fd, current->id);
     return -1;
   }
   vnode_t* node = f->data;
   if ((node->flags & V_DIRECTORY) == V_DIRECTORY) {
     current->vfs->pwd = node;
   } else {
-    kprintf("not directory\n");
+    log_error("not directory\n");
     return -1;
   }
   return ret;
@@ -532,7 +532,7 @@ int sys_fchdir(int fd) {
 int sys_clone(void* fn, void* stack, void* arg) {
   thread_t* current = thread_current();
   if (current == NULL) {
-    kprintf("current is null\n");
+    log_error("current is null\n");
     return -1;
   }
   thread_t* copy_thread = thread_clone(current, STACK_ADDR, THREAD_STACK_SIZE);
@@ -560,7 +560,7 @@ int sys_llseek(int fd, off_t offset_hi, off_t offset_lo, off_t* result,
 int sys_umask(int mask) {
   thread_t* current = thread_current();
   if (current == NULL) {
-    kprintf("current is null\n");
+    log_error("current is null\n");
     return -1;
   }
   // todo
@@ -583,7 +583,7 @@ int sys_fstat(int fd, struct stat* stat) {
   thread_t* current = thread_current();
   fd_t* f = thread_find_fd_id(current, fd);
   if (f == NULL) {
-    kprintf("stat not found fd %d tid %d\n", fd, current->id);
+    log_error("stat not found fd %d tid %d\n", fd, current->id);
     return 0;
   }
   vnode_t* node = f->data;
