@@ -3,7 +3,7 @@
 
 #include "kernel/stdarg.h"
 
-#define LOG_MSG_BUF 128
+#define LOG_MSG_BUF 64
 #define LOG_MAX_FN 10
 
 enum { LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR };

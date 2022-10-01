@@ -18,13 +18,12 @@ void log_default(int tag, const char* message, va_list args) {
     tid = current->id;
   }
   char buf[LOG_MSG_BUF] = {0};
-  vsprintf(buf, "[%08d] %s tid: %d ", ticks, log_level_strings[tag], tid);
-  if(log_info_mod.fd<0){
-    kprintf(buf);
-    kmemset(buf, 0, LOG_MSG_BUF);
+  char* tag_msg = (char*)log_level_strings[tag];
+  if (log_info_mod.fd < 0) {
     vsprintf(buf, message, args);
-    kprintf(buf);
-  }else{
+    kprintf("[%08d] tid: %d %s  %s", ticks, tid, tag_msg, buf);
+  } else {
+    vsprintf(buf, "[%08d] tid: %d ", ticks, tid);
     sys_write(log_info_mod.fd, buf, kstrlen(buf));
     kmemset(buf, 0, LOG_MSG_BUF);
     vsprintf(buf, message, args);
@@ -66,7 +65,15 @@ void log_error(const char* fmt, ...) {
   va_end(args);
 }
 
+void log_register(log_format_fn fn) {
+  log_info_mod.loggers[log_info_mod.logger_size++] = fn;
+}
+
+void log_unregister(log_format_fn fn) {}
+
 void log_init() {
+  log_info_mod.fd = -1;
+  log_register(&log_default);
   const char* filename = "/dev/log";
   int fd = sys_open(filename, 0);
   if (fd < 0) {
@@ -75,12 +82,4 @@ void log_init() {
     return;
   }
   log_info_mod.fd = fd;
-  log_info_mod.logger_size = 1;
-  log_info_mod.loggers[0] = &log_default;
 }
-
-void log_register(log_format_fn fn) {
-  log_info_mod.loggers[log_info_mod.logger_size++] = fn;
-}
-
-void log_unregister(log_format_fn fn) {}
