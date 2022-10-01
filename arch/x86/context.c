@@ -147,7 +147,7 @@ void context_clone(context_t* des, context_t* src, u32* stack0, u32* stack3,
   }
   des->esp0 = (u32)c0;
 
-  des->page_dir = page_alloc_clone(src->page_dir);
+  des->page_dir = page_alloc_clone(src->page_dir,-1);
 }
 
 void context_switch(interrupt_context_t* context, context_t** current,

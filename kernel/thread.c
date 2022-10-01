@@ -23,7 +23,7 @@ void thread_init() { lock_init(&thread_lock); }
 
 thread_t* thread_create_level(void* entry, void* data, u32 level) {
   u32 size = THREAD_STACK_SIZE;
-  thread_t* thread = thread_create_ex(entry, data, size, level, 1);
+  thread_t* thread = thread_create_ex(entry, size, data, level, 1);
   return thread;
 }
 
@@ -55,6 +55,10 @@ thread_t* thread_create_ex_name(char* name, void* entry, u32 size, void* data,
 
 thread_t* thread_create_ex(void* entry, u32 size, void* data, u32 level,
                            u32 page) {
+  if (size <= 0) {
+    log_error("thread create ex size is 0\n");
+    return NULL;
+  }
   if (recycle_tail_thread != NULL) {
     thread_t* thread = NULL;
     if (recycle_tail_thread == recycle_head_thread) {
@@ -71,7 +75,8 @@ thread_t* thread_create_ex(void* entry, u32 size, void* data, u32 level,
     thread_init_self(thread, entry, thread->stack0, thread->stack3,
                      thread->stack_size, thread->level);
     if (page == 1) {
-      thread->context.page_dir = page_alloc_clone(thread->context.page_dir);
+      thread->context.page_dir =
+          page_alloc_clone(thread->context.page_dir, level);
     }
     return thread;
   } else {
@@ -97,7 +102,7 @@ thread_t* thread_create_ex(void* entry, u32 size, void* data, u32 level,
 
     thread_init_self(thread, entry, stack0, stack3, size, level);
     if (page == 1) {
-      thread->context.page_dir = page_alloc_clone(thread->context.page_dir);
+      thread->context.page_dir = page_alloc_clone(thread->context.page_dir,level);
     }
     return thread;
   }
@@ -123,7 +128,7 @@ void thread_sleep(thread_t* thread, u32 count) {
 void thread_wait(thread_t* thread) {
 #ifdef DEBUG_THREAD
   log_debug("thread %d wait==============> %d\n", current_thread[cpu_id]->id,
-          thread->id);
+            thread->id);
 #endif
   thread->state = THREAD_WAITING;
   schedule_next();
@@ -132,7 +137,7 @@ void thread_wait(thread_t* thread) {
 void thread_wake(thread_t* thread) {
 #ifdef DEBUG_THREAD
   log_debug("thread %d wake==============> %d\n", current_thread[cpu_id]->id,
-          thread->id);
+            thread->id);
 #endif
   thread->state = THREAD_RUNNING;
   thread->sleep_counter = 0;
@@ -407,7 +412,7 @@ int thread_find_fd_name(thread_t* thread, u8* name) {
   }
   if (thread->fd_number > thread->fd_size) {
     log_error("thread find fd name limit %d > %d\n", thread->fd_number,
-            thread->fd_size);
+              thread->fd_size);
     return -1;
   }
   for (int i = 0; i < thread->fd_number; i++) {

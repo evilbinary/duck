@@ -45,7 +45,7 @@ typedef struct mem_block {
   struct mem_block* next;
 } __attribute__((packed)) mem_block_t;
 
-u32* page_alloc_clone(u32* page_dir);
+u32* page_alloc_clone(u32* page_dir,u32 level);
 void page_clone(u32* old_page, u32* new_page);
 
 

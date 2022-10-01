@@ -232,7 +232,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   thread_reset_stack3(t, vstack3);
   t->context.kernel_page_dir = current->context.kernel_page_dir;
 #ifdef PAGE_CLONE
-  t->context.page_dir = page_alloc_clone(current->context.page_dir);
+  t->context.page_dir = page_alloc_clone(current->context.page_dir,USER_MODE);
 #else
   t->context.page_dir = current->context.page_dir;
 #endif

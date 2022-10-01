@@ -45,7 +45,7 @@ void* kmalloc_trace(size_t size, void* name, void* no, void* fun) {
     tid = current->id;
   }
   alloc_total += size;
-  kprintf("tid:%d kmalloc count:%d total:%dk size:%d addr:%x %s:%d %s\n", tid,
+  kprintf("tid:%d kmalloc           count:%04d total:%06dk size:%04d addr:%06x %s:%d %s\n", tid,
           alloc_count++, alloc_total / 1024, size, addr, name, no, fun);
   if (addr == NULL) {
     kprintf("kmalloc error\n");
@@ -66,7 +66,7 @@ void* kmalloc_alignment_trace(size_t size, int alignment, void* name, void* no,
   }
   alloc_total += size;
   kprintf(
-      "tid:%d kmalloc alignment count:%d total:%dk size:%d addr:%x %s:%d %s\n",
+      "tid:%d kmalloc alignment count:%04d total:%06dk size:%04d addr:%06x %s:%d %s\n",
       tid, alloc_count++, alloc_total / 1024, size, addr, name, no, fun);
   memory_static(size, MEMORY_TYPE_USE);
   return addr;
