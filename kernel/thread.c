@@ -248,7 +248,6 @@ void thread_destroy(thread_t* thread) {
 
 void thread_recycle(thread_t* thread) {
   thread_remove(thread);
-
   // add into cycle thread
   if (recycle_head_thread == NULL) {
     recycle_head_thread = thread;

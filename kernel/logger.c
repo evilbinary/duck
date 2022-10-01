@@ -21,7 +21,7 @@ void log_default(int tag, const char* message, va_list args) {
   char* tag_msg = (char*)log_level_strings[tag];
   if (log_info_mod.fd < 0) {
     vsprintf(buf, message, args);
-    kprintf("[%08d] tid: %d %s  %s", ticks, tid, tag_msg, buf);
+    kprintf("[%08d] tid: %d %s %s", ticks, tid, tag_msg, buf);
   } else {
     kmemset(buf, 0, LOG_MSG_BUF);
     vsprintf(buf, "[%08d] tid: %d ", ticks, tid);
