@@ -30,7 +30,8 @@ enum {
   DEVICE_GPIO,
   DEVICE_SPI,
   DEVICE_SB,
-  DEVICE_NET
+  DEVICE_NET,
+  DEVICE_LOG
 };
 
 enum {

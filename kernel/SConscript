@@ -8,7 +8,7 @@ import os
 
 Import('env')
 
-cflags='$CFLAGS -finstrument-functions'#-DUSE_POOL -finstrument-functions
+cflags='$CFLAGS '#-DUSE_POOL -finstrument-functions
 
 include=[
         '../',

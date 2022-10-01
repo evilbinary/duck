@@ -149,6 +149,12 @@ int devfs_init(void) {
   net->op = &device_operator;
   vfs_mount(NULL, "/dev", net);
 
+  //log
+  vnode_t *log = vfs_create_node("log", V_FILE | V_BLOCKDEVICE);
+  log->device = device_find(DEVICE_LOG);
+  log->op = &device_operator;
+  vfs_mount(NULL, "/dev", log);
+
   return 0;
 }
 

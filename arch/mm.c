@@ -235,7 +235,7 @@ ullong mm_get_free() {
 
 size_t mm_get_size(void* addr) {
   if (addr == NULL) return;
-  mem_block_t* block = (mem_block_t*)((u32)addr);
+  mem_block_t* block = (mem_block_t*)((u32)addr -  sizeof(mem_block_t));
   return block->size;
 }
 

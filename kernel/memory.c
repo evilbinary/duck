@@ -152,12 +152,12 @@ void memory_static(u32 size, int type) {
     }
   } else {
     if (type == MEMORY_TYPE_USE) {
-      kprintf("sub kerenl %lu  + size %d\n", (u32)memory_summary.kernel_used,
-              size);
+      // kprintf("sub kerenl %lu  + size %d\n", (u32)memory_summary.kernel_used,
+              // size);
       memory_summary.kernel_used += size;
     } else {
-      kprintf("sub kerenl %lu  - size %d\n", (u32)memory_summary.kernel_used,
-              size);
+      // kprintf("sub kerenl %lu  - size %d\n", (u32)memory_summary.kernel_used,
+      //         size);
       memory_summary.kernel_used -= size;
     }
   }

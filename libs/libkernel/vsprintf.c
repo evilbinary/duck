@@ -44,7 +44,7 @@ static int skip_atoi(const char **s) {
  Output:
  Errors:
 ------------------------------------------------------------------------*/
-static char *number(char *str, long long num, int base, int size, int precision,
+static char *number(char *str,int num, int base, int size, int precision,
                     int type) {
   int i;
   char c, sign, tmp[36];
