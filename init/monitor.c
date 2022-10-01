@@ -13,7 +13,7 @@ void do_kernel_thread(void) {
   u32 count = 0;
   for (;;) {
     count++;
-    if (i % 4 == 0){
+    if (i % 4 == 0) {
       i = 0;
     }
     cpu_wait();

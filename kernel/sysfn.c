@@ -90,8 +90,10 @@ u32 sys_open(char* name, int attr) {
     log_error("sys open %s error\n", name);
     return -1;
   }
-  log_debug("sys open new name: %s fd:%d fd->id:%d ptr:%x tid:%d\n", name, f,
+  if(current->id>0){
+    log_debug("sys open new name: %s fd:%d fd->id:%d ptr:%x tid:%d\n", name, f,
             fd->id, fd, current->id);
+  }
   return f;
 }
 

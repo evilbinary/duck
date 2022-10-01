@@ -44,8 +44,8 @@ static int skip_atoi(const char **s) {
  Output:
  Errors:
 ------------------------------------------------------------------------*/
-static char *number(char *str,int num, int base, int size, int precision,
-                    int type) {
+static char *number(char *str, long num, int base, int size,
+                    int precision, int type) {
   int i;
   char c, sign, tmp[36];
   const char *digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -227,7 +227,8 @@ int vsprintf(char *buf, const char *fmt, va_list args) {
           num = va_arg(args, unsigned long);
           if (flags & SIGN) num = (signed long)num;
         } else {
-          num = va_arg(args, unsigned long);
+          num = va_arg(args, unsigned int);
+          if (flags & SIGN) num = (signed int)num;
         }
         str = number(str, num, 10, field_width, precision, flags);
         break;

@@ -23,6 +23,7 @@ void log_default(int tag, const char* message, va_list args) {
     vsprintf(buf, message, args);
     kprintf("[%08d] tid: %d %s  %s", ticks, tid, tag_msg, buf);
   } else {
+    kmemset(buf, 0, LOG_MSG_BUF);
     vsprintf(buf, "[%08d] tid: %d ", ticks, tid);
     sys_write(log_info_mod.fd, buf, kstrlen(buf));
     kmemset(buf, 0, LOG_MSG_BUF);
@@ -73,13 +74,10 @@ void log_unregister(log_format_fn fn) {}
 
 void log_init() {
   log_info_mod.fd = -1;
+  log_info_mod.logger_size=0;
   log_register(&log_default);
-  const char* filename = "/dev/log";
-  int fd = sys_open(filename, 0);
-  if (fd < 0) {
-    sys_close(fd);
-    kprintf("sys exec file not found %s\n", filename);
-    return;
-  }
+}
+
+void log_init_fd(int fd){
   log_info_mod.fd = fd;
 }
