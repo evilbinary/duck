@@ -35,7 +35,7 @@ device_t* device_find(u32 id) {
       return devices[i];
     }
   }
-  kprintf("not fond device %d\n", id);
+  log_warn("not fond device %d\n", id);
   return NULL;
 }
 
@@ -45,6 +45,6 @@ device_t* device_find_name(char* name) {
       return devices[i];
     }
   }
-  kprintf("not fond device name %s\n", name);
+  log_warn("not fond device name %s\n", name);
   return NULL;
 }

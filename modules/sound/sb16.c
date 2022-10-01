@@ -84,14 +84,14 @@ void dsp_reset() {
   io_write8(DSP_RESET, 0);
 
   if (dsp_read() != 0xAA) {
-    kprintf("init sb16 failed\n");
+    log_error("init sb16 failed\n");
   }
 
   io_write8(DSP_WRITE, DSP_VERSION);
   u8 major = io_read8(DSP_READ);
   u8 minor = io_read8(DSP_READ);
 
-  kprintf("reset sb16 major %d minor %d\n", major, minor);
+  log_info("reset sb16 major %d minor %d\n", major, minor);
 }
 
 void sb16_play(void* buf, size_t len) {
@@ -179,7 +179,7 @@ void sb16_handler(interrupt_context_t* context) {
 }
 
 int sb16_init(void) {
-  kprintf("sb16 init\n");
+  log_info("sb16 init\n");
   device_t* dev = kmalloc(sizeof(device_t));
   dev->name = "sb";
   dev->read = read;

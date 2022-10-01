@@ -110,12 +110,12 @@ struct partition_struct* partition_open(device_read_t device_read, device_read_i
         new_partition->type = buffer[4];
         new_partition->offset = read32(&buffer[8]);
         new_partition->length = read32(&buffer[12]);
-        kprintf("partition type:%x offset:%x length:%d\n",new_partition->type,new_partition->offset,new_partition->length);
+        log_info("partition type:%x offset:%x length:%d\n",new_partition->type,new_partition->offset,new_partition->length);
     }
     else
     {
         new_partition->type = 0xff;
-        kprintf("partition type:%x offset:%x length:%d\n",new_partition->type,new_partition->offset,new_partition->length);
+        log_info("partition type:%x offset:%x length:%d\n",new_partition->type,new_partition->offset,new_partition->length);
     }
     return new_partition;
 }

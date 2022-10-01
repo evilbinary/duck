@@ -35,7 +35,7 @@ int kmain(int argc, char* argv[]) {
   thread_run(t1);
   thread_run(t2);
 
-  kprintf("kernel run\n");
+  log_info("kernel run\n");
   kernel_run();
 
   return 0;
@@ -50,7 +50,7 @@ int ksecondary(int cpu, int argc, char* argv) {
   thread_t* t2 = thread_create_name("monitor2", (u32*)&do_monitor_thread, NULL);
   thread_run(t2);
 
-  kprintf("kernel run secondary %d\n", cpu);
+  log_info("kernel run secondary %d\n", cpu);
   kernel_run();
 
   return 0;

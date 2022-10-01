@@ -6,13 +6,13 @@
 #include "kernel/kernel.h"
 
 int test_init(void) {
-  kprintf("test hello\n");
+  log_info("test hello\n");
   test_ahci();
   test_fat();
 
   return 0;
 }
 
-void test_exit(void) { kprintf("test exit\n"); }
+void test_exit(void) { log_info("test exit\n"); }
 
 module_t test_module = {.name = "test", .init = test_init, .exit = test_exit};

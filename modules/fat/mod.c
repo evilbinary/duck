@@ -424,7 +424,7 @@ voperator_t fat_op = {
 void fat_init_op(vnode_t *node) { node->op = &fat_op; }
 
 void fat_init(void) {
-  kprintf("fat init\n");
+  log_info("fat init\n");
   vnode_t *node = vfs_find(NULL, "/dev/sda");
   default_node = node;
   if (node == NULL) {
@@ -460,7 +460,7 @@ void fat_init(void) {
   node->data = file_info;
   // todo why malloc?
   kmalloc(1024 * 4);
-  kprintf("fat init end\n");
+  log_info("fat init end\n");
 }
 
 void fat_exit(void) { kprintf("fat exit\n"); }
