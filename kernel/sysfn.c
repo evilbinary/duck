@@ -605,7 +605,7 @@ int sys_self(void* t) {
 int sys_clock_nanosleep(int clock, int flag, struct timespec* req,
                         struct timespec* rem) {
   // kprintf("sys_clock_nanosleep %d %d\n",req->tv_sec,req->tv_nsec);
-  schedule_sleep(req->tv_sec * 1000 + req->tv_nsec);
+  schedule_sleep(req->tv_sec * 1000*1000*1000 + req->tv_nsec);
   return 0;
 }
 

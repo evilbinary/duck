@@ -168,7 +168,8 @@ void context_switch(interrupt_context_t* context, context_t** current,
   tss->esp0 = next_context->esp0 + sizeof(interrupt_context_t);
   tss->ss0 = next_context->ss0;
   tss->cr3 = next_context->page_dir;
-
   *current = next_context;
-  context_switch_page(next_context->page_dir);
+  if(next_context->page_dir!=NULL){
+    context_switch_page(next_context->page_dir);
+  }
 }

@@ -169,7 +169,7 @@ void pre_launch() {
   // syscall2(SYS_EXEC,"/track",NULL);
   // syscall2(SYS_EXEC,"/test",NULL);
   // syscall2(SYS_EXEC,"/microui",NULL);
-  // syscall2(SYS_EXEC,"/lvgl",NULL);
+  syscall2(SYS_EXEC,"/lvgl",NULL);
   // kprintf("fd=>%d\n",fd);
 
   // syscall2(SYS_EXEC, "/infones", nes_argv);

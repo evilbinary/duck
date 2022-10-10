@@ -5,13 +5,13 @@
 #include "type.h"
 
 struct timespec {
-  time_t tv_sec;
-  time_t tv_nsec;
+  time_t tv_sec;//秒
+  time_t tv_nsec;//纳秒
 };
 
 struct timeval {
-  time_t tv_sec;
-  suseconds_t tv_usec;
+  time_t tv_sec; //秒
+  suseconds_t tv_usec; //微妙
 };
 
 struct itimerval {

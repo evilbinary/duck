@@ -42,7 +42,9 @@ void schedule_next() {}
 
 void schedule_sleep(u32 nsec) {
   thread_t* current = thread_current();
-  thread_sleep(current, nsec / SCHEDULE_FREQUENCY * 1000);
+  u32 tick = nsec / SCHEDULE_FREQUENCY / 1000;
+  // kprintf("%d schedule_sleep nsec=%d tick=%d\n", current->id, nsec,tick);
+  thread_sleep(current, tick);
 }
 
 void schedule_state(int cpu) {
@@ -54,7 +56,11 @@ void schedule_state(int cpu) {
     if (v->state == THREAD_SLEEP) {
       u32 ticks = timer_ticks[cpu];
       v->sleep_counter -= ticks - v->counter;
+      if (v->sleep_counter <= 0) {
+        v->sleep_counter = -1;
+      }
     }
+
   }
 }
 

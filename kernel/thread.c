@@ -315,10 +315,10 @@ void thread_yield() {
 }
 
 thread_t* thread_current() {
-  lock_acquire(&thread_lock);
+  // lock_acquire(&thread_lock);
   int cpu_id = cpu_get_id();
   thread_t* t = current_thread[cpu_id];
-  lock_release(&thread_lock);
+  // lock_release(&thread_lock);
   return t;
 }
 
