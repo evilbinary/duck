@@ -54,6 +54,11 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
                   phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
                   phdr[i].p_memsz);
 #endif
+          char* start = phdr[i].p_offset;
+          char* vaddr = phdr[i].p_vaddr;
+          syscall3(SYS_SEEK, fd, start,0);
+          entry_txt = vaddr;
+          u32 ret = syscall3(SYS_READ, fd, vaddr, phdr[i].p_filesz);
         }
       } break;
       case PT_DYNAMIC:
@@ -135,7 +140,7 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
 #endif
       // map_alignment(page,vaddr,buf,shdr[i].sh_size);
     } else if ((shdr[i].sh_type&SHT_PROGBITS == SHT_PROGBITS) &&
-              (shdr[i].sh_flags & SHF_ALLOC==SHF_ALLOC) && (shdr[i].sh_flags & SHF_WRITE==SHF_WRITE) ) {
+              (shdr[i].sh_flags & SHF_ALLOC==SHF_ALLOC)  ) { //&& (shdr[i].sh_flags & SHF_WRITE==SHF_WRITE)
       char* start = shdr[i].sh_offset;
       char* vaddr = shdr[i].sh_addr;
 #ifdef LOAD_ELF_DEBUG

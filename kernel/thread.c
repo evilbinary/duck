@@ -419,7 +419,7 @@ int thread_find_fd_name(thread_t* thread, u8* name) {
   }
   for (int i = 0; i < thread->fd_number; i++) {
     fd_t* fd = thread->fds[i];
-    if (kstrcmp(name, fd->name) == 0) {
+    if (fd&& kstrcmp(name, fd->name) == 0) {
       return i;
     }
   }
@@ -430,6 +430,13 @@ int thread_add_fd(thread_t* thread, fd_t* fd) {
   if (thread->fd_number > thread->fd_size) {
     log_error("thread add fd limit\n");
     return -1;
+  }
+  for (int i = 0; i < thread->fd_number; i++) {
+    fd_t* fd = thread->fds[i];
+    if(fd==NULL){
+      thread->fds[i]=fd;
+      return i;
+    }
   }
   thread->fds[thread->fd_number] = fd;
   return thread->fd_number++;

@@ -51,7 +51,7 @@ size_t sys_ioctl(u32 fd, u32 cmd, void* args) {
   vnode_t* node = f->data;
   ret = vioctl(node, cmd, args);
 
-  log_debug("sys ioctl fd %d %s cmd %x ret %x\n", fd, f->name, cmd, ret);
+  //log_debug("sys ioctl fd %d %s cmd %x ret %x\n", fd, f->name, cmd, ret);
   return ret;
 }
 
@@ -104,6 +104,7 @@ int sys_close(u32 fd) {
     log_error("close not found fd %d tid %d\n", fd, current->id);
     return 0;
   }
+  thread_set_fd(current,fd,NULL);
   vnode_t* node = f->data;
   if (node == NULL) {
     log_error("sys close node is null tid %d \n", current->id);
@@ -215,7 +216,6 @@ void sys_vfree(void* addr) {
 u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   int fd = sys_open(filename, 0);
   if (fd < 0) {
-    sys_close(fd);
     log_error("sys exec file not found %s\n", filename);
     return -1;
   }
