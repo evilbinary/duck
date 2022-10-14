@@ -432,8 +432,8 @@ int thread_add_fd(thread_t* thread, fd_t* fd) {
     return -1;
   }
   for (int i = 0; i < thread->fd_number; i++) {
-    fd_t* fd = thread->fds[i];
-    if(fd==NULL){
+    fd_t* find_fd = thread->fds[i];
+    if(find_fd==NULL){
       thread->fds[i]=fd;
       return i;
     }
