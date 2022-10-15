@@ -128,6 +128,13 @@ void do_shell_thread(void) {
         do_shell_cmd(buf, count);
         count = 0;
         print_promot();
+      }else if(ch == 127){
+        if(count>0){
+          print_string("\n");
+          buf[--count] = 0;
+          print_promot();
+          print_string(buf);
+        }
       } else {
         buf[count++] = ch;
         syscall3(SYS_WRITE, 1, &ch, 1);
@@ -169,7 +176,7 @@ void pre_launch() {
   // syscall2(SYS_EXEC,"/track",NULL);
   // syscall2(SYS_EXEC,"/test",NULL);
   // syscall2(SYS_EXEC,"/microui",NULL);
-  syscall2(SYS_EXEC,"/lvgl",NULL);
+  // syscall2(SYS_EXEC,"/lvgl",NULL);
   // kprintf("fd=>%d\n",fd);
 
   // syscall2(SYS_EXEC, "/infones", nes_argv);
