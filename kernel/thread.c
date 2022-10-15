@@ -169,8 +169,13 @@ void thread_init_self(thread_t* thread, void* entry, u32* stack0, u32* stack3,
 
 void thread_set_arg(thread_t* thread, void* arg) {
   if (thread == NULL) return;
-  interrupt_context_t* context = thread->context.esp;
+  interrupt_context_t* context = thread->context.esp0;
   context_ret(context) = arg;
+}
+
+void thread_set_params(thread_t* thread,void* args,int size){
+  if (thread == NULL) return;
+  //todo copy 
 }
 
 void thread_reset_stack3(thread_t* thread, u32* stack3) {

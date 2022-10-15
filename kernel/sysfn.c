@@ -51,7 +51,7 @@ size_t sys_ioctl(u32 fd, u32 cmd, void* args) {
   vnode_t* node = f->data;
   ret = vioctl(node, cmd, args);
 
-  //log_debug("sys ioctl fd %d %s cmd %x ret %x\n", fd, f->name, cmd, ret);
+  // log_debug("sys ioctl fd %d %s cmd %x ret %x\n", fd, f->name, cmd, ret);
   return ret;
 }
 
@@ -90,9 +90,9 @@ u32 sys_open(char* name, int attr) {
     log_error("sys open %s error\n", name);
     return -1;
   }
-  if(current->id>0){
+  if (current->id > 0) {
     log_debug("sys open new name: %s fd:%d fd->id:%d ptr:%x tid:%d\n", name, f,
-            fd->id, fd, current->id);
+              fd->id, fd, current->id);
   }
   return f;
 }
@@ -104,7 +104,7 @@ int sys_close(u32 fd) {
     log_error("close not found fd %d tid %d\n", fd, current->id);
     return 0;
   }
-  thread_set_fd(current,fd,NULL);
+  thread_set_fd(current, fd, NULL);
   vnode_t* node = f->data;
   if (node == NULL) {
     log_error("sys close node is null tid %d \n", current->id);
@@ -232,7 +232,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   thread_reset_stack3(t, vstack3);
   t->context.kernel_page_dir = current->context.kernel_page_dir;
 #ifdef PAGE_CLONE
-  t->context.page_dir = page_alloc_clone(current->context.page_dir,USER_MODE);
+  t->context.page_dir = page_alloc_clone(current->context.page_dir, USER_MODE);
 #else
   t->context.page_dir = current->context.page_dir;
 #endif
@@ -270,6 +270,8 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   data->argc = argc;
   data->envp = envp;
   t->exec = data;
+  thread_set_arg(t, data);
+
   // init fds
   for (int i = 0; i < 3; i++) {
     t->fds[i] = current->fds[i];
@@ -431,8 +433,8 @@ void* sys_mmap2(void* addr, int length, int prot, int flags, int fd,
   int ret = 0;
   ret = addr;
   if (fd >= 0 || pgoffset > 0) {
-    log_error("mmap2 system call : fd = %d, prot = %x, pgoffset = %d\n", fd, prot,
-            pgoffset);
+    log_error("mmap2 system call : fd = %d, prot = %x, pgoffset = %d\n", fd,
+              prot, pgoffset);
     return -1;
   }
 
@@ -605,7 +607,7 @@ int sys_self(void* t) {
 int sys_clock_nanosleep(int clock, int flag, struct timespec* req,
                         struct timespec* rem) {
   // kprintf("sys_clock_nanosleep %d %d\n",req->tv_sec,req->tv_nsec);
-  schedule_sleep(req->tv_sec * 1000*1000*1000 + req->tv_nsec);
+  schedule_sleep(req->tv_sec * 1000 * 1000 * 1000 + req->tv_nsec);
   return 0;
 }
 

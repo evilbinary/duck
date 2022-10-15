@@ -19,7 +19,7 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
   }
   Elf32_Phdr phdr[MAX_PHDR];
   kmemset(phdr, 0, MAX_PHDR * sizeof(Elf32_Phdr));
-  syscall3(SYS_SEEK, fd, offset,0);
+  syscall3(SYS_SEEK, fd, offset, 0);
   u32 nbytes =
       syscall3(SYS_READ, fd, phdr, sizeof(Elf32_Phdr) * elf_header->e_phnum);
   // kprintf("addr %x elf=%x\n\r", phdr, elf);
@@ -32,64 +32,64 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
     switch (phdr[i].p_type) {
       case PT_NULL:
         log_debug(" %s %x %x %x %s %x %x \r\n", "NULL", phdr[i].p_offset,
-                phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
-                phdr[i].p_memsz);
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
         break;
       case PT_LOAD: {
         if ((phdr[i].p_flags & PF_X) == PF_X) {
 #ifdef LOAD_ELF_DEBUG
           log_debug(" %s %x %x %x %s %x %x \r\n", "LOAD", phdr[i].p_offset,
-                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
-                  phdr[i].p_memsz);
+                    phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                    phdr[i].p_memsz);
 #endif
 
           char* start = phdr[i].p_offset;
           char* vaddr = phdr[i].p_vaddr;
-          syscall3(SYS_SEEK, fd, start,0);
+          syscall3(SYS_SEEK, fd, start, 0);
           entry_txt = vaddr;
           u32 ret = syscall3(SYS_READ, fd, vaddr, phdr[i].p_filesz);
         } else {
 #ifdef LOAD_ELF_DEBUG
           log_debug(" %s %x %x %x %s %x %x \r\n", "NO LOAD", phdr[i].p_offset,
-                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
-                  phdr[i].p_memsz);
+                    phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                    phdr[i].p_memsz);
 #endif
           char* start = phdr[i].p_offset;
           char* vaddr = phdr[i].p_vaddr;
-          syscall3(SYS_SEEK, fd, start,0);
+          syscall3(SYS_SEEK, fd, start, 0);
           entry_txt = vaddr;
           u32 ret = syscall3(SYS_READ, fd, vaddr, phdr[i].p_filesz);
         }
       } break;
       case PT_DYNAMIC:
         log_debug(" %s %x %x %x\r\n %s %x %x ", "DYNAMIC", phdr[i].p_offset,
-                phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
-                phdr[i].p_memsz);
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
         break;
       case PT_INTERP:
         log_debug(" %s %x %x %x\r\n %s %x %x ", "INTERP", phdr[i].p_offset,
-                phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
-                phdr[i].p_memsz);
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
         break;
       case PT_NOTE:
         log_debug(" %s %x %x %x\r\n %s %x %x ", "NOTE", phdr[i].p_offset,
-                phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
-                phdr[i].p_memsz);
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
         break;
       case PT_SHLIB:
         log_debug(" %s %x %x %x\r\n %s %x %x ", "SHLIB", phdr[i].p_offset,
-                phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
-                phdr[i].p_memsz);
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
         break;
       case PT_PHDR:
         log_debug(" %s %x %x %x\r\n %s %x %x ", "PHDR", phdr[i].p_offset,
-                phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
-                phdr[i].p_memsz);
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
         break;
       case PT_TLS:
         log_debug(" %s %x %x %x\r\n %s %x %x ", "TLS", phdr[i].p_offset,
-                phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
-                phdr[i].p_memsz);
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
         break;
       case PT_NUM:
         kprintf(" %s %x %x %x\r\n %s %x %x ", "NUM", phdr[i].p_offset,
@@ -97,21 +97,21 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
                 phdr[i].p_memsz);
         break;
       case PT_GNU_EH_FRAME:
-        log_debug(" %s %x %x %x\r\n %s %x %x ", "GNU_EH_FRAME", phdr[i].p_offset,
-                phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
-                phdr[i].p_memsz);
+        log_debug(" %s %x %x %x\r\n %s %x %x ", "GNU_EH_FRAME",
+                  phdr[i].p_offset, phdr[i].p_vaddr, phdr[i].p_paddr, "",
+                  phdr[i].p_filesz, phdr[i].p_memsz);
         break;
       case PT_GNU_RELRO:
         log_debug(" %s %x %x %x\r\n %s %x %x ", "GNU_RELRO", phdr[i].p_offset,
-                phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
-                phdr[i].p_memsz);
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
         break;
       case PT_GNU_STACK:
-      #ifdef LOAD_ELF_DEBUG
+#ifdef LOAD_ELF_DEBUG
         log_debug(" %s %x %x %x\r\n %s %x %x ", "GNU_STACK", phdr[i].p_offset,
-                phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
-                phdr[i].p_memsz);
-      #endif
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
+#endif
         break;
       default:
         break;
@@ -125,7 +125,7 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
   }
   Elf32_Shdr shdr[MAX_SHDR];
   kmemset(shdr, 0, sizeof(Elf32_Shdr) * elf_header->e_shnum);
-  syscall3(SYS_SEEK, fd, offset,0);
+  syscall3(SYS_SEEK, fd, offset, 0);
   nbytes =
       syscall3(SYS_READ, fd, shdr, sizeof(Elf32_Shdr) * elf_header->e_shnum);
 
@@ -136,18 +136,20 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
       // kmemset(vaddr, 0, shdr[i].sh_size);
 #ifdef LOAD_ELF_DEBUG
       log_debug("NOBITS start:%x vaddr:%x sh_size:%x \n\r", start, vaddr,
-              shdr[i].sh_size);
+                shdr[i].sh_size);
 #endif
       // map_alignment(page,vaddr,buf,shdr[i].sh_size);
-    } else if ((shdr[i].sh_type&SHT_PROGBITS == SHT_PROGBITS) &&
-              (shdr[i].sh_flags & SHF_ALLOC==SHF_ALLOC)  ) { //&& (shdr[i].sh_flags & SHF_WRITE==SHF_WRITE)
+    } else if ((shdr[i].sh_type & SHT_PROGBITS == SHT_PROGBITS) &&
+               (shdr[i].sh_flags &
+                SHF_ALLOC == SHF_ALLOC)) {  //&& (shdr[i].sh_flags &
+                                            //SHF_WRITE==SHF_WRITE)
       char* start = shdr[i].sh_offset;
       char* vaddr = shdr[i].sh_addr;
 #ifdef LOAD_ELF_DEBUG
       log_debug("data start:%x vaddr:%x sh_size:%x \n\r", start, vaddr,
-              shdr[i].sh_size);
+                shdr[i].sh_size);
 #endif
-      syscall3(SYS_SEEK, fd, start,0);
+      syscall3(SYS_SEEK, fd, start, 0);
       u32 ret = syscall3(SYS_READ, fd, vaddr, shdr[i].sh_size);
       // map_alignment(page,vaddr,buf,shdr[i].sh_size);
     }
@@ -155,20 +157,24 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
   return 0;
 }
 
-void run_elf_thread() {
+void run_elf_thread(void* a) {
   Elf32_Ehdr elf;
   thread_t thread;
-  thread_t* current=&thread;
-  u32 ret=syscall1(SYS_SELF,current);
-  if(ret<0){
+  thread_t* current = &thread;
+  u32 ret = syscall1(SYS_SELF, current);
+  if (ret < 0) {
     log_error("get current thread error\n");
-    return ;
+    return;
   }
   exec_t* exec = current->exec;
+  if(exec==NULL){
+    log_error("get current thread error\n");
+    return;
+  }
   u32 fd = syscall2(SYS_OPEN, exec->filename, 0);
-  #ifdef LOAD_ELF_NAME_DEBUG
+#ifdef LOAD_ELF_NAME_DEBUG
   log_debug("load elf %s fd:%d tid:%d\n", exec->filename, fd, current->id);
-  #endif
+#endif
   if (fd < 0) {
     log_error("open elf %s error\n", exec->filename);
     syscall1(SYS_EXIT, -1);

@@ -158,7 +158,7 @@ void pre_launch() {
 
 #ifdef X86
   // int fd = syscall2(SYS_OPEN, "/dev/stdin", 0);
-  // syscall2(SYS_EXEC,"/ls",NULL);
+  syscall2(SYS_EXEC,"/ls",NULL);
   // syscall2(SYS_EXEC,"/gui",NULL);
   // syscall2(SYS_EXEC,"/test-file",NULL);
   // syscall2(SYS_EXEC,"/test-mem",NULL);
