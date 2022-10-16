@@ -11,6 +11,8 @@
 #include "thread.h"
 #include "vfs.h"
 
+// #define LOAD_ELF_DEBUG
+
 int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
   u32 offset = elf_header->e_phoff;
   if (elf_header->e_phnum > MAX_PHDR) {
@@ -28,7 +30,9 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
   for (int i = 0; i < elf_header->e_phnum; i++) {
 #ifdef LOAD_ELF_DEBUG
     log_debug("ptype:%d\n\r", phdr[i].p_type);
+    log_debug("p addr %x\n", phdr[i].p_paddr);
 #endif
+
     switch (phdr[i].p_type) {
       case PT_NULL:
         log_debug(" %s %x %x %x %s %x %x \r\n", "NULL", phdr[i].p_offset,
@@ -57,7 +61,6 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
           char* start = phdr[i].p_offset;
           char* vaddr = phdr[i].p_vaddr;
           syscall3(SYS_SEEK, fd, start, 0);
-          entry_txt = vaddr;
           u32 ret = syscall3(SYS_READ, fd, vaddr, phdr[i].p_filesz);
         }
       } break;
@@ -130,19 +133,26 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
       syscall3(SYS_READ, fd, shdr, sizeof(Elf32_Shdr) * elf_header->e_shnum);
 
   for (int i = 0; i < elf_header->e_shnum; i++) {
+#ifdef LOAD_ELF_DEBUG
+    log_debug("sh addr %x\n", shdr[i].sh_addr);
+#endif
     if (SHT_NOBITS == shdr[i].sh_type) {
       char* vaddr = shdr[i].sh_addr;
       char* start = shdr[i].sh_offset;
-      // kmemset(vaddr, 0, shdr[i].sh_size);
 #ifdef LOAD_ELF_DEBUG
       log_debug("NOBITS start:%x vaddr:%x sh_size:%x \n\r", start, vaddr,
                 shdr[i].sh_size);
 #endif
+      if (shdr[i].sh_flags & SHF_ALLOC) {
+        kmemset(vaddr, 0, shdr[i].sh_size );
+        // syscall3(SYS_SEEK, fd, start, 0);
+        //u32 ret = syscall3(SYS_READ, fd, vaddr, shdr[i].sh_size);
+      }
       // map_alignment(page,vaddr,buf,shdr[i].sh_size);
     } else if ((shdr[i].sh_type & SHT_PROGBITS == SHT_PROGBITS) &&
                (shdr[i].sh_flags &
                 SHF_ALLOC == SHF_ALLOC)) {  //&& (shdr[i].sh_flags &
-                                            //SHF_WRITE==SHF_WRITE)
+                                            // SHF_WRITE==SHF_WRITE)
       char* start = shdr[i].sh_offset;
       char* vaddr = shdr[i].sh_addr;
 #ifdef LOAD_ELF_DEBUG
@@ -167,7 +177,7 @@ void run_elf_thread(void* a) {
     return;
   }
   exec_t* exec = current->exec;
-  if(exec==NULL){
+  if (exec == NULL) {
     log_error("get current thread error\n");
     return;
   }
@@ -196,7 +206,7 @@ void run_elf_thread(void* a) {
 #ifdef LOAD_ELF_DEBUG
     log_debug("entry %x\n", entry);
 #endif
-    exec_t exec_info=*exec;
+    exec_t exec_info = *exec;
     ret = entry(&exec_info);
   }
 }
