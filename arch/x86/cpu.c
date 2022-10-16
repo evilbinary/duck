@@ -194,3 +194,10 @@ void cpu_delay(int n){
   for (int i = 0; i < 10000 * n; i++)
     ;
 }
+
+void cpu_backtrace(stack_frame_t* fp, void** buf, int size) {
+  int i;
+  for (i = 0; i < size && fp != NULL; fp = fp->prev, i++) {
+    buf[i] = fp->return_addr;
+  }
+}
