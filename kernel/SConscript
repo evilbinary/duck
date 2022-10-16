@@ -42,7 +42,8 @@ env.Library('yiyiya', [
     'pipe.c',
     'mp.c',
     'trace.c',
-    'logger.c'
+    'logger.c',
+    'vmemory.c'
     ],
     CPPPATH=include,
     LIBS=libs,
