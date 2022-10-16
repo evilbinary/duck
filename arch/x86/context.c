@@ -117,7 +117,7 @@ void context_dump_interrupt(interrupt_context_t* context) {
   kprintf("ds:\t%x\tes:\t%x\n", ds, es);
   kprintf("fs:\t%x\tgs:\t%x\n", fs, gs);
 
-  if(context->eip>1000&& context->ebp>1000 ){
+  if(context->ebp>1000 ){
   int buf[10]; 
     stack_frame_t* fp=context->ebp;
     cpu_backtrace(fp,buf,4);
