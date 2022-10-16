@@ -313,7 +313,7 @@ vmemory_area_t* vmemory_area_create(void* addr, u32 size, u8 flags) {
   area->next = NULL;
   area->vaddr = addr;
   area->flags = flags;
-  area->vend = addr+size;
+  area->vend = addr;
   return area;
 }
 
