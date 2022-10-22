@@ -4,6 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "string.h"
+#include "common.h"
 
 void* kmemcpy(void* /* restrict */ s1, const void* /* restrict */ s2,
               size_t n) {
@@ -213,8 +214,31 @@ char* kstrstr(const char* haystack, const char* needle) {
     }
   }
 }
+#ifdef MALLOC_TRACE
+#define ya_block_ptr(ptr) ((block_t*)ptr - 1);
+typedef struct block {
+  size_t size;
+  struct block* next;
+  struct block* prev;
+  u32 free;
+  u32 magic;
+  u32 count;
+} block_t;
+#endif
 
 void* kmemset(void* s, int c, size_t n) {
+#ifdef MALLOC_TRACE
+  block_t* block=ya_block_ptr(s);
+  if(block!=NULL){
+    if(block->magic==999999999|| block->magic==888888888){
+      kassert(block->size>=n);
+      block->count++;
+      if(block->count>=2){
+        kassert(false);
+      }
+    }
+  }
+#endif
   int i;
   for (i = 0; i < n; i++) ((char*)s)[i] = c;
 

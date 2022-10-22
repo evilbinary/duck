@@ -79,7 +79,7 @@ u32 sys_open(char* name, int attr) {
     log_error("sys open file %s error, attr %x \n", name, attr);
     return -1;
   }
-  fd_t* fd = fd_new(file, DEVICE_TYPE_FILE, name);
+  fd_t* fd = fd_open(file, DEVICE_TYPE_FILE, name);
   if (fd == NULL) {
     log_error(" new fd error\n");
     return -1;
@@ -104,15 +104,7 @@ int sys_close(u32 fd) {
     log_error("close not found fd %d tid %d\n", fd, current->id);
     return 0;
   }
-  thread_set_fd(current, fd, NULL);
-  vnode_t* node = f->data;
-  if (node == NULL) {
-    log_error("sys close node is null tid %d \n", current->id);
-    return -1;
-  }
-  // reset offset
-  f->offset = 0;
-  u32 ret = vclose(node);
+  fd_close(f);
   return 0;
 }
 
@@ -306,8 +298,8 @@ int sys_fork() {
 int sys_pipe(int fds[2]) {
   thread_t* current = thread_current();
   vnode_t* node = pipe_make(PAGE_SIZE);
-  fd_t* fd0 = fd_new(node, DEVICE_TYPE_VIRTUAL, "pipe0");
-  fd_t* fd1 = fd_new(node, DEVICE_TYPE_VIRTUAL, "pipe1");
+  fd_t* fd0 = fd_open(node, DEVICE_TYPE_VIRTUAL, "pipe0");
+  fd_t* fd1 = fd_open(node, DEVICE_TYPE_VIRTUAL, "pipe1");
   fds[0] = thread_add_fd(current, fd0);
   ;
   fds[1] = thread_add_fd(current, fd1);

@@ -60,7 +60,7 @@ void* ya_sbrk(size_t size) {
   int found = 0;
   while (current) {
     if (current->type == MEM_FREE) {
-      if (size <= (current->size-4096) ) {
+      if (size <= (current->size - 4096)) {
         addr = current->addr;
         current->addr += size;
         current->size -= size;
@@ -84,6 +84,7 @@ block_t* ya_new_block(size_t size) {
   block->next = NULL;
   block->prev = NULL;
   block->size = size;
+  block->count = 0;
   block->magic = MAGIC_USED;
   if (mmt.g_block_list == NULL) {
     mmt.g_block_list = block;
@@ -127,8 +128,8 @@ void* ya_alloc(size_t size) {
   block->magic = MAGIC_USED;
   void* addr = ya_block_addr(block);
 #ifdef DEBUG
-  kprintf("alloc %x size=%d\n", addr, size);
-  ya_verify();
+  kprintf("\nalloc %x size=%d baddr=%x bsize=%d bcount=%d\n", addr, size, block, block->size,block->count);
+  // ya_verify();
 #endif
   kassert(addr != NULL);
   // kmemset(addr,0,size);
@@ -170,38 +171,44 @@ void ya_free(void* ptr) {
   if (ptr == NULL) {
     return;
   }
-//   block_t* block = ya_block_ptr(ptr);
-// #ifdef DEBUG
-//   kprintf("free  %x size=%d\n", ptr, block->size);
-// #endif
-//   // kassert(block->free == BLOCK_USED);
-//   kassert(block->magic == MAGIC_USED);
-//   block->free = BLOCK_FREE;
-//   block->magic = MAGIC_FREE;
-//   block_t* next = block->next;
-//   if (next != NULL) {
-//     if (next->free == BLOCK_FREE) {
-//       block->size += next->size + sizeof(block_t);
-//       block->next = next->next;
-//       int size = next->size;
-//       if (next->next) {
-//         next->next->prev = block;
-//       }
-//       // memset(next,0,size);
-//     }
-//   }
-//   block_t* prev = block->prev;
-//   if (prev != NULL) {
-//     if (prev->free == BLOCK_FREE) {
-//       prev->size += block->size;
-//       prev->next = block->next;
-//       if (block->next != NULL) {
-//         block->next->prev = prev;
-//       }
-//       int size = block->size;
-//       // memset(block,0,size);
-//     }
-//   }
+  block_t* block = ya_block_ptr(ptr);
+#ifdef DEBUG
+  kprintf("free  %x size=%d baddr=%x bsize=%d bcount=%d\n", ptr, block->size,block,block->size,block->count);
+#endif
+  kassert(block->count == 1);
+  kassert(block->free == BLOCK_USED);
+  kassert(block->magic == MAGIC_USED);
+  block->magic = MAGIC_FREE;
+  block->free = BLOCK_FREE;
+  block->count = 0;
+  kmemset(ptr, 0, block->size);
+  block->count = 0;
+  block_t* next = block->next;
+  ptr=NULL;
+
+  // if (next != NULL) {
+  //   if (next->free == BLOCK_FREE) {
+  //     block->size += next->size + sizeof(block_t);
+  //     block->next = next->next;
+  //     int size = next->size;
+  //     if (next->next) {
+  //       next->next->prev = block;
+  //     }
+  //     // memset(next,0,size);
+  //   }
+  // }
+  // block_t* prev = block->prev;
+  // if (prev != NULL) {
+  //   if (prev->free == BLOCK_FREE) {
+  //     prev->size += block->size;
+  //     prev->next = block->next;
+  //     if (block->next != NULL) {
+  //       block->next->prev = prev;
+  //     }
+  //     int size = block->size;
+  //     // memset(block,0,size);
+  //   }
+  // }
 }
 
 int is_line_intersect(int a1, int a2, int b1, int b2) {

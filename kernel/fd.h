@@ -30,10 +30,11 @@ typedef struct fd {
   u32 *data;
   u32 offset;
   u8 *name;
+  u32 open_count;
 } fd_t;
 
 
-fd_t* fd_new(u32* file, u32 type, char* name);
+fd_t* fd_open(u32* file, u32 type, char* name);
 fd_t* fd_find(u32 fd);
 void fd_close(fd_t* fd);
 int fd_init();

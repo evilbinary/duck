@@ -21,63 +21,81 @@ fd_t* fd_find(u32 fd) {
   return NULL;
 }
 
-fd_t* fd_new(u32* file, u32 type, char* name) {
+fd_t* fd_open(u32* file, u32 type, char* name) {
   if (fd_number > MAX_FD_NUMBER) {
     kprintf("new fd limit \n");
     return NULL;
   }
-  if(file==NULL){
+  if (file == NULL) {
     kprintf("fd new file is null\n");
     return NULL;
   }
+
+  for (int i = 0; i < fd_number; i++) {
+    if (fd_list[i].type==type && fd_list[i].data == file ) {
+      fd_list[i].open_count++;
+      return &fd_list[i];
+    }
+  }
+
   fd_list[fd_number].id = fd_number;
   fd_list[fd_number].type = type;
   fd_list[fd_number].data = file;
   fd_list[fd_number].offset = 0;
   fd_list[fd_number].name = name;
+  fd_list[fd_number].open_count = 1;
   return &fd_list[fd_number++];
 }
 
 int fd_std_init() {
   char* stdin = "/dev/stdin";
-  vnode_t* file = vfs_open_attr(NULL, stdin,V_CHARDEVICE);
-  fd_t* fdstdin = fd_new(file, DEVICE_TYPE_FILE, stdin);
+  vnode_t* file = vfs_open_attr(NULL, stdin, V_CHARDEVICE);
+  fd_t* fdstdin = fd_open(file, DEVICE_TYPE_FILE, stdin);
   if (fdstdin == NULL) {
     kprintf(" new fd stdin error\n");
     return -1;
   }
   char* stdout = "/dev/stdout";
-  file = vfs_open_attr(NULL, stdout,V_CHARDEVICE);
-  fd_t* fdstdout = fd_new(file, DEVICE_TYPE_FILE, stdout);
+  file = vfs_open_attr(NULL, stdout, V_CHARDEVICE);
+  fd_t* fdstdout = fd_open(file, DEVICE_TYPE_FILE, stdout);
   if (fdstdout == NULL) {
     kprintf(" new fd stdout error\n");
     return -1;
   }
 
   char* stderro = "/dev/stderr";
-  fd_t* fdstderro = fd_new(file, DEVICE_TYPE_FILE, stderro);
+  fd_t* fdstderro = fd_open(file, DEVICE_TYPE_FILE, stderro);
   if (fdstderro == NULL) {
     kprintf(" new fd stderro error\n");
     return -1;
   }
   return 1;
 }
-int fd_init(){
-  return 1;
-}
+int fd_init() { return 1; }
 
-void fd_close(fd_t* fd){
-  if(fd==NULL){
+void fd_close(fd_t* fd) {
+  if (fd == NULL) {
     kprintf("fd close is null\n");
     return;
   }
-  vnode_t* file=fd->data;
-  vfs_close(file);
+
+  if (fd->open_count <= 0) {
+    thread_t* current = thread_current();
+    thread_set_fd(current, fd, NULL);
+    vnode_t* file = fd->data;
+    if (file == NULL) {
+      log_error("sys close node is null tid %d \n", current->id);
+      return -1;
+    }
+    // reset offset
+    fd->offset = 0;
+    u32 ret = vclose(file);
+  }
 }
 
-void fd_dumps(){
+void fd_dumps() {
   for (int i = 0; i < fd_number; i++) {
-    fd_t*fd=&fd_list[i];
-    kprintf("fd %d name %s id %d %x\n",i,fd->name,fd->id,fd);
+    fd_t* fd = &fd_list[i];
+    kprintf("fd %d name %s id %d %x\n", i, fd->name, fd->id, fd);
   }
 }

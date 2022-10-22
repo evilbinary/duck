@@ -117,9 +117,6 @@ void vfs_exten_child(vnode_t *node) {
     size = node->child_number * 2;
   }
   vnode_t **child = kmalloc(size * sizeof(vnode_t *));
-  for (int i = 0; i < size; i++) {
-    child[i] = 0;
-  }
   vnode_t **temp = node->child;
   if (node->child != NULL) {
     kmemmove(child, node->child, node->child_number * sizeof(vnode_t *));
@@ -250,7 +247,7 @@ u32 vfs_open(vnode_t *node,u32 mode) {
 
 vnode_t *vfs_create_node(u8 *name, u32 flags) {
   vnode_t *node = kmalloc(sizeof(vnode_t));
-  node->name = kmalloc(kstrlen(name) + 1);
+  node->name = kmalloc(kstrlen(name));
   kstrcpy(node->name, name);
   node->flags = flags;
   node->op = &default_operator;

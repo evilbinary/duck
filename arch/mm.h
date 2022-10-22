@@ -53,6 +53,7 @@ typedef struct block {
   struct block* prev;
   u32 free;
   u32 magic;
+  u32 count;
 } block_t;
 
 typedef void* (*mm_alloc_fn)(size_t size);
