@@ -14,6 +14,8 @@ void kernel_init() {
     log_init();
     kprintf("exception init\n");
     exception_init();
+    kprintf("page init\n");
+    page_init();
     kprintf("syscall init\n");
     syscall_init();
     kprintf("schedule init\n");

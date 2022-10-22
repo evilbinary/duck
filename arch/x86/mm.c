@@ -39,10 +39,7 @@ void map_page_on(page_dir_t* page, u32 virtualaddr, u32 physaddr, u32 flags) {
 }
 
 void map_page(u32 virtualaddr, u32 physaddr, u32 flags) {
-  void* phy = virtual_to_physic(kernel_page_dir_ptr_tab, virtualaddr);
-  if (phy == NULL) {
-    map_page_on(kernel_page_dir_ptr_tab, virtualaddr, physaddr, flags);
-  }
+  map_page_on(kernel_page_dir_ptr_tab, virtualaddr, physaddr, flags);
 }
 
 void unmap_page_on(page_dir_t* page, u32 virtualaddr) {

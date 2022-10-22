@@ -3,54 +3,9 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
-#include "arch/arch.h"
-#include "thread.h"
+#include "page.h"
 
-void page_fault(interrupt_context_t *context) {
-    
-//   u32 fault_addr = cpu_get_fault();
-//   int present = context->code & 0x1;
-  //   if (present == 0) {
-  //     thread_t *current = thread_current();
-  //     if (current != NULL) {
-  //       vmemory_area_t *area = vmemory_area_find(current->vmm, fault_addr,
-  //       0); if (area == NULL) {
-  //         if(current->state==THREAD_STOPPED){
-  //           return;
-  //         }
-  //         if (current->fault_count < 3) {
-  //           thread_exit(current, -1);
-  //           kprintf("tid: %d %s memory fault at %x\n", current->id,
-  //           current->name,
-  //                   fault_addr);
-  //           dump_fault(context, fault_addr);
-  //           current->fault_count++;
-  //         } else if (current->fault_count == 3) {
-  //           kprintf("tid: %d %s memory fault at %x too many\n",
-  //                   current->id, current->name, fault_addr);
-  //           current->fault_count++;
-  //           thread_exit(current, -1);
-  //         }
-  //         return;
-  //       }
-  //       void *phy = virtual_to_physic(current->context.page_dir, fault_addr);
-
-  // #ifdef DEBUG_EXCEPTION
-  //       kprintf(" tid: %x ", current->id);
-  // #endif
-  //       if (phy == NULL) {
-  //         valloc(fault_addr, PAGE_SIZE);
-  //       } else {
-  //         kprintf("tid: %d %s phy remap memory fault at %x\n", current->id,
-  //                 current->name, fault_addr);
-  //         dump_fault(context, fault_addr);
-  //         thread_exit(current, -1);
-  //       }
-  //     } else {
-  //       map_page(fault_addr, fault_addr, PAGE_P | PAGE_USU | PAGE_RWW);
-  //     }
-  //   }
-
+void page_fault_handle(interrupt_context_t *context) {
   u32 fault_addr = cpu_get_fault();
   thread_t *current = thread_current();
   if (current != NULL) {
@@ -59,19 +14,26 @@ void page_fault(interrupt_context_t *context) {
     if (mode == USER_MODE) {
       vmemory_area_t *area = vmemory_area_find(current->vmm, fault_addr, 0);
       if (area == NULL) {
-        if (current->fault_count < 3) {
-          thread_exit(current, -1);
-          kprintf("tid: %d %s memory fault at %x\n", current->id, current->name,
-                  fault_addr);
-          dump_fault(context, fault_addr);
-          current->fault_count++;
-        } else if (current->fault_count == 3) {
-          kprintf("tid: %d %s memory fault at %x too many\n", current->id,
-                  current->name, fault_addr);
-          current->fault_count++;
-          thread_exit(current, -1);
+        void *phy =
+            virtual_to_physic(current->context.kernel_page_dir, fault_addr);
+        if (phy != NULL) {
+          //内核地址，进行映射,todo 进行检查
+          map_page_on(current->context.page_dir, fault_addr, phy,
+                      PAGE_P | PAGE_USU | PAGE_RWW);
+        } else {
+          if (current->fault_count < 3) {
+            thread_exit(current, -1);
+            kprintf("tid: %d %s memory fault at %x\n", current->id,
+                    current->name, fault_addr);
+            dump_fault(context, fault_addr);
+            current->fault_count++;
+          } else if (current->fault_count == 3) {
+            kprintf("tid: %d %s memory fault at %x too many\n", current->id,
+                    current->name, fault_addr);
+            current->fault_count++;
+            thread_exit(current, -1);
+          }
         }
-
         return;
       }
       // kprintf("exception at %x\n",page_fault);
@@ -95,3 +57,5 @@ void page_fault(interrupt_context_t *context) {
     map_page(fault_addr, fault_addr, PAGE_P | PAGE_USU | PAGE_RWW);
   }
 }
+
+void page_init() {}

@@ -4,8 +4,8 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "exceptions.h"
-
 #include "thread.h"
+#include "page.h"
 
 interrupt_handler_t *exception_handlers[EXCEPTION_NUMBER];
 void exception_regist(u32 vec, interrupt_handler_t handler) {
@@ -286,7 +286,7 @@ void frq_handler() {
 }
 
 void do_page_fault(interrupt_context_t *context) {
-  page_fault(context);
+  page_fault_handle(context);
 }
 
 void dump_fault(interrupt_context_t *context, u32 fault_addr) {
@@ -329,52 +329,9 @@ void dump_fault(interrupt_context_t *context, u32 fault_addr) {
   kprintf("----------------------------\n");
 }
 void do_page_fault(interrupt_context_t *context) {
-  page_fault(context);
-
-  u32 fault_addr;
-  asm volatile("mov %%cr2, %0" : "=r"(fault_addr));
-  int present = context->code & 0x1;
-
-  if (present == 0) {
-    thread_t *current = thread_current();
-    if (current != NULL) {
-      vmemory_area_t *area = vmemory_area_find(current->vmm, fault_addr, 0);
-      if (area == NULL) {
-        if(current->state==THREAD_STOPPED){
-          return;
-        }
-        if (current->fault_count < 3) {
-          thread_exit(current, -1);
-          kprintf("tid: %d %s memory fault at %x\n", current->id, current->name,
-                  fault_addr);
-          dump_fault(context, fault_addr);
-          current->fault_count++;
-        } else if (current->fault_count == 3) {
-          kprintf("tid: %d %s memory fault at %x too many\n",
-                  current->id, current->name, fault_addr);
-          current->fault_count++;
-          thread_exit(current, -1);
-        }
-        return;
-      }
-      void *phy = virtual_to_physic(current->context.page_dir, fault_addr);
-
-#ifdef DEBUG_EXCEPTION
-      kprintf(" tid: %x ", current->id);
-#endif
-      if (phy == NULL) {
-        valloc(fault_addr, PAGE_SIZE);
-      } else {
-        kprintf("tid: %d %s phy remap memory fault at %x\n", current->id,
-                current->name, fault_addr);
-        dump_fault(context, fault_addr);
-        thread_exit(current, -1);
-      }
-    } else {
-      map_page(fault_addr, fault_addr, PAGE_P | PAGE_USU | PAGE_RWW);
-    }
-  }
+  page_fault_handle(context);
 }
+
 #elif defined(XTENSA)
 INTERRUPT_SERVICE
 void reset_handler() {
