@@ -8,7 +8,7 @@ extern boot_info_t* boot_info;
 
 memory_manager_t mmt;
 
-#define DEBUG 1
+// #define DEBUG 1
 
 void ya_alloc_init() {
   memory_info_t* first_mem = (memory_info_t*)&boot_info->memory[0];
@@ -60,7 +60,7 @@ void* ya_sbrk(size_t size) {
   int found = 0;
   while (current) {
     if (current->type == MEM_FREE) {
-      if (size <= (current->size - 4096)) {
+      if (size <= (current->size)) {
         addr = current->addr;
         current->addr += size;
         current->size -= size;
@@ -175,7 +175,7 @@ void ya_free(void* ptr) {
 #ifdef DEBUG
   kprintf("free  %x size=%d baddr=%x bsize=%d bcount=%d\n", ptr, block->size,block,block->size,block->count);
 #endif
-  kassert(block->count == 1);
+  // kassert(block->count == 1);
   kassert(block->free == BLOCK_USED);
   kassert(block->magic == MAGIC_USED);
   block->magic = MAGIC_FREE;
@@ -186,29 +186,29 @@ void ya_free(void* ptr) {
   block_t* next = block->next;
   ptr=NULL;
 
-  // if (next != NULL) {
-  //   if (next->free == BLOCK_FREE) {
-  //     block->size += next->size + sizeof(block_t);
-  //     block->next = next->next;
-  //     int size = next->size;
-  //     if (next->next) {
-  //       next->next->prev = block;
-  //     }
-  //     // memset(next,0,size);
-  //   }
-  // }
-  // block_t* prev = block->prev;
-  // if (prev != NULL) {
-  //   if (prev->free == BLOCK_FREE) {
-  //     prev->size += block->size;
-  //     prev->next = block->next;
-  //     if (block->next != NULL) {
-  //       block->next->prev = prev;
-  //     }
-  //     int size = block->size;
-  //     // memset(block,0,size);
-  //   }
-  // }
+  if (next != NULL) {
+    if (next->free == BLOCK_FREE) {
+      block->size += next->size + sizeof(block_t);
+      block->next = next->next;
+      int size = next->size;
+      if (next->next) {
+        next->next->prev = block;
+      }
+      // memset(next,0,size);
+    }
+  }
+  block_t* prev = block->prev;
+  if (prev != NULL) {
+    if (prev->free == BLOCK_FREE) {
+      prev->size += block->size;
+      prev->next = block->next;
+      if (block->next != NULL) {
+        block->next->prev = prev;
+      }
+      int size = block->size;
+      // memset(block,0,size);
+    }
+  }
 }
 
 int is_line_intersect(int a1, int a2, int b1, int b2) {

@@ -30,7 +30,7 @@ typedef struct fd {
   u32 *data;
   u32 offset;
   u8 *name;
-  u32 open_count;
+  u32 use_count;
 } fd_t;
 
 

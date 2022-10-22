@@ -33,7 +33,7 @@ fd_t* fd_open(u32* file, u32 type, char* name) {
 
   for (int i = 0; i < fd_number; i++) {
     if (fd_list[i].type==type && fd_list[i].data == file ) {
-      fd_list[i].open_count++;
+      fd_list[i].use_count++;
       return &fd_list[i];
     }
   }
@@ -43,7 +43,7 @@ fd_t* fd_open(u32* file, u32 type, char* name) {
   fd_list[fd_number].data = file;
   fd_list[fd_number].offset = 0;
   fd_list[fd_number].name = name;
-  fd_list[fd_number].open_count = 1;
+  fd_list[fd_number].use_count = 1;
   return &fd_list[fd_number++];
 }
 
@@ -78,18 +78,16 @@ void fd_close(fd_t* fd) {
     kprintf("fd close is null\n");
     return;
   }
-
-  if (fd->open_count <= 0) {
-    thread_t* current = thread_current();
-    thread_set_fd(current, fd, NULL);
+  fd->use_count--;
+  if (fd->use_count <= 0) {
     vnode_t* file = fd->data;
     if (file == NULL) {
-      log_error("sys close node is null tid %d \n", current->id);
+      log_error("sys close node is null ,name is  %s\n",file->name);
       return -1;
     }
     // reset offset
-    fd->offset = 0;
-    u32 ret = vclose(file);
+    // fd->offset = 0;
+    // u32 ret = vclose(file);
   }
 }
 

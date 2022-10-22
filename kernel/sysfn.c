@@ -104,6 +104,7 @@ int sys_close(u32 fd) {
     log_error("close not found fd %d tid %d\n", fd, current->id);
     return 0;
   }
+  thread_set_fd(current, fd, NULL);
   fd_close(f);
   return 0;
 }
@@ -301,9 +302,7 @@ int sys_pipe(int fds[2]) {
   fd_t* fd0 = fd_open(node, DEVICE_TYPE_VIRTUAL, "pipe0");
   fd_t* fd1 = fd_open(node, DEVICE_TYPE_VIRTUAL, "pipe1");
   fds[0] = thread_add_fd(current, fd0);
-  ;
   fds[1] = thread_add_fd(current, fd1);
-  ;
   return 0;
 }
 
