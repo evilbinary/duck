@@ -6,6 +6,8 @@ static u32 count = 0;
 const size_t align_to = 8;
 extern boot_info_t* boot_info;
 
+#define ALIGN(x, a) (x + (a - 1)) & ~(a - 1)
+
 memory_manager_t mmt;
 
 // #define DEBUG 1
@@ -60,7 +62,7 @@ void* ya_sbrk(size_t size) {
   int found = 0;
   while (current) {
     if (current->type == MEM_FREE) {
-      if (size <= (current->size)) {
+      if (size <= (current->size - 4096)) {
         addr = current->addr;
         current->addr += size;
         current->size -= size;
@@ -69,6 +71,10 @@ void* ya_sbrk(size_t size) {
         }
         found = 1;
         break;
+      } else {
+        if (current->next == NULL) {
+          kassert(size <= current->size);
+        }
       }
     }
     current = current->next;
@@ -117,7 +123,8 @@ void* ya_alloc(size_t size) {
   if (size <= 0) {
     return NULL;
   }
-  size = (size + (align_to - 1)) & ~(align_to - 1);
+  size = ALIGN(size, align_to);
+  
   block_t* block;
   if (mmt.g_block_list == NULL) {
     block = ya_new_block(size);
@@ -128,11 +135,15 @@ void* ya_alloc(size_t size) {
   block->magic = MAGIC_USED;
   void* addr = ya_block_addr(block);
 #ifdef DEBUG
-  kprintf("\nalloc %x size=%d baddr=%x bsize=%d bcount=%d\n", addr, size, block, block->size,block->count);
+  kprintf("\nalloc %x size=%d baddr=%x bsize=%d bcount=%d\n", addr, size, block,
+          block->size, block->count);
   // ya_verify();
 #endif
   kassert(addr != NULL);
   // kmemset(addr,0,size);
+
+  block->no = mmt.alloc_count++;
+  kprintf("ya_alloc(%d);//no %d addr %x \n", size, block->no, addr);
   return addr;
 }
 
@@ -172,8 +183,11 @@ void ya_free(void* ptr) {
     return;
   }
   block_t* block = ya_block_ptr(ptr);
+  kprintf("ya_free_no(%d);\n", block->no);
+
 #ifdef DEBUG
-  kprintf("free  %x size=%d baddr=%x bsize=%d bcount=%d\n", ptr, block->size,block,block->size,block->count);
+  kprintf("free  %x size=%d baddr=%x bsize=%d bcount=%d\n", ptr, block->size,
+          block, block->size, block->count);
 #endif
   // kassert(block->count == 1);
   kassert(block->free == BLOCK_USED);
@@ -184,7 +198,7 @@ void ya_free(void* ptr) {
   kmemset(ptr, 0, block->size);
   block->count = 0;
   block_t* next = block->next;
-  ptr=NULL;
+  ptr = NULL;
 
   if (next != NULL) {
     if (next->free == BLOCK_FREE) {
@@ -253,6 +267,7 @@ void mm_init() {
   mmt.blocks_tail = NULL;
   mmt.g_block_list = NULL;
   mmt.g_block_list_last = NULL;
+  mmt.alloc_count = 0;
 
   count = 0;
 

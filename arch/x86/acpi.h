@@ -86,7 +86,5 @@
 #define IA32_APIC_BASE            0x1B
 #define IA32_APIC_BASE_ENABLE_BIT 11
 
-u32 acpi_get_id();
-
 
 #endif

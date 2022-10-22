@@ -77,6 +77,7 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
 int context_get_mode(context_t* context) {
   int mode = 0;
   if (context != NULL) {
+     return context->level;
   }
   return mode;
 }

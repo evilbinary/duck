@@ -286,49 +286,7 @@ void frq_handler() {
 }
 
 void do_page_fault(interrupt_context_t *context) {
-  u32 fault_addr = read_dfar();
-  thread_t *current = thread_current();
-  if (current != NULL) {
-    int mode = context_get_mode(&current->context);
-    // kprintf("mode %x\n", mode);
-    if (mode == USER_MODE) {
-      vmemory_area_t *area = vmemory_area_find(current->vmm, fault_addr, 0);
-      if (area == NULL) {
-        if (current->fault_count < 3) {
-          thread_exit(current, -1);
-          kprintf("tid: %d %s memory fault at %x\n", current->id, current->name,
-                  fault_addr);
-          dump_fault(context, fault_addr);
-          current->fault_count++;
-        } else if (current->fault_count == 3) {
-          kprintf("tid: %d %s memory fault at %x too many\n",
-                  current->id, current->name, fault_addr);
-          current->fault_count++;
-          thread_exit(current, -1);
-        }
-        
-        return;
-      }
-      // kprintf("exception at %x\n",page_fault);
-      void *phy = virtual_to_physic(current->context.page_dir, fault_addr);
-      if (phy == NULL) {
-        valloc(fault_addr, PAGE_SIZE);
-      } else {
-        // valloc(fault_addr, PAGE_SIZE);
-        kprintf("tid: %d %s phy: %x remap memory fault at %x\n", current->id,
-                current->name, phy, fault_addr);
-        dump_fault(context, fault_addr);
-        // mmu_dump_page(current->context.page_dir,current->context.page_dir,0);
-        thread_exit(current, -1);
-        cpu_halt();
-      }
-    } else {
-      kprintf("tid: %d kernel memory fault at %x\n", current->id, fault_addr);
-      map_page(fault_addr, fault_addr, PAGE_P | PAGE_USU | PAGE_RWW);
-    }
-  } else {
-    map_page(fault_addr, fault_addr, PAGE_P | PAGE_USU | PAGE_RWW);
-  }
+  page_fault(context);
 }
 
 void dump_fault(interrupt_context_t *context, u32 fault_addr) {
@@ -371,6 +329,8 @@ void dump_fault(interrupt_context_t *context, u32 fault_addr) {
   kprintf("----------------------------\n");
 }
 void do_page_fault(interrupt_context_t *context) {
+  page_fault(context);
+
   u32 fault_addr;
   asm volatile("mov %%cr2, %0" : "=r"(fault_addr));
   int present = context->code & 0x1;

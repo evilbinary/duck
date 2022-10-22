@@ -39,7 +39,10 @@ void map_page_on(page_dir_t* page, u32 virtualaddr, u32 physaddr, u32 flags) {
 }
 
 void map_page(u32 virtualaddr, u32 physaddr, u32 flags) {
-  map_page_on(kernel_page_dir_ptr_tab, virtualaddr, physaddr, flags);
+  void* phy = virtual_to_physic(kernel_page_dir_ptr_tab, virtualaddr);
+  if (phy == NULL) {
+    map_page_on(kernel_page_dir_ptr_tab, virtualaddr, physaddr, flags);
+  }
 }
 
 void unmap_page_on(page_dir_t* page, u32 virtualaddr) {
@@ -88,7 +91,7 @@ void map_mem_block(u32 addr, void* page) {
     if (p->origin_addr > addr) {
       // map_page(p->addr, p->addr, PAGE_P | PAGE_USU | PAGE_RWW);
       u32 address = p->origin_addr;
-      for (int i = 0; i < p->size / 0x1000; i++) {
+      for (int i = 0; i < 10000; i++) {  // map block 4000k
         map_page_on(page, address, address, PAGE_P | PAGE_USU | PAGE_RWW);
         // kprintf("map addr %x %x\n", address, address);
         address += 0x1000;
@@ -146,8 +149,8 @@ void mm_init_default() {
   }
   kprintf("- 0x%x\n", address);
 
-  // map > 4GB addr
-  map_mem_block(0x200000, kernel_page_dir_ptr_tab);
+  // map mem block
+  map_mem_block(address, kernel_page_dir_ptr_tab);
 
   if (boot_info->pdt_base != NULL) {
     ulong addr = (ulong)boot_info->pdt_base;

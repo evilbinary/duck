@@ -17,8 +17,8 @@ void arch_init(boot_info_t* boot, int cpu) {
     platform_init();
     cpu_init(cpu);
     display_init();
-    mm_init();
     interrupt_init(cpu);
+    mm_init();
     platform_end();
   } else {
 #ifdef MP_ENABLE

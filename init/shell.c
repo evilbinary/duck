@@ -95,12 +95,20 @@ void do_shell_cmd(char* cmd, int count) {
 
 void pre_launch();
 
+extern int module_ready;
+
 void do_shell_thread(void) {
   char buf[64];
   int count = 0;
   int ret = 0;
+
+  // wait module ready
+  while (module_ready <= 0) {
+  }
+
   print_logo();
   print_promot();
+
   int series = syscall2(SYS_OPEN, "/dev/series", 0);
   if (series < 0) {
     kprintf("error open series\n");
@@ -128,8 +136,8 @@ void do_shell_thread(void) {
         do_shell_cmd(buf, count);
         count = 0;
         print_promot();
-      }else if(ch == 127){
-        if(count>0){
+      } else if (ch == 127) {
+        if (count > 0) {
           print_string("\n");
           buf[--count] = 0;
           print_promot();

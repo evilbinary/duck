@@ -54,6 +54,7 @@ typedef struct block {
   u32 free;
   u32 magic;
   u32 count;
+  u32 no;
 } block_t;
 
 typedef void* (*mm_alloc_fn)(size_t size);
@@ -68,6 +69,7 @@ typedef struct memory_manager {
 
   block_t* g_block_list;
   block_t* g_block_list_last;
+  u32 alloc_count;
 } memory_manager_t;
 
 u32* page_alloc_clone(u32* page_dir, u32 level);

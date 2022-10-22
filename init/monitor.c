@@ -5,10 +5,15 @@
  ********************************************************************/
 #include "main.h"
 
+int module_ready=0;
+
 void do_kernel_thread(void) {
+  modules_init();
   log_info("mp init\n");
   mp_init();
 
+  module_ready=1;
+  
   u32 i = 0;
   u32 count = 0;
   for (;;) {

@@ -53,5 +53,7 @@ void platform_init() {
 }
 
 void platform_end(){
+  #ifdef MP_ENABLE
     acpi_init();
+  #endif
  }

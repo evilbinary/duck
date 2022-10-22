@@ -47,6 +47,10 @@ u32 read_dfar() {
   return val;
 }
 
+u32 cpu_get_fault(){
+  return read_dfar();
+}
+
 u32 read_dfsr() {
   u32 val = 0;
   asm volatile("mrc p15, 0, %0, c5, c0, 0" : "=r"(val));

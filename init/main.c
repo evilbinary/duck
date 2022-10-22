@@ -27,7 +27,6 @@ void kstart(int argc, char* argv[], char** envp) {
 
 int kmain(int argc, char* argv[]) {
   kernel_init();
-  modules_init();
 
   thread_t* t1 = thread_create_name_level("kernel", (u32*)&do_kernel_thread,
                                           NULL, KERNEL_MODE);

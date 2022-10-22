@@ -98,6 +98,12 @@ static inline u32 cpu_get_ip(void) {
   return result;
 }
 
+u32 cpu_get_fault() {
+  u32 fault_addr = 0;
+  asm volatile("mov %%cr2, %0" : "=r"(fault_addr));
+  return fault_addr;
+}
+
 ulong cpu_get_cs(void) {
   ulong result;
   asm volatile("mov %%cs, %%eax" : "=a"(result));
@@ -112,7 +118,7 @@ void set_ldt(u16 tss) {
 
 void cpu_init(int cpu) {
   unsigned long cr0 = read_cr0();
-  kprintf("cpu %d init cr0=%x\n",cpu, cr0);
+  kprintf("cpu %d init cr0=%x\n", cpu, cr0);
 
   u32 tss_base = (u32) & (boot_info->tss[cpu]);
   kprintf("tr base %x\n", tss_base);
@@ -126,14 +132,13 @@ void cpu_init(int cpu) {
   gdt.limit = (boot_info->gdt_number * GDT_SIZE) - 1;
   gdt.base = (u32)boot_info->gdt_base;
   asm volatile("lgdtl %0\n" : : "m"(gdt));
-  
-  kprintf("idt base %x\n", boot_info->idt_base);
 
+  kprintf("idt base %x\n", boot_info->idt_base);
 }
 
 void cpu_halt() { asm("hlt\n"); }
 
-void cpu_wait(){
+void cpu_wait() {
   // asm("hlt\n");
 }
 
@@ -146,51 +151,41 @@ int cpu_tas(volatile int* addr, int newval) {
   return result;
 }
 
+int cpu_get_number() { return boot_info->tss_number; }
 
-int cpu_get_number(){
-  return boot_info->tss_number;
+u32 cpu_get_id() { return acpi_get_id(); }
+
+u32 cpu_get_index(int idx) { return lapic_get_index(idx); }
+
+int cpu_init_id(u32 id) { return lapic_send_init(id); }
+
+int cpu_start_id(u32 id, u32 entry) {
+  // start at 0x2000 at entry-point on boot init.h config
+  return lapic_send_start(id, entry >> 12);
 }
 
-u32 cpu_get_id(){
-  return acpi_get_id();
-}
-
-u32 cpu_get_index(int idx){
-  return lapic_get_index(idx);
-}
-
-int cpu_init_id(u32 id){
-  return lapic_send_init(id);
-}
-
-int cpu_start_id(u32 id,u32 entry){
-  //start at 0x2000 at entry-point on boot init.h config
-  return lapic_send_start(id,entry>>12);
-}
-
-
-void cpu_deplay_init(int hz){
+void cpu_deplay_init(int hz) {
   int val = 0;
-  unsigned int divisor = 1193182/hz;
+  unsigned int divisor = 1193182 / hz;
   val = (io_read8(0x61) & 0xfd) | 0x1;
   io_write8(0x61, val);
   io_write8(0x43, 0xb2);
-  io_write8(0x42,(unsigned char)(divisor & 0xFF));		// LSB
+  io_write8(0x42, (unsigned char)(divisor & 0xFF));  // LSB
   io_read8(0x60);
-	io_write8(0x42,(unsigned char)(divisor >> 8) & 0xFF); // MSB
-
+  io_write8(0x42, (unsigned char)(divisor >> 8) & 0xFF);  // MSB
 }
 
-void cpu_delay_sleep(){
+void cpu_delay_sleep() {
   int val = 0;
   val = (io_read8(0x61) & 0xfe);
-  io_write8(0x61, val); // gate low
+  io_write8(0x61, val);  // gate low
   val = val | 1;
-  io_write8(0x61, val); // gate high
-  while((io_read8(0x61) & 0x20) == 0){}
+  io_write8(0x61, val);  // gate high
+  while ((io_read8(0x61) & 0x20) == 0) {
+  }
 }
 
-void cpu_delay(int n){
+void cpu_delay(int n) {
   for (int i = 0; i < 10000 * n; i++)
     ;
 }

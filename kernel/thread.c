@@ -274,7 +274,7 @@ void thread_recycle(thread_t* thread) {
 void thread_stop(thread_t* thread) {
   if (thread == NULL) return;
   thread->state = THREAD_STOPPED;
-  thread_recycle(thread);
+  // thread_recycle(thread);
   // kprintf("recycle count %d\n", recycle_head_thread_count);
   // schedule_next();
   // cpu_sti();
