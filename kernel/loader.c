@@ -144,7 +144,7 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
                 shdr[i].sh_size);
 #endif
       if (shdr[i].sh_flags & SHF_ALLOC) {
-        kmemset(vaddr, 0, shdr[i].sh_size );
+        // kmemset(vaddr, 0, shdr[i].sh_size );
         // syscall3(SYS_SEEK, fd, start, 0);
         //u32 ret = syscall3(SYS_READ, fd, vaddr, shdr[i].sh_size);
       }

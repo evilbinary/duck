@@ -275,7 +275,7 @@ void ahci_dev_port_init(ahci_device_t* ahci_dev, int no) {
   // Command list maxim size = 32*32 = 1K per port
   // void* ahci_base = kmalloc(40 * 1024 + 8 * 1024 * 32);
   //申请命令缓冲
-  void* base_cmd = kmalloc_alignment(40 * 1024 + 8 * 1024 * 32*0, 1024);
+  void* base_cmd = kmalloc_alignment(40 * 1024 + 8 * 1024 * 32, 1024);
   ahci_dev->base_cmd = base_cmd;
   port->clb = base_cmd + (no << 10);
   port->clbu = 0;

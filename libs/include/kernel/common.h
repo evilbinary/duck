@@ -19,6 +19,6 @@ typedef	long int		off_t;
 void* kmemcpy(void* /* restrict */ s1, const void* /* restrict */ s2, size_t n);
 void* kmemset(void* s, int c, size_t n);
 
-
+# define kassert(__e) ((__e) ? (void)0 : __assert_func (__FILE__, __LINE__,  __FUNCTION__ , #__e))
 
 #endif

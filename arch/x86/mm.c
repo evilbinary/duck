@@ -9,7 +9,7 @@
 #include "cpu.h"
 
 extern boot_info_t* boot_info;
-extern mem_block_t* block_available;
+extern memory_manager_t mmt;
 
 u64 kernel_page_dir_ptr_tab[4] __attribute__((aligned(0x20)));
 u64 kernel_page_dir[512] __attribute__((aligned(0x1000)));
@@ -83,7 +83,7 @@ void mm_test() {
 }
 
 void map_mem_block(u32 addr, void* page) {
-  mem_block_t* p = block_available;
+  mem_block_t* p = mmt.blocks;
   for (; p != NULL; p = p->next) {
     if (p->addr > addr) {
       // map_page(p->addr, p->addr, PAGE_P | PAGE_USU | PAGE_RWW);

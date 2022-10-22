@@ -42,3 +42,8 @@ void kitoa(char* buf, int base, int d) {
   }
 }
 
+
+__attribute__((noreturn, weak)) void __assert_func(const char* file, int line, const char* func, const char* expr) {
+	kprintf("ASSERT FAILED: %s in %s at %s:%i\n", expr, func, file, line);
+  for(;;);
+}

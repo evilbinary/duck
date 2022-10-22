@@ -10,21 +10,21 @@
 #include "libs/include/types.h"
 
 #ifdef ARM
-  #ifdef ARMV7_A
-    #include "armv7-a/mm.h"
-  #elif defined(ARMV7)
-    #include "armv7/mm.h"
-  #elif defined(ARMV5)
-    #include "armv5/mm.h"
-  #elif defined(ARMV8_A)
-    #include "armv8-a/mm.h"
-  #else
-    #error "no support arm"
-  #endif
+#ifdef ARMV7_A
+#include "armv7-a/mm.h"
+#elif defined(ARMV7)
+#include "armv7/mm.h"
+#elif defined(ARMV5)
+#include "armv5/mm.h"
+#elif defined(ARMV8_A)
+#include "armv8-a/mm.h"
+#else
+#error "no support arm"
+#endif
 #elif defined(X86)
-  #include "x86/mm.h"
+#include "x86/mm.h"
 #elif defined(LX6)
-  #include "lx6/mm.h"
+#include "lx6/mm.h"
 #else
 #error "no support"
 #endif
@@ -42,19 +42,42 @@ typedef struct mem_block {
   u32 addr;
   u32 type;
   u32 size;
+  u32 origin_size;
   struct mem_block* next;
 } __attribute__((packed)) mem_block_t;
 
-u32* page_alloc_clone(u32* page_dir,u32 level);
-void page_clone(u32* old_page, u32* new_page);
+typedef struct block {
+  size_t size;
+  struct block* next;
+  struct block* prev;
+  char free;
+  u32 magic;
+} block_t;
 
+typedef void* (*mm_alloc_fn)(size_t size);
+typedef void (*mm_free_fn)(void* ptr);
+typedef void (*mm_init_fn)();
+typedef struct memory_manager {
+  mm_alloc_fn alloc;
+  mm_free_fn free;
+  mm_init_fn init;
+  mem_block_t* blocks;
+  mem_block_t* blocks_tail;
+
+  block_t* g_block_list;
+  block_t* g_block_list_last;
+} memory_manager_t;
+
+u32* page_alloc_clone(u32* page_dir, u32 level);
+void page_clone(u32* old_page, u32* new_page);
 
 #ifdef MALLOC_TRACE
 #define kmalloc(size) kmalloc_trace(size, __FILE__, __LINE__, __FUNCTION__)
 #define kmalloc_alignment(size, alignment) \
   kmalloc_alignment_trace(size, alignment, __FILE__, __LINE__, __FUNCTION__)
 #define kfree(ptr) kfree_trace(ptr, __FILE__, __LINE__, __FUNCTION__)
-#define kfree_alignment(ptr) kfree_alignment_trace(ptr, __FILE__, __LINE__, __FUNCTION__)
+#define kfree_alignment(ptr) \
+  kfree_alignment_trace(ptr, __FILE__, __LINE__, __FUNCTION__)
 
 #else
 void* kmalloc(size_t size);
