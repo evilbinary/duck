@@ -27,6 +27,7 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
   } else {
     kprintf("not suppport level %d\n", level);
   }
+  stack0=((u32)stack0)-sizeof(interrupt_context_t);
   interrupt_context_t* c = stack0;
   c->ss = ds;          // ss
   c->esp = stack3;     // esp

@@ -714,7 +714,7 @@ struct fat_file_struct* fat_open_file(
 
 #if USE_DYNAMIC_MEMORY
   struct fat_file_struct* fd = kmalloc(sizeof(struct fat_file_struct));
-  if (!fd) return 0;
+  if (fd==NULL) return 0;
 #else
   struct fat_file_struct* fd = fat_file_handles;
   uint8_t i;

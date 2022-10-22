@@ -85,9 +85,9 @@ void mm_test() {
 void map_mem_block(u32 addr, void* page) {
   mem_block_t* p = mmt.blocks;
   for (; p != NULL; p = p->next) {
-    if (p->addr > addr) {
+    if (p->origin_addr > addr) {
       // map_page(p->addr, p->addr, PAGE_P | PAGE_USU | PAGE_RWW);
-      u32 address = p->addr;
+      u32 address = p->origin_addr;
       for (int i = 0; i < p->size / 0x1000; i++) {
         map_page_on(page, address, address, PAGE_P | PAGE_USU | PAGE_RWW);
         // kprintf("map addr %x %x\n", address, address);

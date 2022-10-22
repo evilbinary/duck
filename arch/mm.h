@@ -43,6 +43,7 @@ typedef struct mem_block {
   u32 type;
   u32 size;
   u32 origin_size;
+  u32 origin_addr;
   struct mem_block* next;
 } __attribute__((packed)) mem_block_t;
 
@@ -50,7 +51,7 @@ typedef struct block {
   size_t size;
   struct block* next;
   struct block* prev;
-  char free;
+  u32 free;
   u32 magic;
 } block_t;
 
