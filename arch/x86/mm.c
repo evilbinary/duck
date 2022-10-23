@@ -88,7 +88,7 @@ void map_mem_block(u32 addr, void* page) {
     if (p->origin_addr > addr) {
       // map_page(p->addr, p->addr, PAGE_P | PAGE_USU | PAGE_RWW);
       u32 address = p->origin_addr;
-      for (int i = 0; i < 100; i++) {  // map block 400k
+      for (int i = 0; i < 10000; i++) {  // map block 400k
         map_page_on(page, address, address, PAGE_P | PAGE_USU | PAGE_RWW);
         // kprintf("map addr %x %x\n", address, address);
         address += 0x1000;

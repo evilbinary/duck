@@ -12,6 +12,8 @@ memory_manager_t mmt;
 
 // #define DEBUG 1
 
+#ifdef MM_YA_ALLOC
+
 void ya_alloc_init() {
   memory_info_t* first_mem = (memory_info_t*)&boot_info->memory[0];
   u32 size = sizeof(mem_block_t) * boot_info->memory_number;
@@ -331,12 +333,41 @@ ullong mm_get_free() {
   return free;
 }
 
-/*
+#else 
+
+
 mem_block_t* block_alloc_head = NULL;
 mem_block_t* block_alloc_tail = NULL;
 
-mem_block_t* block_available_tail = NULL;
-mem_block_t* block_available = NULL;
+void mm_dump_phy() {
+  for (int i = 0; i < boot_info->memory_number; i++) {
+    memory_sinfo_t* m = (memory_sinfo_t*)&boot_info->memory[i];
+    kprintf("base:%x %x lenght:%x %x type:%d\n", m->baseh, m->basel, m->lengthh,
+            m->lengthl, m->type);
+  }
+  kprintf("total memory %dm %dk\n", boot_info->total_memory / 1024 / 1024,
+          boot_info->total_memory / 1024);
+}
+
+void mm_init() {
+  kprintf("mm init\n");
+  mmt.blocks  = NULL;
+  block_alloc_head = NULL;
+  block_alloc_tail = NULL;
+  mmt.blocks_tail = NULL;
+  count = 0;
+
+  mmt.blocks=NULL;
+
+  kprintf("phy dump\n");
+  mm_dump_phy();
+  kprintf("alloc init\n");
+  // mm init
+  mm_alloc_init();
+
+  kprintf("mm init default\n");
+  mm_init_default();
+}
 
 int is_line_intersect(int a1, int a2, int b1, int b2) {
   return !(b2 < a1 || b1 > a2);
@@ -346,14 +377,16 @@ void mm_add_block(u32 addr, u32 len) {
   mem_block_t* block = addr;
   block->addr = (u32)block + sizeof(mem_block_t);
   block->size = len - sizeof(mem_block_t);
+  block->origin_size = block->size;
+  block->origin_addr = addr;
   block->type = MEM_FREE;
   block->next = NULL;
-  if (block_available == NULL) {
-    block_available = block;
-    block_available_tail = block;
+  if (mmt.blocks == NULL) {
+    mmt.blocks = block;
+    mmt.blocks_tail = block;
   } else {
-    block_available_tail->next = block;
-    block_available_tail = block;
+    mmt.blocks_tail->next = block;
+    mmt.blocks_tail = block;
   }
   kprintf("=>block:%x type:%d size:%d start: %x end:%x\n", block, block->type,
           block->size, block->addr, block->addr + block->size);
@@ -399,7 +432,7 @@ void mm_alloc_init() {
 #define debug
 
 void* mm_alloc(size_t size) {
-  mem_block_t* p = block_available;
+  mem_block_t* p = mmt.blocks;
   debug("malloc count %d size %d\n", count, size);
   u32 pre_alloc_size = size + sizeof(mem_block_t);
   pre_alloc_size = (pre_alloc_size + 8) & ~0x3;
@@ -513,13 +546,13 @@ void mm_dump() {
   mm_dump_print(block_alloc_head);
 
   kprintf("---dump available---\n");
-  mm_dump_print(block_available);
+  mm_dump_print(mmt.blocks);
   kprintf("dump end\n\n");
 }
 
 ullong mm_get_total() {
   ullong total=0;
-  mem_block_t* p = block_available;
+  mem_block_t* p = mmt.blocks;
   for (; p != NULL; p = p->next) {
     total += p->size;
   }
@@ -553,8 +586,8 @@ void mm_free(void* addr) {
   }
   block->next = NULL;
   block->type = MEM_FREE;
-  block_available_tail->next = block;
-  block_available_tail = block;
+  mmt.blocks_tail->next = block;
+  mmt.blocks_tail = block;
 }
 
 u32 mm_get_block_size(void* addr) {
@@ -565,4 +598,4 @@ u32 mm_get_block_size(void* addr) {
     }
   }
 }
-*/
+#endif
