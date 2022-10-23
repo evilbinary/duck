@@ -42,7 +42,7 @@ void page_fault_handle(interrupt_context_t *context) {
         valloc(fault_addr, PAGE_SIZE);
       } else {
         // valloc(fault_addr, PAGE_SIZE);
-        log_error("tid: %d %s phy: %x remap memory fault at %x\n", current->id,
+        log_error("%s phy: %x remap memory fault at %x\n",
                 current->name, phy, fault_addr);
         dump_fault(context, fault_addr);
         // mmu_dump_page(current->context.page_dir,current->context.page_dir,0);
@@ -50,7 +50,7 @@ void page_fault_handle(interrupt_context_t *context) {
         cpu_halt();
       }
     } else {
-      log_info("tid: %d kernel memory fault at %x\n", current->id, fault_addr);
+      log_info("kernel memory fault at %x\n",fault_addr);
       void *phy =
           virtual_to_physic(current->context.kernel_page_dir, fault_addr);
       if (phy == NULL) {
