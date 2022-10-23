@@ -4,7 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "thread.h"
-
+#include "loader.h"
 #include "fd.h"
 #include "syscall.h"
 
@@ -23,7 +23,7 @@ void thread_init() { lock_init(&thread_lock); }
 
 thread_t* thread_create_level(void* entry, void* data, u32 level) {
   u32 size = THREAD_STACK_SIZE;
-  thread_t* thread = thread_create_ex(entry, size, data, level, 1);
+  thread_t* thread = thread_create_ex(entry, size, data, level, 1,NULL);
   return thread;
 }
 
@@ -46,7 +46,7 @@ thread_t* thread_create(void* entry, void* data) {
 
 thread_t* thread_create_ex_name(char* name, void* entry, u32 size, void* data,
                                 u32 level, u32 page) {
-  thread_t* t = thread_create_ex(entry, size, data, level, page);
+  thread_t* t = thread_create_ex(entry, size, data, level, page,NULL);
   char* kname = kmalloc(kstrlen(name));
   kstrcpy(kname, name);
   t->name = kname;
@@ -54,7 +54,7 @@ thread_t* thread_create_ex_name(char* name, void* entry, u32 size, void* data,
 }
 
 thread_t* thread_create_ex(void* entry, u32 size, void* data, u32 level,
-                           u32 page) {
+                           u32 page, vmemory_area_t* vmm) {
   if (size <= 0) {
     log_error("thread create ex size is 0\n");
     return NULL;
@@ -99,6 +99,22 @@ thread_t* thread_create_ex(void* entry, u32 size, void* data, u32 level,
     thread->vfs = kmalloc(sizeof(vfs_t));
     // file description
     thread_fill_fd(thread);
+
+    //vm
+    if(vmm==NULL){
+      u8* vstack3 =NULL;
+      if(level==USER_MODE){
+        vstack3 = STACK_ADDR;
+        map_page_on(thread->context.page_dir,vstack3,stack3);
+      }else{
+        vstack3=stack3;
+      }
+      thread->vmm = vmemory_area_create(HEAP_ADDR, MEMORY_HEAP_SIZE, MEMORY_HEAP);
+      vmemory_area_t* vmexec = vmemory_area_create(EXEC_ADDR, MEMORY_EXEC_SIZE, MEMORY_EXEC);
+      vmemory_area_add(thread->vmm, vmexec);
+      vmemory_area_t* stack = vmemory_area_create(vstack3, THREAD_STACK_SIZE, MEMORY_STACK);
+      vmemory_area_add(thread->vmm, stack);
+    }
 
     thread_init_self(thread, entry, stack0, stack3, size, level);
     if (page == 1) {

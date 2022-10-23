@@ -124,7 +124,6 @@ void* ya_alloc(size_t size) {
     return NULL;
   }
   size = ALIGN(size, align_to);
-  
   block_t* block;
   if (mmt.g_block_list == NULL) {
     block = ya_new_block(size);
@@ -134,16 +133,16 @@ void* ya_alloc(size_t size) {
   block->free = BLOCK_USED;
   block->magic = MAGIC_USED;
   void* addr = ya_block_addr(block);
+  kassert(addr != NULL);
+  block->no = mmt.alloc_count++;
+
 #ifdef DEBUG
   kprintf("\nalloc %x size=%d baddr=%x bsize=%d bcount=%d\n", addr, size, block,
           block->size, block->count);
   // ya_verify();
-#endif
-  kassert(addr != NULL);
-  // kmemset(addr,0,size);
-
-  block->no = mmt.alloc_count++;
   kprintf("ya_alloc(%d);//no %d addr %x \n", size, block->no, addr);
+#endif
+
   return addr;
 }
 
@@ -183,9 +182,9 @@ void ya_free(void* ptr) {
     return;
   }
   block_t* block = ya_block_ptr(ptr);
-  kprintf("ya_free_no(%d);\n", block->no);
 
 #ifdef DEBUG
+  kprintf("ya_free_no(%d);\n", block->no);
   kprintf("free  %x size=%d baddr=%x bsize=%d bcount=%d\n", ptr, block->size,
           block, block->size, block->count);
 #endif

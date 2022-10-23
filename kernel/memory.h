@@ -26,6 +26,8 @@
 #define MEMORY_TYPE_USE 1   //使用
 #define MEMORY_TYPE_FREE 2  //释放
 
+#define MEMORY_ALIGMENT 16
+
 typedef struct memory {
   ulong total;
   ulong free;
@@ -38,8 +40,12 @@ typedef struct vmemory_area {
   void* vend;
   u32 size;
   u8 flags;
+  void* alloc_addr;
+  void* alloc_size;
   struct vmemory_area* next;
 } vmemory_area_t;
+
+#define ALIGN(x, a) (x + (a - 1)) & ~(a - 1)
 
 #ifdef MALLOC_TRACE
 #define kmalloc(size) kmalloc_trace(size, __FILE__, __LINE__, __FUNCTION__)

@@ -68,7 +68,7 @@ thread_t * thread_create_name(char* name,void* entry,void* data);
 thread_t* thread_create_name_level(char* name, void* entry, void* data,u32 level);
 
 thread_t* thread_create_ex(void* entry, u32 size,
-                           void* data,u32 level,u32 page);
+                           void* data,u32 level,u32 page,vmemory_area_t* vmm);
 
 thread_t* thread_create_ex_name(char* name,void* entry,u32 size,
                            void* data,u32 level,u32 page);

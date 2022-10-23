@@ -6,7 +6,7 @@
 #include "page.h"
 
 void page_fault_handle(interrupt_context_t *context) {
-  u32 fault_addr = cpu_get_fault();
+  u32 *fault_addr = cpu_get_fault();
   thread_t *current = thread_current();
   if (current != NULL) {
     int mode = context_get_mode(&current->context);
@@ -23,12 +23,12 @@ void page_fault_handle(interrupt_context_t *context) {
         } else {
           if (current->fault_count < 3) {
             thread_exit(current, -1);
-            kprintf("tid: %d %s memory fault at %x\n", current->id,
+            log_error("tid: %d %s memory fault at %x\n", current->id,
                     current->name, fault_addr);
             dump_fault(context, fault_addr);
             current->fault_count++;
           } else if (current->fault_count == 3) {
-            kprintf("tid: %d %s memory fault at %x too many\n", current->id,
+            log_error("tid: %d %s memory fault at %x too many\n", current->id,
                     current->name, fault_addr);
             current->fault_count++;
             thread_exit(current, -1);
@@ -42,7 +42,7 @@ void page_fault_handle(interrupt_context_t *context) {
         valloc(fault_addr, PAGE_SIZE);
       } else {
         // valloc(fault_addr, PAGE_SIZE);
-        kprintf("tid: %d %s phy: %x remap memory fault at %x\n", current->id,
+        log_error("tid: %d %s phy: %x remap memory fault at %x\n", current->id,
                 current->name, phy, fault_addr);
         dump_fault(context, fault_addr);
         // mmu_dump_page(current->context.page_dir,current->context.page_dir,0);
@@ -50,8 +50,12 @@ void page_fault_handle(interrupt_context_t *context) {
         cpu_halt();
       }
     } else {
-      kprintf("tid: %d kernel memory fault at %x\n", current->id, fault_addr);
-      map_page(fault_addr, fault_addr, PAGE_P | PAGE_USU | PAGE_RWW);
+      log_info("tid: %d kernel memory fault at %x\n", current->id, fault_addr);
+      void *phy =
+          virtual_to_physic(current->context.kernel_page_dir, fault_addr);
+      if (phy == NULL) {
+        valloc(fault_addr, PAGE_SIZE);
+      }
     }
   } else {
     map_page(fault_addr, fault_addr, PAGE_P | PAGE_USU | PAGE_RWW);

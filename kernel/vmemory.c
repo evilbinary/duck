@@ -11,8 +11,7 @@ void vmemory_area_free(vmemory_area_t* area) {
   context_t* context = thread_current_context();
   u32 vaddr = area->vaddr;
   for (int i = 0; i < area->size / PAGE_SIZE; i++) {
-    u32 phyaddr = virtual_to_physic(context->page_dir, vaddr);
-    kfree_alignment(phyaddr);
+    kfree_alignment(vaddr);
     map_page_on(context->page_dir, vaddr, vaddr, 0);
     vaddr += PAGE_SIZE;
   }
@@ -36,6 +35,8 @@ vmemory_area_t* vmemory_area_create(void* addr, u32 size, u8 flags) {
   area->size = size;
   area->next = NULL;
   area->vaddr = addr;
+  area->alloc_addr = addr;
+  area->alloc_size = 0;
   area->flags = flags;
   area->vend = addr;
   return area;

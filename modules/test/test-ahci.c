@@ -3,7 +3,7 @@
 void test_ahci_port_read() {
   device_t* dev = device_find(DEVICE_SATA);
   if (dev == NULL) {
-    kprintf("test ahci port failed\n");
+    log_error("test ahci port failed\n");
   }
   ahci_device_t* ahci_dev = dev->data;
   sector_t sector;
@@ -19,7 +19,7 @@ void test_ahci_port_read() {
   // start offset 0xFFFF000
   int ret = ahci_dev_port_write(ahci_dev, 0, sector, count, buf);
   if (ret < 0) {
-    kprintf("test error at write %d\n", ret);
+    log_error("test error at write %d\n", ret);
   }
 
   kmemset(buf, 0, 1024);
@@ -29,7 +29,7 @@ void test_ahci_port_read() {
   }
   for (int i = 0; i < 1024; i++) {
     if (buf[i] != (i % 128)) {
-      kprintf("test error ahci port at pos %d\n", i);
+      log_error("test error ahci port at pos %d\n", i);
       break;
     }
   }
@@ -38,7 +38,7 @@ void test_ahci_port_read() {
 void test_ahci_read() {
   device_t* dev = device_find(DEVICE_SATA);
   if (dev == NULL) {
-    kprintf("test ahci read failed\n");
+    log_error("test ahci read failed\n");
   }
   ahci_device_t* ahci_dev = dev->data;
   int offset = 0xFFFF000;
@@ -47,11 +47,11 @@ void test_ahci_read() {
   dev->ioctl(dev, IOC_WRITE_OFFSET, offset);
   int ret = dev->read(dev, buf, count);
   if (ret < 0) {
-    kprintf("test ahci read error at %d\n", ret);
+    log_error("test ahci read error at %d\n", ret);
   }
   for (int i = 0; i < 1024; i++) {
     if (buf[i] != (i % 128)) {
-      kprintf("test ahci read error at pos %d\n", i);
+      log_error("test ahci read error at pos %d\n", i);
       break;
     }
   }

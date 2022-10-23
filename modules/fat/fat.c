@@ -46,7 +46,7 @@ struct fat_fs_struct* fat_open(struct partition_struct* partition) {
 #if USE_DYNAMIC_MEMORY
   struct fat_fs_struct* fs = kmalloc(sizeof(struct fat_fs_struct));
   if (!fs) {
-    kprintf("malloc error\n");
+    log_error("malloc error\n");
     return 0;
   }
 #else
@@ -62,7 +62,7 @@ struct fat_fs_struct* fat_open(struct partition_struct* partition) {
   fs->partition = partition;
   u32 ret=fat_read_header(fs);
   if (!ret) {
-    kprintf("fat header error ret %d\n ",ret);
+    log_error("fat header error ret %d\n ",ret);
 #if USE_DYNAMIC_MEMORY
     kfree(fs);
 #else
@@ -103,12 +103,12 @@ void fat_close(struct fat_fs_struct* fs) {
  */
 uint32_t fat_read_header(struct fat_fs_struct* fs) {
   if (!fs) {
-    kprintf("fat_read_header fs error\n");
+    log_error("fat_read_header fs error\n");
     return -1;
   }
   struct partition_struct* partition = fs->partition;
   if (!partition) {
-    kprintf("fat_read_header partition error\n");
+    log_error("fat_read_header partition error\n");
     return -2;
   }
 
@@ -122,7 +122,7 @@ uint32_t fat_read_header(struct fat_fs_struct* fs) {
   int ret =
       partition->device_read(partition_offset + 0x0b, buffer, sizeof(buffer));
   if (!ret) {
-    kprintf("fat_read_header error %d\n", ret);
+    log_error("fat_read_header error %d\n", ret);
     return -3;
   }
 
@@ -149,13 +149,13 @@ uint32_t fat_read_header(struct fat_fs_struct* fs) {
   if (sectors_per_fat != 0)
     sectors_per_fat32 = sectors_per_fat;
   else if (sectors_per_fat32 == 0) {
-    kprintf("fat_read_header neither FAT16 nor FAT32 0\n");
+    log_error("fat_read_header neither FAT16 nor FAT32 0\n");
     /* this is neither FAT16 nor FAT32 */
     return -5;
   }
 #else
   if (sectors_per_fat == 0) { /* this is not a FAT16 */
-    kprintf("fat_read_header neither FAT16 \n");
+    log_error("fat_read_header neither FAT16 \n");
     return 0;
   }
 #endif
@@ -171,7 +171,7 @@ uint32_t fat_read_header(struct fat_fs_struct* fs) {
       - ((max_root_entries * 32 + bytes_per_sector - 1) / bytes_per_sector);
   uint32_t data_cluster_count = data_sector_count / sectors_per_cluster;
   if (data_cluster_count < 4085) { /* this is a FAT12, not supported */
-    kprintf("fat_read_header this is a FAT12, not supported \n");
+    log_error("fat_read_header this is a FAT12, not supported \n");
     return 0;
   } else if (data_cluster_count < 65525)
     /* this is a FAT16 */
@@ -1192,7 +1192,7 @@ uint8_t fat_read_dir(struct fat_dir_struct* dd,
      * So we now reset the handle and signal the caller the
      * end of the listing.
      */
-    kprintf("cluster_offset>cluster_size %d %d\n",cluster_offset,cluster_size);
+    log_debug("cluster_offset>cluster_size %d %d\n",cluster_offset,cluster_size);
     fat_reset_dir(dd);
     return 0;
   }
@@ -1212,7 +1212,7 @@ uint8_t fat_read_dir(struct fat_dir_struct* dd,
       cluster_size = header->cluster_zero_offset - header->root_dir_offset;
   }
   if(fs->partition->device_read_interval==NULL){
-    kprintf("fs->partition->device_read_interval is null\n");
+    log_debug("fs->partition->device_read_interval is null\n");
     return 0;
   }
   /* read entries */
