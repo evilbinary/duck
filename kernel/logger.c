@@ -51,10 +51,10 @@ void log_default_color(int tag, const char* message, va_list args) {
 
   if (log_info_mod.fd < 0) {
     vsprintf(buf, message, args);
-    kprintf("%s[%08d] %stid:%d %s%s %s%s%s",LOG_GRAY,ticks,LOG_WHITE_BOLD,tid,tag_color,tag_msg,LOG_WHITE, buf,LOG_NONE);
+    kprintf("%s[%08d] %stid:%d %s%-5s %s%s%s",LOG_GRAY,ticks,LOG_WHITE_BOLD,tid,tag_color,tag_msg,LOG_WHITE, buf,LOG_NONE);
   } else {
     kmemset(buf, 0, LOG_MSG_BUF);
-    vsprintf(buf, "[%08d] tid: %d ", ticks, tid);
+    vsprintf(buf, "%s[%08d] %stid:%d %s%-5s %s",LOG_GRAY, ticks,LOG_WHITE_BOLD, tid,tag_color,tag_msg,LOG_NONE);
     sys_write(log_info_mod.fd, buf, kstrlen(buf));
     kmemset(buf, 0, LOG_MSG_BUF);
     vsprintf(buf, message, args);
