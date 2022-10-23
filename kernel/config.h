@@ -93,6 +93,8 @@
 #endif
 // #define fn_free kfree
 
+#define LOG_COLOR 1 
+
 #include "logger.h"
 
 #endif

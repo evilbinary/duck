@@ -1,5 +1,4 @@
 #include "logger.h"
-
 #include "thread.h"
 
 log_t log_info_mod;
@@ -8,6 +7,13 @@ const char* log_level_strings[] = {
     "info",   // 1
     "warn",   // 2
     "error",  // 3
+};
+
+const char* log_level_color[] ={
+  LOG_CYAN,
+  LOG_GREEN,
+  LOG_YELLOW,
+  LOG_PURPLE
 };
 
 void log_default(int tag, const char* message, va_list args) {
@@ -22,6 +28,30 @@ void log_default(int tag, const char* message, va_list args) {
   if (log_info_mod.fd < 0) {
     vsprintf(buf, message, args);
     kprintf("[%08d] tid: %d %s %s", ticks, tid, tag_msg, buf);
+  } else {
+    kmemset(buf, 0, LOG_MSG_BUF);
+    vsprintf(buf, "[%08d] tid: %d ", ticks, tid);
+    sys_write(log_info_mod.fd, buf, kstrlen(buf));
+    kmemset(buf, 0, LOG_MSG_BUF);
+    vsprintf(buf, message, args);
+    sys_write(log_info_mod.fd, buf, kstrlen(buf));
+  }
+}
+
+void log_default_color(int tag, const char* message, va_list args) {
+  int ticks = schedule_get_ticks();
+  int tid = -1;
+  thread_t* current = thread_current();
+  if (current != NULL) {
+    tid = current->id;
+  }
+  char buf[LOG_MSG_BUF] = {0};
+  char* tag_msg = (char*)log_level_strings[tag];
+  char* tag_color=log_level_color[tag];
+
+  if (log_info_mod.fd < 0) {
+    vsprintf(buf, message, args);
+    kprintf("%s[%08d] %stid:%d %s%s %s%s%s",LOG_GRAY,ticks,LOG_WHITE_BOLD,tid,tag_color,tag_msg,LOG_WHITE, buf,LOG_NONE);
   } else {
     kmemset(buf, 0, LOG_MSG_BUF);
     vsprintf(buf, "[%08d] tid: %d ", ticks, tid);
@@ -75,7 +105,11 @@ void log_unregister(log_format_fn fn) {}
 void log_init() {
   log_info_mod.fd = -1;
   log_info_mod.logger_size=0;
+#ifdef LOG_COLOR
+  log_register(&log_default_color);
+#else
   log_register(&log_default);
+#endif
 }
 
 void log_init_fd(int fd){
