@@ -11,6 +11,7 @@ extern boot_info_t* boot_info;
 memory_manager_t mmt;
 
 // #define DEBUG 1
+#define MM_YA_ALLOC 1
 
 #ifdef MM_YA_ALLOC
 

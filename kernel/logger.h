@@ -4,7 +4,7 @@
 #include "config.h"
 #include "kernel/stdarg.h"
 
-#define LOG_MSG_BUF 128
+#define LOG_MSG_BUF 256
 #define LOG_MAX_FN 10
 
 // \033[+背景色+;+字体色+;+效果+m

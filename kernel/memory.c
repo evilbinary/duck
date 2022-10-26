@@ -31,9 +31,9 @@ memory_t* memory_info() {
 
 void* vm_alloc(size_t size) {
   void* addr = NULL;
-  size=ALIGN(size, MEMORY_ALIGMENT);
+  size = ALIGN(size, MEMORY_ALIGMENT);
   thread_t* current = thread_current();
-  if (current == NULL) {
+  if (current == NULL ) {
     //内核启动没有进程，使用内核物理内存
     addr = mm_alloc(size);
     return addr;
@@ -41,38 +41,40 @@ void* vm_alloc(size_t size) {
   addr = current->vmm->alloc_addr;
   current->vmm->alloc_addr += size;
   current->vmm->alloc_size += size;
-  // kmemset(addr,0,size);
+
   return addr;
 }
 
 void* vm_alloc_alignment(size_t size, int alignment) {
+  size = ALIGN(size, MEMORY_ALIGMENT);
   void* addr = NULL;
   thread_t* current = thread_current();
-  if (current == NULL) {
+  if (current == NULL ) {
     //内核启动没有进程，使用内核物理内存
     addr = mm_alloc_zero_align(size, alignment);
     return addr;
   }
   addr = current->vmm->alloc_addr;
-  void* new_addr = ALIGN((u32)addr, alignment);
+  u32 page_alignt = alignment - 1;
+  void* new_addr = (u32)addr & (~page_alignt);
+  // void* new_addr = ALIGN((u32)addr, alignment);
 
-  current->vmm->alloc_size += new_addr -addr +size ;
+  current->vmm->alloc_size += new_addr - addr + size;
   current->vmm->alloc_addr = new_addr + size;
-
   return new_addr;
 }
 
 void vm_free(void* ptr) {
   thread_t* current = thread_current();
   if (current == NULL) {
-    //mm_free(ptr);
+    // mm_free(ptr);
   }
 }
 
 void vm_free_alignment(void* ptr) {
   thread_t* current = thread_current();
   if (current == NULL) {
-    //mm_free_align(ptr);
+    // mm_free_align(ptr);
   }
 }
 
@@ -85,15 +87,9 @@ int free_total = 0;
 
 void* kmalloc_trace(size_t size, void* name, void* no, void* fun) {
   void* addr = vm_alloc(size);
-  u32 tid = -1;
-  thread_t* current = thread_current();
-  if (current != NULL) {
-    tid = current->id;
-  }
   alloc_total += size;
-  log_debug(
-      "tid: %d kmalloc count:%04d total:%06dk size:%04d addr:%06x %s:%d %s\n",
-      tid, alloc_count++, alloc_total / 1024, size, addr, name, no, fun);
+  log_debug("kmalloc count:%04d total:%06dk size:%04d addr:%06x %s:%d %s\n",
+            alloc_count++, alloc_total / 1024, size, addr, name, no, fun);
   if (addr == NULL) {
     log_error("kmalloc error\n");
     return addr;
@@ -104,15 +100,9 @@ void* kmalloc_trace(size_t size, void* name, void* no, void* fun) {
 void* kmalloc_alignment_trace(size_t size, int alignment, void* name, void* no,
                               void* fun) {
   void* addr = vm_alloc_alignment(size, alignment);
-  u32 tid = -1;
-  thread_t* current = thread_current();
-  if (current != NULL) {
-    tid = current->id;
-  }
   alloc_total += size;
-  log_debug(
-      "kmalloca count:%04d total:%06dk size:%04d addr:%06x %s:%d %s\n",
-      tid, alloc_count++, alloc_total / 1024, size, addr, name, no, fun);
+  log_debug("kmalloca count:%04d total:%06dk size:%04d addr:%06x %s:%d %s\n",
+            alloc_count++, alloc_total / 1024, size, addr, name, no, fun);
   memory_static(size, MEMORY_TYPE_USE);
   return addr;
 }
@@ -120,30 +110,20 @@ void* kmalloc_alignment_trace(size_t size, int alignment, void* name, void* no,
 void kfree_trace(void* ptr, void* name, void* no, void* fun) {
   size_t size = mm_get_size(ptr);
   u32 tid = -1;
-  thread_t* current = thread_current();
-  if (current != NULL) {
-    tid = current->id;
-  }
-
-  log_debug("kfree count:%d total:%dk size:%d addr:%x %s:%d %s\n", tid,
-          free_count++, free_total / 1024, size, ptr, name, no, fun);
+  log_debug("kfree count:%d total:%dk size:%d addr:%x %s:%d %s\n", free_count++,
+            free_total / 1024, size, ptr, name, no, fun);
 
   vm_free(ptr);
-  memory_static(size, MEMORY_TYPE_FREE);
+  // memory_static(size, MEMORY_TYPE_FREE);
 }
 
 void kfree_alignment_trace(void* ptr, void* name, void* no, void* fun) {
   size_t size = mm_get_size(ptr);
-  u32 tid = -1;
-  thread_t* current = thread_current();
-  if (current != NULL) {
-    tid = current->id;
-  }
-  log_debug("%d kfreea count:%d total:%dk size:%d addr:%x %s:%d %s\n", tid,
-          free_count++, free_total / 1024, size, ptr, name, no, fun);
+  log_debug("kfreea count:%d total:%dk size:%d addr:%x %s:%d %s\n",
+            free_count++, free_total / 1024, size, ptr, name, no, fun);
 
   vm_free_alignment(ptr);
-  memory_static(size, MEMORY_TYPE_FREE);
+  // memory_static(size, MEMORY_TYPE_FREE);
 }
 
 #else
@@ -208,12 +188,14 @@ void* valloc(void* addr, size_t size) {
   }
   u32 page_alignt = PAGE_SIZE - 1;
   void* vaddr = (u32)addr & (~page_alignt);
+  // void* vaddr = ALIGN((u32)addr, PAGE_SIZE);
+
 #ifdef USE_POOL
   void* phy_addr = queue_pool_poll(user_pool);
   if (phy_addr == NULL) {
     phy_addr = mm_alloc_zero_align(size, PAGE_SIZE);
   } else {
-    kprintf("use pool addr %x\n", phy_addr);
+    log_info("use pool addr %x\n", phy_addr);
   }
 #else
   void* phy_addr = mm_alloc_zero_align(size, PAGE_SIZE);
@@ -221,12 +203,8 @@ void* valloc(void* addr, size_t size) {
   void* paddr = phy_addr;
   for (int i = 0; i < size / PAGE_SIZE; i++) {
     if (current != NULL) {
-      if (current->level == USER_MODE) {
         map_page_on(current->context.page_dir, vaddr, paddr,
                     PAGE_P | PAGE_USU | PAGE_RWW);
-      } else if (current->level == KERNEL_MODE) {
-        map_page(vaddr, paddr, PAGE_P | PAGE_USU | PAGE_RWW);
-      }
     } else {
       map_page(vaddr, paddr, PAGE_P | PAGE_USU | PAGE_RWW);
     }
@@ -256,6 +234,20 @@ void vfree(void* addr) {
   }
 }
 
+void* kvirtual_to_physic(void* addr, int size) {
+  thread_t* current = thread_current();
+  void* phy = NULL;
+  if (current != NULL) {
+    phy = virtual_to_physic(current->context.page_dir, addr);
+    if (phy == NULL) {
+      log_error("get phy null\n");
+      kmemset(addr, 0, size);
+      phy = virtual_to_physic(current->context.page_dir, addr);
+    }
+  }
+  return phy;
+}
+
 void map_2gb(u64* page_dir_ptr_tab, u32 attr) {
   u32 addr = 0;
   for (int i = 0; i < 0x200000 / PAGE_SIZE; i++) {
@@ -270,7 +262,7 @@ void map_alignment(void* page, void* vaddr, void* buf, u32 size) {
     file_4k = size;
   }
   for (int i = 0; i < file_4k / PAGE_SIZE; i++) {
-    kprintf("map_alignment vaddr:%x paddr:%x\n", vaddr, buf);
+    log_debug("map_alignment vaddr:%x paddr:%x\n", vaddr, buf);
     map_page_on(page, (u32)vaddr, (u32)buf, PAGE_P | PAGE_USU | PAGE_RWW);
     vaddr += PAGE_SIZE;
     buf += PAGE_SIZE;
@@ -299,7 +291,7 @@ int kpool_put(void* e) { return queue_pool_put(kernel_pool, e); }
 void* kpool_poll() {
   void* e = queue_pool_poll(kernel_pool);
   if (e == NULL) {
-    kprintf("kpool poll is null\n");
+    log_error("kpool poll is null\n");
   }
   return e;
 }

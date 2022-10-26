@@ -4,8 +4,9 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "thread.h"
-#include "loader.h"
+
 #include "fd.h"
+#include "loader.h"
 #include "syscall.h"
 
 thread_t* current_thread[MAX_CPU] = {0};
@@ -23,12 +24,13 @@ void thread_init() { lock_init(&thread_lock); }
 
 thread_t* thread_create_level(void* entry, void* data, u32 level) {
   u32 size = THREAD_STACK_SIZE;
-  thread_t* thread = thread_create_ex(entry, size, data, level, 1,NULL);
+  thread_t* thread = thread_create_ex(entry, size, data, level, 1, NULL);
   return thread;
 }
 
 thread_t* thread_create_name(char* name, void* entry, void* data) {
   thread_t* t = thread_create(entry, data);
+  if (t == NULL) return t;
   t->name = name;
   return t;
 }
@@ -36,6 +38,7 @@ thread_t* thread_create_name(char* name, void* entry, void* data) {
 thread_t* thread_create_name_level(char* name, void* entry, void* data,
                                    u32 level) {
   thread_t* t = thread_create_level(entry, data, level);
+  if (t == NULL) return t;
   t->name = name;
   return t;
 }
@@ -46,7 +49,8 @@ thread_t* thread_create(void* entry, void* data) {
 
 thread_t* thread_create_ex_name(char* name, void* entry, u32 size, void* data,
                                 u32 level, u32 page) {
-  thread_t* t = thread_create_ex(entry, size, data, level, page,NULL);
+  thread_t* t = thread_create_ex(entry, size, data, level, page, NULL);
+  if (t == NULL) return t;
   char* kname = kmalloc(kstrlen(name));
   kstrcpy(kname, name);
   t->name = kname;
@@ -59,69 +63,67 @@ thread_t* thread_create_ex(void* entry, u32 size, void* data, u32 level,
     log_error("thread create ex size is 0\n");
     return NULL;
   }
-  if (recycle_tail_thread != NULL) {
-    thread_t* thread = NULL;
-    if (recycle_tail_thread == recycle_head_thread) {
-      thread = recycle_tail_thread;
-      recycle_head_thread = NULL;
-      recycle_tail_thread = NULL;
-    } else {
-      thread = recycle_head_thread;
-      recycle_head_thread = recycle_head_thread->next;
-    }
 
-    thread->fd_number = 0;
-    thread_fill_fd(thread);
-    thread_init_self(thread, entry, thread->stack0, thread->stack3,
-                     thread->stack_size, thread->level);
-    if (page == 1) {
-      thread->context.page_dir =
-          page_alloc_clone(thread->context.page_dir, level);
-    }
-    return thread;
-  } else {
 #ifdef NO_THREAD_STACK0
-    u8* stack0 = NULL;
+  u8* stack0 = NULL;
 #else
-    u8* stack0 = kmalloc(size);
+  u8* stack0 = kmalloc(size);
 #endif
-    u8* stack3 = kmalloc_alignment(size, PAGE_SIZE);
+  u8* stack3 = kmalloc_alignment(size, PAGE_SIZE);
 
-    thread_t* thread = kmalloc(sizeof(thread_t));
-    thread->lock = 0;
-    thread->data = data;
-    thread->fd_size = 40;
-    thread->fd_number = 0;
-    thread->fds = kmalloc(sizeof(fd_t) * thread->fd_size);
-    thread->stack_size = size;
+  thread_t* thread = kmalloc(sizeof(thread_t));
+  thread->lock = 0;
+  thread->data = data;
+  thread->fd_size = 40;
+  thread->fd_number = 0;
+  thread->fds = kmalloc(sizeof(fd_t) * thread->fd_size);
+  thread->stack_size = size;
 
-    // vfs
-    thread->vfs = kmalloc(sizeof(vfs_t));
-    // file description
-    thread_fill_fd(thread);
+  // vfs
+  thread->vfs = kmalloc(sizeof(vfs_t));
+  // file description
+  thread_fill_fd(thread);
 
-    //vm
-    if(vmm==NULL){
-      u8* vstack3 =NULL;
-      if(level==USER_MODE){
-        vstack3 = STACK_ADDR;
-        map_page_on(thread->context.page_dir,vstack3,stack3);
-      }else{
-        vstack3=stack3;
-      }
-      thread->vmm = vmemory_area_create(HEAP_ADDR, MEMORY_HEAP_SIZE, MEMORY_HEAP);
-      vmemory_area_t* vmexec = vmemory_area_create(EXEC_ADDR, MEMORY_EXEC_SIZE, MEMORY_EXEC);
-      vmemory_area_add(thread->vmm, vmexec);
-      vmemory_area_t* stack = vmemory_area_create(vstack3, THREAD_STACK_SIZE, MEMORY_STACK);
-      vmemory_area_add(thread->vmm, stack);
+  // vm
+  u8* vstack3 = stack3;
+  if (vmm == NULL) {
+    u32 koffset = 0;
+    if (level == USER_MODE) {
+      vstack3 = STACK_ADDR;
+    } else if (level == KERNEL_MODE) {
+      koffset += KERNEL_OFFSET;
+      vstack3 = STACK_ADDR + koffset;
     }
-
-    thread_init_self(thread, entry, stack0, stack3, size, level);
-    if (page == 1) {
-      thread->context.page_dir = page_alloc_clone(thread->context.page_dir,level);
-    }
-    return thread;
+    thread->vmm =
+        vmemory_area_create(HEAP_ADDR + koffset, MEMORY_HEAP_SIZE, MEMORY_HEAP);
+    vmemory_area_t* vmexec =
+        vmemory_area_create(EXEC_ADDR + koffset, MEMORY_EXEC_SIZE, MEMORY_EXEC);
+    vmemory_area_add(thread->vmm, vmexec);
+    vmemory_area_t* stack =
+        vmemory_area_create(vstack3, THREAD_STACK_SIZE, MEMORY_STACK);
+    vmemory_area_add(thread->vmm, stack);
   }
+  // check stack0 and stack3
+  if (stack0 == NULL || stack3 == NULL || vstack3 == NULL) {
+    log_error("create thread failt for stack is null\n");
+    return NULL;
+  }
+  thread_init_self(thread, entry, stack0, vstack3, size, level);
+
+  // init page
+  if (page == 1) {
+    thread->context.page_dir =
+        page_alloc_clone(thread->context.page_dir, level);
+  }
+  if (vmm == NULL) {
+    for (int i = 0; i < (size / PAGE_SIZE + 1); i++) {
+      map_page_on(thread->context.page_dir, vstack3, stack3,PAGE_P | PAGE_USU | PAGE_RWW);
+      vstack3 += PAGE_SIZE;
+      stack3 += PAGE_SIZE;
+    }
+  }
+
+  return thread;
 }
 
 void thread_fill_fd(thread_t* thread) {
@@ -189,9 +191,9 @@ void thread_set_arg(thread_t* thread, void* arg) {
   context_ret(context) = arg;
 }
 
-void thread_set_params(thread_t* thread,void* args,int size){
+void thread_set_params(thread_t* thread, void* args, int size) {
   if (thread == NULL) return;
-  //todo copy 
+  // todo copy
 }
 
 void thread_reset_stack3(thread_t* thread, u32* stack3) {
@@ -283,8 +285,8 @@ void thread_recycle(thread_t* thread) {
     recycle_tail_thread = thread;
   }
   recycle_head_thread_count++;
-  //free page alloc
-  page_free(thread->context.page_dir,thread->level);
+  // free page alloc
+  page_free(thread->context.page_dir, thread->level);
 }
 
 void thread_stop(thread_t* thread) {
@@ -440,7 +442,7 @@ int thread_find_fd_name(thread_t* thread, u8* name) {
   }
   for (int i = 0; i < thread->fd_number; i++) {
     fd_t* fd = thread->fds[i];
-    if (fd&& kstrcmp(name, fd->name) == 0) {
+    if (fd && kstrcmp(name, fd->name) == 0) {
       return i;
     }
   }
@@ -454,8 +456,8 @@ int thread_add_fd(thread_t* thread, fd_t* fd) {
   }
   for (int i = 0; i < thread->fd_number; i++) {
     fd_t* find_fd = thread->fds[i];
-    if(find_fd==NULL){
-      thread->fds[i]=fd;
+    if (find_fd == NULL) {
+      thread->fds[i] = fd;
       return i;
     }
   }
