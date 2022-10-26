@@ -269,13 +269,18 @@ void ahci_dev_port_init(ahci_device_t* ahci_dev, int no) {
 
   stop_cmd(port);  //停止运行 Stop command engine
 
+  int port_size=2;
   // Command list offset: 1K*portno
   // Command list entry size = 32
   // Command list entry maxim count = 32
   // Command list maxim size = 32*32 = 1K per port
   // void* ahci_base = kmalloc(40 * 1024 + 8 * 1024 * 32);
   //申请命令缓冲
-  void* base_cmd = kmalloc_alignment(40 * 1024 + 8 * 1024 * 32, 1024);
+  int cmd_size=40 * 1024 + 8 * 1024 *port_size ;
+  // void* base_cmd = kmalloc(cmd_size);
+  void* base_cmd = kmalloc_alignment(cmd_size, 1024);
+  base_cmd = kvirtual_to_physic(base_cmd,0);
+
   ahci_dev->base_cmd = base_cmd;
   port->clb = base_cmd + (no << 10);
   port->clbu = 0;
@@ -290,7 +295,7 @@ void ahci_dev_port_init(ahci_device_t* ahci_dev, int no) {
   // Command table offset: 40K + 8K*portno
   // Command table size = 256*32 = 8K per port
   hba_cmd_header_t* cmdheader = (hba_cmd_header_t*)(port->clb);
-  for (int i = 0; i < 32; i++) {
+  for (int i = 0; i < port_size; i++) {
     cmdheader[i].prdtl = 8;  // 8 prdt entries per command table
                              // 256 bytes per command table, 64+16+48+16*8
     // Command table offset: 40K + 8K*portno + cmdheader_index*256

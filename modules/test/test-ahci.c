@@ -4,6 +4,7 @@ void test_ahci_port_read() {
   device_t* dev = device_find(DEVICE_SATA);
   if (dev == NULL) {
     log_error("test ahci port failed\n");
+    return;
   }
   ahci_device_t* ahci_dev = dev->data;
   sector_t sector;
@@ -39,6 +40,7 @@ void test_ahci_read() {
   device_t* dev = device_find(DEVICE_SATA);
   if (dev == NULL) {
     log_error("test ahci read failed\n");
+    return;
   }
   ahci_device_t* ahci_dev = dev->data;
   int offset = 0xFFFF000;

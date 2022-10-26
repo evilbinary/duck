@@ -9,6 +9,7 @@ void test_fat_read() {
   device_t* dev = device_find(DEVICE_SATA);
   if (dev == NULL) {
     log_error("test ahci port failed\n");
+    return;
   }
   ahci_device_t* ahci_dev = dev->data;
 
@@ -22,6 +23,7 @@ void test_fat_read() {
   int ret = fat_read_bytes(node, offset, count, buf);
   if (ret < 0) {
     log_error("test fat error %d\n", ret);
+    return;
   }
   for (int i = 0; i < 1024; i++) {
     if (buf[i] != (i % 128)) {
@@ -35,6 +37,7 @@ void test_fat_read_small() {
   device_t* dev = device_find(DEVICE_SATA);
   if (dev == NULL) {
     log_error("test ahci port failed\n");
+    return;
   }
   ahci_device_t* ahci_dev = dev->data;
 
@@ -47,6 +50,7 @@ void test_fat_read_small() {
   int ret = fat_read_bytes(node, offset, READ_BUFFER, buf);
   if (ret < 0) {
     log_error("test fat small error %d\n", ret);
+    return;
   }
   for (int i = 0; i < READ_BUFFER; i++) {
     if (buf[i] != (i % 128)) {
@@ -60,13 +64,19 @@ void test_fat_read_file() {
   vnode_t* node = vfs_find(NULL, "/dev/sda");
   if (node == NULL) {
     log_error("test read file failed\n");
+    return;
   }
   vnode_t* duck = node->op->find(node, "duck.png");
   if (node == NULL) {
     log_error("test read file failed duck not found\n");
+    return;
   }
   int offset = 0x2a0;
   char* buffer = kmalloc(READ_BUFFER);
+  if(duck==NULL){
+    log_error("duck node is null\n");
+    return;
+  }
   int ret = duck->op->read(duck, offset, READ_BUFFER, buffer);
   if (ret <= 0) {
     log_error("read <=0\n");
