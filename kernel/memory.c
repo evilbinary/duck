@@ -54,10 +54,12 @@ void* vm_alloc_alignment(size_t size, int alignment) {
     addr = mm_alloc_zero_align(size, alignment);
     return addr;
   }
-  addr = current->vmm->alloc_addr;
-  u32 page_alignt = alignment - 1;
-  void* new_addr = (u32)addr & (~page_alignt);
-  // void* new_addr = ALIGN((u32)addr, alignment);
+  addr = current->vmm->alloc_addr ;
+  // u32 page_alignt = alignment - 1;
+  // void* new_addr = ((u32)addr+ alignment) & (~page_alignt) ;
+  // void* new_addr = ALIGN( ((u32)addr +alignment), alignment);
+  void* new_addr=addr + alignment;
+  new_addr= ALIGN((u32)new_addr, alignment);
 
   current->vmm->alloc_size += new_addr - addr + size;
   current->vmm->alloc_addr = new_addr + size;

@@ -46,17 +46,9 @@ void page_fault_handle(interrupt_context_t *context) {
                 fault_addr);
       dump_fault(context, fault_addr);
       // mmu_dump_page(current->context.page_dir,current->context.page_dir,0);
-      // thread_exit(current, -1);
-      // cpu_halt();
+      thread_exit(current, -1);
+      cpu_halt();
     }
-    // } else {
-    //   log_info("kernel memory fault at %x\n", fault_addr);
-    //   void *phy =
-    //       virtual_to_physic(current->context.kernel_page_dir, fault_addr);
-    //   if (phy == NULL) {
-    //     valloc(fault_addr, PAGE_SIZE);
-    //   }
-    // }
   } else {
     map_page(fault_addr, fault_addr, PAGE_P | PAGE_USU | PAGE_RWW);
   }
