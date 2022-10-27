@@ -21,6 +21,11 @@
 #define THREAD_SLEEP	5
 #define THREAD_UNINTERRUPTIBLE 15
 
+
+#define PAGE_CLONE 1
+#define PAGE_ALLOC 2
+#define PAGE_SAME 3
+
 #ifndef KERNEL_THREAD_STACK_SIZE
 #define KERNEL_THREAD_STACK_SIZE 1024*2
 #endif
@@ -56,7 +61,6 @@ typedef struct thread {
     u32 *entry;
     u32 stack_size;
     u32 cpu_id;
-    u32 mem_size;
 }thread_t;
 
 

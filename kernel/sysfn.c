@@ -204,8 +204,6 @@ void sys_vfree(void* addr) {
   vfree(addr);
 }
 
-#define PAGE_CLONE 1
-
 u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   int fd = sys_open(filename, 0);
   if (fd < 0) {
@@ -219,17 +217,8 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     return 0;
   }
   sys_close(fd);
-  u8* vstack3 = STACK_ADDR;
   thread_t* t = thread_create_ex_name(filename, (u32*)&run_elf_thread,
-                                      THREAD_STACK_SIZE, NULL, USER_MODE, 0);
-  thread_reset_stack3(t, vstack3);
-  t->context.kernel_page_dir = current->context.kernel_page_dir;
-#ifdef PAGE_CLONE
-  t->context.page_dir = page_alloc_clone(current->context.page_dir, USER_MODE);
-#else
-  t->context.page_dir = current->context.page_dir;
-#endif
-
+                                      THREAD_STACK_SIZE, NULL, USER_MODE, PAGE_ALLOC);                                  
   // init pwd
   vnode_t* node = f->data;
   if (node == NULL) {
@@ -241,16 +230,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   } else {
     t->vfs->pwd = node;
   }
-
-  // init vmm
-  t->vmm = vmemory_area_create(HEAP_ADDR, MEMORY_HEAP_SIZE, MEMORY_HEAP);
-  vmemory_area_t* vmexec =
-      vmemory_area_create(EXEC_ADDR, MEMORY_EXEC_SIZE, MEMORY_EXEC);
-  vmemory_area_add(t->vmm, vmexec);
-  vmemory_area_t* stack =
-      vmemory_area_create(vstack3, THREAD_STACK_SIZE, MEMORY_STACK);
-  vmemory_area_add(t->vmm, stack);
-
+  
   // init data
   int argc = 0;
   while (argv != NULL && argv[argc] != NULL) {
@@ -369,16 +349,16 @@ int sys_brk(int addr) {
     return 0;
   }
   if (addr == 0) {
-    if (vm->vend == vm->vaddr) {
-      vm->vend = vm->vaddr + addr;
+    if (vm->alloc_addr == vm->vaddr) {
+      vm->alloc_addr = vm->vaddr + addr;
     }
-    addr = vm->vend;
+    addr = vm->alloc_addr;
     log_error("sys sbrk return first addr:%x\n", addr);
     return addr;
   }
-  vm->vend = addr;
-  log_debug("sys sbrk return addr:%x\n", vm->vend);
-  return vm->vend;
+  vm->alloc_addr = addr;
+  log_debug("sys sbrk return addr:%x\n", vm->alloc_addr);
+  return vm->alloc_addr;
 }
 
 int sys_readv(int fd, iovec_t* vector, int count) {

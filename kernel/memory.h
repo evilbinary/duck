@@ -41,7 +41,7 @@ typedef struct vmemory_area {
   u32 size;
   u8 flags;
   void* alloc_addr;
-  void* alloc_size;
+  u32 alloc_size;
   struct vmemory_area* next;
 } vmemory_area_t;
 

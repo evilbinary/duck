@@ -33,7 +33,7 @@ void* vm_alloc(size_t size) {
   void* addr = NULL;
   size = ALIGN(size, MEMORY_ALIGMENT);
   thread_t* current = thread_current();
-  if (current == NULL ) {
+  if (current == NULL) {
     //内核启动没有进程，使用内核物理内存
     addr = mm_alloc(size);
     return addr;
@@ -49,20 +49,23 @@ void* vm_alloc_alignment(size_t size, int alignment) {
   size = ALIGN(size, MEMORY_ALIGMENT);
   void* addr = NULL;
   thread_t* current = thread_current();
-  if (current == NULL ) {
+  if (current == NULL) {
     //内核启动没有进程，使用内核物理内存
     addr = mm_alloc_zero_align(size, alignment);
     return addr;
   }
-  addr = current->vmm->alloc_addr ;
+  addr = current->vmm->alloc_addr;
   // u32 page_alignt = alignment - 1;
   // void* new_addr = ((u32)addr+ alignment) & (~page_alignt) ;
   // void* new_addr = ALIGN( ((u32)addr +alignment), alignment);
-  void* new_addr=addr + alignment;
-  new_addr= ALIGN((u32)new_addr, alignment);
+  // void* new_addr=addr + alignment;
+  // new_addr= ALIGN((u32)new_addr, alignment);
 
-  current->vmm->alloc_size += new_addr - addr + size;
-  current->vmm->alloc_addr = new_addr + size;
+  int offset = alignment - 1 + sizeof(void*);
+  void* new_addr = (void**)(((size_t)(addr) + offset) & ~(alignment - 1));
+
+  current->vmm->alloc_size += size + offset;
+  current->vmm->alloc_addr += size + offset;
   return new_addr;
 }
 
@@ -160,10 +163,8 @@ void memory_static(u32 size, int type) {
   thread_t* current = thread_current();
   if (current != NULL) {
     if (type == MEMORY_TYPE_USE) {
-      current->mem_size += size;
       memory_summary.user_used += size;
     } else {
-      current->mem_size -= size;
       memory_summary.user_used -= size;
     }
   } else {
@@ -205,8 +206,8 @@ void* valloc(void* addr, size_t size) {
   void* paddr = phy_addr;
   for (int i = 0; i < size / PAGE_SIZE; i++) {
     if (current != NULL) {
-        map_page_on(current->context.page_dir, vaddr, paddr,
-                    PAGE_P | PAGE_USU | PAGE_RWW);
+      map_page_on(current->context.page_dir, vaddr, paddr,
+                  PAGE_P | PAGE_USU | PAGE_RWW);
     } else {
       map_page(vaddr, paddr, PAGE_P | PAGE_USU | PAGE_RWW);
     }
@@ -214,6 +215,7 @@ void* valloc(void* addr, size_t size) {
     vaddr += PAGE_SIZE;
     paddr += PAGE_SIZE;
   }
+  memory_static(size, MEMORY_TYPE_USE);
   return addr;
 }
 

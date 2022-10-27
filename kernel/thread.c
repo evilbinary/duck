@@ -111,13 +111,32 @@ thread_t* thread_create_ex(void* entry, u32 size, void* data, u32 level,
   thread_init_self(thread, entry, stack0, vstack3, size, level);
 
   // init page
-  if (page == 1) {
-    thread->context.page_dir =
-        page_alloc_clone(thread->context.page_dir, level);
+  thread_t* current = thread_current();
+  if (current != NULL) {
+    thread->context.kernel_page_dir = current->context.kernel_page_dir;
+    thread->context.page_dir = current->context.page_dir;
+
+    u32* page_dir = NULL;
+    if (current->level == KERNEL_MODE) {
+      page_dir = current->context.kernel_page_dir;
+    } else {
+      page_dir = current->context.page_dir;
+    }
+    if (page == PAGE_CLONE) {
+      thread->context.page_dir = page_alloc_clone(page_dir, level);
+    } else if (page == PAGE_ALLOC) {
+      thread->context.page_dir = page_alloc_clone(NULL, level);
+    }
+
+  } else {
+    if (page == PAGE_ALLOC) {
+      thread->context.page_dir = page_alloc_clone(NULL, level);
+    }
   }
   if (vmm == NULL) {
     for (int i = 0; i < (size / PAGE_SIZE + 1); i++) {
-      map_page_on(thread->context.page_dir, vstack3, stack3,PAGE_P | PAGE_USU | PAGE_RWW);
+      map_page_on(thread->context.page_dir, vstack3, stack3,
+                  PAGE_P | PAGE_USU | PAGE_RWW);
       vstack3 += PAGE_SIZE;
       stack3 += PAGE_SIZE;
     }
@@ -522,7 +541,7 @@ void thread_dumps() {
   char* str = "unkown";
   kprintf(
       "id    pid     name                 state     cpu  counter   sleep      "
-      "mem\n");
+      "vmm      nstack    file\n");
   for (int i = 0; i < MAX_CPU; i++) {
     for (thread_t* p = schedulable_head_thread[i]; p != NULL; p = p->next) {
       if (p->state <= THREAD_SLEEP) {
@@ -536,8 +555,10 @@ void thread_dumps() {
       } else {
         kprintf("   ");
       }
-      kprintf("%-8s %4d   %6d  %6d  %6dk\n", str, p->cpu_id, p->counter,
-              p->sleep_counter, p->mem_size / 1024);
+      kprintf("%-8s %4d   %6d  %6d  %6dk  %6dk  %6d\n", str, p->cpu_id, p->counter,
+              p->sleep_counter,
+              p->vmm != NULL ? p->vmm->alloc_size / 1024 : 0, p->stack_size/1024,
+              p->fd_number);
     }
   }
 }

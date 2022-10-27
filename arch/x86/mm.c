@@ -178,12 +178,15 @@ void* virtual_to_physic(u64* page_dir_ptr_tab, void* vaddr) {
 
 void page_clone(u32* old_page, u32* new_page) {
   u64* page = old_page;
+  if(old_page==NULL){
+    return;
+  }
   u64* page_dir_ptr_tab = new_page;
   for (int pdpte_index = 0; pdpte_index < 4; pdpte_index++) {
     u64* page_dir_ptr = page[pdpte_index] & ~0xFFF;
     if (page_dir_ptr != NULL) {
       // kprintf("pdpte_index---->%d\n", pdpte_index);
-      u64* new_page_dir_ptr = kmalloc_alignment(sizeof(u64) * 512, PAGE_SIZE);
+      u64* new_page_dir_ptr = mm_alloc_zero_align(sizeof(u64) * 512, PAGE_SIZE);
       page_dir_ptr_tab[pdpte_index] =
           ((u64)new_page_dir_ptr) | PAGE_P | PAGE_USU | PAGE_RWW;
       for (int pde_index = 0; pde_index < 512; pde_index++) {
@@ -192,7 +195,7 @@ void page_clone(u32* old_page, u32* new_page) {
           // kprintf("pdpte_index---->%d pde_index-> %d\n", pdpte_index,
           //         pde_index);
           u64* new_page_tab_ptr =
-              kmalloc_alignment(sizeof(u64) * 512, PAGE_SIZE);
+              mm_alloc_zero_align(sizeof(u64) * 512, PAGE_SIZE);
           new_page_dir_ptr[pde_index] =
               ((u64)new_page_tab_ptr) | PAGE_P | PAGE_USU | PAGE_RWW;
           for (int pte_index = 0; pte_index < 512; pte_index++) {
@@ -220,7 +223,7 @@ u32* page_alloc_clone(u32* old_page_dir, u32 level) {
     return old_page_dir;
   }
   if (level == USER_MODE) {
-    u32* page_dir_ptr_tab = kmalloc_alignment(sizeof(u64) * 4, 0x1000);
+    u32* page_dir_ptr_tab = mm_alloc_zero_align(sizeof(u64) * 4, 0x1000);
 
     // map 0-0x200000 2GB
     // unsigned int i, address = 0;
@@ -256,7 +259,7 @@ u32* page_alloc_clone(u32* old_page_dir, u32 level) {
     return page_dir_ptr_tab;
   }
   if (level == -1) {
-    u32* page_dir_ptr_tab = kmalloc_alignment(sizeof(u64) * 4, 0x1000);
+    u32* page_dir_ptr_tab = mm_alloc_zero_align(sizeof(u64) * 4, 0x1000);
     page_clone(old_page_dir, page_dir_ptr_tab);
     return page_dir_ptr_tab;
   }

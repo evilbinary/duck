@@ -10,7 +10,7 @@ extern boot_info_t* boot_info;
 
 memory_manager_t mmt;
 
-// #define DEBUG 1
+#define DEBUG 1
 #define MM_YA_ALLOC 1
 
 #ifdef MM_YA_ALLOC
@@ -138,12 +138,13 @@ void* ya_alloc(size_t size) {
   void* addr = ya_block_addr(block);
   kassert(addr != NULL);
   block->no = mmt.alloc_count++;
+  mmt.alloc_size += size;
 
 #ifdef DEBUG
-  kprintf("\nalloc %x size=%d baddr=%x bsize=%d bcount=%d\n", addr, size, block,
-          block->size, block->count);
+  kprintf("alloc %x size=%d count=%d total=%dk  baddr=%x bsize=%d bcount=%d\n",
+          addr, size, mmt.alloc_count,mmt.alloc_size/1024, block, block->size, block->count);
   // ya_verify();
-  kprintf("ya_alloc(%d);//no %d addr %x \n", size, block->no, addr);
+  // kprintf("ya_alloc(%d);//no %d addr %x \n", size, block->no, addr);
 #endif
 
   return addr;
@@ -187,7 +188,7 @@ void ya_free(void* ptr) {
   block_t* block = ya_block_ptr(ptr);
 
 #ifdef DEBUG
-  kprintf("ya_free_no(%d);\n", block->no);
+  // kprintf("ya_free_no(%d);\n", block->no);
   kprintf("free  %x size=%d baddr=%x bsize=%d bcount=%d\n", ptr, block->size,
           block, block->size, block->count);
 #endif
@@ -270,6 +271,7 @@ void mm_init() {
   mmt.g_block_list = NULL;
   mmt.g_block_list_last = NULL;
   mmt.alloc_count = 0;
+  mmt.alloc_size = 0;
 
   count = 0;
 
@@ -334,8 +336,7 @@ ullong mm_get_free() {
   return free;
 }
 
-#else 
-
+#else
 
 mem_block_t* block_alloc_head = NULL;
 mem_block_t* block_alloc_tail = NULL;
@@ -352,13 +353,13 @@ void mm_dump_phy() {
 
 void mm_init() {
   kprintf("mm init\n");
-  mmt.blocks  = NULL;
+  mmt.blocks = NULL;
   block_alloc_head = NULL;
   block_alloc_tail = NULL;
   mmt.blocks_tail = NULL;
   count = 0;
 
-  mmt.blocks=NULL;
+  mmt.blocks = NULL;
 
   kprintf("phy dump\n");
   mm_dump_phy();
@@ -428,7 +429,6 @@ void mm_alloc_init() {
     }
   }
 }
-
 
 #define debug
 
@@ -552,7 +552,7 @@ void mm_dump() {
 }
 
 ullong mm_get_total() {
-  ullong total=0;
+  ullong total = 0;
   mem_block_t* p = mmt.blocks;
   for (; p != NULL; p = p->next) {
     total += p->size;
@@ -573,7 +573,7 @@ ullong mm_get_free() {
 
 size_t mm_get_size(void* addr) {
   if (addr == NULL) return;
-  mem_block_t* block = (mem_block_t*)((u32)addr -  sizeof(mem_block_t));
+  mem_block_t* block = (mem_block_t*)((u32)addr - sizeof(mem_block_t));
   return block->size;
 }
 

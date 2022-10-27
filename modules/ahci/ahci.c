@@ -149,6 +149,10 @@ int ahci_dev_port_read(ahci_device_t* ahci_dev, int no, sector_t sector,
   //   print("\n clb %x clbu %x", port->clb, port->clbu);
   //获取命令列表基地址（高位和低位）
   addr = (((port->clbu) << 32) | port->clb);
+  if(addr ==NULL){
+    log_error("ahci dev port read failed addr is null\n");
+    return -1;
+  }
 
   //转命令指针
   hba_cmd_header_t* cmdheader = (hba_cmd_header_t*)addr;
@@ -278,8 +282,8 @@ void ahci_dev_port_init(ahci_device_t* ahci_dev, int no) {
   //申请命令缓冲
   int cmd_size=40 * 1024 + 8 * 1024 *port_size ;
   // void* base_cmd = kmalloc(cmd_size);
-  // void* base_cmd = kmalloc_alignment(cmd_size, 4096);
-  // base_cmd = kvirtual_to_physic(base_cmd,0);
+  // void* base_cmd = kmalloc_alignment(cmd_size, 1024);
+  // base_cmd = kvirtual_to_physic(base_cmd,cmd_size);
   //todo not use mm alloc
   void* base_cmd =mm_alloc(cmd_size);
 

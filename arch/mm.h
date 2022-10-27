@@ -70,6 +70,7 @@ typedef struct memory_manager {
   block_t* g_block_list;
   block_t* g_block_list_last;
   u32 alloc_count;
+  u32 alloc_size;
 } memory_manager_t;
 
 u32* page_alloc_clone(u32* page_dir, u32 level);
