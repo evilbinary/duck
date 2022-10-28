@@ -10,7 +10,7 @@
 #include "config.h"
 
 #ifdef X86 
-#define EXEC_ADDR  0x70000000
+#define EXEC_ADDR  0x200000
 #define STACK_ADDR 0x80000000
 #define HEAP_ADDR  0x82000000
 

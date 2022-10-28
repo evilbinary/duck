@@ -71,7 +71,6 @@ void* do_schedule(interrupt_context_t* interrupt_context) {
   thread_t* current_thread = thread_current();
   schedule_state(cpu);
   next_thread = schedule_get_next();
-  // kprintf("schedule next %s %d\n",next_thread->name,next_thread->id);
   if (next_thread == NULL) {
     kprintf("schedule error next\n");
     return NULL;

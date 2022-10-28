@@ -217,20 +217,19 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     return 0;
   }
   sys_close(fd);
-  thread_t* t = thread_create_ex_name(filename, (u32*)&run_elf_thread,
-                                      THREAD_STACK_SIZE, NULL, USER_MODE, PAGE_ALLOC);                                  
-  // init pwd
+
+  thread_set_entry(current, (u32*)&run_elf_thread);
   vnode_t* node = f->data;
   if (node == NULL) {
     log_error("sys exec node is null pwd\n");
     return -1;
   }
   if (node->parent != NULL) {
-    t->vfs->pwd = node->parent;
+    current->vfs->pwd = node->parent;
   } else {
-    t->vfs->pwd = node;
+    current->vfs->pwd = node;
   }
-  
+
   // init data
   int argc = 0;
   while (argv != NULL && argv[argc] != NULL) {
@@ -242,15 +241,9 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   data->argv = argv;
   data->argc = argc;
   data->envp = envp;
-  t->exec = data;
-  thread_set_arg(t, data);
-
-  // init fds
-  for (int i = 0; i < 3; i++) {
-    t->fds[i] = current->fds[i];
-  }
-  // thread_dump(t);
-  thread_run(t);
+  current->exec = data;
+  // thread_set_arg(t, data);
+  thread_run(current);
   return 0;
 }
 

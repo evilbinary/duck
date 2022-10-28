@@ -10,7 +10,7 @@ void page_fault_handle(interrupt_context_t *context) {
   thread_t *current = thread_current();
   if (current != NULL) {
     int mode = context_get_mode(&current->context);
-    // kprintf("mode %x\n", mode);
+    log_debug("page fault at %x\n",fault_addr);
     vmemory_area_t *area = vmemory_area_find(current->vmm, fault_addr, 0);
     if (area == NULL) {
       void *phy =

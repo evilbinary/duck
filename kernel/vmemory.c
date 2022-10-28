@@ -52,9 +52,6 @@ void vmemory_area_add(vmemory_area_t* areas, vmemory_area_t* area) {
 vmemory_area_t* vmemory_area_find(vmemory_area_t* areas, void* addr,
                                   size_t size) {
   vmemory_area_t* p = areas;
-  if(addr==0x1fde2000){
-    int a=10;
-  }
   for (; p != NULL; p = p->next) {
     // kprintf("vmemory_area_find addr: %x p->vaddr:%x
     // p->size:%x\n",addr,p->vaddr,p->size);

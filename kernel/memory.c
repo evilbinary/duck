@@ -205,6 +205,7 @@ void* valloc(void* addr, size_t size) {
 #endif
   void* paddr = phy_addr;
   for (int i = 0; i < size / PAGE_SIZE; i++) {
+    log_debug("map vaddr:%x paddr:%x\n", vaddr, paddr);
     if (current != NULL) {
       map_page_on(current->context.page_dir, vaddr, paddr,
                   PAGE_P | PAGE_USU | PAGE_RWW);
@@ -219,7 +220,7 @@ void* valloc(void* addr, size_t size) {
   return addr;
 }
 
-// rease
+// free
 void vfree(void* addr) {
   if (addr == NULL) return;
   thread_t* current = thread_current();

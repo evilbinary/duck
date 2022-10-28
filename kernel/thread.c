@@ -116,14 +116,8 @@ thread_t* thread_create_ex(void* entry, u32 size, void* data, u32 level,
     thread->context.kernel_page_dir = current->context.kernel_page_dir;
     thread->context.page_dir = current->context.page_dir;
 
-    u32* page_dir = NULL;
-    if (current->level == KERNEL_MODE) {
-      page_dir = current->context.kernel_page_dir;
-    } else {
-      page_dir = current->context.page_dir;
-    }
     if (page == PAGE_CLONE) {
-      thread->context.page_dir = page_alloc_clone(page_dir, level);
+      thread->context.page_dir = page_alloc_clone(current->context.page_dir, level);
     } else if (page == PAGE_ALLOC) {
       thread->context.page_dir = page_alloc_clone(NULL, level);
     }
@@ -202,6 +196,11 @@ void thread_init_self(thread_t* thread, void* entry, u32* stack0, u32* stack3,
   thread->cpu_id = cpu_get_id();
   context_init(&thread->context, (u32*)entry, stack0_top, stack3_top, level,
                thread->cpu_id);
+}
+
+void thread_set_entry(thread_t* thread,void* entry){
+  if (thread == NULL) return;
+  context_set_entry(&thread->context,entry);
 }
 
 void thread_set_arg(thread_t* thread, void* arg) {

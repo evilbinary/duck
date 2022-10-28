@@ -178,7 +178,7 @@ void run_elf_thread(void* a) {
   }
   exec_t* exec = current->exec;
   if (exec == NULL) {
-    log_error("get current thread error\n");
+    log_error("get current thread exec error\n");
     return;
   }
   u32 fd = syscall2(SYS_OPEN, exec->filename, 0);
