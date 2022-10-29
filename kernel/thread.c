@@ -417,6 +417,8 @@ thread_t* thread_clone(thread_t* thread, u32 flags) {
   copy->stack3_top = copy_stack3_top;
   copy->stack3 = copy_stack3;
 
+  kmemmove(copy_stack3, thread->stack3, size);
+
   // copy context
   log_debug("copy_stack0: %x copy_stack3: %x \n", copy_stack0, copy_stack3);
   context_clone(&copy->context, &thread->context, copy_stack0_top,
@@ -434,7 +436,7 @@ thread_t* thread_clone(thread_t* thread, u32 flags) {
     copy->fds = kmalloc(sizeof(fd_t) * thread->fd_size);
     kmemmove(copy->fds, thread->fds, sizeof(fd_t) * thread->fd_size);
   } else if (flags == PAGE_ALLOC) {
-    //todo
+    // todo
   }
 
   interrupt_context_t* context = copy->context.esp0;
@@ -533,24 +535,23 @@ void thread_dumps() {
                         "waitting", "sleep",   "unkown"};
   char* str = "unkown";
   kprintf(
-      "id    pid     name                 state     cpu  counter   sleep      "
-      "vmm      nstack    file\n");
+      "id   pid  name       state     cpu  count  sleep   "
+      "vmm    nstack  file\n");
   for (int i = 0; i < MAX_CPU; i++) {
     for (thread_t* p = schedulable_head_thread[i]; p != NULL; p = p->next) {
       if (p->state <= THREAD_SLEEP) {
         str = state_str[p->state];
       }
-      kprintf("%-6d ", p->id);
-      kprintf("%-6d ", p->pid);
+      kprintf("%-4d ", p->id);
+      kprintf("%-4d ", p->pid);
 
       if (p->name != NULL) {
-        kprintf("%-20s ", p->name);
+        kprintf("%-10s ", p->name);
       } else {
         kprintf("   ");
       }
-      kprintf("%-8s %4d   %6d  %6d  %6dk  %6dk  %6d\n", str, p->cpu_id,
-              p->counter, p->sleep_counter,
-              p->vmm != NULL ? p->vmm->alloc_size / 1024 : 0,
+      kprintf("%-8s %4d %6d %6d %4dk %4dk   %4d\n", str, p->cpu_id, p->counter,
+              p->sleep_counter, p->vmm != NULL ? p->vmm->alloc_size / 1024 : 0,
               p->stack_size / 1024, p->fd_number);
     }
   }
