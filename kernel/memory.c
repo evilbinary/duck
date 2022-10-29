@@ -249,6 +249,8 @@ void* kvirtual_to_physic(void* addr, int size) {
       kmemset(addr, 0, size);
       phy = virtual_to_physic(current->context.page_dir, addr);
     }
+  } else {
+    phy = addr;
   }
   return phy;
 }

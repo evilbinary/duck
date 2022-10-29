@@ -73,7 +73,12 @@ size_t fat_read_bytes(vnode_t *node, u32 offset, size_t nbytes, u8 *buf) {
   u32 ret = 0;
   u32 count = nbytes / BYTE_PER_SECTOR;
   u32 rest = nbytes % BYTE_PER_SECTOR;
-  char small_buf[BYTE_PER_SECTOR*2];
+  char vsmall_buf[BYTE_PER_SECTOR*2];
+  char* small_buf=kvirtual_to_physic(vsmall_buf,0);
+  if(small_buf==NULL){
+    small_buf=vsmall_buf;
+  }
+
   for (int i = 0; i < count; i++) {
     kmemset(small_buf, 0, BYTE_PER_SECTOR*2);
     ret = fat_device_read(node, offset, BYTE_PER_SECTOR, small_buf);
@@ -97,7 +102,11 @@ size_t fat_read_bytes(vnode_t *node, u32 offset, size_t nbytes, u8 *buf) {
 size_t fat_write_bytes(vnode_t *node, u32 offset, size_t nbytes, u8 *buf) {
   u32 count = nbytes / BYTE_PER_SECTOR;
   u32 rest = nbytes % BYTE_PER_SECTOR;
-  char small_buf[BYTE_PER_SECTOR * 2];
+  char vsmall_buf[BYTE_PER_SECTOR*2];
+  char* small_buf=kvirtual_to_physic(vsmall_buf,0);
+  if(small_buf==NULL){
+    small_buf=vsmall_buf;
+  }
   u32 ret = 0;
   for (int i = 0; i < count; i++) {
     kmemset(small_buf, 0, BYTE_PER_SECTOR);
@@ -196,8 +205,7 @@ u32 find_file_in_dir(struct fat_fs_struct *fs, struct fat_dir_struct *dd,
                      const char *name, struct fat_dir_entry_struct *dir_entry) {
   while (fat_read_dir(dd, dir_entry)) {
     if (kstrcmp(dir_entry->long_name, name) == 0) {
-      // kprintf("find_file_in_dir %s==%s
-      // attr:%x\n",dir_entry->long_name,name,dir_entry->attributes);
+      // kprintf("find_file_in_dir %s==%s attr:%x\n",dir_entry->long_name,name,dir_entry->attributes);
       fat_reset_dir(dd);
       return 1;
     }
@@ -458,8 +466,6 @@ void fat_init(void) {
   file_info->fs = fs;
   file_info->dd = dd;
   node->data = file_info;
-  // todo why malloc?
-  kmalloc(1024 * 4);
   log_info("fat init end\n");
 }
 

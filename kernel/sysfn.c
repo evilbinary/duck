@@ -217,13 +217,13 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     log_error("read not found fd %d tid %d\n", fd, current->id);
     return 0;
   }
-  sys_close(fd);
   thread_set_entry(current, (u32*)&run_elf_thread);
   vnode_t* node = f->data;
   if (node == NULL) {
     log_error("sys exec node is null pwd\n");
     return -1;
   }
+  sys_close(fd);
   if (node->parent != NULL) {
     current->vfs->pwd = node->parent;
   } else {

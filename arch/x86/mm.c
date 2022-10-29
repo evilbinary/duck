@@ -173,12 +173,15 @@ void* virtual_to_physic(u64* page_dir_ptr_tab, void* vaddr) {
   }
   void* phyaddr = page_tab_ptr[pte_index] & ~0xFFF;
   // kprintf("virtual_to_physic %x\n",phyaddr);
-  return phyaddr;
+  if (phyaddr == NULL) {
+    return NULL;
+  }
+  return phyaddr + offset;
 }
 
 void page_clone(u32* old_page, u32* new_page) {
   u64* page = old_page;
-  if(old_page==NULL){
+  if (old_page == NULL) {
     return;
   }
   u64* page_dir_ptr_tab = new_page;
