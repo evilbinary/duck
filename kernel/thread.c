@@ -419,25 +419,27 @@ thread_t* thread_clone(thread_t* thread, u32 flags) {
 
   kmemmove(copy_stack3, thread->stack3, size);
 
-  // copy context
-  log_debug("copy_stack0: %x copy_stack3: %x \n", copy_stack0, copy_stack3);
-  context_clone(&copy->context, &thread->context, copy_stack0_top,
-                copy_stack3_top, thread->stack0_top, thread_stack3_top);
 
   if (flags == PAGE_CLONE) {
-    // copy vmm
-    copy->vmm = vmemory_clone(thread->vmm);
-    copy->context.page_dir =
-        page_alloc_clone(thread->context.page_dir, thread->level);
-
     // copy files
     copy->fd_size = thread->fd_size;
     copy->fd_number = thread->fd_number;
     copy->fds = kmalloc(sizeof(fd_t) * thread->fd_size);
     kmemmove(copy->fds, thread->fds, sizeof(fd_t) * thread->fd_size);
+
+    // copy vmm
+    copy->vmm = vmemory_clone(thread->vmm);
+    copy->context.page_dir =
+        page_alloc_clone(thread->context.page_dir, thread->level);
+
   } else if (flags == PAGE_ALLOC) {
     // todo
   }
+
+    // copy context
+  log_debug("copy_stack0: %x copy_stack3: %x \n", copy_stack0, copy_stack3);
+  context_clone(&copy->context, &thread->context, copy_stack0_top,
+                copy_stack3_top, thread->stack0_top, thread_stack3_top);
 
   interrupt_context_t* context = copy->context.esp0;
   context_ret(context) = 0;
