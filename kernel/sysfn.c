@@ -196,7 +196,7 @@ void* sys_valloc(void* addr, size_t size) { return valloc(addr, size); }
 
 void* sys_vheap() {
   thread_t* current = thread_current();
-  return current->vmm->vaddr;
+  return current->vmm->alloc_addr;
 }
 
 void sys_vfree(void* addr) {
@@ -211,13 +211,13 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     return -1;
   }
   thread_t* current = thread_current();
+  current->name=filename;
   fd_t* f = thread_find_fd_id(current, fd);
   if (f == NULL) {
     log_error("read not found fd %d tid %d\n", fd, current->id);
     return 0;
   }
   sys_close(fd);
-
   thread_set_entry(current, (u32*)&run_elf_thread);
   vnode_t* node = f->data;
   if (node == NULL) {
@@ -253,7 +253,7 @@ int sys_fork() {
     log_error("current is null\n");
     return -1;
   }
-  thread_t* copy_thread = thread_clone(current, STACK_ADDR, THREAD_STACK_SIZE);
+  thread_t* copy_thread = thread_clone(current,PAGE_SAME);
 
 #ifdef LOG_DEBUG
   log_debug("-------dump current thread %d %s-------------\n", current->id);
@@ -261,9 +261,6 @@ int sys_fork() {
   log_debug("-------dump clone thread %d-------------\n", copy_thread->id);
   thread_dump(copy_thread);
 #endif
-
-  interrupt_context_t* context = copy_thread->context.esp0;
-  context_ret(context) = 0;
 
   thread_run(copy_thread);
   return current->id;
@@ -503,7 +500,7 @@ int sys_clone(void* fn, void* stack, void* arg) {
     log_error("current is null\n");
     return -1;
   }
-  thread_t* copy_thread = thread_clone(current, STACK_ADDR, THREAD_STACK_SIZE);
+  thread_t* copy_thread = thread_clone(current,PAGE_CLONE);
 #ifdef LOG_DEBUG
   kprintf("-------dump current thread %d %s-------------\n", current->id);
   thread_dump(current);

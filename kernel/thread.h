@@ -91,7 +91,7 @@ void thread_exit(thread_t* thread, int code);
 
 void thread_yield();
 thread_t* thread_current();
-thread_t* thread_clone(thread_t* thread, u32* vstack3, u32 size);
+thread_t* thread_clone(thread_t* thread,u32 flags);
 int thread_add_fd(thread_t* thread,fd_t* fd);
 fd_t* thread_find_fd_id(thread_t* thread,u32 fd);
 int thread_find_fd_name(thread_t* thread, u8* name);

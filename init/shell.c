@@ -49,7 +49,17 @@ int do_exec(char* cmd, int count) {
     argv[i++] = ptr;
     ptr = kstrtok(NULL, split);
   }
-  return syscall2(SYS_EXEC, buf, &argv[1]);
+  int pid=syscall0(SYS_FORK);
+  if(pid==0){//子进程
+    syscall2(SYS_EXEC, buf, &argv[1]);
+    int p=syscall0(SYS_GETPID);
+    kprintf("child current p=%d pid=%d\n",p,pid);
+  }else{
+    int p=syscall0(SYS_GETPID);
+    kprintf("parent current p=%d pid=%d\n",p,pid);
+  }
+
+  return pid;
 }
 
 void cd_command(char* cmd, int count) {

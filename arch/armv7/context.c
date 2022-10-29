@@ -150,7 +150,7 @@ void context_clone(context_t* des, context_t* src, u32* stack0, u32* stack3,
     des->esp=stack3;
   }
   des->page_dir =src->page_dir;
-  des->page_dir = page_alloc_clone(src->page_dir);
+  // des->page_dir = page_alloc_clone(src->page_dir);
   des->kernel_page_dir = src->kernel_page_dir;
 #if DEBUG
   kprintf("------context clone dump des--------------\n");

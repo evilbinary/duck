@@ -99,8 +99,7 @@ thread_t* thread_create_ex(void* entry, u32 size, void* data, u32 level,
     vmemory_area_t* vmexec =
         vmemory_area_create(EXEC_ADDR + koffset, MEMORY_EXEC_SIZE, MEMORY_EXEC);
     vmemory_area_add(thread->vmm, vmexec);
-    vmemory_area_t* stack =
-        vmemory_area_create(vstack3, THREAD_STACK_SIZE, MEMORY_STACK);
+    vmemory_area_t* stack = vmemory_area_create(vstack3, size, MEMORY_STACK);
     vmemory_area_add(thread->vmm, stack);
   }
   // check stack0 and stack3
@@ -117,7 +116,8 @@ thread_t* thread_create_ex(void* entry, u32 size, void* data, u32 level,
     thread->context.page_dir = current->context.page_dir;
 
     if (page == PAGE_CLONE) {
-      thread->context.page_dir = page_alloc_clone(current->context.page_dir, level);
+      thread->context.page_dir =
+          page_alloc_clone(current->context.page_dir, level);
     } else if (page == PAGE_ALLOC) {
       thread->context.page_dir = page_alloc_clone(NULL, level);
     }
@@ -198,9 +198,9 @@ void thread_init_self(thread_t* thread, void* entry, u32* stack0, u32* stack3,
                thread->cpu_id);
 }
 
-void thread_set_entry(thread_t* thread,void* entry){
+void thread_set_entry(thread_t* thread, void* entry) {
   if (thread == NULL) return;
-  context_set_entry(&thread->context,entry);
+  context_set_entry(&thread->context, entry);
 }
 
 void thread_set_arg(thread_t* thread, void* arg) {
@@ -378,12 +378,13 @@ context_t* thread_current_context() {
   return &t->context;
 }
 
-thread_t* thread_clone(thread_t* thread, u32* vstack3, u32 size) {
+thread_t* thread_clone(thread_t* thread, u32 flags) {
   if (thread == NULL) {
     return NULL;
   }
   thread_t* copy = kmalloc(sizeof(thread_t));
 
+  kmemcpy(copy, thread, sizeof(thread_t));
   copy->id = thread_ids++;
   copy->next = NULL;
   copy->state = THREAD_CREATE;
@@ -393,58 +394,51 @@ thread_t* thread_clone(thread_t* thread, u32* vstack3, u32 size) {
   copy->data = thread->data;
   copy->pid = thread->id;
   copy->name = thread->name;
+  copy->counter = 0;
+  copy->fault_count = 0;
+  copy->sleep_counter = 0;
 
-  // copy files
-  copy->fd_size = thread->fd_size;
-  copy->fd_number = thread->fd_number;
-  copy->fds = kmalloc(sizeof(fd_t) * thread->fd_size);
-  kmemmove(copy->fds, thread->fds, sizeof(fd_t) * thread->fd_size);
+  int size = thread->stack_size;
 
   // copy stack0
   u8* copy_stack0 = kmalloc(size);
   u8* copy_stack0_top = copy_stack0 + size;
   copy->stack0_top = copy_stack0_top;
   copy->stack0 = copy_stack0;
-  // kmemmove((u32)stack0_top-size, (u32)thread->stack0_top-size, size);
-  // kmemmove(stack0_top, thread->stack0_top, size);
   kmemmove(copy_stack0, thread->stack0, size);
 
+  u8* copy_stack3 = NULL;
+  u8* copy_stack3_top = NULL;
+  u8* thread_stack3_top = thread->stack3_top;
+
   // copy stack3
-  u8* copy_stack3 = kmalloc_alignment(size, PAGE_SIZE);
-  u8* copy_stack3_top = copy_stack3 + size;
+  copy_stack3 = kmalloc_alignment(size, PAGE_SIZE);
+  copy_stack3_top = copy_stack3 + size;
   copy->stack3_top = copy_stack3_top;
   copy->stack3 = copy_stack3;
 
-  u8* thread_stack3_top = thread->stack3_top;
-  if (vstack3 != NULL) {
-    copy->stack3 = vstack3;
-    copy->stack3_top = (u32)vstack3 + size;
-  }
-
-  // use phy copy direct
+  // copy context
   log_debug("copy_stack0: %x copy_stack3: %x \n", copy_stack0, copy_stack3);
   context_clone(&copy->context, &thread->context, copy_stack0_top,
                 copy_stack3_top, thread->stack0_top, thread_stack3_top);
 
-  if (vstack3 != NULL) {
-    // may ref by vmm area
-    u32 offset = 0;
-    for (int i = 0; i < (size / PAGE_SIZE + 1); i++) {
-      u8* p_thread_stack3 = (u8*)thread->stack3 + offset;
-      p_thread_stack3 =
-          virtual_to_physic(thread->context.page_dir, p_thread_stack3);
-      if (p_thread_stack3 == NULL) {
-        log_info("thread stack3 is null\n");
-        continue;
-      }
-      // kprintf("copy_stack3 %x p_thread_stack3 %x thread->stack3
-      // %x\n",copy_stack3,p_thread_stack3,thread->stack3 );
-      kmemmove(copy_stack3 + offset, p_thread_stack3, PAGE_SIZE);
-      map_page_on(copy->context.page_dir, vstack3 + offset,
-                  copy_stack3 + offset, PAGE_P | PAGE_USU | PAGE_RWW);
-      offset += PAGE_SIZE;
-    }
+  if (flags == PAGE_CLONE) {
+    // copy vmm
+    copy->vmm = vmemory_clone(thread->vmm);
+    copy->context.page_dir =
+        page_alloc_clone(thread->context.page_dir, thread->level);
+
+    // copy files
+    copy->fd_size = thread->fd_size;
+    copy->fd_number = thread->fd_number;
+    copy->fds = kmalloc(sizeof(fd_t) * thread->fd_size);
+    kmemmove(copy->fds, thread->fds, sizeof(fd_t) * thread->fd_size);
+  } else if (flags == PAGE_ALLOC) {
+    //todo
   }
+
+  interrupt_context_t* context = copy->context.esp0;
+  context_ret(context) = 0;
 
   return copy;
 }
@@ -554,10 +548,10 @@ void thread_dumps() {
       } else {
         kprintf("   ");
       }
-      kprintf("%-8s %4d   %6d  %6d  %6dk  %6dk  %6d\n", str, p->cpu_id, p->counter,
-              p->sleep_counter,
-              p->vmm != NULL ? p->vmm->alloc_size / 1024 : 0, p->stack_size/1024,
-              p->fd_number);
+      kprintf("%-8s %4d   %6d  %6d  %6dk  %6dk  %6d\n", str, p->cpu_id,
+              p->counter, p->sleep_counter,
+              p->vmm != NULL ? p->vmm->alloc_size / 1024 : 0,
+              p->stack_size / 1024, p->fd_number);
     }
   }
 }

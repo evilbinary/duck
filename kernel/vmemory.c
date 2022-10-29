@@ -5,7 +5,6 @@
  ********************************************************************/
 #include "memory.h"
 
-
 void vmemory_area_free(vmemory_area_t* area) {
   if (area == NULL) return;
   context_t* context = thread_current_context();
@@ -35,7 +34,7 @@ vmemory_area_t* vmemory_area_create(void* addr, u32 size, u8 flags) {
   area->size = size;
   area->next = NULL;
   area->vaddr = addr;
-  area->vend = addr+size;
+  area->vend = addr + size;
   area->alloc_addr = addr;
   area->alloc_size = 0;
   area->flags = flags;
@@ -72,4 +71,25 @@ vmemory_area_t* vmemory_area_find_flag(vmemory_area_t* areas, u32 flags) {
     }
   }
   return NULL;
+}
+
+vmemory_area_t* vmemory_clone(vmemory_area_t* areas) {
+  if (areas == NULL) {
+    return NULL;
+  }
+  vmemory_area_t* new_area = NULL;
+  vmemory_area_t* current = NULL;
+  vmemory_area_t* p = areas;
+  for (; p != NULL; p = p->next) {
+    vmemory_area_t* c = vmemory_area_create(p->vaddr, p->size, p->flags);
+    c->alloc_addr = p->alloc_addr;
+    c->alloc_size = p->alloc_size;
+    if (new_area == NULL) {
+      new_area = c;
+      current = c;
+    } else {
+      current->next = c;
+    }
+  }
+  return new_area;
 }

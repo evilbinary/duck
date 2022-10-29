@@ -11,9 +11,12 @@
 #include "thread.h"
 #include "vfs.h"
 
-// #define LOAD_ELF_DEBUG
+#define LOAD_ELF_DEBUG
 
 int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
+  #ifdef LOAD_ELF_DEBUG
+  log_debug("load elf %d\n",fd);
+  #endif
   u32 offset = elf_header->e_phoff;
   if (elf_header->e_phnum > MAX_PHDR) {
     log_error("phnum %d > MAX_PHDR\n", elf_header->e_phnum);
