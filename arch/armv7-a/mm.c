@@ -13,7 +13,9 @@
 #define PAGE_DIR_NUMBER 4096 * 4
 
 extern boot_info_t* boot_info;
-static u32 page_dir[PAGE_DIR_NUMBER] __attribute__((aligned(0x4000)));
+extern memory_manager_t mmt;
+
+static u32 kernel_page_dir[PAGE_DIR_NUMBER] __attribute__((aligned(0x4000)));
 
 void map_page_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
   u32 l1_index = virtualaddr >> 20;
@@ -33,15 +35,17 @@ void map_page(u32 virtualaddr, u32 physaddr, u32 flags) {
 
 void mm_init_default() {
   mm_test();
-  boot_info->pdt_base = page_dir;
-  kmemset(page_dir, 0, 4096 * 8);
+  boot_info->pdt_base = kernel_page_dir;
+  kmemset(kernel_page_dir, 0, sizeof(PAGE_DIR_NUMBER));
 
   u32 address = 0;
-  kprintf("map %x - %x\n", address, 0x1000 * 1024 * 10);
-  for (int j = 0; j < 1024 * 10; j++) {
+  kprintf("map %x - %x\n", address, 1024 * 1000);
+  for (int j = 0; j < 1000; j++) {
     map_page(address, address, 0);
     address += 0x1000;
   }
+  map_mem_block();
+
   address = boot_info->kernel_entry;
   kprintf("map kernel %x ", address);
   int i;
@@ -91,7 +95,7 @@ void mm_init_default() {
   cpu_set_domain(0x07070707);
   // cpu_set_domain(0xffffffff);
   // cpu_set_domain(0x55555555);
-  cpu_set_page(page_dir);
+  cpu_set_page(kernel_page_dir);
 
   // start_dump();
   kprintf("enable page\n");
@@ -104,10 +108,22 @@ void mm_test() {
   // map_page(0x90000,0x600000,3);
   // u32* addr=mm_alloc(256);
   // *addr=0x123456;
-    // kprintf("===============+>\n");
-    // u32 *p = 0x1c2ac0c;
-    // *p = 1 << 6;
-    // kprintf("p=%x\n", *p);
+  // kprintf("===============+>\n");
+  // u32 *p = 0x1c2ac0c;
+  // *p = 1 << 6;
+  // kprintf("p=%x\n", *p);
+}
+
+void map_mem_block() {
+  mem_block_t* p = mmt.blocks;
+  for (; p != NULL; p = p->next) {
+    u32 address = p->origin_addr;
+    for (int i = 0; i < 1000; i++) {  // map block 400k
+      map_page(address, address, 0);
+      // kprintf("map addr %x %x\n", address, address);
+      address += 0x1000;
+    }
+  }
 }
 
 void* virtual_to_physic(void* page, void* vaddr) {
@@ -115,13 +131,18 @@ void* virtual_to_physic(void* page, void* vaddr) {
   u32* l1 = page;
   u32 l1_index = (u32)vaddr >> 20;
   u32 l2_index = (u32)vaddr >> 12 & 0xFF;
+  u32 offset = (u32)vaddr & 0x0FFF;
+
   u32* l2 = ((u32)l1[l1_index]) & 0xFFFFFC00;
-  if (l2 != NULL) {
-    // kprintf("l2 %x\n",l2);
-    phyaddr = (l2[l2_index] >> 12) << 12;
+  if (l2 == NULL) {
+    return NULL;
+  }
+  phyaddr = (l2[l2_index] >> 12) << 12;
+  if (phyaddr == NULL) {
+    return NULL;
   }
   // kprintf("virtual_to_physic vaddr %x paddr %x\n",vaddr,phyaddr);
-  return phyaddr;
+  return phyaddr + offset;
 }
 
 void page_clone(u32* old_page, u32* new_page) {
