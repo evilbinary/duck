@@ -205,13 +205,13 @@ void sys_vfree(void* addr) {
 }
 
 u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
+  thread_t* current = thread_current();
+  current->name = filename;
   int fd = sys_open(filename, 0);
   if (fd < 0) {
     log_error("sys exec file not found %s\n", filename);
     return -1;
   }
-  thread_t* current = thread_current();
-  current->name=filename;
   fd_t* f = thread_find_fd_id(current, fd);
   if (f == NULL) {
     log_error("read not found fd %d tid %d\n", fd, current->id);
@@ -247,13 +247,56 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   return 0;
 }
 
+int sys_clone(void* fn, void* stack, void* arg) {
+  thread_t* current = thread_current();
+  if (current == NULL) {
+    log_error("current is null\n");
+    return -1;
+  }
+  thread_t* copy_thread = thread_copy(current, PAGE_CLONE | FS_CLONE);
+#ifdef LOG_DEBUG
+  kprintf("-------dump current thread %d %s-------------\n", current->id);
+  thread_dump(current);
+  kprintf("-------dump clone thread %d-------------\n", copy_thread->id);
+  thread_dump(copy_thread);
+#endif
+
+  interrupt_context_t* context = copy_thread->context.esp0;
+  context_ret(context) = 0;
+  context_set_entry(&copy_thread->context, fn);
+
+  thread_run(copy_thread);
+  return copy_thread->id;
+}
+
+int sys_vfork() {
+  thread_t* current = thread_current();
+  if (current == NULL) {
+    log_error("current is null\n");
+    return -1;
+  }
+  thread_t* copy_thread = thread_copy(current, PAGE_SAME);
+
+#ifdef LOG_DEBUG
+  log_debug("-------dump current thread %d %s-------------\n", current->id);
+  thread_dump(current);
+  log_debug("-------dump clone thread %d-------------\n", copy_thread->id);
+  thread_dump(copy_thread);
+#endif
+
+  thread_run(copy_thread);
+  return current->id;
+}
+
+#define LOG_DEBUG 1
+
 int sys_fork() {
   thread_t* current = thread_current();
   if (current == NULL) {
     log_error("current is null\n");
     return -1;
   }
-  thread_t* copy_thread = thread_clone(current,PAGE_SAME);
+  thread_t* copy_thread = thread_copy(current, PAGE_CLONE |VM_CLONE_ALL);
 
 #ifdef LOG_DEBUG
   log_debug("-------dump current thread %d %s-------------\n", current->id);
@@ -492,28 +535,6 @@ int sys_fchdir(int fd) {
     return -1;
   }
   return ret;
-}
-
-int sys_clone(void* fn, void* stack, void* arg) {
-  thread_t* current = thread_current();
-  if (current == NULL) {
-    log_error("current is null\n");
-    return -1;
-  }
-  thread_t* copy_thread = thread_clone(current,PAGE_CLONE);
-#ifdef LOG_DEBUG
-  kprintf("-------dump current thread %d %s-------------\n", current->id);
-  thread_dump(current);
-  kprintf("-------dump clone thread %d-------------\n", copy_thread->id);
-  thread_dump(copy_thread);
-#endif
-
-  interrupt_context_t* context = copy_thread->context.esp0;
-  context_ret(context) = 0;
-  context_set_entry(&copy_thread->context, fn);
-
-  thread_run(copy_thread);
-  return copy_thread->id;
 }
 
 int sys_llseek(int fd, off_t offset_hi, off_t offset_lo, off_t* result,

@@ -23,8 +23,16 @@
 
 
 #define PAGE_CLONE 1
-#define PAGE_ALLOC 2
-#define PAGE_SAME 3
+#define PAGE_ALLOC 1<<2
+#define PAGE_SAME 1<<3
+#define PAGE_COPY_ON_WRITE 1<<4 //copy on write
+#define FS_CLONE 1<<5
+#define STACK_CLONE 1<<6
+#define VM_CLONE_ALL 1<<7
+#define VM_CLONE 1<<8
+#define VM_SAME 1<<9
+
+
 
 #ifndef KERNEL_THREAD_STACK_SIZE
 #define KERNEL_THREAD_STACK_SIZE 1024*2
@@ -91,7 +99,7 @@ void thread_exit(thread_t* thread, int code);
 
 void thread_yield();
 thread_t* thread_current();
-thread_t* thread_clone(thread_t* thread,u32 flags);
+thread_t* thread_copy(thread_t* thread,u32 flags);
 int thread_add_fd(thread_t* thread,fd_t* fd);
 fd_t* thread_find_fd_id(thread_t* thread,u32 fd);
 int thread_find_fd_name(thread_t* thread, u8* name);

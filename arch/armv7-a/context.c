@@ -130,6 +130,16 @@ void context_dump_interrupt(interrupt_context_t* context) {
   kprintf("r12(ip): %x\n", context->r12);
 }
 
+void context_dump_fault(interrupt_context_t *context, u32 fault_addr) {
+  kprintf("----------------------------\n");
+  kprintf("ifsr: %x dfsr: %x dfar: %x\n", read_ifsr(), read_dfsr(),
+          read_dfar());
+  kprintf("pc: %x\n", read_pc());
+  context_dump_interrupt(context);
+  kprintf("fault: 0x%x \n", fault_addr);
+  kprintf("----------------------------\n\n");
+}
+
 void context_clone(context_t* des, context_t* src, u32* stack0, u32* stack3,
                    u32* old0, u32* old3) {
   interrupt_context_t* d0 = stack0;

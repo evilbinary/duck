@@ -7,9 +7,8 @@
 
 extern boot_info_t* boot_info;
 
-
 void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
-                  u32 level,int cpu) {
+                  u32 level, int cpu) {
   if (context == NULL) {
     return;
   }
@@ -27,30 +26,30 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
   } else {
     kprintf("not suppport level %d\n", level);
   }
-  stack0=((u32)stack0)-sizeof(interrupt_context_t);
-  interrupt_context_t* c = stack0;
-  c->ss = ds;          // ss
-  c->esp = stack3;     // esp
-  c->eflags = 0x0200;  // eflags
-  c->cs = cs;          // cs
-  c->eip = entry;      // eip 4
+  stack0 = ((u32)stack0) - sizeof(interrupt_context_t);
+  interrupt_context_t* ic = stack0;
+  ic->ss = ds;          // ss
+  ic->esp = stack3;     // esp
+  ic->eflags = 0x0200;  // eflags
+  ic->cs = cs;          // cs
+  ic->eip = entry;      // eip 4
 
-  c->no = 0;             // no  5
-  c->code = 0;           // no  5
-  c->eax = 0;            // eax 6
-  c->ecx = 0;            // ecx 7
-  c->edx = 0;            // edx 8
-  c->ebx = 0;            // ebx 9
-  c->esp_null = stack0;  // esp 10
-  c->ebp = stack3;       // ebp 11
-  c->esi = 0;            // esi 12
-  c->edi = 0;            // edi 13
-  c->ds = ds;            // ds  14
-  c->es = ds;            // es  15
-  c->fs = ds;            // fs  16
-  c->gs = ds;            // gs    17
+  ic->no = 0;             // no  5
+  ic->code = 0;           // no  5
+  ic->eax = 0;            // eax 6
+  ic->ecx = 0;            // ecx 7
+  ic->edx = 0;            // edx 8
+  ic->ebx = 0;            // ebx 9
+  ic->esp_null = stack0;  // esp 10
+  ic->ebp = stack3;       // ebp 11
+  ic->esi = 0;            // esi 12
+  ic->edi = 0;            // edi 13
+  ic->ds = ds;            // ds  14
+  ic->es = ds;            // es  15
+  ic->fs = ds;            // fs  16
+  ic->gs = ds;            // gs    17
 
-  context->esp0 = c;
+  context->esp0 = ic;
   context->ss0 = GDT_ENTRY_32BIT_DS * GDT_SIZE;
   context->ds0 = GDT_ENTRY_32BIT_DS * GDT_SIZE;
   context->esp = stack3;
@@ -77,11 +76,10 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
 int context_get_mode(context_t* context) {
   int mode = 0;
   if (context != NULL) {
-     return context->level;
+    return context->level;
   }
   return mode;
 }
-
 
 void context_dump(context_t* c) {
   kprintf("eip:     %x\n", c->eip);
@@ -96,65 +94,101 @@ void context_dump(context_t* c) {
   }
 }
 
-void context_dump_interrupt(interrupt_context_t* context) {
+void context_dump_interrupt(interrupt_context_t* ic) {
   u32 cr2, cr3;
-  u32 ds, es, fs, gs;
+  u32 ds, es, fs, gs, cs, ss;
   asm volatile("movl	%%cr2,	%%eax" : "=a"(cr2));
   asm volatile("movl %%cr3,	%%eax" : "=a"(cr3));
   asm volatile("movl %%ds,	%%eax" : "=a"(ds));
   asm volatile("movl %%es,	%%eax" : "=a"(es));
   asm volatile("movl %%fs,	%%eax" : "=a"(fs));
   asm volatile("movl %%gs,	%%eax" : "=a"(gs));
-  kprintf("cs:\t%x\teip:\t%x\teflags:\t%x\n", context->cs, context->eip,
-          context->eflags);
-  kprintf("ss:\t%x\tesp:\t%x\n", context->ss, context->esp);
-  // kprintf("old ss:\t%x\told esp:%x\n", old_ss, old_esp);
-  kprintf("code:%x\tcr2:\t%x\tcr3:\t%x\n", context->no, cr2, cr3);
-  kprintf("General Registers:\n----------------------------\n");
-  kprintf("eax:\t%x\tebx:\t%x\n", context->eax, context->ebx);
-  kprintf("ecx:\t%x\tedx:\t%x\n", context->ecx, context->edx);
-  kprintf("esi:\t%x\tedi:\t%x\tebp:\t%x\n", context->esi, context->edi,
-          context->ebp);
-  kprintf("Segment Registers:\n----------------------------\n");
-  kprintf("ds:\t%x\tes:\t%x\n", ds, es);
-  kprintf("fs:\t%x\tgs:\t%x\n", fs, gs);
+  asm volatile("movl %%cs,	%%eax" : "=a"(cs));
+  asm volatile("movl %%ss,	%%eax" : "=a"(ss));
 
-  if(context->ebp>1000 ){
-  int buf[10]; 
-    stack_frame_t* fp=context->ebp;
-    cpu_backtrace(fp,buf,4);
-    kprintf("backtrace:\n");
-    for(int i=0;i<4;i++){
-      kprintf(" %8x\n",buf[i]);
+  kprintf("--interrupt context segment registers--\n");
+  kprintf("code: %2x eflags: %8x\n", ic->no, ic->eflags);
+  kprintf("cs: %4x eip: %8x \n", ic->cs, ic->eip);
+  kprintf("ss: %4x esp: %8x\n", ic->ss, ic->esp);
+  // kprintf("old ss:\t%x\told esp:%x\n", old_ss, old_esp);
+  kprintf("--interrupt context genernal registers--\n");
+  kprintf("eax: %8x ebx: %8x\n", ic->eax, ic->ebx);
+  kprintf("ecx: %8x edx: %8x\n", ic->ecx, ic->edx);
+  kprintf("esi: %8x edi: %8x\n", ic->esi, ic->edi);
+  kprintf("esp: %8x ebp: %x\n", ic->esp, ic->ebp);
+  kprintf("--segment registers--\n");
+  kprintf("cs: %2x ss: %x\n", cs, ss);
+  kprintf("ds: %2x es: %x\n", ds, es);
+  kprintf("fs: %2x gs: %x\n", fs, gs);
+  kprintf("cr2: %8x cr3: %8x\n", cr2, cr3);
+
+  if (ic->ebp > 1000) {
+    int buf[10];
+    stack_frame_t* fp = ic->ebp;
+    cpu_backtrace(fp, buf, 4);
+    kprintf("--backtrace--\n");
+    for (int i = 0; i < 4; i++) {
+      kprintf(" %8x\n", buf[i]);
     }
   }
 }
 
-void context_clone(context_t* des, context_t* src, u32* stack0, u32* stack3,
-                   u32* old0, u32* old3) {
-  *des = *src;
-  interrupt_context_t* c0 = stack0;
-  interrupt_context_t* s0 = src->esp0;
-  if (stack0 != NULL) {
-    *c0 = *s0;
-    c0->eflags = 0x0200;
+void context_dump_fault(interrupt_context_t* ic, u32 fault_addr) {
+  int present = ic->code & 0x1;  // present
+  int rw = ic->code & 0x2;       // rw
+  int us = ic->code & 0x4;       // user mode
+  int reserved = ic->code & 0x8;
+  int id = ic->code & 0x10;
+  kprintf("--dump page fault--\n");
+  context_dump_interrupt(ic);
+  kprintf("page: [");
+  if (present == 1) {
+    kprintf("present ");
   }
-  if (stack3 != NULL) {
-    des->esp = s0->esp;
+  if (rw) {
+    kprintf("read-only ");
   }
-  des->esp0 = (u32)c0;
+  if (us) {
+    kprintf("user-mode ");
+  }
+  if (reserved) {
+    kprintf("reserved ");
+  }
+  kprintf("]\n");
+  kprintf("fault: 0x%x \n", fault_addr);
+  kprintf("----------------------------\n");
 }
 
-void context_switch(interrupt_context_t* context, context_t** current,
+void context_clone(context_t* des, context_t* src, u32* stack0, u32* stack3,
+                   u32* old0, u32* old3) {
+  //这里重点关注 esp esp0 page_dir 3个变量的复制
+  // not cover page_dir
+  void* page = des->page_dir;
+  *des = *src;
+  des->page_dir = page;
+
+  stack0 = ((u32)stack0) - sizeof(interrupt_context_t);
+
+  interrupt_context_t* ic = stack0;
+  interrupt_context_t* is = src->esp0;
+  if (ic != NULL) {
+    *ic = *is;  // set esp alias stack3 and ip cs ss and so on
+    ic->eflags = 0x0200;
+  }
+  des->esp0 = (u32)ic;  // set esp0 alias stack3
+  des->esp = src->esp;
+}
+
+void context_switch(interrupt_context_t* ic, context_t** current,
                     context_t* next_context) {
   context_t* current_context = *current;
 
-  if (context == NULL) {
-    context = current_context->esp0;
-    context->esp = current_context->esp;
+  if (ic == NULL) {
+    ic = current_context->esp0;
+    ic->esp = current_context->esp;
   } else {
-    current_context->esp0 = context;
-    current_context->esp = context->esp;
+    current_context->esp0 = ic;
+    current_context->esp = ic->esp;
   }
 
   interrupt_context_t* c = next_context->esp0;
@@ -164,7 +198,7 @@ void context_switch(interrupt_context_t* context, context_t** current,
   tss->ss0 = next_context->ss0;
   tss->cr3 = next_context->page_dir;
   *current = next_context;
-  if(next_context->page_dir!=NULL){
+  if (next_context->page_dir != NULL) {
     context_switch_page(next_context->page_dir);
   }
 }

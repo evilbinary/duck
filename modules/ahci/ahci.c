@@ -281,10 +281,10 @@ void ahci_dev_port_init(ahci_device_t* ahci_dev, int no) {
   // void* ahci_base = kmalloc(40 * 1024 + 8 * 1024 * 32);
   //申请命令缓冲
   int cmd_size=40 * 1024 + 8 * 1024 *port_size ;
-  // void* base_cmd = kmalloc(cmd_size);
-  // void* base_cmd = kmalloc_alignment(cmd_size, 1024);
-  // base_cmd = kvirtual_to_physic(base_cmd,cmd_size);
-  //todo not use mm alloc
+
+  //void* base_cmd = kmalloc(cmd_size);
+  //base_cmd = kvirtual_to_physic(base_cmd,cmd_size);
+  //use mm alloc
   void* base_cmd =mm_alloc(cmd_size);
 
   ahci_dev->base_cmd = base_cmd;

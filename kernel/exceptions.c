@@ -288,48 +288,12 @@ void frq_handler() {
 void do_page_fault(interrupt_context_t *context) {
   page_fault_handle(context);
 }
-
-void dump_fault(interrupt_context_t *context, u32 fault_addr) {
-  kprintf("----------------------------\n");
-  kprintf("ifsr: %x dfsr: %x dfar: %x\n", read_ifsr(), read_dfsr(),
-          read_dfar());
-  kprintf("pc: %x\n", read_pc());
-  context_dump_interrupt(context);
-  kprintf("fault: 0x%x \n", fault_addr);
-  kprintf("----------------------------\n\n");
-}
-
 #endif
 
 #elif defined(X86)
 
-void dump_fault(interrupt_context_t *context, u32 fault_addr) {
-  int present = context->code & 0x1;  // present
-  int rw = context->code & 0x2;       // rw
-  int us = context->code & 0x4;       // user mode
-  int reserved = context->code & 0x8;
-  int id = context->code & 0x10;
-  kprintf("----------------------------\n");
-  context_dump_interrupt(context);
-  kprintf("page: [");
-  if (present == 1) {
-    kprintf("present ");
-  }
-  if (rw) {
-    kprintf("read-only ");
-  }
-  if (us) {
-    kprintf("user-mode ");
-  }
-  if (reserved) {
-    kprintf("reserved ");
-  }
-  kprintf("]\n");
-  kprintf("fault: 0x%x \n", fault_addr);
-  kprintf("----------------------------\n");
-}
-void do_page_fault(interrupt_context_t *context) {
-  page_fault_handle(context);
+void do_page_fault(interrupt_context_t *icontext) {
+  page_fault_handle(icontext);
 }
 
 #elif defined(XTENSA)
