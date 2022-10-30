@@ -73,7 +73,7 @@ vmemory_area_t* vmemory_area_find_flag(vmemory_area_t* areas, u32 flags) {
   return NULL;
 }
 
-vmemory_area_t* vmemory_clone(vmemory_area_t* areas) {
+vmemory_area_t* vmemory_clone(vmemory_area_t* areas, int flag) {
   if (areas == NULL) {
     return NULL;
   }
@@ -82,14 +82,29 @@ vmemory_area_t* vmemory_clone(vmemory_area_t* areas) {
   vmemory_area_t* p = areas;
   for (; p != NULL; p = p->next) {
     vmemory_area_t* c = vmemory_area_create(p->vaddr, p->size, p->flags);
-    c->alloc_addr = p->alloc_addr;
-    c->alloc_size = p->alloc_size;
+    if (flag == 1) {
+      c->alloc_addr = p->alloc_addr;
+      c->alloc_size = p->alloc_size;
+    }
     if (new_area == NULL) {
       new_area = c;
       current = c;
     } else {
       current->next = c;
+      current = c;
     }
   }
   return new_area;
+}
+
+vmemory_area_t* vmemory_create_default(u32 vstack3, u32 size, u32 koffset) {
+  vmemory_area_t* vmm =
+      vmemory_area_create(HEAP_ADDR + koffset, MEMORY_HEAP_SIZE, MEMORY_HEAP);
+  vmemory_area_t* vmexec =
+      vmemory_area_create(EXEC_ADDR + koffset, MEMORY_EXEC_SIZE, MEMORY_EXEC);
+  vmemory_area_add(vmm, vmexec);
+  vmemory_area_t* stack =
+      vmemory_area_create(vstack3 + koffset, size, MEMORY_STACK);
+  vmemory_area_add(vmm, stack);
+  return vmm;
 }
