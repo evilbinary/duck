@@ -379,8 +379,8 @@ void thread_recycle(thread_t* thread) {
     recycle_tail_thread = thread;
   }
   recycle_head_thread_count++;
-  // free page alloc
-  page_free(thread->context.page_dir, thread->level);
+  // todo free page alloc
+  // page_free(thread->context.page_dir, thread->level);
 }
 
 void thread_stop(thread_t* thread) {

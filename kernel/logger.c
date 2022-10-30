@@ -23,7 +23,8 @@ void log_default(int tag, const char* message, va_list args) {
   if (current != NULL) {
     tid = current->id;
   }
-  char buf[LOG_MSG_BUF] = {0};
+  char buf[LOG_MSG_BUF];
+  kmemset(buf,0,LOG_MSG_BUF);
   char* tag_msg = (char*)log_level_strings[tag];
   if (log_info_mod.fd < 0) {
     vsprintf(buf, message, args);
@@ -45,7 +46,8 @@ void log_default_color(int tag, const char* message, va_list args) {
   if (current != NULL) {
     tid = current->id;
   }
-  char buf[LOG_MSG_BUF] = {0};
+  char buf[LOG_MSG_BUF];
+  kmemset(buf,0,LOG_MSG_BUF);
   char* tag_msg = (char*)log_level_strings[tag];
   char* tag_color=log_level_color[tag];
 

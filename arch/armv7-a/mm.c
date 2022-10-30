@@ -150,7 +150,7 @@ void page_clone(u32* old_page, u32* new_page) {
   }
 }
 
-u32* page_alloc_clone(u32* kernel_page_dir) {
+u32* page_alloc_clone(u32* kernel_page_dir, u32 level) {
   u32* page_dir_ptr_tab =
       mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, 0x4000);
   page_clone(kernel_page_dir, page_dir_ptr_tab);
