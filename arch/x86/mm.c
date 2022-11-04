@@ -147,7 +147,7 @@ void mm_init_default() {
   kprintf("- 0x%x\n", address);
 
   // map mem block
-  map_mem_block(address, kernel_page_dir_ptr_tab);
+  map_mem_block(address);
 
   if (boot_info->pdt_base != NULL) {
     ulong addr = (ulong)boot_info->pdt_base;
@@ -264,6 +264,10 @@ u32* page_alloc_clone(u32* old_page_dir, u32 level) {
   if (level == -1) {
     u32* page_dir_ptr_tab = mm_alloc_zero_align(sizeof(u64) * 4, 0x1000);
     page_clone(old_page_dir, page_dir_ptr_tab);
+    return page_dir_ptr_tab;
+  }
+  if (level == -2) {
+    u32* page_dir_ptr_tab = mm_alloc_zero_align(sizeof(u64) * 4, 0x1000);
     return page_dir_ptr_tab;
   }
   return NULL;

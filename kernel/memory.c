@@ -30,6 +30,7 @@ memory_t* memory_info() {
 }
 
 void* vm_alloc(size_t size) {
+  if (size == 0) return NULL;
   void* addr = NULL;
   size = ALIGN(size, MEMORY_ALIGMENT);
   thread_t* current = thread_current();

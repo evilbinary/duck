@@ -100,6 +100,7 @@ void use_kernel_page();
 void use_user_page();
 
 void* virtual_to_physic(u64* page_dir_ptr_tab, void* vaddr);
+void* kvirtual_to_physic(void* addr, int size);
 
 void memory_init();
 

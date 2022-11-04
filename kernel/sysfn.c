@@ -253,7 +253,7 @@ int sys_clone(void* fn, void* stack, void* arg) {
     log_error("current is null\n");
     return -1;
   }
-  thread_t* copy_thread = thread_copy(current, PAGE_CLONE | FS_CLONE);
+  thread_t* copy_thread = thread_copy(current, THREAD_FORK);
 #ifdef LOG_DEBUG
   kprintf("-------dump current thread %d %s-------------\n", current->id);
   thread_dump(current);
@@ -261,9 +261,8 @@ int sys_clone(void* fn, void* stack, void* arg) {
   thread_dump(copy_thread);
 #endif
 
-  interrupt_context_t* context = copy_thread->context.esp0;
-  context_ret(context) = 0;
-  context_set_entry(&copy_thread->context, fn);
+  thread_set_ret(copy_thread,0);
+  thread_set_entry(copy_thread, fn);
 
   thread_run(copy_thread);
   return copy_thread->id;
@@ -275,7 +274,7 @@ int sys_vfork() {
     log_error("current is null\n");
     return -1;
   }
-  thread_t* copy_thread = thread_copy(current, PAGE_SAME);
+  thread_t* copy_thread = thread_copy(current, THREAD_VFORK);
 
 #ifdef LOG_DEBUG
   log_debug("-------dump current thread %d %s-------------\n", current->id);
@@ -296,7 +295,8 @@ int sys_fork() {
     log_error("current is null\n");
     return -1;
   }
-  thread_t* copy_thread = thread_copy(current, PAGE_CLONE |VM_CLONE_ALL);
+  thread_t* copy_thread = thread_copy(current, THREAD_FORK);
+  thread_set_ret(copy_thread,0);
 
 #ifdef LOG_DEBUG
   log_debug("-------dump current thread %d %s-------------\n", current->id);

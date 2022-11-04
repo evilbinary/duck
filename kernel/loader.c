@@ -171,6 +171,7 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
 }
 
 void run_elf_thread(void* a) {
+  log_debug("run load elf\n");
   Elf32_Ehdr elf;
   thread_t thread;
   thread_t* current = &thread;
