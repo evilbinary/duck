@@ -106,7 +106,7 @@ void sb16_play(void* buf, size_t len) {
     size_t phys = buf;
     thread_t* current = thread_current();
     if (current != NULL) {
-      phys = virtual_to_physic(current->context.page_dir, buf);  // DMA phy
+      phys = kvirtual_to_physic(buf,len);  // DMA phy
     }
     io_write8(0x83, (phys >> 16) & 0xFF);
     io_write8(0x02, (phys >> 8) & 0xFF);

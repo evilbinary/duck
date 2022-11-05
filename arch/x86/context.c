@@ -57,11 +57,11 @@ void context_init(context_t* context, u32* entry, u32* kstack, u32* ustack,
   context->ds = ds;
 
   ulong addr = (ulong)boot_info->pdt_base;
-  //must not overwrite page_dir
-  if (context->page_dir == NULL) {
-    context->page_dir = addr;
+  // must not overwrite page_dir
+  if (context->upage == NULL) {
+    context->upage = addr;
   }
-  context->kernel_page_dir = addr;
+  context->kpage = addr;
 
   if (tss->eip == 0 && tss->cr3 == 0) {
     tss->ss0 = context->ss0;
@@ -89,8 +89,8 @@ void context_dump(context_t* c) {
   kprintf("ksp:    %x\n", c->ksp);
   kprintf("usp:     %x\n", c->usp);
 
-  kprintf("page_dir: %x\n", c->page_dir);
-  kprintf("kernel page_dir: %x\n", c->kernel_page_dir);
+  kprintf("user page: %x\n", c->upage);
+  kprintf("kernel page: %x\n", c->kpage);
 
   if (c->ksp != 0) {
     context_dump_interrupt(c->ksp);
@@ -169,11 +169,11 @@ void context_clone(context_t* des, context_t* src) {
   interrupt_context_t* is = src->ksp;
 
   // not cover page_dir
-  void* page = des->page_dir;
+  void* page = des->upage;
   *des = *src;
-  des->page_dir = page;
+  des->upage = page;
 
-  ic = ((u32)ic) - sizeof(interrupt_context_t);
+  // ic = ((u32)ic) - sizeof(interrupt_context_t);
 
   if (ic != NULL) {
     *ic = *is;  // set usp alias ustack and ip cs ss and so on
@@ -200,9 +200,9 @@ void context_switch(interrupt_context_t* ic, context_t** current,
   tss_t* tss = next_context->tss;
   tss->esp = next_context->ksp + sizeof(interrupt_context_t);
   tss->ss0 = next_context->ss0;
-  tss->cr3 = next_context->page_dir;
+  tss->cr3 = next_context->upage;
   *current = next_context;
-  if (next_context->page_dir != NULL) {
-    context_switch_page(next_context->page_dir);
+  if (next_context->upage != NULL) {
+    context_switch_page(next_context->upage);
   }
 }

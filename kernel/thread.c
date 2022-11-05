@@ -182,7 +182,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
 
   // page 分配方式
   if (thread != NULL) {
-    copy->context.kernel_page_dir = thread->context.kernel_page_dir;
+    copy->context.kpage = thread->context.kpage;
 
     // 堆栈分配方式
     u32* copy_ustack = NULL;
@@ -219,7 +219,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
 
     if (flags & PAGE_CLONE) {
       //分配页
-      copy->context.page_dir = page_alloc_clone(thread->context.page_dir, thread->level);
+      copy->context.upage = page_alloc_clone(thread->context.upage, thread->level);
       //映射栈
       void* phy = kvirtual_to_physic(copy_ustack, 0);
       thread_map(copy, STACK_ADDR, phy, copy->ustack_size);
@@ -229,16 +229,16 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       thread_map(copy, HEAP_ADDR, phy, copy->vmm->alloc_size);
 
     } else if (flags & PAGE_SAME) {
-      copy->context.page_dir = thread->context.page_dir;
+      copy->context.upage = thread->context.upage;
     } else if (flags & PAGE_ALLOC) {
-      copy->context.page_dir = page_alloc_clone(NULL, copy->level);
+      copy->context.upage = page_alloc_clone(NULL, copy->level);
     } else if (flags & PAGE_COPY_ON_WRITE) {
       // todo check
       u32 pages = thread->vmm->alloc_size / PAGE_SIZE + 1;
       u32 address = thread->vmm->vaddr;
       for (int i = 0; i < pages; i++) {
         void* phy = kvirtual_to_physic(address, 0);
-        map_page_on(copy->context.page_dir, address, phy,
+        map_page_on(copy->context.upage, address, phy,
                     PAGE_P | PAGE_USU | PAGE_RWR);
         address += PAGE_SIZE;
       }
@@ -253,14 +253,14 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       // thread_map(copy, STACK_ADDR + koffset, phy, copy->ustack_size);
       copy->ustack = kmalloc(copy->ustack_size);
       copy->ustack_top = copy->ustack + copy->ustack_size;
-      copy->context.page_dir = page_alloc_clone(NULL, copy->level);
+      copy->context.upage = page_alloc_clone(NULL, copy->level);
     } else if (copy->level == USER_MODE) {
       void* ustack = kmalloc_alignment(copy->ustack_size, PAGE_SIZE);
       void* phy = kvirtual_to_physic(ustack, 0);
       copy->ustack = STACK_ADDR;
       copy->ustack_top = copy->ustack + copy->ustack_size;
       thread_map(copy, STACK_ADDR, phy, copy->ustack_size);
-      copy->context.page_dir = page_alloc_clone(NULL, copy->level);
+      copy->context.upage = page_alloc_clone(NULL, copy->level);
     }
   }
 
@@ -273,7 +273,7 @@ void thread_map(thread_t* thread, u32 virt_addr, u32 phy_addr, u32 size) {
   u32 offset = 0;
   u32 pages = size / PAGE_SIZE + size % PAGE_SIZE == 0 ? 0 : 1;
   for (int i = 0; i < pages; i++) {
-    map_page_on(thread->context.page_dir, virt_addr + offset, phy_addr + offset,
+    map_page_on(thread->context.upage, virt_addr + offset, phy_addr + offset,
                 PAGE_P | PAGE_USU | PAGE_RWW);
     log_debug("thread %d map vaddr: %x - paddr: %x\n", thread->id,
               virt_addr + offset, phy_addr + offset);
@@ -290,7 +290,7 @@ int thread_check(thread_t* thread) {
     log_error("create thread failt for ustack is null\n");
     return -1;
   }
-  if (thread->context.page_dir == NULL) {
+  if (thread->context.upage == NULL) {
     log_error("create thread failt for page dir is null\n");
     return -1;
   }
@@ -361,7 +361,7 @@ void thread_set_params(thread_t* thread, void* args, int size) {
 
 void thread_reset_user_stack(thread_t* thread, u32* ustack) {
   // todo free ustack
-  //  void* phy = virtual_to_physic(thread->context.page_dir, ustack);
+  //  void* phy = virtual_to_physic(thread->context.upage, ustack);
   //  if(phy!=NULL){
   //    kfree(phy);
   //  }else{
@@ -447,7 +447,7 @@ void thread_recycle(thread_t* thread) {
   }
   recycle_head_thread_count++;
   // todo free page alloc
-  // page_free(thread->context.page_dir, thread->level);
+  // page_free(thread->context.upage, thread->level);
 }
 
 void thread_stop(thread_t* thread) {

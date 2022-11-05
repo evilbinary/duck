@@ -43,7 +43,7 @@ void* vm_alloc(size_t size) {
   current->vmm->alloc_addr += size;
   current->vmm->alloc_size += size;
 
-  log_debug("vm alloc page:%x size:%d addr:%x\n", current->context.page_dir,
+  log_debug("vm alloc page:%x size:%d addr:%x\n", current->context.upage,
             size, addr);
   return addr;
 }
@@ -72,7 +72,7 @@ void* vm_alloc_alignment(size_t size, int alignment) {
   current->vmm->alloc_size += new_size;
   current->vmm->alloc_addr += new_size;
 
-  log_debug("vm alloc a page:%x size:%d addr:%x\n", current->context.page_dir,
+  log_debug("vm alloc a page:%x size:%d addr:%x\n", current->context.upage,
             new_size, new_addr);
 
   return new_addr;
@@ -214,10 +214,10 @@ void* valloc(void* addr, size_t size) {
 #endif
   void* paddr = phy_addr;
   for (int i = 0; i < size / PAGE_SIZE; i++) {
-    log_debug("map page:%x vaddr:%x paddr:%x\n", current->context.page_dir,
+    log_debug("map page:%x vaddr:%x paddr:%x\n", current->context.upage,
               vaddr, paddr);
     if (current != NULL) {
-      map_page_on(current->context.page_dir, vaddr, paddr,
+      map_page_on(current->context.upage, vaddr, paddr,
                   PAGE_P | PAGE_USU | PAGE_RWW);
     } else {
       map_page(vaddr, paddr, PAGE_P | PAGE_USU | PAGE_RWW);
@@ -234,9 +234,9 @@ void* valloc(void* addr, size_t size) {
 void vfree(void* addr) {
   if (addr == NULL) return;
   thread_t* current = thread_current();
-  void* phy = virtual_to_physic(current->context.page_dir, addr);
+  void* phy = virtual_to_physic(current->context.upage, addr);
   // kprintf("vfree vaddr:%x paddr:%x\n");
-  // unmap_page_on(current->context.page_dir, addr);
+  // unmap_page_on(current->context.upage, addr);
   if (phy != NULL) {
 #ifdef USE_POOL
     int ret = queue_pool_put(user_pool, phy);
@@ -253,11 +253,11 @@ void* kvirtual_to_physic(void* addr, int size) {
   thread_t* current = thread_current();
   void* phy = NULL;
   if (current != NULL) {
-    phy = virtual_to_physic(current->context.page_dir, addr);
+    phy = virtual_to_physic(current->context.upage, addr);
     if (phy == NULL) {
       log_error("get phy null\n");
       kmemset(addr, 0, size);
-      phy = virtual_to_physic(current->context.page_dir, addr);
+      phy = virtual_to_physic(current->context.upage, addr);
     }
   } else {
     phy = addr;
@@ -316,15 +316,15 @@ void* kpool_poll() {
 void use_kernel_page() {
   context_t* context = thread_current_context();
   if (context != NULL && cpu_cpl() == KERNEL_MODE) {
-    context->tss->cr3 = context->kernel_page_dir;
-    context_switch_page(context->kernel_page_dir);
+    context->tss->cr3 = context->kpage;
+    context_switch_page(context->kpage);
   }
 }
 
 void use_user_page() {
   context_t* context = thread_current_context();
   if (context != NULL && cpu_cpl() == KERNEL_MODE) {
-    context->tss->cr3 = context->page_dir;
-    context_switch_page(context->page_dir);
+    context->tss->cr3 = context->upage;
+    context_switch_page(context->upage);
   }
 }

@@ -11,7 +11,7 @@ void vmemory_area_free(vmemory_area_t* area) {
   u32 vaddr = area->vaddr;
   for (int i = 0; i < area->size / PAGE_SIZE; i++) {
     kfree_alignment(vaddr);
-    map_page_on(context->page_dir, vaddr, vaddr, 0);
+    map_page_on(context->upage, vaddr, vaddr, 0);
     vaddr += PAGE_SIZE;
   }
   area->flags = MEMORY_FREE;

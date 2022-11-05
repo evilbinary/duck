@@ -34,8 +34,8 @@ typedef struct context_t {
   u32 usp, ss, ds;
   u32 eip;
   tss_t* tss;
-  u32* page_dir;
-  u32* kernel_page_dir;
+  u32* upage;
+  u32* kpage;
   u32 level;
   u32 tid;
 } context_t;
