@@ -9,17 +9,6 @@
 #include "arch/boot.h"
 #include "libs/include/types.h"
 
-typedef struct context_t {
-  u32 esp0, ss0, ds0;
-  u32 esp, ss, ds;
-  u32 eip;
-  tss_t* tss;
-  u32* page_dir;
-  u32* kernel_page_dir;
-  u32 level;
-  u32 tid;
-} context_t;
-
 typedef struct interrupt_context {
   // ds
   u32 gs, fs, es, ds;
@@ -38,6 +27,18 @@ typedef struct interrupt_context {
   u32 esp;
   u32 ss;
 } __attribute__((packed)) interrupt_context_t;
+
+typedef struct context_t {
+  interrupt_context_t* ksp;
+  u32 ss0, ds0;
+  u32 usp, ss, ds;
+  u32 eip;
+  tss_t* tss;
+  u32* page_dir;
+  u32* kernel_page_dir;
+  u32 level;
+  u32 tid;
+} context_t;
 
 typedef void (*interrupt_handler_t)(interrupt_context_t* context);
 
@@ -144,14 +145,14 @@ void interrutp_regist(u32 vec, interrupt_handler_t handler);
       "sti\n"                       \
       "iret\n"                      \
       :                             \
-      : "m"(context->esp0))
+      : "m"(context->ksp))
 
 
 #define context_switch_page(page_dir) asm volatile("mov %0, %%cr3" : : "r" (page_dir))
 
 #define context_fn(context) context->eax
 #define context_ret(context) context->eax
-#define context_set_entry(context,entry) ((interrupt_context_t*)((context)->esp0))->eip=entry
+#define context_set_entry(context,entry) ((interrupt_context_t*)((context)->ksp))->eip=entry
 
 
 #define context_restore(duck_context) interrupt_exit_context(duck_context)

@@ -29,7 +29,7 @@ void context_init(context_t* context, u32* entry, u32* kstack, u32* ustack,
   kstack = ((u32)kstack) - sizeof(interrupt_context_t);
   interrupt_context_t* ic = kstack;
   ic->ss = ds;          // ss
-  ic->esp = ustack;     // esp
+  ic->esp = ustack;     // usp
   ic->eflags = 0x0200;  // eflags
   ic->cs = cs;          // cs
   ic->eip = entry;      // eip 4
@@ -40,7 +40,7 @@ void context_init(context_t* context, u32* entry, u32* kstack, u32* ustack,
   ic->ecx = 0;            // ecx 7
   ic->edx = 0;            // edx 8
   ic->ebx = 0;            // ebx 9
-  ic->esp_null = kstack;  // esp 10
+  ic->esp_null = ustack;  // esp 10
   ic->ebp = ustack;       // ebp 11
   ic->esi = 0;            // esi 12
   ic->edi = 0;            // edi 13
@@ -49,10 +49,10 @@ void context_init(context_t* context, u32* entry, u32* kstack, u32* ustack,
   ic->fs = ds;            // fs  16
   ic->gs = ds;            // gs    17
 
-  context->esp0 = ic;
+  context->ksp = ic;
   context->ss0 = GDT_ENTRY_32BIT_DS * GDT_SIZE;
   context->ds0 = GDT_ENTRY_32BIT_DS * GDT_SIZE;
-  context->esp = ustack;
+  context->usp = ustack;
   context->ss = ds;
   context->ds = ds;
 
@@ -65,12 +65,12 @@ void context_init(context_t* context, u32* entry, u32* kstack, u32* ustack,
 
   if (tss->eip == 0 && tss->cr3 == 0) {
     tss->ss0 = context->ss0;
-    tss->esp0 = context->esp0 + sizeof(interrupt_context_t);
+    tss->esp0 = context->ksp + sizeof(interrupt_context_t);
     tss->eip = context->eip;
     tss->ss = ds;
     tss->ds = tss->es = tss->fs = tss->gs = ds;
     tss->cs = cs;
-    tss->esp = context->esp;
+    tss->esp = context->usp;
     tss->cr3 = boot_info->pdt_base;
     set_ldt(GDT_ENTRY_32BIT_TSS * GDT_SIZE);
   }
@@ -86,14 +86,14 @@ int context_get_mode(context_t* context) {
 
 void context_dump(context_t* c) {
   kprintf("eip:     %x\n", c->eip);
-  kprintf("esp0:    %x\n", c->esp0);
-  kprintf("esp:     %x\n", c->esp);
+  kprintf("ksp:    %x\n", c->ksp);
+  kprintf("usp:     %x\n", c->usp);
 
   kprintf("page_dir: %x\n", c->page_dir);
   kprintf("kernel page_dir: %x\n", c->kernel_page_dir);
 
-  if (c->esp0 != 0) {
-    context_dump_interrupt(c->esp0);
+  if (c->ksp != 0) {
+    context_dump_interrupt(c->ksp);
   }
 }
 
@@ -113,7 +113,7 @@ void context_dump_interrupt(interrupt_context_t* ic) {
   kprintf("code: %2x eflags: %8x\n", ic->no, ic->eflags);
   kprintf("cs: %4x eip: %8x \n", ic->cs, ic->eip);
   kprintf("ss: %4x esp: %8x\n", ic->ss, ic->esp);
-  // kprintf("old ss:\t%x\told esp:%x\n", old_ss, old_esp);
+  // kprintf("old ss:\t%x\told usp:%x\n", old_ss, old_usp);
   kprintf("--interrupt context genernal registers--\n");
   kprintf("eax: %8x ebx: %8x\n", ic->eax, ic->ebx);
   kprintf("ecx: %8x edx: %8x\n", ic->ecx, ic->edx);
@@ -163,24 +163,24 @@ void context_dump_fault(interrupt_context_t* ic, u32 fault_addr) {
 }
 
 void context_clone(context_t* des, context_t* src) {
-  //这里重点关注 esp esp0 page_dir 3个变量的复制
-  
-  interrupt_context_t* ic = des->esp0;
-  interrupt_context_t* is = src->esp0;
+  //这里重点关注 usp ksp page_dir 3个变量的复制
+
+  interrupt_context_t* ic = des->ksp;
+  interrupt_context_t* is = src->ksp;
 
   // not cover page_dir
   void* page = des->page_dir;
   *des = *src;
   des->page_dir = page;
 
-  // ic = ((u32)ic) - sizeof(interrupt_context_t);
+  ic = ((u32)ic) - sizeof(interrupt_context_t);
 
   if (ic != NULL) {
-    *ic = *is;  // set esp alias ustack and ip cs ss and so on
+    *ic = *is;  // set usp alias ustack and ip cs ss and so on
     ic->eflags = 0x0200;
   }
-  des->esp0 = (u32)ic;  // set esp0 alias ustack
-  des->esp = src->esp;
+  des->ksp = (u32)ic;  // set ksp alias ustack
+  des->usp = src->usp;
 }
 
 void context_switch(interrupt_context_t* ic, context_t** current,
@@ -188,17 +188,17 @@ void context_switch(interrupt_context_t* ic, context_t** current,
   context_t* current_context = *current;
 
   if (ic == NULL) {
-    ic = current_context->esp0;
-    ic->esp = current_context->esp;
+    ic = current_context->ksp;
+    ic->esp = current_context->usp;
   } else {
-    current_context->esp0 = ic;
-    current_context->esp = ic->esp;
+    current_context->ksp = ic;
+    current_context->usp = ic->esp;
   }
 
-  interrupt_context_t* c = next_context->esp0;
+  interrupt_context_t* c = next_context->ksp;
 
   tss_t* tss = next_context->tss;
-  tss->esp0 = next_context->esp0 + sizeof(interrupt_context_t);
+  tss->esp = next_context->ksp + sizeof(interrupt_context_t);
   tss->ss0 = next_context->ss0;
   tss->cr3 = next_context->page_dir;
   *current = next_context;

@@ -82,7 +82,7 @@ void* do_schedule(interrupt_context_t* interrupt_context) {
   thread_set_current(next_thread);
   timer_ticks[cpu]++;
   timer_end();
-  return c->esp0;
+  return c->ksp;
 }
 
 INTERRUPT_SERVICE

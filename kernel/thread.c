@@ -164,6 +164,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     if (thread != NULL && (flags & STACK_CLONE)) {
       kmemmove(copy->kstack, thread->kstack, thread->kstack_size);
     }
+    copy->context.ksp=copy->kstack_top;
   }
 
   // vmm分配方式
@@ -343,13 +344,13 @@ void thread_set_entry(thread_t* thread, void* entry) {
 
 void thread_set_arg(thread_t* thread, void* arg) {
   if (thread == NULL) return;
-  interrupt_context_t* context = thread->context.esp0;
+  interrupt_context_t* context = thread->context.ksp;
   context_ret(context) = arg;
 }
 
 void thread_set_ret(thread_t* thread, u32 ret) {
   if (thread == NULL) return;
-  interrupt_context_t* context = thread->context.esp0;
+  interrupt_context_t* context = thread->context.ksp;
   context_ret(context) = 0;
 }
 
