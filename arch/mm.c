@@ -110,6 +110,11 @@ block_t* ya_find_free_block(size_t size) {
   block_t* block = mmt.g_block_list;
   block_t* find_block = NULL;
   while (block) {
+    if (!(block->magic == MAGIC_USED || block->magic == MAGIC_FREE)) {
+      log_error("errro find free block,magic error\n");
+      cpu_halt();
+      break;
+    }
     if (block->free == BLOCK_FREE && block->size >= size) {
       find_block = block;
       break;
@@ -142,8 +147,9 @@ void* ya_alloc(size_t size) {
 
 #ifdef DEBUG
   kprintf("alloc %x size=%d count=%d total=%dk  baddr=%x bsize=%d bcount=%d\n",
-          addr, size, mmt.alloc_count,mmt.alloc_size/1024, block, block->size, block->count);
-  // ya_verify();
+          addr, size, mmt.alloc_count, mmt.alloc_size / 1024, block,
+          block->size, block->count);
+  ya_verify();
   // kprintf("ya_alloc(%d);//no %d addr %x \n", size, block->no, addr);
 #endif
 

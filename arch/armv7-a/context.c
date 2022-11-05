@@ -4,6 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "context.h"
+
 #include "cpu.h"
 
 extern boot_info_t* boot_info;
@@ -20,7 +21,7 @@ int context_get_mode(context_t* context) {
 }
 
 void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
-                  u32 level,int cpu) {
+                  u32 level, int cpu) {
   if (context == NULL) {
     return;
   }
@@ -74,7 +75,10 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
 
   ulong addr = (ulong)boot_info->pdt_base;
   context->kernel_page_dir = addr;
-  context->page_dir = addr;
+  //must not overwrite page_dir
+  if (context->page_dir == NULL) {
+    context->page_dir = addr;
+  }
 #ifdef PAGE_CLONE
   context->page_dir = page_alloc_clone(addr);
 #endif
@@ -130,7 +134,7 @@ void context_dump_interrupt(interrupt_context_t* context) {
   kprintf("r12(ip): %x\n", context->r12);
 }
 
-void context_dump_fault(interrupt_context_t *context, u32 fault_addr) {
+void context_dump_fault(interrupt_context_t* context, u32 fault_addr) {
   kprintf("----------------------------\n");
   kprintf("ifsr: %x dfsr: %x dfar: %x\n", read_ifsr(), read_dfsr(),
           read_dfar());
@@ -149,7 +153,7 @@ void context_clone(context_t* des, context_t* src, u32* stack0, u32* stack3,
   context_dump(src);
 #endif
   des->eip = src->eip;
-  des->level= src->level;
+  des->level = src->level;
   if (stack0 != NULL) {
     kmemmove(d0, s0, sizeof(interrupt_context_t));
     des->esp0 = (u32)d0;
@@ -162,14 +166,14 @@ void context_clone(context_t* des, context_t* src, u32* stack0, u32* stack3,
     cpsr.A = 1;
     cpsr.I = 1;
     cpsr.F = 1;
-    cpsr.T =0;
+    cpsr.T = 0;
 
     cpsr.M = 0x13;
     d0->psr = cpsr.val;
-    d0->sp=stack3;
-    des->esp=stack3;
+    d0->sp = stack3;
+    des->esp = stack3;
   }
-  des->page_dir =src->page_dir;
+  des->page_dir = src->page_dir;
   des->page_dir = page_alloc_clone(src->page_dir);
   des->kernel_page_dir = src->kernel_page_dir;
 #if DEBUG

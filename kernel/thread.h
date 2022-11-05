@@ -126,6 +126,5 @@ void thread_run_all();
 void thread_reset_stack3(thread_t* thread, u32* stack3);
 
 void thread_fill_fd(thread_t* thread);
-void thread_init_self(thread_t* thread, void* entry, u32 level);
 
 #endif

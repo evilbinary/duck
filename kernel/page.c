@@ -11,9 +11,6 @@ void page_fault_handle(interrupt_context_t *context) {
   if (current != NULL) {
     int mode = context_get_mode(&current->context);
     log_debug("page fault at %x\n",fault_addr);
-    if(fault_addr == 0x8000000 || fault_addr==0x200000 ||fault_addr<=0x24 ){
-      int i=0;
-    }
     vmemory_area_t *area = vmemory_area_find(current->vmm, fault_addr, 0);
     if (area == NULL) {
       void *phy =
@@ -28,6 +25,7 @@ void page_fault_handle(interrupt_context_t *context) {
           log_error("%s memory fault at %x\n", current->name, fault_addr);
           context_dump_fault(context, fault_addr);
           current->fault_count++;
+          cpu_halt();
         } else if (current->fault_count == 3) {
           log_error("%s memory fault at %x too many\n", current->name,
                     fault_addr);

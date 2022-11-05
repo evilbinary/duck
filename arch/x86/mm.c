@@ -223,41 +223,16 @@ void page_clone(u32* old_page, u32* new_page) {
 
 u32* page_alloc_clone(u32* old_page_dir, u32 level) {
   if (level == KERNEL_MODE) {
-    return old_page_dir;
+    return kernel_page_dir_ptr_tab;
   }
   if (level == USER_MODE) {
     u32* page_dir_ptr_tab = mm_alloc_zero_align(sizeof(u64) * 4, 0x1000);
-
-    // map 0-0x200000 2GB
-    // unsigned int i, address = 0;
-    // kprintf("page alloc clone start 0x%x ", address);
-    // for (i = 0; i < 512; i++) {
-    //   map_page_on(page_dir_ptr_tab, address, address,
-    //               PAGE_P | PAGE_USU | PAGE_RWW);
-    //   address = address + 0x1000;
-    // }
-    // kprintf("- 0x%x\n", address);
-
-    // u32 virtualaddr =
-    //     (3 & 0x03) << 30 | (488 & 0x01FF) << 21 | (0 & 0x01FF) << 12;
-    // address = virtualaddr;
-    // for (i = 0; i < 512; i++) {
-    //   map_page_on(page_dir_ptr_tab, address, address,
-    //               PAGE_P | PAGE_USU | PAGE_RWW);
-    //   address = address + 0x1000;
-    // }
-
-    // address = boot_info->kernel_entry;
-    // kprintf("map kernel %x ", address);
-    // for (i = 0; i < (((u32)boot_info->kernel_size) / 0x1000 + 6); i++) {
-    //   map_page_on(page_dir_ptr_tab, address, address,
-    //               (PAGE_P | PAGE_USU | PAGE_RWW));
-    //   address += 0x1000;
-    // }
-    // kprintf("- 0x%x\n", address);
-
-    // map_mem_block(0x200000, page_dir_ptr_tab);
-
+    for (int i = 0; i < 4; i++) {
+      page_dir_ptr_tab[i] = 0;
+    }
+    if (old_page_dir == NULL) {
+      old_page_dir = kernel_page_dir_ptr_tab;
+    }
     page_clone(old_page_dir, page_dir_ptr_tab);
     return page_dir_ptr_tab;
   }

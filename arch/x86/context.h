@@ -17,6 +17,7 @@ typedef struct context_t {
   u32* page_dir;
   u32* kernel_page_dir;
   u32 level;
+  u32 tid;
 } context_t;
 
 typedef struct interrupt_context {
@@ -154,8 +155,7 @@ void interrutp_regist(u32 vec, interrupt_handler_t handler);
 
 
 #define context_restore(duck_context) interrupt_exit_context(duck_context)
-void context_clone(context_t* context, context_t* src, u32* stack0, u32* stack3,
-                   u32* old0, u32* old3);
+void context_clone(context_t* context, context_t* src);
 void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
                   u32 level,int cpu);
                              

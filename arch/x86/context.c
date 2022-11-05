@@ -26,7 +26,6 @@ void context_init(context_t* context, u32* entry, u32* kstack, u32* ustack,
   } else {
     kprintf("not suppport level %d\n", level);
   }
-  ustack = ustack- 0x100;//resev
   kstack = ((u32)kstack) - sizeof(interrupt_context_t);
   interrupt_context_t* ic = kstack;
   ic->ss = ds;          // ss
@@ -58,7 +57,10 @@ void context_init(context_t* context, u32* entry, u32* kstack, u32* ustack,
   context->ds = ds;
 
   ulong addr = (ulong)boot_info->pdt_base;
-  context->page_dir = addr;
+  //must not overwrite page_dir
+  if (context->page_dir == NULL) {
+    context->page_dir = addr;
+  }
   context->kernel_page_dir = addr;
 
   if (tss->eip == 0 && tss->cr3 == 0) {
@@ -160,18 +162,19 @@ void context_dump_fault(interrupt_context_t* ic, u32 fault_addr) {
   kprintf("----------------------------\n");
 }
 
-void context_clone(context_t* des, context_t* src, u32* kstack, u32* ustack,
-                   u32* old0, u32* old3) {
+void context_clone(context_t* des, context_t* src) {
   //这里重点关注 esp esp0 page_dir 3个变量的复制
+  
+  interrupt_context_t* ic = des->esp0;
+  interrupt_context_t* is = src->esp0;
+
   // not cover page_dir
   void* page = des->page_dir;
   *des = *src;
   des->page_dir = page;
 
-  kstack = ((u32)kstack) - sizeof(interrupt_context_t);
+  // ic = ((u32)ic) - sizeof(interrupt_context_t);
 
-  interrupt_context_t* ic = kstack;
-  interrupt_context_t* is = src->esp0;
   if (ic != NULL) {
     *ic = *is;  // set esp alias ustack and ip cs ss and so on
     ic->eflags = 0x0200;

@@ -59,6 +59,23 @@ thread_t* thread_create_ex_name(char* name, void* entry, u32 size, void* data,
   return t;
 }
 
+void thread_init_default(thread_t* thread, u32 level, u32* entry, void* data) {
+  thread->id = thread_ids++;
+  thread->lock = 0;
+  thread->next = NULL;
+  thread->priority = 1;
+  thread->counter = 0;
+  thread->sleep_counter = 0;
+  thread->state = THREAD_CREATE;
+  thread->level = level;
+  thread->entry = entry;
+  thread->cpu_id = cpu_get_id();
+  thread->context.tid = thread->id;
+  thread->fd_size = 40;
+  thread->fd_number = 0;
+  thread->data = data;
+}
+
 thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
                            void* data, u32 level, u32 flags) {
   if (ustack_size <= 0) {
@@ -66,19 +83,17 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
     return NULL;
   }
   thread_t* thread = kmalloc(sizeof(thread_t));
-  thread->id = thread_ids++;
-  thread->lock = 0;
-  thread->data = data;
-  thread->fd_size = 40;
-  thread->fd_number = 0;
+  thread_init_default(thread, level, entry, data);
+
   thread->fds = kmalloc(sizeof(fd_t) * thread->fd_size);
   thread->ustack_size = ustack_size;
   thread->kstack_size = kstack_size;
+  // must set null before init
   thread->kstack = NULL;
   thread->ustack = NULL;
   thread->kstack_top = NULL;
   thread->ustack_top = NULL;
-  thread->level = level;
+
   // vfs
   thread->vfs = kmalloc(sizeof(vfs_t));
   // file description
@@ -87,7 +102,9 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   // init vm include stack heap exec
   thread_t* current = thread_current();
   thread_init_vm(thread, current, flags);
-  thread_init_self(thread, entry, level);
+
+  context_init(&thread->context, (u32*)thread->entry, thread->kstack_top,
+               thread->ustack_top, thread->level, thread->cpu_id);
   return thread;
 }
 
@@ -98,11 +115,7 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   thread_t* copy = kmalloc(sizeof(thread_t));
 
   kmemmove(copy, thread, sizeof(thread_t));
-  copy->id = thread_ids++;
-  copy->next = NULL;
-  copy->state = THREAD_CREATE;
-  copy->priority = thread->priority;
-  copy->counter = thread->counter;
+  thread_init_default(copy, thread->level, thread->entry, thread->data);
   copy->vmm = thread->vmm;
   copy->data = thread->data;
   copy->pid = thread->id;
@@ -110,11 +123,16 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   copy->counter = 0;
   copy->fault_count = 0;
   copy->sleep_counter = 0;
-  copy->level = USER_MODE;
+
+  // must set
+  copy->kstack = NULL;
+  copy->ustack = NULL;
+  copy->kstack_top = NULL;
+  copy->ustack_top = NULL;
 
   thread_init_vm(copy, thread, flags);
-  thread_init_self(thread, copy->entry, copy->level);
 
+  context_clone(&copy->context, &thread->context);
   return copy;
 }
 
@@ -181,7 +199,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     }
 
     //堆栈分配方式
-    u32 copy_heap = NULL;
+    u32* copy_heap = NULL;
     int heap_size = MEMORY_HEAP_SIZE;
     if (copy->vmm->alloc_size > 0) {
       heap_size = copy->vmm->alloc_size;
@@ -190,17 +208,17 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       heap_size = PAGE_SIZE;
     }
     if (flags & HEAP_ALLOC) {
-      copy_heap = kmalloc(heap_size);
+      copy_heap = kmalloc_alignment(heap_size, PAGE_SIZE);
     } else if (flags & HEAP_SAME) {
       copy_heap = thread->vmm->vaddr;
     } else if (flags & HEAP_CLONE) {
-      copy_heap = kmalloc(heap_size);
+      copy_heap = kmalloc_alignment(heap_size, PAGE_SIZE);
       kmemmove(copy_heap, thread->vmm->vaddr, heap_size);
     }
 
     if (flags & PAGE_CLONE) {
       //分配页
-      copy->context.page_dir = page_alloc_clone(thread->context.page_dir, -2);
+      copy->context.page_dir = page_alloc_clone(thread->context.page_dir, thread->level);
       //映射栈
       void* phy = kvirtual_to_physic(copy_ustack, 0);
       thread_map(copy, STACK_ADDR, phy, copy->ustack_size);
@@ -225,16 +243,23 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       }
     }
   } else {
-    log_debug("kernel start before ustack init\n");
+    log_debug("kernel start before init\n");
     if (copy->level == KERNEL_MODE) {
+      void* ustack = kmalloc_alignment(copy->ustack_size, PAGE_SIZE);
+      void* phy = kvirtual_to_physic(ustack, 0);
+      // copy->ustack = STACK_ADDR + koffset;
+      // copy->ustack_top = copy->ustack + copy->ustack_size;
+      // thread_map(copy, STACK_ADDR + koffset, phy, copy->ustack_size);
       copy->ustack = kmalloc(copy->ustack_size);
       copy->ustack_top = copy->ustack + copy->ustack_size;
+      copy->context.page_dir = page_alloc_clone(NULL, copy->level);
     } else if (copy->level == USER_MODE) {
       void* ustack = kmalloc_alignment(copy->ustack_size, PAGE_SIZE);
       void* phy = kvirtual_to_physic(ustack, 0);
       copy->ustack = STACK_ADDR;
       copy->ustack_top = copy->ustack + copy->ustack_size;
       thread_map(copy, STACK_ADDR, phy, copy->ustack_size);
+      copy->context.page_dir = page_alloc_clone(NULL, copy->level);
     }
   }
 
@@ -311,22 +336,6 @@ void thread_wake(thread_t* thread) {
   schedule_next();
 }
 
-/**
- * 初始化线程信息和上下文信息
- */
-void thread_init_self(thread_t* thread, void* entry, u32 level) {
-  thread->next = NULL;
-  thread->priority = 1;
-  thread->counter = 0;
-  thread->sleep_counter = 0;
-  thread->state = THREAD_CREATE;
-  thread->level = level;
-  thread->entry = entry;
-  thread->cpu_id = cpu_get_id();
-  context_init(&thread->context, (u32*)entry, thread->kstack_top,
-               thread->ustack_top, level, thread->cpu_id);
-}
-
 void thread_set_entry(thread_t* thread, void* entry) {
   if (thread == NULL) return;
   context_set_entry(&thread->context, entry);
@@ -359,7 +368,6 @@ void thread_reset_user_stack(thread_t* thread, u32* ustack) {
   //  }
   thread->ustack = ustack;
   thread->ustack_top = ustack + thread->ustack_size;
-  thread_init_self(thread, thread->entry, thread->level);
 }
 
 void thread_add(thread_t* thread) {
@@ -594,6 +602,28 @@ void thread_dump(thread_t* thread) {
   kprintf("code     %d\n", thread->code);
   kprintf("--context--\n");
   context_dump(&thread->context);
+  kprintf("--kstack--\n");
+  thread_dump_stack(thread->kstack_top, 0x100);
+  kprintf("--ustack--\n");
+  thread_dump_stack(thread->ustack_top, 0x100);
+  kprintf("\n");
+}
+
+void thread_dump_stack(u32* stack, u32 size) {
+  int line_width = 24;
+  int offset = 0;
+  char* buffer = stack;
+  for (int i = 0; i < size; i++) {
+    if (i % line_width == 0) {
+      if (i == 0) {
+        kprintf(" %07x   ", offset);
+      } else {
+        kprintf("\n %07x   ", offset);
+      }
+    }
+    kprintf("%02x ", 0xff & buffer[i]);
+    offset++;
+  }
   kprintf("\n");
 }
 

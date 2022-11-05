@@ -43,10 +43,13 @@ void* vm_alloc(size_t size) {
   current->vmm->alloc_addr += size;
   current->vmm->alloc_size += size;
 
+  log_debug("vm alloc page:%x size:%d addr:%x\n", current->context.page_dir,
+            size, addr);
   return addr;
 }
 
 void* vm_alloc_alignment(size_t size, int alignment) {
+  if (size == 0) return NULL;
   size = ALIGN(size, MEMORY_ALIGMENT);
   void* addr = NULL;
   thread_t* current = thread_current();
@@ -64,9 +67,14 @@ void* vm_alloc_alignment(size_t size, int alignment) {
 
   int offset = alignment - 1 + sizeof(void*);
   void* new_addr = (void**)(((size_t)(addr) + offset) & ~(alignment - 1));
+  int new_size = new_addr - addr + size;
 
-  current->vmm->alloc_size += size + offset;
-  current->vmm->alloc_addr += size + offset;
+  current->vmm->alloc_size += new_size;
+  current->vmm->alloc_addr += new_size;
+
+  log_debug("vm alloc a page:%x size:%d addr:%x\n", current->context.page_dir,
+            new_size, new_addr);
+
   return new_addr;
 }
 
@@ -206,7 +214,8 @@ void* valloc(void* addr, size_t size) {
 #endif
   void* paddr = phy_addr;
   for (int i = 0; i < size / PAGE_SIZE; i++) {
-    log_debug("map vaddr:%x paddr:%x\n", vaddr, paddr);
+    log_debug("map page:%x vaddr:%x paddr:%x\n", current->context.page_dir,
+              vaddr, paddr);
     if (current != NULL) {
       map_page_on(current->context.page_dir, vaddr, paddr,
                   PAGE_P | PAGE_USU | PAGE_RWW);
