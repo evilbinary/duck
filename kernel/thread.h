@@ -38,6 +38,8 @@
 #define HEAP_ALLOC 1 << 14
 #define HEAP_SAME 1 << 15
 
+#define THREAD_DEFAULT (STACK_ALLOC|HEAP_ALLOC|PAGE_CLONE)
+
 #define THREAD_FORK \
   (PAGE_CLONE | VM_CLONE_ALL | FS_CLONE | STACK_CLONE | HEAP_CLONE)
 #define THREAD_CLONE (PAGE_CLONE | FS_CLONE)
@@ -94,7 +96,7 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 size, void* data,
 
 thread_t* thread_create_ex_name(char* name, void* entry, u32 size, void* data,
                                 u32 level, u32 flags);
-void thread_init_vm(thread_t* copy, thread_t* thread, u32 flags);
+int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags);
 
 void thread_sleep(thread_t* thread, u32 count);
 
