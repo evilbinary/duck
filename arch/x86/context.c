@@ -7,7 +7,7 @@
 
 extern boot_info_t* boot_info;
 
-void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
+void context_init(context_t* context, u32* entry, u32* kstack, u32* ustack,
                   u32 level, int cpu) {
   if (context == NULL) {
     return;
@@ -26,10 +26,11 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
   } else {
     kprintf("not suppport level %d\n", level);
   }
-  stack0 = ((u32)stack0) - sizeof(interrupt_context_t);
-  interrupt_context_t* ic = stack0;
+  ustack = ustack- 0x100;//resev
+  kstack = ((u32)kstack) - sizeof(interrupt_context_t);
+  interrupt_context_t* ic = kstack;
   ic->ss = ds;          // ss
-  ic->esp = stack3;     // esp
+  ic->esp = ustack;     // esp
   ic->eflags = 0x0200;  // eflags
   ic->cs = cs;          // cs
   ic->eip = entry;      // eip 4
@@ -40,8 +41,8 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
   ic->ecx = 0;            // ecx 7
   ic->edx = 0;            // edx 8
   ic->ebx = 0;            // ebx 9
-  ic->esp_null = stack0;  // esp 10
-  ic->ebp = stack3;       // ebp 11
+  ic->esp_null = kstack;  // esp 10
+  ic->ebp = ustack;       // ebp 11
   ic->esi = 0;            // esi 12
   ic->edi = 0;            // edi 13
   ic->ds = ds;            // ds  14
@@ -52,7 +53,7 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
   context->esp0 = ic;
   context->ss0 = GDT_ENTRY_32BIT_DS * GDT_SIZE;
   context->ds0 = GDT_ENTRY_32BIT_DS * GDT_SIZE;
-  context->esp = stack3;
+  context->esp = ustack;
   context->ss = ds;
   context->ds = ds;
 
@@ -159,7 +160,7 @@ void context_dump_fault(interrupt_context_t* ic, u32 fault_addr) {
   kprintf("----------------------------\n");
 }
 
-void context_clone(context_t* des, context_t* src, u32* stack0, u32* stack3,
+void context_clone(context_t* des, context_t* src, u32* kstack, u32* ustack,
                    u32* old0, u32* old3) {
   //这里重点关注 esp esp0 page_dir 3个变量的复制
   // not cover page_dir
@@ -167,15 +168,15 @@ void context_clone(context_t* des, context_t* src, u32* stack0, u32* stack3,
   *des = *src;
   des->page_dir = page;
 
-  stack0 = ((u32)stack0) - sizeof(interrupt_context_t);
+  kstack = ((u32)kstack) - sizeof(interrupt_context_t);
 
-  interrupt_context_t* ic = stack0;
+  interrupt_context_t* ic = kstack;
   interrupt_context_t* is = src->esp0;
   if (ic != NULL) {
-    *ic = *is;  // set esp alias stack3 and ip cs ss and so on
+    *ic = *is;  // set esp alias ustack and ip cs ss and so on
     ic->eflags = 0x0200;
   }
-  des->esp0 = (u32)ic;  // set esp0 alias stack3
+  des->esp0 = (u32)ic;  // set esp0 alias ustack
   des->esp = src->esp;
 }
 

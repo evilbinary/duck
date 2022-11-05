@@ -22,8 +22,8 @@
 
 #define SYSCALL_NUMBER 512
 
-#define KERNEL_THREAD_STACK_SIZE 1024*4
-#define THREAD_STACK_SIZE 4096 //4k
+#define KERNEL_THREAD_STACK_SIZE 1024*2  // 2k
+#define THREAD_STACK_SIZE 4096         // 4k
 
 #define PAGE_SIZE 0x1000
 
@@ -42,7 +42,7 @@
 #define SYSCALL_NUMBER 512
 
 #define KERNEL_THREAD_STACK_SIZE 256
-#define THREAD_STACK_SIZE 1024*2
+#define THREAD_STACK_SIZE 1024 * 2
 
 #define PAGE_SIZE THREAD_STACK_SIZE
 
@@ -62,8 +62,8 @@
 
 #define SYSCALL_NUMBER 512
 
-#define KERNEL_THREAD_STACK_SIZE 1024*2
-#define THREAD_STACK_SIZE 4096 //4k
+#define KERNEL_THREAD_STACK_SIZE 1024 * 2
+#define THREAD_STACK_SIZE 4096  // 4k
 #define PAGE_SIZE 0x1000
 
 #endif
@@ -79,10 +79,9 @@
 //打印 sysfn信息
 // #define LOG_DEBUG 0
 
-#define MAX_PATH_BUFFER 256 //最长文件路径
+#define MAX_PATH_BUFFER 256  //最长文件路径
 
-
-#define kdbg kprintf("%s:%d\n",__FILE__,__LINE__)
+#define kdbg kprintf("%s:%d\n", __FILE__, __LINE__)
 #ifdef MALLOC_TRACE
 #define fn_malloc kmalloc_trace
 #define fn_free kfree_trace
@@ -93,7 +92,7 @@
 #endif
 // #define fn_free kfree
 
-#define LOG_COLOR 1 
+#define LOG_COLOR 1
 
 #include "logger.h"
 
