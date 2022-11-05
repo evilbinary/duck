@@ -5,6 +5,7 @@
  ********************************************************************/
 #include "gpio.h"
 #include "serial.h"
+#include "dev/devfs.h"
 
 void serial_write(char a) { uart_send(a); }
 
@@ -56,6 +57,13 @@ int serial_init(void) {
   dev->id = DEVICE_SERIAL;
   dev->type = DEVICE_TYPE_CHAR;
   device_add(dev);
+
+
+  // series
+  vnode_t *series = vfs_create_node("series", V_FILE);
+  vfs_mount(NULL, "/dev", series);
+  series->device = dev;
+  series->op = &device_operator;
 
   // uart_init();
   return 0;

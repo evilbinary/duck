@@ -40,7 +40,7 @@ extern module_t rtc_module;
 extern module_t fat_module;
 extern module_t sb16_module;
 extern module_t test_module;
-
+extern module_t pty_module;
 #elif defined(XTENSA)
 extern module_t hello_module;
 
@@ -66,6 +66,10 @@ void modules_init(void) {
   module_regist(&devfs_module);
 
 #else
+  // require
+  module_regist(&devfs_module);
+
+  // optional module
   module_regist(&serial_module);
   module_regist(&i2c_module);
   module_regist(&gpio_module);
@@ -73,7 +77,6 @@ void modules_init(void) {
   module_regist(&gpu_module);
   module_regist(&mouse_module);
   module_regist(&sdhci_module);
-  module_regist(&devfs_module);
   module_regist(&fat_module);
   // module_regist(&fat32_module);
   // module_regist(&hello_module);
@@ -84,19 +87,23 @@ void modules_init(void) {
   module_regist(&hello_module);
 
 #elif defined(X86)
-  module_regist(&pci_module);
+  // require
+  module_regist(&devfs_module);
+
+  // optional module
   module_regist(&serial_module);
+  module_regist(&pci_module);
   module_regist(&keyboard_module);
   module_regist(&rtc_module);
-  // module_regist(&vga_module);
+  // // module_regist(&vga_module);
   module_regist(&qemu_module);
   module_regist(&mouse_module);
-  module_regist(&ahci_module);
+  module_regist(&pty_module);
   module_regist(&sb16_module);
-  module_regist(&devfs_module);
+
+  module_regist(&ahci_module);
   // module_regist(&fat32_module);
   module_regist(&fat_module);
-
   module_regist(&test_module);
 
 #elif defined(XTENSA)
@@ -105,5 +112,4 @@ void modules_init(void) {
 #else
   module_regist(&hello_module);
 #endif
-
 }

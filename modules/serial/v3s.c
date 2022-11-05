@@ -4,15 +4,11 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "serial.h"
+#include "dev/devfs.h"
 
+void serial_write(char a) { uart_send(a); }
 
-void serial_write(char a) {
-  uart_send(a);
-}
-
-char serial_read() {
-  return uart_receive();
-}
+char serial_read() { return uart_receive(); }
 
 void serial_printf(char* fmt, ...) {
   int i;
@@ -56,6 +52,13 @@ int serial_init(void) {
   device_add(dev);
 
   // uart_init();
+
+  // devfs series
+  vnode_t* series = vfs_create_node("series", V_FILE);
+  vfs_mount(NULL, "/dev", series);
+  series->device = dev;
+  series->op = &device_operator;
+
   return 0;
 }
 

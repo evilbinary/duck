@@ -3,10 +3,7 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
-#include "kernel/device.h"
-#include "kernel/fd.h"
-#include "kernel/module.h"
-#include "kernel/vfs.h"
+#include "devfs.h"
 #include "pty/pty.h"
 
 voperator_t no_rw_operator = {.close = device_close,
@@ -83,71 +80,8 @@ int devfs_init(void) {
     stdout->device = device_find(DEVICE_SERIAL);
   }
   stderr->device = stdout->device;
-
-  // series
-  vnode_t *series = vfs_create_node("series", V_FILE);
-  vfs_mount(NULL, "/dev", series);
-  series->device = device_find(DEVICE_SERIAL);
-
-  series->op = &device_operator;
-
-  // frambuffer
-  device_t *fb_dev = device_find(DEVICE_VGA);
-  if (fb_dev == NULL) {
-    fb_dev = device_find(DEVICE_VGA_QEMU);
-  }
-  if (fb_dev != NULL) {
-    vnode_t *frambuffer = vfs_create_node("fb", V_FILE);
-    vfs_mount(NULL, "/dev", frambuffer);
-    frambuffer->device = fb_dev;
-    frambuffer->op = &device_operator;
-  } else {
-    kprintf("dev fb not found\n");
-  }
-
-  // mouse
-  device_t *mouse_dev = device_find(DEVICE_MOUSE);
-  if (mouse_dev != NULL) {
-    vnode_t *mouse = vfs_create_node("mouse", V_FILE);
-    vfs_mount(NULL, "/dev", mouse);
-    mouse->device = mouse_dev;
-    mouse->op = &device_operator;
-  } else {
-    kprintf("dev mouse not found\n");
-  }
-
-  // time
-  device_t *rtc_dev = device_find(DEVICE_RTC);
-  if (rtc_dev != NULL) {
-    vnode_t *time = vfs_create_node("time", V_FILE);
-    vfs_mount(NULL, "/dev", time);
-    time->device = rtc_dev;
-    time->op = &device_operator;
-  } else {
-    kprintf("dev time not found\n");
-  }
-
-  // pty
-  vnode_t *pts = NULL;
-  vnode_t *ptm = NULL;
-  pty_create(&ptm, &pts);
-  vfs_mount(NULL, "/dev", ptm);
-  vfs_mount(NULL, "/dev", pts);
-
+  
   fd_std_init();
-
-  // dsp
-  vnode_t *dsp = vfs_create_node("dsp", V_FILE | V_BLOCKDEVICE);
-  dsp->device = device_find(DEVICE_SB);
-  dsp->op = &device_operator;
-
-  vfs_mount(NULL, "/dev", dsp);
-
-  // net
-  vnode_t *net = vfs_create_node("net", V_FILE | V_BLOCKDEVICE);
-  net->device = device_find(DEVICE_NET);
-  net->op = &device_operator;
-  vfs_mount(NULL, "/dev", net);
 
   //log
   vnode_t *log = vfs_create_node("log", V_FILE | V_BLOCKDEVICE);

@@ -4,6 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "kernel/kernel.h"
+#include "dev/devfs.h"
 
 int net_init(void) {
   kprintf("net init\n");
@@ -17,6 +18,12 @@ int net_init(void) {
   device_add(dev);
   
   net_init_device(dev);
+
+  // net
+  vnode_t *net = vfs_create_node("net", V_FILE | V_BLOCKDEVICE);
+  net->device = device_find(DEVICE_NET);
+  net->op = &device_operator;
+  vfs_mount(NULL, "/dev", net);
 
   return 0;
 }

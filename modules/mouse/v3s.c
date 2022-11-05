@@ -6,6 +6,7 @@
 #include "i2c/i2c.h"
 #include "kernel/kernel.h"
 #include "mouse.h"
+#include "dev/devfs.h"
 
 #define NS2009_READ_X_LOW_POWER_12BIT 0xc0
 #define NS2009_READ_Y_LOW_POWER_12BIT 0xd0
@@ -121,6 +122,19 @@ int mouse_init(void) {
 
   device_t* i2c_dev = device_find(DEVICE_I2C);
   mouse_device.data = i2c_dev;
+
+
+    // mouse
+  device_t* mouse_dev = device_find(DEVICE_MOUSE);
+  if (mouse_dev != NULL) {
+    vnode_t* mouse = vfs_create_node("mouse", V_FILE);
+    vfs_mount(NULL, "/dev", mouse);
+    mouse->device = mouse_dev;
+    mouse->op = &device_operator;
+  } else {
+    kprintf("dev mouse not found\n");
+  }
+
   return 0;
 }
 

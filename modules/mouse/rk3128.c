@@ -4,7 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "mouse.h"
-
+#include "dev/devfs.h"
 #include "kernel/kernel.h"
 
 mouse_device_t mouse_device;
@@ -68,6 +68,16 @@ int mouse_init(void) {
   //   cqueue_put(mouse_device.events,e);
   // }
 
+  // mouse
+  device_t* mouse_dev = device_find(DEVICE_MOUSE);
+  if (mouse_dev != NULL) {
+    vnode_t* mouse = vfs_create_node("mouse", V_FILE);
+    vfs_mount(NULL, "/dev", mouse);
+    mouse->device = mouse_dev;
+    mouse->op = &device_operator;
+  } else {
+    kprintf("dev mouse not found\n");
+  }
 
   return 0;
 }

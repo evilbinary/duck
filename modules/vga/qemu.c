@@ -3,6 +3,7 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
+#include "dev/devfs.h"
 #include "vga.h"
 
 #define QEMU_VENDOR_ID 0x1234
@@ -50,8 +51,8 @@ u16 qemu_read_reg(u16 index) {
 void qemu_clear_screen(vga_device_t* vga) {}
 
 void qemu_flip_screen(vga_device_t* vga, u32 index) {
-  vga->framebuffer_index=index;
-  qemu_write_reg(VBE_DISPI_INDEX_Y_OFFSET, index*vga->height);
+  vga->framebuffer_index = index;
+  qemu_write_reg(VBE_DISPI_INDEX_Y_OFFSET, index * vga->height);
 }
 
 void qemu_init_mode(pci_device_t* pdev, vga_device_t* vga, int mode) {
@@ -84,13 +85,13 @@ void qemu_init_mode(pci_device_t* pdev, vga_device_t* vga, int mode) {
   qemu_write_reg(VBE_DISPI_INDEX_Y_OFFSET, 0);
   qemu_write_reg(VBE_DISPI_INDEX_ENABLE,
                  VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED);
-  //qemu_write_reg(0, 0x20);
-  //qemu_write_reg(VBE_DISPI_INDEX_ID,VBE_DISPI_ID5);
+  // qemu_write_reg(0, 0x20);
+  // qemu_write_reg(VBE_DISPI_INDEX_ID,VBE_DISPI_ID5);
 
   qemu_clear_screen(vga);
 }
 
-int qemu_init_device(device_t* dev,u32 vendor_id,u32 device_id) {
+int qemu_init_device(device_t* dev, u32 vendor_id, u32 device_id) {
   pci_device_t* pdev = pci_find_vendor_device(vendor_id, device_id);
   if (pdev == NULL) {
     kprintf("can not find pci qemu device\n");
@@ -112,11 +113,10 @@ int qemu_init_device(device_t* dev,u32 vendor_id,u32 device_id) {
   vga->frambuffer = bar0;
   vga->flip_buffer = qemu_flip_screen;
   // qemu_read_reg(VBE_DISPI_INDEX_VIDEO_MEMORY_64K)
-  for (int i = 0; i < size* vga->framebuffer_count / PAGE_SIZE; i++) {
+  for (int i = 0; i < size * vga->framebuffer_count / PAGE_SIZE; i++) {
     map_page(addr, addr, PAGE_P | PAGE_USU | PAGE_RWW);
     addr += PAGE_SIZE;
   }
-  
 
   // #ifdef DOUBLE_BUFFER
   //   vga->frambuffer = bar0 + size * 2;
@@ -144,9 +144,23 @@ int qemu_init(void) {
   dev->type = DEVICE_TYPE_VGA;
   device_add(dev);
 
-  i32 ret=qemu_init_device(dev,QEMU_VENDOR_ID,QEMU_DEVICE_ID);
-  if(ret<0){
-    ret=qemu_init_device(dev,VBOX_VENDOR_ID,VBOX_DEVICE_ID);
+  i32 ret = qemu_init_device(dev, QEMU_VENDOR_ID, QEMU_DEVICE_ID);
+  if (ret < 0) {
+    ret = qemu_init_device(dev, VBOX_VENDOR_ID, VBOX_DEVICE_ID);
+  }
+
+  // frambuffer
+  device_t* fb_dev = device_find(DEVICE_VGA);
+  if (fb_dev == NULL) {
+    fb_dev = device_find(DEVICE_VGA_QEMU);
+  }
+  if (fb_dev != NULL) {
+    vnode_t* frambuffer = vfs_create_node("fb", V_FILE);
+    vfs_mount(NULL, "/dev", frambuffer);
+    frambuffer->device = fb_dev;
+    frambuffer->op = &device_operator;
+  } else {
+    kprintf("dev fb not found\n");
   }
 
   return ret;

@@ -4,6 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "serial.h"
+#include "dev/devfs.h"
 
 static int is_send() { return io_read8(PORT_COM1 + 5) & 0x20; }
 
@@ -68,6 +69,14 @@ int serial_init(void) {
   io_write8(PORT_COM1 + 3, 0x03);
   io_write8(PORT_COM1 + 2, 0xC7);
   io_write8(PORT_COM1 + 4, 0x0B);
+
+
+  // series
+  vnode_t *series = vfs_create_node("series", V_FILE);
+  vfs_mount(NULL, "/dev", series);
+  series->device = dev;
+  series->op = &device_operator;
+
   return 0;
 }
 

@@ -5,6 +5,7 @@
  ********************************************************************/
 #include "dma/dma.h"
 #include "kernel/kernel.h"
+#include "dev/devfs.h"
 
 #define DSP_ADDR_PORT 0x224
 #define DSP_DATA_PORT 0x225
@@ -50,7 +51,6 @@
 // #define SAMPLE_RATE 22050
 #define BUFFER_MS 40
 #define BUFFER_SIZE ((size_t)(SAMPLE_RATE * (BUFFER_MS / 1000.0)))
-
 
 static i16 buffer[BUFFER_SIZE];
 static bool buffer_flip = false;
@@ -101,12 +101,12 @@ void sb16_play(void* buf, size_t len) {
     // DMA channel 1
     io_write8(0x0A, 1 | 4);  // Disable channel 1
     io_write8(0x0C, 1);      // Flip-flop (any value e.g. 1)
-    io_write8(0x0B, 0x49);   // Transfert mode (0x48 for single mode/0x58 for auto
-                        // mode + channel number)
+    io_write8(0x0B, 0x49);   // Transfert mode (0x48 for single mode/0x58 for
+                            // auto mode + channel number)
     size_t phys = buf;
     thread_t* current = thread_current();
     if (current != NULL) {
-      phys = kvirtual_to_physic(buf,len);  // DMA phy
+      phys = kvirtual_to_physic(buf, len);  // DMA phy
     }
     io_write8(0x83, (phys >> 16) & 0xFF);
     io_write8(0x02, (phys >> 8) & 0xFF);
@@ -119,8 +119,8 @@ void sb16_play(void* buf, size_t len) {
 
     io_write8(0xD4, 1 | 4);  // Disable channel 5
     io_write8(0xD8, 1);      // Flip-flop (any value e.g. 1)
-    io_write8(0xD6, 0x49);   // Transfert mode (0x48 for single mode/0x58 for auto
-                        // mode + channel number)
+    io_write8(0xD6, 0x49);   // Transfert mode (0x48 for single mode/0x58 for
+                            // auto mode + channel number)
     size_t phys = mmu_read(buf);  // DMA !
     io_write8(0x8B, (phys >> 16) & 0xFF);
     io_write8(0xC4, (phys >> 8) & 0xFF);
@@ -156,12 +156,12 @@ static size_t write(device_t* dev, void* buf, size_t len) {
 void do_sb16(interrupt_context_t* context) {
   kprintf("sb16 handler\n");
 
-   buffer_flip = !buffer_flip;
-    // fill(
-    //     &buffer[buffer_flip ? 0 : (BUFFER_SIZE / 2)],
-    //     (BUFFER_SIZE / 2)
-    // );
- u16 sample_count = (BUFFER_SIZE / 2) - 1;
+  buffer_flip = !buffer_flip;
+  // fill(
+  //     &buffer[buffer_flip ? 0 : (BUFFER_SIZE / 2)],
+  //     (BUFFER_SIZE / 2)
+  // );
+  u16 sample_count = (BUFFER_SIZE / 2) - 1;
   dsp_write(DSP_PLAY | DSP_PROG_16 | DSP_AUTO_INIT);
   dsp_write(DSP_SIGNED | DSP_MONO);
   dsp_write((u8)((sample_count >> 0) & 0xFF));
@@ -188,13 +188,11 @@ int sb16_init(void) {
   dev->type = DEVICE_TYPE_BLOCK;
   device_add(dev);
 
-
   interrutp_regist(MIXER_IRQ, sb16_handler);
 
-// // set irq
+  // // set irq
   io_write8(DSP_ADDR_PORT, DSP_IRQ);
   io_write8(DSP_DATA_PORT, MIXER_IRQ_DATA);
-
 
   // reset
   dsp_reset();
@@ -203,11 +201,18 @@ int sb16_init(void) {
   u16 sample_count = (BUFFER_SIZE / 2) - 1;
   dsp_write(DSP_PLAY | DSP_PROG_16 | DSP_AUTO_INIT);
   dsp_write(DSP_SIGNED | DSP_MONO);
-  dsp_write((u8) ((sample_count >> 0) & 0xFF));
-  dsp_write((u8) ((sample_count >> 8) & 0xFF));
+  dsp_write((u8)((sample_count >> 0) & 0xFF));
+  dsp_write((u8)((sample_count >> 8) & 0xFF));
 
   dsp_write(DSP_ON);
   dsp_write(DSP_ON_16);
+
+  // dsp
+  vnode_t* dsp = vfs_create_node("dsp", V_FILE | V_BLOCKDEVICE);
+  dsp->device = device_find(DEVICE_SB);
+  dsp->op = &device_operator;
+
+  vfs_mount(NULL, "/dev", dsp);
 
   return 0;
 }

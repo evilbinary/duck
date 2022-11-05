@@ -3,16 +3,15 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
-#include "mouse.h"
-
 #include "kernel/kernel.h"
+#include "mouse.h"
+#include "dev/devfs.h"
 
 mouse_device_t mouse_device;
 mouse_event_t event;
-u32 has_data=0;
+u32 has_data = 0;
 
 static size_t read(device_t* dev, void* buf, size_t len) {
-
   return 0;
   // u32 ret = len;
   // if(has_data<0){
@@ -37,18 +36,11 @@ void mouse_handler() {
   interrupt_exit();
 }
 
-u8 mouse_read() {
-   
-  return 0;
-}
+u8 mouse_read() { return 0; }
 
-void mouse_write(u8 data) {
-  
-}
+void mouse_write(u8 data) {}
 
-void mouse_wait(u8 type) {
-  
-}
+void mouse_wait(u8 type) {}
 
 int mouse_init(void) {
   device_t* dev = kmalloc(sizeof(device_t));
@@ -68,13 +60,23 @@ int mouse_init(void) {
   //   cqueue_put(mouse_device.events,e);
   // }
 
+  // mouse
+  device_t* mouse_dev = device_find(DEVICE_MOUSE);
+  if (mouse_dev != NULL) {
+    vnode_t* mouse = vfs_create_node("mouse", V_FILE);
+    vfs_mount(NULL, "/dev", mouse);
+    mouse->device = mouse_dev;
+    mouse->op = &device_operator;
+  } else {
+    kprintf("dev mouse not found\n");
+  }
 
   return 0;
 }
 
 void do_mouse(interrupt_context_t* context) {
   u32 read_count = 0;
-  u8 state = 0; 
+  u8 state = 0;
 }
 
 void mouse_exit(void) { kprintf("mouse exit\n"); }

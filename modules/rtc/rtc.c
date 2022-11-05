@@ -4,7 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "rtc.h"
-
+#include "dev/devfs.h"
 #include "kernel/kernel.h"
 
 rtc_time_t rtc_time;
@@ -90,6 +90,18 @@ int rtc_init(void) {
   dev->data = &rtc_time;
 
   device_add(dev);
+
+  // time
+  device_t* rtc_dev = device_find(DEVICE_RTC);
+  if (rtc_dev != NULL) {
+    vnode_t* time = vfs_create_node("time", V_FILE);
+    vfs_mount(NULL, "/dev", time);
+    time->device = rtc_dev;
+    time->op = &device_operator;
+  } else {
+    kprintf("dev time not found\n");
+  }
+
   return 0;
 }
 

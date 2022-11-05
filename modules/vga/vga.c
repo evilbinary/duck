@@ -4,7 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "vga.h"
-
+#include "dev/devfs.h"
 #include "dma/dma.h"
 
 size_t vga_read(device_t* dev, void* buf, size_t len) {
@@ -39,15 +39,14 @@ size_t vga_ioctl(device_t* dev, u32 cmd, void* args) {
   } else if (cmd == IOC_READ_FRAMBUFFER_BPP) {
     ret = vga->bpp;
   } else if (cmd == IOC_FLUSH_FRAMBUFFER) {
-    if (vga->frambuffer != NULL&&vga->flip_buffer!=NULL) {
-      u32 offset=(u32*)args;
-      vga->flip_buffer(vga,offset%vga->framebuffer_count);
+    if (vga->frambuffer != NULL && vga->flip_buffer != NULL) {
+      u32 offset = (u32*)args;
+      vga->flip_buffer(vga, offset % vga->framebuffer_count);
     }
-  }
-  else if (cmd == IOC_READ_FRAMBUFFER_INFO) {
-   vga_device_t* buffer_info=(u32*)args;
-   u32 size=(u32*)args;
-   *buffer_info=*vga;
+  } else if (cmd == IOC_READ_FRAMBUFFER_INFO) {
+    vga_device_t* buffer_info = (u32*)args;
+    u32 size = (u32*)args;
+    *buffer_info = *vga;
   }
   return ret;
 }
@@ -89,6 +88,21 @@ int vga_init(void) {
   device_add(dev);
 
   vga_init_device(dev);
+
+  // frambuffer
+  device_t* fb_dev = device_find(DEVICE_VGA);
+  if (fb_dev == NULL) {
+    fb_dev = device_find(DEVICE_VGA_QEMU);
+  }
+  if (fb_dev != NULL) {
+    vnode_t* frambuffer = vfs_create_node("fb", V_FILE);
+    vfs_mount(NULL, "/dev", frambuffer);
+    frambuffer->device = fb_dev;
+    frambuffer->op = &device_operator;
+  } else {
+    kprintf("dev fb not found\n");
+  }
+
   return 0;
 }
 

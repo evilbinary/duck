@@ -1,4 +1,5 @@
 #include "pty.h"
+
 #include "kernel/rw_queue.h"
 
 voperator_t pty_master_operator = {.close = NULL,
@@ -135,7 +136,7 @@ int pty_slave_add(vnode_t *pts) {
   sprintf(buf, "%d", i);
   vnode_t *child = vfs_create_node(buf, V_FILE);
   child->device = pts->device;
-  child->op=&pty_slave_operator;
+  child->op = &pty_slave_operator;
   vfs_add_child(pts, child);
   return i;
 }
@@ -172,3 +173,17 @@ int pty_create(vnode_t **ptm, vnode_t **pts) {
 
   return 1;
 }
+
+int pty_init(void) {
+  // pty
+  vnode_t *pts = NULL;
+  vnode_t *ptm = NULL;
+  pty_create(&ptm, &pts);
+  vfs_mount(NULL, "/dev", ptm);
+  vfs_mount(NULL, "/dev", pts);
+  return 0;
+}
+
+void pty_exit(void) { kprintf("pty exit\n"); }
+
+module_t pty_module = {.name = "pty", .init = pty_init, .exit = pty_exit};
