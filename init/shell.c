@@ -49,14 +49,14 @@ int do_exec(char* cmd, int count) {
     argv[i++] = ptr;
     ptr = kstrtok(NULL, split);
   }
-  int pid=syscall0(SYS_FORK);
-  if(pid==0){//子进程
+  int pid = syscall0(SYS_FORK);
+  if (pid == 0) {  //子进程
     syscall2(SYS_EXEC, buf, &argv[1]);
-    int p=syscall0(SYS_GETPID);
-    kprintf("child current p=%d pid=%d\n",p,pid);
-  }else{
-    int p=syscall0(SYS_GETPID);
-    kprintf("parent current p=%d pid=%d\n",p,pid);
+    int p = syscall0(SYS_GETPID);
+    kprintf("child current p=%d pid=%d\n", p, pid);
+  } else {
+    int p = syscall0(SYS_GETPID);
+    kprintf("parent current p=%d pid=%d\n", p, pid);
   }
 
   return pid;
@@ -107,6 +107,11 @@ void pre_launch();
 
 extern int module_ready;
 
+void sleep() {
+  u32 tv[2] = {1, 0};
+  syscall4(SYS_CLOCK_NANOSLEEP, 0, 0, &tv, &tv);
+}
+
 void do_shell_thread(void) {
   char buf[64];
   int count = 0;
@@ -114,6 +119,7 @@ void do_shell_thread(void) {
 
   // wait module ready
   while (module_ready <= 0) {
+    sleep();
   }
 
   print_logo();
@@ -158,8 +164,7 @@ void do_shell_thread(void) {
         syscall3(SYS_WRITE, 1, &ch, 1);
       }
     } else {
-      u32 tv[2] = {1, 0};
-      syscall4(SYS_CLOCK_NANOSLEEP, 0, 0, &tv, &tv);
+      sleep();
     }
   }
 }
