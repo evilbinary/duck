@@ -12,7 +12,7 @@ extern boot_info_t* boot_info;
 int context_get_mode(context_t* context) {
   int mode = 0;
   if (context != NULL) {
-    interrupt_context_t* c = context->esp0;
+    interrupt_context_t* c = context->ksp;
     if ((c->psr & 0x1F) == 0x10) {
       return 3;  // user mode
     }
@@ -28,7 +28,7 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
   context->tss = NULL;
   context->eip = entry;
   context->level = level;
-  context->esp0 = stack0;
+  context->ksp = stack0;
   u32 cs, ds;
   cpsr_t cpsr;
   cpsr.val = 0;
@@ -70,17 +70,17 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
   user->r12 = 0x00120012;  // ip
   user->sp = stack3;       // r13
   user->lr0 = user->lr;
-  context->esp = stack3;
-  context->esp0 = stack0;
+  context->usp = stack3;
+  context->ksp = stack0;
 
   ulong addr = (ulong)boot_info->pdt_base;
-  context->kernel_page_dir = addr;
-  //must not overwrite page_dir
-  if (context->page_dir == NULL) {
-    context->page_dir = addr;
+  context->kpage = addr;
+  // must not overwrite upage
+  if (context->upage == NULL) {
+    context->upage = addr;
   }
 #ifdef PAGE_CLONE
-  context->page_dir = page_alloc_clone(addr);
+  context->upage = page_alloc_clone(addr);
 #endif
 }
 
@@ -92,11 +92,11 @@ void context_switch(interrupt_context_t* context, context_t** current,
   kprintf("-----switch dump current------\n");
   context_dump(current_context);
 #endif
-  current_context->esp0 = context;
-  current_context->esp = context->sp;
+  current_context->ksp = context;
+  current_context->usp = context->sp;
   current_context->eip = context->lr;
   *current = next_context;
-  context_switch_page(next_context->page_dir);
+  context_switch_page(next_context->upage);
 #if DEBUG
   kprintf("-----switch dump next------\n");
   context_dump(next_context);
@@ -105,14 +105,14 @@ void context_switch(interrupt_context_t* context, context_t** current,
 }
 
 void context_dump(context_t* c) {
-  kprintf("ip:  %x\n", c->eip);
-  kprintf("sp0: %x\n", c->esp0);
-  kprintf("sp:  %x\n", c->esp);
+  kprintf("eip: %8x\n", c->eip);
+  kprintf("ksp: %8x\n", c->ksp);
+  kprintf("usp: %8x\n", c->usp);
 
-  kprintf("page_dir: %x\n", c->page_dir);
-  kprintf("kernel page_dir: %x\n", c->kernel_page_dir);
+  kprintf("upage: %x\n", c->upage);
+  kprintf("kernel upage: %x\n", c->kpage);
   kprintf("--interrupt context--\n");
-  interrupt_context_t* context = c->esp0;
+  interrupt_context_t* context = c->ksp;
   context_dump_interrupt(context);
 }
 
@@ -144,21 +144,25 @@ void context_dump_fault(interrupt_context_t* context, u32 fault_addr) {
   kprintf("----------------------------\n\n");
 }
 
-void context_clone(context_t* des, context_t* src, u32* stack0, u32* stack3,
-                   u32* old0, u32* old3) {
-  interrupt_context_t* d0 = stack0;
-  interrupt_context_t* s0 = src->esp0;
+void context_clone(context_t* des, context_t* src) {
+  //这里重点关注 usp ksp upage 3个变量的复制
+
+  interrupt_context_t* ic = des->ksp;
+  interrupt_context_t* is = src->ksp;
 #if DEBUG
   kprintf("------context clone dump src--------------\n");
   context_dump(src);
 #endif
-  des->eip = src->eip;
-  des->level = src->level;
-  if (stack0 != NULL) {
-    kmemmove(d0, s0, sizeof(interrupt_context_t));
-    des->esp0 = (u32)d0;
-  }
-  if (stack3 != NULL) {
+  // not cover upage
+  void* page = des->upage;
+  *des = *src;
+  des->upage = page;
+
+  // ic = ((u32)ic) - sizeof(interrupt_context_t);
+
+  if (ic != NULL) {
+    // set usp alias ustack and ip cs ss and so on
+    kmemmove(ic, is, sizeof(interrupt_context_t));
     cpsr_t cpsr;
     cpsr.val = 0;
     cpsr.Z = 1;
@@ -169,13 +173,11 @@ void context_clone(context_t* des, context_t* src, u32* stack0, u32* stack3,
     cpsr.T = 0;
 
     cpsr.M = 0x13;
-    d0->psr = cpsr.val;
-    d0->sp = stack3;
-    des->esp = stack3;
+    ic->psr = cpsr.val;
+    ic->sp = src->usp;
   }
-  des->page_dir = src->page_dir;
-  des->page_dir = page_alloc_clone(src->page_dir);
-  des->kernel_page_dir = src->kernel_page_dir;
+  des->ksp = (u32)ic;  // set ksp alias ustack
+  des->usp = src->usp;
 #if DEBUG
   kprintf("------context clone dump des--------------\n");
 #endif

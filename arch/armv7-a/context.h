@@ -10,16 +10,6 @@
 #include "libs/include/types.h"
 #include "platform/platform.h"
 
-typedef struct context_t {
-  u32 esp0, ss0, ds0;
-  u32 esp, ss, ds;
-  u32 eip;
-  tss_t* tss;
-  u32* page_dir;
-  u32* kernel_page_dir;
-  u32 level;
-} context_t;
-
 typedef struct interrupt_context {
   // manual push
   u32 no;
@@ -46,6 +36,18 @@ typedef struct interrupt_context {
   u32 lr;  // r14
 
 } __attribute__((packed)) interrupt_context_t;
+
+typedef struct context_t {
+  interrupt_context_t* ksp;
+  u32 ss0, ds0;
+  u32 usp, ss, ds;
+  u32 eip;
+  tss_t* tss;
+  u32* upage;
+  u32* kpage;
+  u32 level;
+  u32 tid;
+} context_t;
 
 #define interrupt_process(X) \
   asm volatile(              \
@@ -81,19 +83,19 @@ typedef struct interrupt_context {
       "add sp,sp,#8\n"                       \
       "subs pc,lr,#4\n"                      \
       :                                      \
-      : "m"(duck_context->esp0))
+      : "m"(duck_context->ksp))
 
-#define interrupt_exit_ret() \
-  asm volatile(                      \
-      "mov sp,r0 \n"                 \
-      "ldmfd sp!,{r1,r2}\n"          \
-      "ldmfd sp!,{r0}\n"             \
-      "msr spsr,r0\n"                \
-      "ldmfd sp!,{r0-r12,lr}\n"      \
-      "ldmfd sp,{sp,lr}^\n"          \
-      "add sp,sp,#8\n"               \
-      "subs pc,lr,#4\n"              \
-      :                              \
+#define interrupt_exit_ret()    \
+  asm volatile(                 \
+      "mov sp,r0 \n"            \
+      "ldmfd sp!,{r1,r2}\n"     \
+      "ldmfd sp!,{r0}\n"        \
+      "msr spsr,r0\n"           \
+      "ldmfd sp!,{r0-r12,lr}\n" \
+      "ldmfd sp,{sp,lr}^\n"     \
+      "add sp,sp,#8\n"          \
+      "subs pc,lr,#4\n"         \
+      :                         \
       :)
 
 #define interrupt_entering(VEC) interrupt_entering_code(VEC, 0)
@@ -128,12 +130,11 @@ typedef struct interrupt_context {
 #define context_fn(context) context->r7
 #define context_ret(context) context->r0
 #define context_set_entry(context, entry) \
-  ((interrupt_context_t*)((context)->esp0))->lr = entry + 4;
+  (((context_t*)context)->ksp->lr = entry + 4);
 
 #define context_restore(duck_context) interrupt_exit_context(duck_context);
 
-void context_clone(context_t* context, context_t* src, u32* stack0, u32* stack3,
-                   u32* old0, u32* old3);
+void context_clone(context_t* context, context_t* src);
 void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
                   u32 level, int cpu);
 void context_dump(context_t* c);

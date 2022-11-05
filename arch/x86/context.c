@@ -85,9 +85,9 @@ int context_get_mode(context_t* context) {
 }
 
 void context_dump(context_t* c) {
-  kprintf("eip:     %x\n", c->eip);
-  kprintf("ksp:    %x\n", c->ksp);
-  kprintf("usp:     %x\n", c->usp);
+  kprintf("eip: %8x\n", c->eip);
+  kprintf("ksp: %8x\n", c->ksp);
+  kprintf("usp: %8x\n", c->usp);
 
   kprintf("user page: %x\n", c->upage);
   kprintf("kernel page: %x\n", c->kpage);

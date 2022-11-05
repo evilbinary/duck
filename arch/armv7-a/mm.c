@@ -171,11 +171,30 @@ void page_clone(u32* old_page, u32* new_page) {
   }
 }
 
-u32* page_alloc_clone(u32* kernel_page_dir, u32 level) {
-  u32* page_dir_ptr_tab =
-      mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, 0x4000);
-  page_clone(kernel_page_dir, page_dir_ptr_tab);
-  return page_dir_ptr_tab;
+u32* page_alloc_clone(u32* old_page_dir, u32 level) {
+  if (level == KERNEL_MODE) {
+    return kernel_page_dir;
+  }
+  if (level == USER_MODE) {
+    u32* page_dir_ptr_tab =
+        mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, 0x4000);
+
+    if (old_page_dir == NULL) {
+      old_page_dir = kernel_page_dir;
+    }
+    page_clone(old_page_dir, page_dir_ptr_tab);
+    return page_dir_ptr_tab;
+  }
+  if (level == -1) {
+    u32* page_dir_ptr_tab = mm_alloc_zero_align(sizeof(u64) * 4, 0x1000);
+    page_clone(old_page_dir, page_dir_ptr_tab);
+    return page_dir_ptr_tab;
+  }
+  if (level == -2) {
+    u32* page_dir_ptr_tab = mm_alloc_zero_align(sizeof(u64) * 4, 0x1000);
+    return page_dir_ptr_tab;
+  }
+  return NULL;
 }
 
 void unmap_page_on(page_dir_t* page, u32 virtualaddr) {
