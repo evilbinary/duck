@@ -11,7 +11,7 @@
 #include "kernel/rw_queue.h"
 
 #define PIPE_BUFFER 128
-
+#define PIPE_WAIT_QUEUE_SIZE 20
 
 typedef struct pipe{
     rw_queue_t* wait_queue;

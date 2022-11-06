@@ -33,7 +33,7 @@ size_t pipe_buffer_write_notify(buffer_t* buffer) {
 
 pipe_t* pipe_create(u32 size) {
   pipe_t* pipe = kmalloc(sizeof(pipe_t));
-  pipe->wait_queue = rw_queue_create(20);
+  pipe->wait_queue = rw_queue_create(PIPE_WAIT_QUEUE_SIZE);
   pipe->buffer =
       buffer_create(size, pipe_buffer_write_wait, pipe_buffer_read_wait,
                     pipe_buffer_write_notify, pipe_buffer_read_notify);

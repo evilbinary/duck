@@ -193,6 +193,9 @@ void cpu_delay(int n) {
 void cpu_backtrace(stack_frame_t* fp, void** buf, int size) {
   int i;
   for (i = 0; i < size && fp != NULL; fp = fp->prev, i++) {
+    if(fp->return_addr<=0){
+      break;
+    }
     buf[i] = fp->return_addr;
   }
 }

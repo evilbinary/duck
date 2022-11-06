@@ -7,15 +7,24 @@
 
 extern boot_info_t* boot_info;
 
-void context_init(context_t* context, u32* entry, u32* kstack, u32* ustack,
-                  u32 level, int cpu) {
+int context_init(context_t* context, u32* entry, u32 level, int cpu) {
   if (context == NULL) {
-    return;
+    return -1;
   }
+  if (context->ksp_start == NULL || context->usp_start == NULL) {
+    log_error("ksp start or usp start is null\n");
+    return -1;
+  }
+  if (context->ksp_end == NULL || context->ksp_end == NULL) {
+    log_error("ksp end or usp end is null\n");
+    return -1;
+  }
+
   tss_t* tss = &boot_info->tss[cpu];
   context->tss = tss;
   context->eip = entry;
   context->level = level;
+  context->cpu = cpu;
   u32 cs, ds;
   if (level == 0) {
     cs = GDT_ENTRY_32BIT_CS * GDT_SIZE;
@@ -24,35 +33,36 @@ void context_init(context_t* context, u32* entry, u32* kstack, u32* ustack,
     cs = GDT_ENTRY_USER_32BIT_CS * GDT_SIZE | level;
     ds = GDT_ENTRY_USER_32BIT_DS * GDT_SIZE | level;
   } else {
-    kprintf("not suppport level %d\n", level);
+    log_error("not suppport level %d\n", level);
   }
-  kstack = ((u32)kstack) - sizeof(interrupt_context_t);
-  interrupt_context_t* ic = kstack;
+  u32 ksp_top = ((u32)context->ksp_end) - sizeof(interrupt_context_t);
+  u32 usp_top = context->usp_end;
+  interrupt_context_t* ic = ksp_top;
   ic->ss = ds;          // ss
-  ic->esp = ustack;     // usp
+  ic->esp = usp_top;    // usp
   ic->eflags = 0x0200;  // eflags
   ic->cs = cs;          // cs
   ic->eip = entry;      // eip 4
 
-  ic->no = 0;             // no  5
-  ic->code = 0;           // no  5
-  ic->eax = 0;            // eax 6
-  ic->ecx = 0;            // ecx 7
-  ic->edx = 0;            // edx 8
-  ic->ebx = 0;            // ebx 9
-  ic->esp_null = ustack;  // esp 10
-  ic->ebp = ustack;       // ebp 11
-  ic->esi = 0;            // esi 12
-  ic->edi = 0;            // edi 13
-  ic->ds = ds;            // ds  14
-  ic->es = ds;            // es  15
-  ic->fs = ds;            // fs  16
-  ic->gs = ds;            // gs    17
+  ic->no = 0;              // no  5
+  ic->code = 0;            // no  5
+  ic->eax = 0;             // eax 6
+  ic->ecx = 0;             // ecx 7
+  ic->edx = 0;             // edx 8
+  ic->ebx = 0;             // ebx 9
+  ic->esp_null = usp_top;  // esp 10
+  ic->ebp = usp_top;       // ebp 11
+  ic->esi = 0;             // esi 12
+  ic->edi = 0;             // edi 13
+  ic->ds = ds;             // ds  14
+  ic->es = ds;             // es  15
+  ic->fs = ds;             // fs  16
+  ic->gs = ds;             // gs    17
 
   context->ksp = ic;
   context->ss0 = GDT_ENTRY_32BIT_DS * GDT_SIZE;
   context->ds0 = GDT_ENTRY_32BIT_DS * GDT_SIZE;
-  context->usp = ustack;
+  context->usp = usp_top;
   context->ss = ds;
   context->ds = ds;
 
@@ -74,6 +84,7 @@ void context_init(context_t* context, u32* entry, u32* kstack, u32* ustack,
     tss->cr3 = boot_info->pdt_base;
     set_ldt(GDT_ENTRY_32BIT_TSS * GDT_SIZE);
   }
+  return 0;
 }
 
 int context_get_mode(context_t* context) {
@@ -128,9 +139,9 @@ void context_dump_interrupt(interrupt_context_t* ic) {
   if (ic->ebp > 1000) {
     int buf[10];
     stack_frame_t* fp = ic->ebp;
-    cpu_backtrace(fp, buf, 4);
+    cpu_backtrace(fp, buf, 3);
     kprintf("--backtrace--\n");
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 3; i++) {
       kprintf(" %8x\n", buf[i]);
     }
   }
@@ -162,10 +173,22 @@ void context_dump_fault(interrupt_context_t* ic, u32 fault_addr) {
   kprintf("----------------------------\n");
 }
 
-void context_clone(context_t* des, context_t* src) {
+int context_clone(context_t* des, context_t* src) {
+  if (src->ksp_start == NULL || src->usp_start == NULL) {
+    log_error("ksp top or usp top is null\n");
+    return -1;
+  }
+  if (des->ksp_start == NULL || des->usp_start == NULL) {
+    log_error("ksp top or usp top is null\n");
+    return -1;
+  }
+
   //这里重点关注 usp ksp page_dir 3个变量的复制
 
-  interrupt_context_t* ic = des->ksp;
+  u32* ksp_end = (u32)des->ksp_end + sizeof(interrupt_context_t);
+
+
+  interrupt_context_t* ic = ksp_end;
   interrupt_context_t* is = src->ksp;
 
   // not cover page_dir
@@ -173,14 +196,14 @@ void context_clone(context_t* des, context_t* src) {
   *des = *src;
   des->upage = page;
 
-  // ic = ((u32)ic) - sizeof(interrupt_context_t);
-
   if (ic != NULL) {
     *ic = *is;  // set usp alias ustack and ip cs ss and so on
     ic->eflags = 0x0200;
   }
-  des->ksp = (u32)ic;  // set ksp alias ustack
+  // set ksp alias ustack
+  des->ksp = (u32)ic;
   des->usp = src->usp;
+  return 0;
 }
 
 void context_switch(interrupt_context_t* ic, context_t** current,
@@ -195,14 +218,13 @@ void context_switch(interrupt_context_t* ic, context_t** current,
     current_context->usp = ic->esp;
   }
 
-  interrupt_context_t* c = next_context->ksp;
-
   tss_t* tss = next_context->tss;
-  tss->esp = next_context->ksp + sizeof(interrupt_context_t);
-  tss->ss0 = next_context->ss0;
-  tss->cr3 = next_context->upage;
-  *current = next_context;
+  // tss->esp0 = next_context->ksp + sizeof(interrupt_context_t);
+  // tss->ss0 = next_context->ss0;
+  //  tss->cr3 = next_context->upage;
+
   if (next_context->upage != NULL) {
     context_switch_page(next_context->upage);
   }
+  *current = next_context;
 }

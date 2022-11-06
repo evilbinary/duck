@@ -67,7 +67,6 @@ void schedule_state(int cpu) {
 void* do_schedule(interrupt_context_t* interrupt_context) {
   int cpu = cpu_get_id();
   thread_t* next_thread = NULL;
-  thread_t* prev_thread = NULL;
   thread_t* current_thread = thread_current();
   schedule_state(cpu);
   next_thread = schedule_get_next();
@@ -75,9 +74,10 @@ void* do_schedule(interrupt_context_t* interrupt_context) {
     kprintf("schedule error next\n");
     return NULL;
   }
+  if(next_thread->id==2){
+    int i=0;
+  }
   context_t* c = &current_thread->context;
-  prev_thread = current_thread;
-  current_thread = next_thread;
   context_switch(interrupt_context, &c, &next_thread->context);
   thread_set_current(next_thread);
   timer_ticks[cpu]++;

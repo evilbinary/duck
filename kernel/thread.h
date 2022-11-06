@@ -38,7 +38,7 @@
 #define HEAP_ALLOC 1 << 14
 #define HEAP_SAME 1 << 15
 
-#define THREAD_DEFAULT (STACK_ALLOC|HEAP_ALLOC|PAGE_CLONE)
+#define THREAD_DEFAULT (STACK_ALLOC | HEAP_ALLOC | PAGE_CLONE)
 
 #define THREAD_FORK \
   (PAGE_CLONE | VM_CLONE_ALL | FS_CLONE | STACK_CLONE | HEAP_CLONE)
@@ -54,21 +54,15 @@
 #endif
 typedef struct thread {
   u32 id;
-  context_t context;
   u8* name;
   int priority;
   int counter;
   int state;
   int sleep_counter;
-  void* kstack;
-  void* ustack;
-  void* kstack_top;
-  void* ustack_top;
-  u32 ustack_size;
-  u32 kstack_size;
   struct thread_s* next;
   void* data;
   void* exec;
+  context_t context;
   vmemory_area_t* vmm;
   u32 pid;
   u32** fds;
@@ -79,7 +73,6 @@ typedef struct thread {
   u32 fault_count;
   vfs_t* vfs;
   u32 level;
-  u32* entry;
   u32 cpu_id;
 } thread_t;
 

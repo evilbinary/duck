@@ -95,14 +95,12 @@ void modules_init(void) {
   module_regist(&pci_module);
   module_regist(&keyboard_module);
   module_regist(&rtc_module);
-  // // module_regist(&vga_module);
+  // module_regist(&vga_module);
   module_regist(&qemu_module);
   module_regist(&mouse_module);
   module_regist(&pty_module);
   module_regist(&sb16_module);
-
   module_regist(&ahci_module);
-  // module_regist(&fat32_module);
   module_regist(&fat_module);
   module_regist(&test_module);
 

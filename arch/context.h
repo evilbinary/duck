@@ -33,9 +33,8 @@
 #endif
 
 
-void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
-                  u32 level,int cpu);
-
+int context_init(context_t* context, u32* entry, u32 level, int cpu);
+int context_clone(context_t* des, context_t* src);
 void context_switch(interrupt_context_t* context,context_t** current, 
                     context_t* next_context);
 

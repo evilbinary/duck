@@ -37,7 +37,16 @@ typedef struct context_t {
   u32* upage;
   u32* kpage;
   u32 level;
+  u32 cpu;
   u32 tid;
+
+  void* ksp_start;
+  void* usp_start;
+  void* ksp_end;
+  void* usp_end;
+
+  u32 usp_size;
+  u32 ksp_size;
 } context_t;
 
 typedef void (*interrupt_handler_t)(interrupt_context_t* context);
@@ -156,9 +165,8 @@ void interrutp_regist(u32 vec, interrupt_handler_t handler);
 
 
 #define context_restore(duck_context) interrupt_exit_context(duck_context)
-void context_clone(context_t* context, context_t* src);
-void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
-                  u32 level,int cpu);
+int context_clone(context_t* context, context_t* src);
+int context_init(context_t* context, u32* entry, u32 level, int cpu);
                              
 void context_dump(context_t* c);
 
