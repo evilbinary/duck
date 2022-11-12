@@ -9,8 +9,8 @@
 #include "kernel/config.h"
 #include "arch/arch.h"
 
-#ifdef X86 
-#define EXEC_ADDR  0x200000
+#ifdef X86
+#define EXEC_ADDR  0x40000000 //1gb exec space to stack
 #define STACK_ADDR 0x80000000
 #define HEAP_ADDR  0x82000000
 
