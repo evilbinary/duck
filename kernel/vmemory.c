@@ -5,106 +5,326 @@
  ********************************************************************/
 #include "memory.h"
 
-void vmemory_area_free(vmemory_area_t* area) {
-  if (area == NULL) return;
-  context_t* context = thread_current_context();
-  u32 vaddr = area->vaddr;
-  for (int i = 0; i < area->size / PAGE_SIZE; i++) {
-    kfree_alignment(vaddr);
-    map_page_on(context->upage, vaddr, vaddr, 0);
-    vaddr += PAGE_SIZE;
-  }
-  area->flags = MEMORY_FREE;
+#include "algorithm/queue_pool.h"
+#include "thread.h"
+
+queue_pool_t* kernel_pool;
+queue_pool_t* user_pool;
+
+lock_t memory_lock;
+memory_t memory_summary;
+
+void memory_init() {
+  lock_init(&memory_lock);
+  memory_summary.total = mm_get_total();
+  memory_summary.free = mm_get_free();
+  memory_summary.kernel_used = 0;
+  memory_summary.user_used = 0;
+  kpool_init();
 }
 
-// alloc by page fault
-vmemory_area_t* vmemory_area_alloc(vmemory_area_t* areas, void* addr,
-                                   u32 size) {
-  vmemory_area_t* area = vmemory_area_find(areas, addr, size);
-  if (area != NULL) {
-    return area;
-  }
-  area = vmemory_area_create(addr, size, 0);
-  vmemory_area_add(areas, area);
-  return area;
+memory_t* memory_info() {
+  memory_summary.free = memory_summary.total - memory_summary.kernel_used -
+                        memory_summary.user_used;
+  return &memory_summary;
 }
 
-vmemory_area_t* vmemory_area_create(void* addr, u32 size, u8 flags) {
-  vmemory_area_t* area = kmalloc(sizeof(vmemory_area_t));
-  area->size = size;
-  area->next = NULL;
-  area->vaddr = addr;
-  area->vend = addr + size;
-  area->alloc_addr = addr;
-  area->alloc_size = 0;
-  area->flags = flags;
-  return area;
+void* vm_alloc(size_t size) {
+  if (size == 0) return NULL;
+  void* addr = NULL;
+  size = ALIGN(size, MEMORY_ALIGMENT);
+  thread_t* current = thread_current();
+  if (current == NULL) {
+    //内核启动没有进程，使用内核物理内存
+    addr = mm_alloc(size);
+    return addr;
+  }
+  addr = current->vmm->alloc_addr;
+  current->vmm->alloc_addr += size;
+  current->vmm->alloc_size += size;
+
+  log_debug("vm alloc page:%x size:%d addr:%x\n", current->context.upage,
+            size, addr);
+  return addr;
 }
 
-void vmemory_area_add(vmemory_area_t* areas, vmemory_area_t* area) {
-  vmemory_area_t* p = areas;
-  for (; p->next != NULL; p = p->next) {
+void* vm_alloc_alignment(size_t size, int alignment) {
+  if (size == 0) return NULL;
+  size = ALIGN(size, MEMORY_ALIGMENT);
+  void* addr = NULL;
+  thread_t* current = thread_current();
+  if (current == NULL) {
+    //内核启动没有进程，使用内核物理内存
+    addr = mm_alloc_zero_align(size, alignment);
+    return addr;
   }
-  p->next = area;
+  addr = current->vmm->alloc_addr;
+  // u32 page_alignt = alignment - 1;
+  // void* new_addr = ((u32)addr+ alignment) & (~page_alignt) ;
+  // void* new_addr = ALIGN( ((u32)addr +alignment), alignment);
+  // void* new_addr=addr + alignment;
+  // new_addr= ALIGN((u32)new_addr, alignment);
+
+  int offset = alignment - 1 + sizeof(void*);
+  void* new_addr = (void**)(((size_t)(addr) + offset) & ~(alignment - 1));
+  int new_size = new_addr - addr + size;
+
+  current->vmm->alloc_size += new_size;
+  current->vmm->alloc_addr += new_size;
+
+  log_debug("vm alloc a page:%x size:%d addr:%x\n", current->context.upage,
+            new_size, new_addr);
+
+  return new_addr;
 }
 
-vmemory_area_t* vmemory_area_find(vmemory_area_t* areas, void* addr,
-                                  size_t size) {
-  vmemory_area_t* p = areas;
-  for (; p != NULL; p = p->next) {
-    // kprintf("vmemory_area_find addr: %x p->vaddr:%x
-    // p->size:%x\n",addr,p->vaddr,p->size);
-    if ((addr >= p->vaddr) && (addr <= (p->vaddr + p->size))) {
-      return p;
-    }
+void vm_free(void* ptr) {
+  thread_t* current = thread_current();
+  if (current == NULL) {
+    // mm_free(ptr);
   }
-  return NULL;
 }
 
-vmemory_area_t* vmemory_area_destroy(vmemory_area_t* area) {}
-
-vmemory_area_t* vmemory_area_find_flag(vmemory_area_t* areas, u32 flags) {
-  vmemory_area_t* p = areas;
-  for (; p != NULL; p = p->next) {
-    if (p->flags == flags) {
-      return p;
-    }
+void vm_free_alignment(void* ptr) {
+  thread_t* current = thread_current();
+  if (current == NULL) {
+    // mm_free_align(ptr);
   }
-  return NULL;
 }
 
-vmemory_area_t* vmemory_clone(vmemory_area_t* areas, int flag) {
-  if (areas == NULL) {
-    return NULL;
+#ifdef MALLOC_TRACE
+
+int alloc_count = 0;
+int alloc_total = 0;
+int free_count = 0;
+int free_total = 0;
+
+void* kmalloc_trace(size_t size, void* name, void* no, void* fun) {
+  void* addr = vm_alloc(size);
+  alloc_total += size;
+  log_debug("kmalloc count:%04d total:%06dk size:%04d addr:%06x %s:%d %s\n",
+            alloc_count++, alloc_total / 1024, size, addr, name, no, fun);
+  if (addr == NULL) {
+    log_error("kmalloc error\n");
+    return addr;
   }
-  vmemory_area_t* new_area = NULL;
-  vmemory_area_t* current = NULL;
-  vmemory_area_t* p = areas;
-  for (; p != NULL; p = p->next) {
-    vmemory_area_t* c = vmemory_area_create(p->vaddr, p->size, p->flags);
-    if (flag == 1) {
-      c->alloc_addr = p->alloc_addr;
-      c->alloc_size = p->alloc_size;
-    }
-    if (new_area == NULL) {
-      new_area = c;
-      current = c;
+  return addr;
+}
+
+void* kmalloc_alignment_trace(size_t size, int alignment, void* name, void* no,
+                              void* fun) {
+  void* addr = vm_alloc_alignment(size, alignment);
+  alloc_total += size;
+  log_debug("kmalloca count:%04d total:%06dk size:%04d addr:%06x %s:%d %s\n",
+            alloc_count++, alloc_total / 1024, size, addr, name, no, fun);
+  memory_static(size, MEMORY_TYPE_USE);
+  return addr;
+}
+
+void kfree_trace(void* ptr, void* name, void* no, void* fun) {
+  size_t size = mm_get_size(ptr);
+  u32 tid = -1;
+  log_debug("kfree count:%d total:%dk size:%d addr:%x %s:%d %s\n", free_count++,
+            free_total / 1024, size, ptr, name, no, fun);
+
+  vm_free(ptr);
+  // memory_static(size, MEMORY_TYPE_FREE);
+}
+
+void kfree_alignment_trace(void* ptr, void* name, void* no, void* fun) {
+  size_t size = mm_get_size(ptr);
+  log_debug("kfreea count:%d total:%dk size:%d addr:%x %s:%d %s\n",
+            free_count++, free_total / 1024, size, ptr, name, no, fun);
+
+  vm_free_alignment(ptr);
+  // memory_static(size, MEMORY_TYPE_FREE);
+}
+
+#else
+
+void* kmalloc(size_t size) {
+  void* addr = vm_alloc(size);
+  memory_static(size, MEMORY_TYPE_USE);
+  return addr;
+}
+
+void* kmalloc_alignment(size_t size, int alignment) {
+  void* addr = vm_alloc_alignment(size, alignment);
+  memory_static(size, MEMORY_TYPE_USE);
+  return addr;
+}
+
+void kfree(void* ptr) {
+  vm_free(ptr);
+  // size_t size = mm_get_size(ptr);
+  // memory_static(size, MEMORY_TYPE_FREE);
+}
+
+void kfree_alignment(void* ptr) {
+  vm_free_alignment(ptr);
+  // size_t size = mm_get_size(ptr);
+  // memory_static(size, MEMORY_TYPE_FREE);
+}
+
+#endif
+
+void memory_static(u32 size, int type) {
+  thread_t* current = thread_current();
+  if (current != NULL) {
+    if (type == MEMORY_TYPE_USE) {
+      memory_summary.user_used += size;
     } else {
-      current->next = c;
-      current = c;
+      memory_summary.user_used -= size;
+    }
+  } else {
+    if (type == MEMORY_TYPE_USE) {
+      // kprintf("sub kerenl %lu  + size %d\n", (u32)memory_summary.kernel_used,
+      // size);
+      memory_summary.kernel_used += size;
+    } else {
+      // kprintf("sub kerenl %lu  - size %d\n", (u32)memory_summary.kernel_used,
+      //         size);
+      memory_summary.kernel_used -= size;
     }
   }
-  return new_area;
 }
 
-vmemory_area_t* vmemory_create_default(u32 ustack_size, u32 koffset) {
-  vmemory_area_t* vmm =
-      vmemory_area_create(HEAP_ADDR + koffset, MEMORY_HEAP_SIZE, MEMORY_HEAP);
-  vmemory_area_t* vmexec =
-      vmemory_area_create(EXEC_ADDR + koffset, MEMORY_EXEC_SIZE, MEMORY_EXEC);
-  vmemory_area_add(vmm, vmexec);
-  vmemory_area_t* stack =
-      vmemory_area_create(STACK_ADDR + koffset, ustack_size, MEMORY_STACK);
-  vmemory_area_add(vmm, stack);
-  return vmm;
+// alloc physic right now on virtual
+void* valloc(void* addr, size_t size) {
+  thread_t* current = thread_current();
+  if (size < PAGE_SIZE) {
+    size = PAGE_SIZE;
+  }
+  if ((size % PAGE_SIZE) > 0) {
+    size += PAGE_SIZE;
+  }
+  u32 page_alignt = PAGE_SIZE - 1;
+  void* vaddr = (u32)addr & (~page_alignt);
+  // void* vaddr = ALIGN((u32)addr, PAGE_SIZE);
+
+#ifdef USE_POOL
+  void* phy_addr = queue_pool_poll(user_pool);
+  if (phy_addr == NULL) {
+    phy_addr = mm_alloc_zero_align(size, PAGE_SIZE);
+  } else {
+    log_info("use pool addr %x\n", phy_addr);
+  }
+#else
+  void* phy_addr = mm_alloc_zero_align(size, PAGE_SIZE);
+#endif
+  void* paddr = phy_addr;
+  for (int i = 0; i < size / PAGE_SIZE; i++) {
+    log_debug("map page:%x vaddr:%x paddr:%x\n", current->context.upage,
+              vaddr, paddr);
+    if (current != NULL) {
+      map_page_on(current->context.upage, vaddr, paddr,
+                  PAGE_P | PAGE_USU | PAGE_RWW);
+    } else {
+      map_page(vaddr, paddr, PAGE_P | PAGE_USU | PAGE_RWW);
+    }
+    // kprintf("vmap vaddr:%x paddr:%x\n", vaddr, paddr);
+    vaddr += PAGE_SIZE;
+    paddr += PAGE_SIZE;
+  }
+  memory_static(size, MEMORY_TYPE_USE);
+  return addr;
+}
+
+// free
+void vfree(void* addr) {
+  if (addr == NULL) return;
+  thread_t* current = thread_current();
+  void* phy = virtual_to_physic(current->context.upage, addr);
+  // kprintf("vfree vaddr:%x paddr:%x\n");
+  // unmap_page_on(current->context.upage, addr);
+  if (phy != NULL) {
+#ifdef USE_POOL
+    int ret = queue_pool_put(user_pool, phy);
+    if (ret == 0) {
+      kfree(phy);
+    }
+#else
+    kfree(phy);
+#endif
+  }
+}
+
+void* kvirtual_to_physic(void* addr, int size) {
+  thread_t* current = thread_current();
+  void* phy = NULL;
+  if (current != NULL) {
+    phy = virtual_to_physic(current->context.upage, addr);
+    if (phy == NULL) {
+      log_error("get phy null\n");
+      kmemset(addr, 0, size);
+      phy = virtual_to_physic(current->context.upage, addr);
+    }
+  } else {
+    phy = addr;
+  }
+  return phy;
+}
+
+void map_2gb(u64* page_dir_ptr_tab, u32 attr) {
+  u32 addr = 0;
+  for (int i = 0; i < 0x200000 / PAGE_SIZE; i++) {
+    map_page_on(page_dir_ptr_tab, addr, addr, attr);
+    addr += PAGE_SIZE;
+  }
+}
+
+void map_alignment(void* page, void* vaddr, void* buf, u32 size) {
+  u32 file_4k = PAGE_SIZE;
+  if (size > PAGE_SIZE) {
+    file_4k = size;
+  }
+  for (int i = 0; i < file_4k / PAGE_SIZE; i++) {
+    log_debug("map_alignment vaddr:%x paddr:%x\n", vaddr, buf);
+    map_page_on(page, (u32)vaddr, (u32)buf, PAGE_P | PAGE_USU | PAGE_RWW);
+    vaddr += PAGE_SIZE;
+    buf += PAGE_SIZE;
+  }
+}
+
+void page_clone_user(u64* page, u64* page_dir_ptr_tab) {
+  use_kernel_page();
+  page_clone(page, page_dir_ptr_tab);
+  // unmap_mem_block(page_dir_ptr_tab, 0x200000);
+  use_user_page();
+}
+
+void kpool_init() {
+#ifdef USE_POOL
+  kernel_pool = queue_pool_create(KERNEL_POOL_NUM, PAGE_SIZE);
+  user_pool = queue_pool_create_align(USER_POOL_NUM, PAGE_SIZE, PAGE_SIZE);
+#else
+  kernel_pool = NULL;
+  user_pool = NULL;
+#endif
+}
+
+int kpool_put(void* e) { return queue_pool_put(kernel_pool, e); }
+
+void* kpool_poll() {
+  void* e = queue_pool_poll(kernel_pool);
+  if (e == NULL) {
+    log_error("kpool poll is null\n");
+  }
+  return e;
+}
+
+void use_kernel_page() {
+  context_t* context = thread_current_context();
+  if (context != NULL && cpu_cpl() == KERNEL_MODE) {
+    context->tss->cr3 = context->kpage;
+    context_switch_page(context->kpage);
+  }
+}
+
+void use_user_page() {
+  context_t* context = thread_current_context();
+  if (context != NULL && cpu_cpl() == KERNEL_MODE) {
+    context->tss->cr3 = context->upage;
+    context_switch_page(context->upage);
+  }
 }

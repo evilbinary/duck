@@ -110,4 +110,6 @@ void modules_init(void) {
 #else
   module_regist(&hello_module);
 #endif
+
+  module_run_all();
 }

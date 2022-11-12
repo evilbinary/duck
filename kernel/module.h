@@ -15,11 +15,17 @@
 #define MAX_MODULES 256
 #endif
 
+typedef void (*mod_init_fn)();
+typedef void (*mod_exit_fn)();
+
+
 typedef struct module{
     char* name;
-    void* init;
-    void* exit;
+    mod_init_fn init;
+    mod_exit_fn exit;
 } module_t;
+
+
 
 void module_init();
 

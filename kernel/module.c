@@ -6,11 +6,9 @@
 #include "module.h"
 
 module_t* modules[MAX_MODULES];
-u32 module_number=0;
+u32 module_number = 0;
 
-void module_init() {
-  module_number = 0;
-}
+void module_init() { module_number = 0; }
 
 void module_regist(module_t* mod) {
   if (module_number > MAX_MODULES) {
@@ -18,10 +16,6 @@ void module_regist(module_t* mod) {
     return;
   }
   modules[module_number++] = mod;
-  if (mod->init != NULL) {
-    void (*init)() = mod->init;
-    init();
-  }
 }
 
 void module_unregist(module_t* mod) {
@@ -41,4 +35,13 @@ module_t* module_find(char* name) {
     }
   }
   return NULL;
+}
+
+void module_run_all() {
+  for (int i = 0; i < module_number; i++) {
+    module_t* mod =modules[i];
+    if (mod !=NULL && mod->init != NULL) {
+      mod->init();
+    }
+  }
 }

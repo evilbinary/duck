@@ -87,7 +87,7 @@ void mm_init_default() {
 
   unsigned int address = 0;
   // map mem block 100 page 400k
-  map_mem_block(PAGE_SIZE * 400);
+  map_mem_block(PAGE_SIZE * 100);
 
   // map 0 - 0x14000
   map_range(0, 0, PAGE_SIZE * 20, PAGE_P | PAGE_USU | PAGE_RWW);
@@ -112,7 +112,9 @@ void mm_init_default() {
   map_page(boot_info->gdt_base, boot_info->gdt_base,
            PAGE_P | PAGE_USU | PAGE_RWW);
 
-  map_page(boot_info->disply.video,boot_info->disply.video,PAGE_P | PAGE_USU | PAGE_RWW);
+  map_range(boot_info->disply.video, boot_info->disply.video,
+                 boot_info->disply.height * boot_info->disply.width * 2,
+                 PAGE_P | PAGE_USU | PAGE_RWW);
 
   if (boot_info->pdt_base != NULL) {
     ulong addr = (ulong)boot_info->pdt_base;
