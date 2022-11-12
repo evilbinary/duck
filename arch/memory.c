@@ -111,7 +111,7 @@ block_t* ya_find_free_block(size_t size) {
   block_t* find_block = NULL;
   while (block) {
     if (!(block->magic == MAGIC_USED || block->magic == MAGIC_FREE)) {
-      log_error("errro find free block,magic error\n");
+      log_error("errro find free block %x,magic error is %x\n",block,block->magic);
       cpu_halt();
       break;
     }

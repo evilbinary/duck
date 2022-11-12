@@ -7,7 +7,9 @@
 #define IO_H
 
 #include "libs/include/types.h"
-void kprintf(const char* format, ...);
+#define KPRINT_BUF 1024
+
+int kprintf(const char* format, ...);
 
 typedef void (*write_channel_fn)(u8 ch);
 void io_add_write_channel(write_channel_fn fn);

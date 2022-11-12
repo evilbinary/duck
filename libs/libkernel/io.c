@@ -27,16 +27,26 @@ void print_char(u8 ch) {
   }
 }
 
-void kprintf(const char* fmt, ...) {
-  char printf_buffer[256];
-  kmemset(printf_buffer,0,256);
+char printf_buffer[KPRINT_BUF];
+
+int kprintf(const char* fmt, ...) {
+  kmemset(printf_buffer,0,KPRINT_BUF);
   int i;
 	va_list args;
 	va_start(args, fmt);
 	i = vsprintf(printf_buffer, fmt, args);
+  if(i>KPRINT_BUF){
+    for(;;){
+      print_char('O');
+      print_char('V');
+      print_char('E');
+      print_char('R');
+    }
+  }
 	va_end(args);
   int len=kstrlen(printf_buffer);
   for(int i=0;i<len;i++){
     print_char(printf_buffer[i]);
   }
+  return i;
 }

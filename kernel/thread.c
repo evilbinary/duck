@@ -283,7 +283,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
 
 void thread_map(thread_t* thread, u32 virt_addr, u32 phy_addr, u32 size) {
   u32 offset = 0;
-  u32 pages = size / PAGE_SIZE + size % PAGE_SIZE == 0 ? 0 : 1;
+  u32 pages = size / PAGE_SIZE + (size % PAGE_SIZE == 0 ? 0 : 1);
   for (int i = 0; i < pages; i++) {
     map_page_on(thread->context.upage, virt_addr + offset, phy_addr + offset,
                 PAGE_P | PAGE_USU | PAGE_RWW);
