@@ -34,7 +34,6 @@ int kmain(int argc, char* argv[]) {
   thread_run(t1);
   thread_run(t2);
 
-  log_info("kernel run\n");
   kernel_run();
 
   return 0;

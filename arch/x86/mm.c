@@ -66,7 +66,6 @@ void unmap_page_on(page_dir_t* page, u32 virtualaddr) {
   }
 }
 
-
 void map_mem_block(u32 size) {
   mem_block_t* p = mmt.blocks;
   for (; p != NULL; p = p->next) {
@@ -105,10 +104,15 @@ void mm_init_default() {
   }
   kprintf("map kernel end %d\n", boot_info->segments_number);
 
+  map_page(boot_info->kernel_stack, boot_info->kernel_stack,
+           PAGE_P | PAGE_USU | PAGE_RWW);
+
   map_page(boot_info->pdt_base, boot_info->pdt_base,
            PAGE_P | PAGE_USU | PAGE_RWW);
   map_page(boot_info->gdt_base, boot_info->gdt_base,
            PAGE_P | PAGE_USU | PAGE_RWW);
+
+  map_page(boot_info->disply.video,boot_info->disply.video,PAGE_P | PAGE_USU | PAGE_RWW);
 
   if (boot_info->pdt_base != NULL) {
     ulong addr = (ulong)boot_info->pdt_base;

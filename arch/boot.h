@@ -128,6 +128,9 @@ typedef struct boot_info {
   ksegment_t segments[KERNEL_SEGMENT];
   u32 segments_number;
 
+  u32 kernel_stack;
+  u32 kernel_stack_size;
+
   void* kernel_entry;
   u32* second_boot_entry;
   tss_t tss[MAX_CPU];
