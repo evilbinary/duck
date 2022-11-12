@@ -10,7 +10,7 @@
 #include "boot.h"
 #include "cpu.h"
 #include "display.h"
-#include "mm.h"
+#include "memory.h"
 #include "libs/include/kernel/common.h"
 #include "libs/include/kernel/elf.h"
 #include "interrupt.h"

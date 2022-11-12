@@ -226,6 +226,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       //分配页
       copy->context.upage =
           page_alloc_clone(thread->context.upage, thread->level);
+
       //映射栈
       void* phy = kvirtual_to_physic(copy_ustack, 0);
       thread_map(copy, STACK_ADDR, phy, copy->context.usp_size);

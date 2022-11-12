@@ -13,7 +13,7 @@ arch =env['ARCH']
 source=[
     'arch.c',
     'lock.c',
-    'mm.c',
+    'memory.c',
 ]
 
 source+=Glob(arch+'/*.c')

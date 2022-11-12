@@ -12,6 +12,7 @@
 #define MAX_CPU 4
 #define CPU_NUMBER 2
 #define GDT_NUMBER 12
+#define KERNEL_SEGMENT 6
 
 #ifdef ARM
 
@@ -97,7 +98,7 @@ typedef struct disk_info{
 }disk_info_t;
 
 
-typedef struct tss_t {
+typedef struct tss_info {
   u32 back_link;
   u32 esp0, ss0;
   u32 esp1, ss1;
@@ -113,11 +114,20 @@ typedef struct tss_t {
   u32 trace_bitmap;
 } tss_t;
 
+typedef struct ksegment{
+  u32* start;
+  u32 size;
+  u32 type;
+} ksegment_t;
+
 typedef struct boot_info {  
   i32 version;
   u32* kernel_origin_base;
   u32* kernel_base;
   u32* kernel_size;
+  ksegment_t segments[KERNEL_SEGMENT];
+  u32 segments_number;
+
   void* kernel_entry;
   u32* second_boot_entry;
   tss_t tss[MAX_CPU];

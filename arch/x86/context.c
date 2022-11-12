@@ -75,7 +75,7 @@ int context_init(context_t* context, u32* entry, u32 level, int cpu) {
 
   if (tss->eip == 0 && tss->cr3 == 0) {
     tss->ss0 = context->ss0;
-    tss->esp0 = context->ksp + sizeof(interrupt_context_t);
+    tss->esp0 = ((u32)context->ksp) + sizeof(interrupt_context_t);
     tss->eip = context->eip;
     tss->ss = ds;
     tss->ds = tss->es = tss->fs = tss->gs = ds;
@@ -185,8 +185,8 @@ int context_clone(context_t* des, context_t* src) {
 
   //这里重点关注 usp ksp page_dir 3个变量的复制
 
-  u32* ksp_end = (u32)des->ksp_end + sizeof(interrupt_context_t);
-
+  u32* ksp_end = (u32)des->ksp_end - sizeof(interrupt_context_t);
+  u32* usp_end = des->usp_end;
 
   interrupt_context_t* ic = ksp_end;
   interrupt_context_t* is = src->ksp;
@@ -202,7 +202,7 @@ int context_clone(context_t* des, context_t* src) {
   }
   // set ksp alias ustack
   des->ksp = (u32)ic;
-  des->usp = src->usp;
+  des->usp = usp_end;
   return 0;
 }
 
@@ -217,14 +217,12 @@ void context_switch(interrupt_context_t* ic, context_t** current,
     current_context->ksp = ic;
     current_context->usp = ic->esp;
   }
-
-  tss_t* tss = next_context->tss;
-  // tss->esp0 = next_context->ksp + sizeof(interrupt_context_t);
-  // tss->ss0 = next_context->ss0;
-  //  tss->cr3 = next_context->upage;
-
+  *current = next_context;
   if (next_context->upage != NULL) {
+    tss_t* tss = next_context->tss;
+    tss->esp0 = (u32)next_context->ksp + sizeof(interrupt_context_t);
+    tss->ss0 = next_context->ss0;
+    tss->cr3 = next_context->upage;
     context_switch_page(next_context->upage);
   }
-  *current = next_context;
 }

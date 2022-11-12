@@ -3,17 +3,14 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
-#include "../mm.h"
-
 #include "../cpu.h"
+#include "../memory.h"
 #include "cpu.h"
 
 extern boot_info_t* boot_info;
 extern memory_manager_t mmt;
 
 u64 kernel_page_dir_ptr_tab[4] __attribute__((aligned(0x20)));
-u64 kernel_page_dir[512] __attribute__((aligned(0x1000)));
-u64 kernel_page_tab[512] __attribute__((aligned(0x1000)));
 
 void map_page_on(page_dir_t* page, u32 virtualaddr, u32 physaddr, u32 flags) {
   u32 l1_pdpte_index = (u32)virtualaddr >> 30 & 0x03;
@@ -69,48 +66,14 @@ void unmap_page_on(page_dir_t* page, u32 virtualaddr) {
   }
 }
 
-void mm_test() {
-  // map_page(0x90000,0x600000,3);
-  // 0xfd000000
-  // map_page(0x1ff000,0x400000,PAGE_P | PAGE_USU | PAGE_RWW);
-  // map_page(0xfd000000, 0xfd000000, PAGE_P | PAGE_USU | PAGE_RWW);
 
-  // u32 addr = 0x100000;
-  // for (int i = 0; i < 100; i++) {
-  //   map_page(addr, addr, PAGE_P | PAGE_USU | PAGE_RWW);
-  //   addr += 0x1000;
-  // }
-}
-
-void map_mem_block(u32 addr) {
+void map_mem_block(u32 size) {
   mem_block_t* p = mmt.blocks;
   for (; p != NULL; p = p->next) {
-    if (p->origin_addr > addr) {
-      // map_page(p->addr, p->addr, PAGE_P | PAGE_USU | PAGE_RWW);
-      u32 address = p->origin_addr;
-      for (int i = 0; i < 1000; i++) {  // map block 400k
-        map_page(address, address, PAGE_P | PAGE_USU | PAGE_RWW);
-        // kprintf("map addr %x %x\n", address, address);
-        address += 0x1000;
-      }
-    }
-  }
-}
-
-void unmap_mem_block(u32* page, u32 addr) {
-  for (int i = 0; i < boot_info->memory_number; i++) {
-    memory_info_t* mem = (memory_info_t*)&boot_info->memory[i];
-    if (mem->type != 1) {  // normal ram
-      continue;
-    }
-    if (mem->base > addr) {
-      u32 address = mem->base;
-      for (int i = 0; i < mem->length / 0x1000; i++) {
-        unmap_page_on(page, address);
-        kprintf("unmap addr %x %x\n", address, address);
-        address += 0x1000;
-      }
-    }
+    u32 address = p->origin_addr;
+    map_range(address, address, size, PAGE_P | PAGE_USU | PAGE_RWW);
+    kprintf("map mem block addr range %x - %x\n", p->origin_addr,
+            p->origin_addr + size);
   }
 }
 
@@ -122,37 +85,44 @@ void mm_init_default() {
   for (int i = 0; i < 4; i++) {
     kernel_page_dir_ptr_tab[i] = 0;
   }
-  for (int i = 0; i < 512; i++) {
-    kernel_page_dir[i] = 0;
-    kernel_page_tab[i] = 0;
-  }
-  kernel_page_dir_ptr_tab[0] = (u32)kernel_page_dir | PAGE_P;
-  kernel_page_dir[0] = (u32)kernel_page_tab | (PAGE_P | PAGE_USU | PAGE_RWW);
 
-  // // //map 0-0x200000 2GB
-  unsigned int i, address = 0;
-  kprintf("start 0x%x ", address);
-  for (i = 0; i < 512; i++) {
-    map_page(address, address, (PAGE_P | PAGE_USU | PAGE_RWW));
-    address = address + 0x1000;
-  }
-  kprintf("- 0x%x\n", address);  // 0x200000 2GB
+  unsigned int address = 0;
+  // map mem block 100 page 400k
+  map_mem_block(PAGE_SIZE * 400);
 
-  address = boot_info->kernel_entry;
-  kprintf("map kernel %x ", address);
-  for (i = 0; i < (((u32)boot_info->kernel_size) / 0x1000 + 6); i++) {
-    map_page(address, address, (PAGE_P | PAGE_USU | PAGE_RWW));
-    address += 0x1000;
-  }
-  kprintf("- 0x%x\n", address);
+  // map 0 - 0x14000
+  map_range(0, 0, PAGE_SIZE * 20, PAGE_P | PAGE_USU | PAGE_RWW);
 
-  // map mem block
-  map_mem_block(address);
+  // map kernel
+  kprintf("map kernel start\n");
+  for (int i = 0; i < boot_info->segments_number; i++) {
+    u32 size = boot_info->segments[i].size;
+    address = boot_info->segments[i].start;
+    map_range(address, address, size, PAGE_P | PAGE_USU | PAGE_RWW);
+
+    kprintf("map kernel %d range %x  - %x\n", i, boot_info->segments[i].start,
+            address + size);
+  }
+  kprintf("map kernel end %d\n", boot_info->segments_number);
+
+  map_page(boot_info->pdt_base, boot_info->pdt_base,
+           PAGE_P | PAGE_USU | PAGE_RWW);
+  map_page(boot_info->gdt_base, boot_info->gdt_base,
+           PAGE_P | PAGE_USU | PAGE_RWW);
 
   if (boot_info->pdt_base != NULL) {
     ulong addr = (ulong)boot_info->pdt_base;
     cpu_enable_paging_pae(addr);
     kprintf("paging pae scucess\n");
+  }
+}
+
+void map_range(u32 vaddr, u32 paddr, u32 size, u32 flag) {
+  int pages = size / PAGE_SIZE + (size % PAGE_SIZE > 0 ? 1 : 0);
+  for (int j = 0; j < pages; j++) {
+    map_page(vaddr, paddr, flag);
+    vaddr += PAGE_SIZE;
+    paddr += PAGE_SIZE;
   }
 }
 

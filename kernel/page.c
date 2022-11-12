@@ -10,12 +10,13 @@ void page_fault_handle(interrupt_context_t *context) {
   thread_t *current = thread_current();
   if (current != NULL) {
     int mode = context_get_mode(&current->context);
-    log_debug("page fault at %x\n",fault_addr);
+    log_debug("page fault at %x\n", fault_addr);
     vmemory_area_t *area = vmemory_area_find(current->vmm, fault_addr, 0);
     if (area == NULL) {
-      void *phy =
-          virtual_to_physic(current->context.kpage, fault_addr);
+      void *phy = virtual_to_physic(current->context.kpage, fault_addr);
+      log_debug("page area not found %x\n", fault_addr);
       if (phy != NULL) {
+        log_debug("page lookup kernel found phy: %x\n", phy);
         //内核地址，进行映射,todo 进行检查
         map_page_on(current->context.upage, fault_addr, phy,
                     PAGE_P | PAGE_USU | PAGE_RWW);
