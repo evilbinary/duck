@@ -41,7 +41,7 @@
 #define MEMORY_DATA 5
 #define MEMORY_STACK 6
 
-#define MEMORY_HEAP_SIZE 1024 * 1024 * 100  // 100m
+#define MEMORY_HEAP_SIZE 1024 * 1024 * 200  // 200m
 #define MEMORY_EXEC_SIZE 1024 * 1024 * 100  // 100m
 
 #define KERNEL_POOL_NUM 20

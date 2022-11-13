@@ -236,7 +236,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     argc++;
   }
 
-  exec_t* data = kmalloc(sizeof(exec_t),KERNEL_TYPE);
+  exec_t* data = kmalloc(sizeof(exec_t), KERNEL_TYPE);
   data->filename = filename;
   data->argv = argv;
   data->argc = argc;
@@ -261,7 +261,7 @@ int sys_clone(void* fn, void* stack, void* arg) {
   thread_dump(copy_thread);
 #endif
 
-  thread_set_ret(copy_thread,0);
+  thread_set_ret(copy_thread, 0);
   thread_set_entry(copy_thread, fn);
 
   thread_run(copy_thread);
@@ -296,7 +296,7 @@ int sys_fork() {
     return -1;
   }
   thread_t* copy_thread = thread_copy(current, THREAD_FORK);
-  thread_set_ret(copy_thread,0);
+  thread_set_ret(copy_thread, 0);
 
 #ifdef LOG_DEBUG
   log_debug("-------dump current thread %d %s-------------\n", current->id);
@@ -372,26 +372,43 @@ int sys_readdir(int fd, int index, void* dirent) {
   return ret;
 }
 
-int sys_brk(int addr) {
+void* sys_sbrk(int increment) {
   thread_t* current = thread_current();
-  log_debug("sys sbrk tid:%x addr:%x\n", current->id, addr);
+  vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
+  if (vm == NULL) {
+    log_error("sys sbrk not found vm\n");
+    return 0;
+  }
+  vm->alloc_addr += increment;
+  vm->alloc_size += increment;
+  return vm->alloc_addr;
+}
+
+int sys_brk(u32 end) {
+  thread_t* current = thread_current();
+  log_debug("sys sbrk tid:%x addr:%x\n", current->id, end);
 
   vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
   if (vm == NULL) {
     log_error("sys brk not found vm\n");
+    return -1;
+  }
+  if (end == 0) {
+    if (vm->alloc_addr == vm->vaddr) {
+      vm->alloc_addr = vm->vaddr + end;
+    }
+    end = vm->alloc_addr;
+    log_debug("sys sbrk return first addr:%x\n", end);
     return 0;
   }
-  if (addr == 0) {
-    if (vm->alloc_addr == vm->vaddr) {
-      vm->alloc_addr = vm->vaddr + addr;
-    }
-    addr = vm->alloc_addr;
-    log_error("sys sbrk return first addr:%x\n", addr);
-    return addr;
+  if (end < vm->alloc_addr) {
+    // todo free map age
+    log_debug("sbrk need to free\n");
   }
-  vm->alloc_addr = addr;
+  vm->alloc_size += end - (u32)vm->alloc_addr;
+  vm->alloc_addr = end;
   log_debug("sys sbrk return addr:%x\n", vm->alloc_addr);
-  return vm->alloc_addr;
+  return 0;
 }
 
 int sys_readv(int fd, iovec_t* vector, int count) {
@@ -638,6 +655,8 @@ void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_DUP2] = &sys_dup2;
   syscall_table[SYS_READDIR] = &sys_readdir;
   syscall_table[SYS_BRK] = &sys_brk;
+  syscall_table[SYS_SBRK] = &sys_sbrk;
+
   syscall_table[SYS_READV] = &sys_readv;
   syscall_table[SYS_WRITEV] = &sys_writev;
   syscall_table[SYS_CHDIR] = &sys_chdir;

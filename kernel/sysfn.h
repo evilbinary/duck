@@ -29,6 +29,7 @@ enum {
   SYS_PIPE = 42,
   SYS_DUP = 41,
   SYS_BRK = 45,
+  SYS_SBRK = 46,
   SYS_IOCTL = 54,
   SYS_UMASK = 60,
   SYS_DUP2 = 63,
@@ -87,6 +88,7 @@ enum {
   SYS_PIPE = 42,
   SYS_DUP = 41,
   SYS_BRK = 45,
+  SYS_SBRK = 46,
   SYS_IOCTL = 54,
   SYS_UMASK = 60,
   SYS_DUP2 = 63,
@@ -171,7 +173,7 @@ int sys_dup(int oldfd);
 
 int sys_dup2(int oldfd, int newfd);
 int sys_readdir(int fd, int index, void* dirent);
-int sys_brk(int addr);
+int sys_brk(u32 end);
 
 int sys_readv(int fd, iovec_t* vector, int count);
 int sys_writev(int fd, iovec_t* vector, int count);
