@@ -7,8 +7,8 @@
 
 int test_init(void) {
   log_info("test hello\n");
-  // test_ahci();
-  // test_fat();
+  test_ahci();
+  test_fat();
 
   return 0;
 }
