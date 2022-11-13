@@ -43,8 +43,8 @@ void* vm_alloc(size_t size) {
   current->vmm->alloc_addr += size;
   current->vmm->alloc_size += size;
 
-  log_debug("vm alloc page:%x size:%d addr:%x\n", current->context.upage,
-            size, addr);
+  // log_debug("vm alloc page:%x size:%d addr:%x\n", current->context.upage,
+  //           size, addr);
   return addr;
 }
 
@@ -72,8 +72,8 @@ void* vm_alloc_alignment(size_t size, int alignment) {
   current->vmm->alloc_size += new_size;
   current->vmm->alloc_addr += new_size;
 
-  log_debug("vm alloc a page:%x size:%d addr:%x\n", current->context.upage,
-            new_size, new_addr);
+  // log_debug("vm alloc a page:%x size:%d addr:%x\n", current->context.upage,
+  //           new_size, new_addr);
 
   return new_addr;
 }
@@ -102,8 +102,9 @@ int free_total = 0;
 void* kmalloc_trace(size_t size, void* name, void* no, void* fun) {
   void* addr = vm_alloc(size);
   alloc_total += size;
-  log_debug("kmalloc count:%04d total:%06dk size:%04d addr:%06x %s:%d %s\n",
-            alloc_count++, alloc_total / 1024, size, addr, name, no, fun);
+  void* paddr=kvirtual_to_physic(addr,0);
+  log_debug("kmalloc count:%04d total:%06dk size:%04d addr:%06x paddr:%06x %s:%d %s\n",
+            alloc_count++, alloc_total / 1024, size, addr,paddr, name, no, fun);
   if (addr == NULL) {
     log_error("kmalloc error\n");
     return addr;
@@ -115,8 +116,10 @@ void* kmalloc_alignment_trace(size_t size, int alignment, void* name, void* no,
                               void* fun) {
   void* addr = vm_alloc_alignment(size, alignment);
   alloc_total += size;
-  log_debug("kmalloca count:%04d total:%06dk size:%04d addr:%06x %s:%d %s\n",
-            alloc_count++, alloc_total / 1024, size, addr, name, no, fun);
+  void* paddr=kvirtual_to_physic(addr,0);
+
+  log_debug("kmalloca count:%04d total:%06dk size:%04d addr:%06x paddr:%06x %s:%d %s\n",
+            alloc_count++, alloc_total / 1024, size, addr,paddr, name, no, fun);
   memory_static(size, MEMORY_TYPE_USE);
   return addr;
 }
@@ -256,7 +259,9 @@ void* kvirtual_to_physic(void* addr, int size) {
     phy = virtual_to_physic(current->context.upage, addr);
     if (phy == NULL) {
       log_error("get phy null\n");
-      kmemset(addr, 0, size);
+      if(size>0){
+        kmemset(addr, 0, size);
+      }
       phy = virtual_to_physic(current->context.upage, addr);
     }
   } else {
