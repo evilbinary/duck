@@ -179,7 +179,6 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     copy->vmm = vmemory_clone(thread->vmm, 0);
   } else if (flags & VM_CLONE_ALL) {
     copy->vmm = vmemory_clone(thread->vmm, 1);
-    copy->vmm = kvirtual_to_physic(copy->vmm,0);
     copy->vmm->alloc_addr = thread->vmm->alloc_addr;
     copy->vmm->alloc_size = thread->vmm->alloc_size;
   } else if (flags & VM_SAME) {
@@ -241,6 +240,10 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       //映射堆
       phy = kvirtual_to_physic(copy_heap, 0);
       thread_map(copy, HEAP_ADDR, phy, copy->vmm->alloc_size);
+
+      //update heap addr
+      copy->vmm->alloc_addr = thread->vmm->alloc_addr;
+      copy->vmm->alloc_size = thread->vmm->alloc_size;
 
     } else if (flags & PAGE_SAME) {
       copy->context.upage = thread->context.upage;
