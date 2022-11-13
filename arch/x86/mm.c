@@ -33,9 +33,8 @@ void map_page_on(page_dir_t* page, u32 virtualaddr, u32 physaddr, u32 flags) {
   }
   l3_page_tab_ptr[l3_pte_index] = (u64)physaddr & ~0xFFF | flags;
   // page_tab_ptr[offset] = (u32)physaddr | (flags & 0xFFF);
-  
-  // kprintf("map page:%x on vaddr:%x paddr:%x\n",page,virtualaddr,physaddr);
 
+  // kprintf("map page:%x on vaddr:%x paddr:%x\n",page,virtualaddr,physaddr);
 }
 
 void map_page(u32 virtualaddr, u32 physaddr, u32 flags) {
@@ -76,6 +75,7 @@ void map_mem_block(u32 size) {
     map_range(address, address, size, PAGE_P | PAGE_USU | PAGE_RWW);
     kprintf("map mem block addr range %x - %x\n", p->origin_addr,
             p->origin_addr + size);
+    mmt.last_map_addr = address + size;
   }
 }
 
@@ -89,8 +89,8 @@ void mm_init_default() {
   }
 
   unsigned int address = 0;
-  // map mem block 200 page 800k
-  map_mem_block(PAGE_SIZE * 400);
+  // map mem block 100 page 400k
+  map_mem_block(PAGE_SIZE * 100);
 
   // map 0 - 0x14000
   map_range(0, 0, PAGE_SIZE * 20, PAGE_P | PAGE_USU | PAGE_RWW);
@@ -116,8 +116,8 @@ void mm_init_default() {
            PAGE_P | PAGE_USU | PAGE_RWW);
 
   map_range(boot_info->disply.video, boot_info->disply.video,
-                 boot_info->disply.height * boot_info->disply.width * 2,
-                 PAGE_P | PAGE_USU | PAGE_RWW);
+            boot_info->disply.height * boot_info->disply.width * 2,
+            PAGE_P | PAGE_USU | PAGE_RWW);
 
   if (boot_info->pdt_base != NULL) {
     ulong addr = (ulong)boot_info->pdt_base;

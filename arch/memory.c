@@ -84,6 +84,18 @@ void* ya_sbrk(size_t size) {
   }
   kassert(found > 0);
   kassert(addr != NULL);
+  if (mmt.last_map_addr > 0 &&
+      ((u32)addr + PAGE_SIZE * (mmt.extend_phy_count + 10)) >
+          mmt.last_map_addr) {
+    kprintf("extend kernel phy mem %x exten count:%d\n", addr,mmt.extend_phy_count);
+    // extend 400k*mmt.extend_phy_count phy mem
+    mmt.extend_phy_count++;
+    for (int i = 0; i < 100 * mmt.extend_phy_count; i++) {
+      map_page(mmt.last_map_addr, mmt.last_map_addr,
+               PAGE_P | PAGE_USU | PAGE_RWW);
+      mmt.last_map_addr += PAGE_SIZE;
+    }
+  }
   return addr;
 }
 
@@ -111,7 +123,8 @@ block_t* ya_find_free_block(size_t size) {
   block_t* find_block = NULL;
   while (block) {
     if (!(block->magic == MAGIC_USED || block->magic == MAGIC_FREE)) {
-      log_error("errro find free block %x,magic error is %x\n",block,block->magic);
+      log_error("errro find free block %x,magic error is %x\n", block,
+                block->magic);
       cpu_halt();
       break;
     }
@@ -278,6 +291,8 @@ void mm_init() {
   mmt.g_block_list_last = NULL;
   mmt.alloc_count = 0;
   mmt.alloc_size = 0;
+  mmt.last_map_addr = 0;
+  mmt.extend_phy_count = 0;
 
   count = 0;
 
@@ -308,7 +323,7 @@ void* mm_alloc_zero_align(size_t size, u32 alignment) {
   if ((p1 = (void*)mm_alloc(size + offset)) == NULL) return NULL;
   p2 = (void**)(((size_t)(p1) + offset) & ~(alignment - 1));
   p2[-1] = p1;
-  kmemset(p2, 0, size);
+  //kmemset(p2, 0, size);
 #ifdef DEBUG
   kprintf("alloc align %x size=%d\n", p2, size);
 #endif
