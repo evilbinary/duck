@@ -433,6 +433,32 @@ void fat_init_op(vnode_t *node) { node->op = &fat_op; }
 
 void fat_init(void) {
   log_info("fat init\n");
+
+  char *name;
+  vnode_t *root_super = NULL;
+  for (int i = 0; i < 3; i++) {
+    device_t *dev = device_find(DEVICE_SATA + i);
+    if (dev == NULL) {
+      continue;
+    }
+    name = kmalloc(4);
+    name[0] = 's';
+    name[1] = 'd';
+    name[2] = 0x61 + i;
+    name[3] = 0;
+    vnode_t *node_sda = devfs_create_device(dev);
+    node_sda->name = name;
+    vfs_mount(NULL, "/dev", node_sda);
+    if (root_super == NULL) {
+      root_super = node_sda;
+      break;
+    }
+  }
+
+  // auto mount first dev as root
+  vnode_t *root = vfs_find(NULL, "/");
+  root->super = root_super;
+
   vnode_t *node = vfs_find(NULL, "/dev/sda");
   default_node = node;
   if (node == NULL) {

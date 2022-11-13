@@ -34,29 +34,6 @@ vnode_t *devfs_create_device(device_t *dev) {
 int devfs_init(void) {
   vnode_t *node_dev = vfs_create_node("dev", V_DIRECTORY);
   vfs_mount(NULL, "/", node_dev);
-  char *name;
-  vnode_t *root_super = NULL;
-  for (int i = 0; i < 3; i++) {
-    device_t *dev = device_find(DEVICE_SATA + i);
-    if (dev == NULL) {
-      continue;
-    }
-    name = kmalloc(4);
-    name[0] = 's';
-    name[1] = 'd';
-    name[2] = 0x61 + i;
-    name[3] = 0;
-    vnode_t *node_sda = devfs_create_device(dev);
-    node_sda->name = name;
-    vfs_mount(NULL, "/dev", node_sda);
-    if (root_super == NULL) {
-      root_super = node_sda;
-    }
-  }
-
-  // auto mount first dev as root
-  vnode_t *root = vfs_find(NULL, "/");
-  root->super = root_super;
 
   // SYS_READ,SYS_WRITE
   vnode_t *stdin = vfs_create_node("stdin", V_FILE);
