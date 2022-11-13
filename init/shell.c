@@ -57,6 +57,7 @@ int do_exec(char* cmd, int count) {
     int p = syscall0(SYS_GETPID);
     kprintf("child current p=%d pid=%d\n", p, pid);
     syscall2(SYS_EXEC, buf, &argv[1]);
+    syscall1(SYS_EXIT,0);
   } else {
     int p = syscall0(SYS_GETPID);
     kprintf("parent current p=%d pid=%d\n", p, pid);
