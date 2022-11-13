@@ -195,12 +195,12 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     // 堆栈分配方式
     u32* copy_ustack = NULL;
     if (flags & STACK_ALLOC) {
-      copy_ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE,KERNEL_TYPE);
+      copy_ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE,DEFAULT_TYPE);
       copy->context.usp = STACK_ADDR + copy->context.usp_size;
       copy->context.usp_start = copy_ustack;
       copy->context.usp_end = copy->context.usp_start + copy->context.usp_size;
     } else if (flags & STACK_CLONE) {
-      copy_ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE,KERNEL_TYPE);
+      copy_ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE,DEFAULT_TYPE);
       kmemmove(copy_ustack, thread->context.usp_start, copy->context.usp_size);
 
       copy->context.usp = thread->context.usp;
@@ -212,7 +212,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
 
     //堆栈分配方式
     u32* copy_heap = NULL;
-    int heap_size = MEMORY_HEAP_SIZE;
+    int heap_size = thread->vmm->alloc_size;
     if (copy->vmm->alloc_size > 0) {
       heap_size = copy->vmm->alloc_size;
     }
@@ -220,11 +220,11 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       heap_size = PAGE_SIZE;
     }
     if (flags & HEAP_ALLOC) {
-      copy_heap = kmalloc_alignment(heap_size, PAGE_SIZE,KERNEL_TYPE);
+      copy_heap = kmalloc_alignment(heap_size, PAGE_SIZE,DEFAULT_TYPE);
     } else if (flags & HEAP_SAME) {
       copy_heap = thread->vmm->vaddr;
     } else if (flags & HEAP_CLONE) {
-      copy_heap = kmalloc_alignment(heap_size, PAGE_SIZE,KERNEL_TYPE);
+      copy_heap = kmalloc_alignment(heap_size, PAGE_SIZE,DEFAULT_TYPE);
       kmemmove(copy_heap, thread->vmm->vaddr, heap_size);
     }
 
@@ -260,7 +260,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
   } else {
     log_debug("kernel start before init\n");
     if (copy->level == KERNEL_MODE) {
-      void* ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE,KERNEL_TYPE);
+      void* ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE,DEFAULT_TYPE);
       copy->context.usp = STACK_ADDR + koffset + copy->context.usp_size;
       copy->context.usp_start = ustack;
       copy->context.usp_end = copy->context.usp + copy->context.usp_size;
@@ -272,7 +272,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       // copy->context.usp_size;
       copy->context.upage = page_alloc_clone(NULL, copy->level);
     } else if (copy->level == USER_MODE) {
-      void* ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE,KERNEL_TYPE);
+      void* ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE,DEFAULT_TYPE);
       void* phy = kvirtual_to_physic(ustack, 0);
       copy->context.usp_start = phy;
       copy->context.usp_end = copy->context.usp_start + copy->context.usp_size;
