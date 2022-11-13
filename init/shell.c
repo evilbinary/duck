@@ -44,6 +44,9 @@ int do_exec(char* cmd, int count) {
   const char* split = " ";
   char* ptr = kstrtok(cmd, split);
   argv[i++] = ptr;
+  if(argv[1]==' '|| argv[0]==NULL){
+    return 0;
+  }
   sprintf(buf, "/%s", argv[0]);
   while (ptr != NULL) {
     argv[i++] = ptr;
