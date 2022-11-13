@@ -26,7 +26,7 @@ void page_fault_handle(interrupt_context_t *context) {
           log_error("%s memory fault at %x\n", current->name, fault_addr);
           context_dump_fault(context, fault_addr);
           current->fault_count++;
-          cpu_halt();
+          //cpu_halt();
         } else if (current->fault_count == 3) {
           log_error("%s memory fault at %x too many\n", current->name,
                     fault_addr);

@@ -15,10 +15,10 @@
 
 #include "types.h"
 
-#define	O_CREAT			00000100
-#define	O_EXCL			00000200
-#define	O_NOCTTY		00000400
-#define	O_TRUNC			00001000
+#define	O_CREAT			0x0000100
+#define	O_EXCL			0x0000200
+#define	O_NOCTTY		0x0000400
+#define	O_TRUNC			0x0001000
 
 #ifndef MAX_FD_NUMBER
 #define MAX_FD_NUMBER 512

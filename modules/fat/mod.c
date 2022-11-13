@@ -73,22 +73,22 @@ size_t fat_read_bytes(vnode_t *node, u32 offset, size_t nbytes, u8 *buf) {
   u32 ret = 0;
   u32 count = nbytes / BYTE_PER_SECTOR;
   u32 rest = nbytes % BYTE_PER_SECTOR;
-  char vsmall_buf[BYTE_PER_SECTOR*2];
-  char* small_buf=kvirtual_to_physic(vsmall_buf,0);
-  if(small_buf==NULL){
-    small_buf=vsmall_buf;
+  char vsmall_buf[BYTE_PER_SECTOR * 2];
+  char *small_buf = kvirtual_to_physic(vsmall_buf, 0);
+  if (small_buf == NULL) {
+    small_buf = vsmall_buf;
   }
 
   for (int i = 0; i < count; i++) {
-    kmemset(small_buf, 0, BYTE_PER_SECTOR*2);
+    kmemset(small_buf, 0, BYTE_PER_SECTOR * 2);
     ret = fat_device_read(node, offset, BYTE_PER_SECTOR, small_buf);
     kmemmove(buf, small_buf + offset % BYTE_PER_SECTOR, BYTE_PER_SECTOR);
     buf += BYTE_PER_SECTOR;
     offset += BYTE_PER_SECTOR;
   }
   if (rest > 0) {
-    kmemset(small_buf, 0, BYTE_PER_SECTOR*2);
-    ret = fat_device_read(node, offset, BYTE_PER_SECTOR*2, small_buf);
+    kmemset(small_buf, 0, BYTE_PER_SECTOR * 2);
+    ret = fat_device_read(node, offset, BYTE_PER_SECTOR * 2, small_buf);
     buf += count * BYTE_PER_SECTOR;
     kmemmove(buf, small_buf + offset % BYTE_PER_SECTOR, rest);
   }
@@ -102,10 +102,10 @@ size_t fat_read_bytes(vnode_t *node, u32 offset, size_t nbytes, u8 *buf) {
 size_t fat_write_bytes(vnode_t *node, u32 offset, size_t nbytes, u8 *buf) {
   u32 count = nbytes / BYTE_PER_SECTOR;
   u32 rest = nbytes % BYTE_PER_SECTOR;
-  char vsmall_buf[BYTE_PER_SECTOR*2];
-  char* small_buf=kvirtual_to_physic(vsmall_buf,0);
-  if(small_buf==NULL){
-    small_buf=vsmall_buf;
+  char vsmall_buf[BYTE_PER_SECTOR * 2];
+  char *small_buf = kvirtual_to_physic(vsmall_buf, 0);
+  if (small_buf == NULL) {
+    small_buf = vsmall_buf;
   }
   u32 ret = 0;
   for (int i = 0; i < count; i++) {
@@ -194,9 +194,9 @@ u32 fat_op_write(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
     return -1;
   }
   fat_seek_file(file_info->fd, &offset, FAT_SEEK_SET);
-  u32 ret=fat_write_file(file_info->fd, buffer, nbytes);
-  if(file_info->fd!=NULL){
-    node->length=file_info->fd->dir_entry.file_size;
+  u32 ret = fat_write_file(file_info->fd, buffer, nbytes);
+  if (file_info->fd != NULL) {
+    node->length = file_info->fd->dir_entry.file_size;
   }
   return ret;
 }
@@ -205,7 +205,8 @@ u32 find_file_in_dir(struct fat_fs_struct *fs, struct fat_dir_struct *dd,
                      const char *name, struct fat_dir_entry_struct *dir_entry) {
   while (fat_read_dir(dd, dir_entry)) {
     if (kstrcmp(dir_entry->long_name, name) == 0) {
-      // kprintf("find_file_in_dir %s==%s attr:%x\n",dir_entry->long_name,name,dir_entry->attributes);
+      // kprintf("find_file_in_dir %s==%s
+      // attr:%x\n",dir_entry->long_name,name,dir_entry->attributes);
       fat_reset_dir(dd);
       return 1;
     }
@@ -246,12 +247,14 @@ u32 fat_op_open(vnode_t *node, u32 mode) {
   }
   struct fat_fs_struct *fs = file_info->fs;
   file_info->offset = 0;
-  if (((mode & O_CREAT) == O_CREAT) ||
+  if (((mode & O_CREAT) == O_CREAT) &&
       (file_info->fd == NULL && file_info->dd == NULL)) {
     log_debug("create new file %s\n", name);
     file_info_t *parent_file_info = node->parent->data;
-    file_info_t *new_file_info = kmalloc(sizeof(struct file_info),DEFAULT_TYPE);
-    struct fat_dir_struct *dd = kmalloc(sizeof(struct fat_dir_struct),DEFAULT_TYPE);
+    file_info_t *new_file_info =
+        kmalloc(sizeof(struct file_info), KERNEL_TYPE);
+    struct fat_dir_struct *dd =
+        kmalloc(sizeof(struct fat_dir_struct), KERNEL_TYPE);
     new_file_info->dd = dd;
     dd->fs = fs;
     node->data = new_file_info;
@@ -266,9 +269,19 @@ u32 fat_op_open(vnode_t *node, u32 mode) {
       return -1;
     }
     new_file_info->fd = fd;
-  }else{
-    if(file_info->fd!=NULL){
-      node->length =file_info->fd->dir_entry.file_size;
+  } else {
+    if (file_info->fd != NULL) {
+      node->length = file_info->fd->dir_entry.file_size;
+    } else {
+      //struct fat_dir_struct *dd =kmalloc(sizeof(struct fat_dir_struct), DEFAULT_TYPE);
+      // struct fat_file_struct *fd = fat_open_file(fs, &dd->dir_entry);
+      // if (!fd) {
+      //   log_error("create file bad fd %s\n", name);
+      //   return -1;
+      // }
+      // file_info->fd = fd;
+      // file_info->dd =dd;
+      // fat_op_find(node,name);
     }
   }
   return 1;
@@ -290,7 +303,7 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
     return NULL;
   }
 
-  file_info_t *new_file_info = kmalloc(sizeof(file_info_t),DEFAULT_TYPE);
+  file_info_t *new_file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
   new_file_info->fs = fs;
   int ret = open_file_in_dir(fs, dd, name, new_file_info);
   if (!ret) {
@@ -304,8 +317,8 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
   }
   vnode_t *file = vfs_create_node(name, type);
   file->data = new_file_info;
-  if(new_file_info->fd!=NULL){
-      file->length =new_file_info->fd->dir_entry.file_size;
+  if (new_file_info->fd != NULL) {
+    file->length = new_file_info->fd->dir_entry.file_size;
   }
   file->device = node->device;
   fat_init_op(file);
@@ -359,24 +372,24 @@ int fat_op_close(vnode_t *node) {
   return 0;
 }
 
-size_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args){
+size_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args) {
   u32 ret = 0;
 
-  if(cmd==IOC_STAT){
+  if (cmd == IOC_STAT) {
     file_info_t *file_info = node->data;
     if (file_info == NULL) {
       file_info = node->super->data;
       node->data = file_info;
     }
-    struct stat *stat=args;
-    if(file_info->dd!=NULL){
-      stat->st_size= file_info->dd->dir_entry.file_size;
-      stat->st_mtim= file_info->dd->dir_entry.modification_time;
-      stat->st_mode= file_info->dd->dir_entry.attributes;
-    }else if(file_info->fd!=NULL){
-      stat->st_size= file_info->fd->dir_entry.file_size;
-      stat->st_mtim= file_info->fd->dir_entry.modification_time;
-      stat->st_mode= file_info->fd->dir_entry.attributes;
+    struct stat *stat = args;
+    if (file_info->dd != NULL) {
+      stat->st_size = file_info->dd->dir_entry.file_size;
+      stat->st_mtim = file_info->dd->dir_entry.modification_time;
+      stat->st_mode = file_info->dd->dir_entry.attributes;
+    } else if (file_info->fd != NULL) {
+      stat->st_size = file_info->fd->dir_entry.file_size;
+      stat->st_mtim = file_info->fd->dir_entry.modification_time;
+      stat->st_mode = file_info->fd->dir_entry.attributes;
     }
 
     return 0;
@@ -393,13 +406,13 @@ size_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args){
   return ret;
 }
 
-
-void get_datetime(uint16_t* year, uint8_t* month, uint8_t* day, uint8_t* hour, uint8_t* min, uint8_t* sec){
-  int time_fd=-1;
+void get_datetime(uint16_t *year, uint8_t *month, uint8_t *day, uint8_t *hour,
+                  uint8_t *min, uint8_t *sec) {
+  int time_fd = -1;
   time_fd = sys_open("/dev/time", 0);
-  if (time_fd < 0) return ;
+  if (time_fd < 0) return;
 
-   rtc_time_t time;
+  rtc_time_t time;
   time.day = 1;
   time.hour = 0;
   time.minute = 0;
@@ -409,14 +422,14 @@ void get_datetime(uint16_t* year, uint8_t* month, uint8_t* day, uint8_t* hour, u
   int ret = sys_read(time_fd, &time, sizeof(rtc_time_t));
   if (ret < 0) {
     log_error("erro read time\n");
-    return ;
+    return;
   }
-  *year=time.year;
-  *month=time.month;
-  *day=time.day;
-  *hour=time.hour;
-  *min=time.minute;
-  *sec=time.second;
+  *year = time.year;
+  *month = time.month;
+  *day = time.day;
+  *hour = time.hour;
+  *min = time.minute;
+  *sec = time.second;
 }
 
 voperator_t fat_op = {
@@ -441,7 +454,7 @@ void fat_init(void) {
     if (dev == NULL) {
       continue;
     }
-    name = kmalloc(4,DEFAULT_TYPE);
+    name = kmalloc(4, DEFAULT_TYPE);
     name[0] = 's';
     name[1] = 'd';
     name[2] = 0x61 + i;
@@ -488,7 +501,7 @@ void fat_init(void) {
     return NULL;
   }
 
-  file_info_t *file_info = kmalloc(sizeof(file_info_t),DEFAULT_TYPE);
+  file_info_t *file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
   file_info->fs = fs;
   file_info->dd = dd;
   node->data = file_info;
