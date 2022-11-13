@@ -5,18 +5,26 @@
  ********************************************************************/
 #include "page.h"
 
+// #define DEBUG
+
 void page_fault_handle(interrupt_context_t *context) {
   u32 *fault_addr = cpu_get_fault();
   thread_t *current = thread_current();
   if (current != NULL) {
     int mode = context_get_mode(&current->context);
+#ifdef DEBUG
     log_debug("page fault at %x\n", fault_addr);
+#endif
     vmemory_area_t *area = vmemory_area_find(current->vmm, fault_addr, 0);
     if (area == NULL) {
       void *phy = virtual_to_physic(current->context.kpage, fault_addr);
+#ifdef DEBUG
       log_debug("page area not found %x\n", fault_addr);
+#endif
       if (phy != NULL) {
+#ifdef DEBUG
         log_debug("page lookup kernel found phy: %x\n", phy);
+#endif
         //内核地址，进行映射,todo 进行检查
         map_page_on(current->context.upage, fault_addr, phy,
                     PAGE_P | PAGE_USU | PAGE_RWW);
@@ -26,7 +34,7 @@ void page_fault_handle(interrupt_context_t *context) {
           log_error("%s memory fault at %x\n", current->name, fault_addr);
           context_dump_fault(context, fault_addr);
           current->fault_count++;
-          //cpu_halt();
+          // cpu_halt();
         } else if (current->fault_count == 3) {
           log_error("%s memory fault at %x too many\n", current->name,
                     fault_addr);

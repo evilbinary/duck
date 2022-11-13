@@ -255,8 +255,10 @@ void* valloc(void* addr, size_t size) {
 #endif
   void* paddr = phy_addr;
   for (int i = 0; i < size / PAGE_SIZE; i++) {
+#ifdef DEBUG
     log_debug("map page:%x vaddr:%x paddr:%x\n", current->context.upage, vaddr,
               paddr);
+#endif
     if (current != NULL) {
       map_page_on(current->context.upage, vaddr, paddr,
                   PAGE_P | PAGE_USU | PAGE_RWW);
