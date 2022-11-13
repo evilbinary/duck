@@ -10,7 +10,7 @@
 
 
 int vbox_init(void) {
-  device_t* dev = kmalloc(sizeof(device_t));
+  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "vbox";
   dev->read = vga_read;
   dev->write = vga_write;

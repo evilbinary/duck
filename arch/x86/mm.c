@@ -33,6 +33,9 @@ void map_page_on(page_dir_t* page, u32 virtualaddr, u32 physaddr, u32 flags) {
   }
   l3_page_tab_ptr[l3_pte_index] = (u64)physaddr & ~0xFFF | flags;
   // page_tab_ptr[offset] = (u32)physaddr | (flags & 0xFFF);
+  
+  // kprintf("map page:%x on vaddr:%x paddr:%x\n",page,virtualaddr,physaddr);
+
 }
 
 void map_page(u32 virtualaddr, u32 physaddr, u32 flags) {
@@ -87,7 +90,7 @@ void mm_init_default() {
 
   unsigned int address = 0;
   // map mem block 200 page 800k
-  map_mem_block(PAGE_SIZE * 200);
+  map_mem_block(PAGE_SIZE * 400);
 
   // map 0 - 0x14000
   map_range(0, 0, PAGE_SIZE * 20, PAGE_P | PAGE_USU | PAGE_RWW);
@@ -158,6 +161,7 @@ void* virtual_to_physic(u64* page_dir_ptr_tab, void* vaddr) {
 void page_clone(u32* old_page, u32* new_page) {
   u64* page = old_page;
   if (old_page == NULL) {
+    kprintf("page clone old page is null\n");
     return;
   }
   u64* page_dir_ptr_tab = new_page;

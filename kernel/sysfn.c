@@ -236,7 +236,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     argc++;
   }
 
-  exec_t* data = kmalloc(sizeof(exec_t));
+  exec_t* data = kmalloc(sizeof(exec_t),KERNEL_TYPE);
   data->filename = filename;
   data->argv = argv;
   data->argc = argc;

@@ -29,7 +29,7 @@ size_t gpio_ioctl(device_t* dev, u32 cmd, void* args) {
 
 int gpio_init(void) {
   kprintf("gpio init\n");
-  device_t* dev = kmalloc(sizeof(device_t));
+  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "gpio";
   dev->read = gpio_read;
   dev->write = gpio_write;

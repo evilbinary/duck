@@ -195,6 +195,7 @@ int context_clone(context_t* des, context_t* src) {
   // not cover upage
   void* page = des->upage;
   des->upage = page;
+  pdes->upage= page;
 
   if (ic != NULL) {
     *ic = *is;  // set usp alias ustack and ip cs ss and so on

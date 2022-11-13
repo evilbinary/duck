@@ -40,7 +40,7 @@ void keyboard_wait() {
 }
 
 int keyboard_init(void) {
-  device_t* dev = kmalloc(sizeof(device_t));
+  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "keyboard";
   dev->read = read;
   dev->id = DEVICE_KEYBOARD;

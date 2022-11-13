@@ -40,7 +40,7 @@ size_t spi_ioctl(device_t* dev, u32 cmd, void* args) {
 int spi_init(void) {
   kprintf("spi\n");
 
-  device_t* dev = kmalloc(sizeof(device_t));
+  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "spi";
   dev->read = spi_read;
   dev->write = spi_write;

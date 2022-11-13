@@ -53,7 +53,7 @@ thread_t* thread_create_ex_name(char* name, void* entry, u32 size, void* data,
   thread_t* t = thread_create_ex(entry, KERNEL_THREAD_STACK_SIZE, size, data,
                                  level, flags);
   if (t == NULL) return t;
-  char* kname = kmalloc(kstrlen(name));
+  char* kname = kmalloc(kstrlen(name),KERNEL_TYPE);
   kstrcpy(kname, name);
   t->name = kname;
   return t;
@@ -83,10 +83,10 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
     log_error("thread create ex  user stack size is 0\n");
     return NULL;
   }
-  thread_t* thread = kmalloc(sizeof(thread_t));
+  thread_t* thread = kmalloc(sizeof(thread_t),KERNEL_TYPE);
   thread_init_default(thread, level, entry, data);
 
-  thread->fds = kmalloc(sizeof(fd_t) * thread->fd_size);
+  thread->fds = kmalloc(sizeof(fd_t) * thread->fd_size,KERNEL_TYPE);
   thread->context.usp_size = ustack_size;
   thread->context.ksp_size = kstack_size;
   // must set null before init
@@ -97,7 +97,7 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   thread->context.ksp_end = NULL;
   thread->context.usp_end = NULL;
   // vfs
-  thread->vfs = kmalloc(sizeof(vfs_t));
+  thread->vfs = kmalloc(sizeof(vfs_t),KERNEL_TYPE);
   // file description
   thread_fill_fd(thread);
 
@@ -113,7 +113,7 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   if (thread == NULL) {
     return NULL;
   }
-  thread_t* copy = kmalloc(sizeof(thread_t));
+  thread_t* copy = kmalloc(sizeof(thread_t),KERNEL_TYPE);
 
   kmemmove(copy, thread, sizeof(thread_t));
   thread_init_default(copy, thread->level, thread->context.eip, thread->data);
@@ -155,14 +155,14 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     // copy file
     copy->fd_size = thread->fd_size;
     copy->fd_number = thread->fd_number;
-    copy->fds = kmalloc(sizeof(fd_t) * thread->fd_size);
+    copy->fds = kmalloc(sizeof(fd_t) * thread->fd_size,KERNEL_TYPE);
     kmemmove(copy->fds, thread->fds, sizeof(fd_t) * thread->fd_size);
   }
 
   //栈分配方式
   // kstack
   if (copy->context.ksp_start == NULL) {
-    void* kstack = kmalloc(copy->context.ksp_size);
+    void* kstack = kmalloc(copy->context.ksp_size,KERNEL_TYPE);
     copy->context.ksp_start = kvirtual_to_physic(kstack, 0);
     copy->context.ksp_end = copy->context.ksp_size + copy->context.ksp_start;
     if (thread == NULL) {
@@ -179,6 +179,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     copy->vmm = vmemory_clone(thread->vmm, 0);
   } else if (flags & VM_CLONE_ALL) {
     copy->vmm = vmemory_clone(thread->vmm, 1);
+    copy->vmm = kvirtual_to_physic(copy->vmm,0);
     copy->vmm->alloc_addr = thread->vmm->alloc_addr;
     copy->vmm->alloc_size = thread->vmm->alloc_size;
   } else if (flags & VM_SAME) {
@@ -194,12 +195,12 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     // 堆栈分配方式
     u32* copy_ustack = NULL;
     if (flags & STACK_ALLOC) {
-      copy_ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE);
+      copy_ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE,KERNEL_TYPE);
       copy->context.usp = STACK_ADDR + copy->context.usp_size;
       copy->context.usp_start = copy_ustack;
       copy->context.usp_end = copy->context.usp_start + copy->context.usp_size;
     } else if (flags & STACK_CLONE) {
-      copy_ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE);
+      copy_ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE,KERNEL_TYPE);
       kmemmove(copy_ustack, thread->context.usp_start, copy->context.usp_size);
 
       copy->context.usp = thread->context.usp;
@@ -219,11 +220,11 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       heap_size = PAGE_SIZE;
     }
     if (flags & HEAP_ALLOC) {
-      copy_heap = kmalloc_alignment(heap_size, PAGE_SIZE);
+      copy_heap = kmalloc_alignment(heap_size, PAGE_SIZE,KERNEL_TYPE);
     } else if (flags & HEAP_SAME) {
       copy_heap = thread->vmm->vaddr;
     } else if (flags & HEAP_CLONE) {
-      copy_heap = kmalloc_alignment(heap_size, PAGE_SIZE);
+      copy_heap = kmalloc_alignment(heap_size, PAGE_SIZE,KERNEL_TYPE);
       kmemmove(copy_heap, thread->vmm->vaddr, heap_size);
     }
 
@@ -259,7 +260,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
   } else {
     log_debug("kernel start before init\n");
     if (copy->level == KERNEL_MODE) {
-      void* ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE);
+      void* ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE,KERNEL_TYPE);
       copy->context.usp = STACK_ADDR + koffset + copy->context.usp_size;
       copy->context.usp_start = ustack;
       copy->context.usp_end = copy->context.usp + copy->context.usp_size;
@@ -271,7 +272,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       // copy->context.usp_size;
       copy->context.upage = page_alloc_clone(NULL, copy->level);
     } else if (copy->level == USER_MODE) {
-      void* ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE);
+      void* ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE,KERNEL_TYPE);
       void* phy = kvirtual_to_physic(ustack, 0);
       copy->context.usp_start = phy;
       copy->context.usp_end = copy->context.usp_start + copy->context.usp_size;
@@ -391,6 +392,9 @@ void thread_reset_user_stack(thread_t* thread, u32* ustack) {
 
 void thread_add(thread_t* thread) {
   lock_acquire(&thread_lock);
+
+  //内核需要物理地址
+  thread=kvirtual_to_physic(thread,0);
   int cpu_id = cpu_get_id();
   if (schedulable_head_thread[cpu_id] == NULL) {
     schedulable_head_thread[cpu_id] = thread;
@@ -624,9 +628,12 @@ void thread_dump(thread_t* thread) {
   kprintf("--context--\n");
   context_dump(&thread->context);
   kprintf("--kstack--\n");
-  thread_dump_stack(thread->context.ksp_start, thread->context.ksp_size);
+  // thread_dump_stack(thread->context.ksp_start, thread->context.ksp_size);
+  int dump_size=0x100;
+  thread_dump_stack(thread->context.ksp_end -dump_size, dump_size);
   kprintf("--ustack--\n");
-  thread_dump_stack(thread->context.usp_start, thread->context.usp_size);
+  // thread_dump_stack(thread->context.usp_start, thread->context.usp_size);
+  thread_dump_stack(thread->context.usp_end-dump_size, dump_size);
   kprintf("\n");
 }
 

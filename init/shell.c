@@ -51,9 +51,9 @@ int do_exec(char* cmd, int count) {
   }
   int pid = syscall0(SYS_FORK);
   if (pid == 0) {  //子进程
-    syscall2(SYS_EXEC, buf, &argv[1]);
     int p = syscall0(SYS_GETPID);
     kprintf("child current p=%d pid=%d\n", p, pid);
+    syscall2(SYS_EXEC, buf, &argv[1]);
   } else {
     int p = syscall0(SYS_GETPID);
     kprintf("parent current p=%d pid=%d\n", p, pid);

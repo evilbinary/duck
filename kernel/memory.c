@@ -29,6 +29,20 @@ memory_t* memory_info() {
   return &memory_summary;
 }
 
+void* phy_alloc(size_t size) {
+  if (size == 0) return NULL;
+  void* addr = NULL;
+  addr = mm_alloc(size);
+  return addr;
+}
+
+void* phy_alloc_aligment(size_t size, int alignment) {
+  if (size == 0) return NULL;
+  void* addr = NULL;
+  addr = mm_alloc_zero_align(size, alignment);
+  return addr;
+}
+
 void* vm_alloc(size_t size) {
   if (size == 0) return NULL;
   void* addr = NULL;
@@ -99,12 +113,19 @@ int alloc_total = 0;
 int free_count = 0;
 int free_total = 0;
 
-void* kmalloc_trace(size_t size, void* name, void* no, void* fun) {
-  void* addr = vm_alloc(size);
+void* kmalloc_trace(size_t size, u32 flag, void* name, void* no, void* fun) {
+  void* addr = NULL;
+  if (flag & KERNEL_TYPE || flag & DEVICE_TYPE) {
+    addr = phy_alloc(size);
+  } else {
+    addr = vm_alloc(size);
+  }
   alloc_total += size;
-  void* paddr=kvirtual_to_physic(addr,0);
-  log_debug("kmalloc count:%04d total:%06dk size:%04d addr:%06x paddr:%06x %s:%d %s\n",
-            alloc_count++, alloc_total / 1024, size, addr,paddr, name, no, fun);
+  void* paddr = kvirtual_to_physic(addr, 0);
+  log_debug(
+      "kmalloc count:%04d total:%06dk size:%04d addr:%06x paddr:%06x %s:%d "
+      "%s\n",
+      alloc_count++, alloc_total / 1024, size, addr, paddr, name, no, fun);
   if (addr == NULL) {
     log_error("kmalloc error\n");
     return addr;
@@ -112,14 +133,21 @@ void* kmalloc_trace(size_t size, void* name, void* no, void* fun) {
   return addr;
 }
 
-void* kmalloc_alignment_trace(size_t size, int alignment, void* name, void* no,
-                              void* fun) {
-  void* addr = vm_alloc_alignment(size, alignment);
+void* kmalloc_alignment_trace(size_t size, int alignment, u32 flag, void* name,
+                              void* no, void* fun) {
+  void* addr = NULL;
+  if (flag & KERNEL_TYPE || flag & DEVICE_TYPE) {
+    addr = phy_alloc_aligment(size, alignment);
+  } else {
+    addr = vm_alloc_alignment(size, alignment);
+  }
   alloc_total += size;
-  void* paddr=kvirtual_to_physic(addr,0);
+  void* paddr = kvirtual_to_physic(addr, 0);
 
-  log_debug("kmalloca count:%04d total:%06dk size:%04d addr:%06x paddr:%06x %s:%d %s\n",
-            alloc_count++, alloc_total / 1024, size, addr,paddr, name, no, fun);
+  log_debug(
+      "kmalloca count:%04d total:%06dk size:%04d addr:%06x paddr:%06x %s:%d "
+      "%s\n",
+      alloc_count++, alloc_total / 1024, size, addr, paddr, name, no, fun);
   memory_static(size, MEMORY_TYPE_USE);
   return addr;
 }
@@ -145,14 +173,24 @@ void kfree_alignment_trace(void* ptr, void* name, void* no, void* fun) {
 
 #else
 
-void* kmalloc(size_t size) {
-  void* addr = vm_alloc(size);
+void* kmalloc(size_t size, u32 flag) {
+  void* addr = NULL;
+  if (flag & KERNEL_TYPE || flag & DEVICE_TYPE) {
+    addr = phy_alloc(size);
+  } else {
+    addr = vm_alloc(size);
+  }
   memory_static(size, MEMORY_TYPE_USE);
   return addr;
 }
 
-void* kmalloc_alignment(size_t size, int alignment) {
-  void* addr = vm_alloc_alignment(size, alignment);
+void* kmalloc_alignment(size_t size, int alignment, u32 flag) {
+  void* addr = NULL;
+  if (flag & KERNEL_TYPE || flag & DEVICE_TYPE) {
+    addr = phy_alloc_aligment(size);
+  } else {
+    addr = vm_alloc_alignment(size, alignment);
+  }
   memory_static(size, MEMORY_TYPE_USE);
   return addr;
 }
@@ -217,8 +255,8 @@ void* valloc(void* addr, size_t size) {
 #endif
   void* paddr = phy_addr;
   for (int i = 0; i < size / PAGE_SIZE; i++) {
-    log_debug("map page:%x vaddr:%x paddr:%x\n", current->context.upage,
-              vaddr, paddr);
+    log_debug("map page:%x vaddr:%x paddr:%x\n", current->context.upage, vaddr,
+              paddr);
     if (current != NULL) {
       map_page_on(current->context.upage, vaddr, paddr,
                   PAGE_P | PAGE_USU | PAGE_RWW);
@@ -259,7 +297,7 @@ void* kvirtual_to_physic(void* addr, int size) {
     phy = virtual_to_physic(current->context.upage, addr);
     if (phy == NULL) {
       log_error("get phy null\n");
-      if(size>0){
+      if (size > 0) {
         kmemset(addr, 0, size);
       }
       phy = virtual_to_physic(current->context.upage, addr);

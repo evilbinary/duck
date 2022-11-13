@@ -75,7 +75,7 @@ static void stm32_spi_init() {
 }
 
 int spi_init_device(device_t* dev) {
-  spi_t* spi = kmalloc(sizeof(spi_t));
+  spi_t* spi = kmalloc(sizeof(spi_t),DEFAULT_TYPE);
   dev->data = spi;
 
   spi->inited = 0;

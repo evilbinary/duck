@@ -51,7 +51,7 @@ size_t gpu_ioctl(device_t* dev, u32 cmd, void* args) {
 }
 
 void gpu_init_device(device_t* dev) {
-  vga_device_t* vga = kmalloc(sizeof(vga_device_t));
+  vga_device_t* vga = kmalloc(sizeof(vga_device_t),DEFAULT_TYPE);
   vga->frambuffer = 0;
   dev->data = vga;
   gpu_init_mode(vga, VGA_MODE_480x272x32);
@@ -60,7 +60,7 @@ void gpu_init_device(device_t* dev) {
 }
 
 int gpu_init(void) {
-  device_t* dev = kmalloc(sizeof(device_t));
+  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "vga";
   dev->read = gpu_read;
   dev->write = gpu_write;

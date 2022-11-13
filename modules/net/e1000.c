@@ -62,7 +62,7 @@ int net_init_device(device_t* dev) {
     map_page(addr, addr, PAGE_P | PAGE_USU | PAGE_RWW);
     addr += 0x1000;
   }
-  e1000_t* e1000 = kmalloc(sizeof(e1000_t));
+  e1000_t* e1000 = kmalloc(sizeof(e1000_t),DEFAULT_TYPE);
   dev->data = e1000;
   e1000->mmio = bar0;
 

@@ -50,7 +50,7 @@ pci_device_t* pci_get_device(u16 bus, u16 slot, u16 function) {
   u16 device = pci_read16(bus, slot, function, 2);
   u16 class = pci_read16(bus, slot, function, 0xa);
   u16 header_type = pci_read16(bus, slot, function, 0xd);
-  pci_device_t* pdev = (pci_device_t*)kmalloc(sizeof(pci_device_t));
+  pci_device_t* pdev = (pci_device_t*)kmalloc(sizeof(pci_device_t),DEFAULT_TYPE);
   pdev->vendor = vendor;
   pdev->device = device;
   pdev->function = function;
@@ -98,7 +98,7 @@ pci_device_t* pci_find_class(u32 class) {
 }
 
 int pci_init(void) {
-  device_t* dev = kmalloc(sizeof(device_t));
+  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "pci";
   dev->read = read;
   dev->id = DEVICE_PCI;

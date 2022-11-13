@@ -13,7 +13,7 @@ void test_fat_read() {
   }
   ahci_device_t* ahci_dev = dev->data;
 
-  vnode_t* node = kmalloc(sizeof(vnode_t));
+  vnode_t* node = kmalloc(sizeof(vnode_t),DEFAULT_TYPE);
   node->device = dev;
 
   int offset = 0xFFFF000;
@@ -41,7 +41,7 @@ void test_fat_read_small() {
   }
   ahci_device_t* ahci_dev = dev->data;
 
-  vnode_t* node = kmalloc(sizeof(vnode_t));
+  vnode_t* node = kmalloc(sizeof(vnode_t),DEFAULT_TYPE);
   node->device = dev;
 
   int offset = 0xFFFF000;
@@ -72,7 +72,7 @@ void test_fat_read_file() {
     return;
   }
   int offset = 0x2a0;
-  char* buffer = kmalloc(READ_BUFFER);
+  char* buffer = kmalloc(READ_BUFFER,DEFAULT_TYPE);
   if(duck==NULL){
     log_error("duck node is null\n");
     return;

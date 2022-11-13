@@ -250,8 +250,8 @@ u32 fat_op_open(vnode_t *node, u32 mode) {
       (file_info->fd == NULL && file_info->dd == NULL)) {
     log_debug("create new file %s\n", name);
     file_info_t *parent_file_info = node->parent->data;
-    file_info_t *new_file_info = kmalloc(sizeof(struct file_info));
-    struct fat_dir_struct *dd = kmalloc(sizeof(struct fat_dir_struct));
+    file_info_t *new_file_info = kmalloc(sizeof(struct file_info),DEFAULT_TYPE);
+    struct fat_dir_struct *dd = kmalloc(sizeof(struct fat_dir_struct),DEFAULT_TYPE);
     new_file_info->dd = dd;
     dd->fs = fs;
     node->data = new_file_info;
@@ -290,7 +290,7 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
     return NULL;
   }
 
-  file_info_t *new_file_info = kmalloc(sizeof(file_info_t));
+  file_info_t *new_file_info = kmalloc(sizeof(file_info_t),DEFAULT_TYPE);
   new_file_info->fs = fs;
   int ret = open_file_in_dir(fs, dd, name, new_file_info);
   if (!ret) {
@@ -441,7 +441,7 @@ void fat_init(void) {
     if (dev == NULL) {
       continue;
     }
-    name = kmalloc(4);
+    name = kmalloc(4,DEFAULT_TYPE);
     name[0] = 's';
     name[1] = 'd';
     name[2] = 0x61 + i;
@@ -488,7 +488,7 @@ void fat_init(void) {
     return NULL;
   }
 
-  file_info_t *file_info = kmalloc(sizeof(file_info_t));
+  file_info_t *file_info = kmalloc(sizeof(file_info_t),DEFAULT_TYPE);
   file_info->fs = fs;
   file_info->dd = dd;
   node->data = file_info;

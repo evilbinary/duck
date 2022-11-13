@@ -30,7 +30,7 @@ vmemory_area_t* vmemory_area_alloc(vmemory_area_t* areas, void* addr,
 }
 
 vmemory_area_t* vmemory_area_create(void* addr, u32 size, u8 flags) {
-  vmemory_area_t* area = kmalloc(sizeof(vmemory_area_t));
+  vmemory_area_t* area = kmalloc(sizeof(vmemory_area_t),KERNEL_TYPE);
   area->size = size;
   area->next = NULL;
   area->vaddr = addr;

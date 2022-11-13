@@ -207,7 +207,7 @@ u32 v3s_i2c_read_write(i2c_t* i2c, u32* data, u32 count) {
 }
 
 int i2c_init_device(device_t* dev) {
-  i2c_t* i2c = kmalloc(sizeof(i2c_t));
+  i2c_t* i2c = kmalloc(sizeof(i2c_t),DEFAULT_TYPE);
   dev->data = i2c;
 
   i2c->inited = 0;

@@ -192,7 +192,7 @@ static inline void v3s_tcon_set_mode(v3s_lcd_t *lcd) {
 
 int v3s_lcd_init(vga_device_t *vga) {
   kprintf("v3s_lcd_init\n");
-  v3s_lcd_t *lcd = kmalloc(sizeof(v3s_lcd_t));
+  v3s_lcd_t *lcd = kmalloc(sizeof(v3s_lcd_t),DEFAULT_TYPE);
   vga->priv = lcd;
 
   lcd->de = V3S_DE_BASE;
@@ -233,7 +233,7 @@ int v3s_lcd_init(vga_device_t *vga) {
     addr += 0x1000;
   }
 
-  // vga->pframbuffer=kmalloc(vga->framebuffer_length*2);
+  // vga->pframbuffer=kmalloc(vga->framebuffer_length*2,DEFAULT_TYPE);
   // map fb
   addr = vga->frambuffer;
   u32 paddr = vga->pframbuffer;

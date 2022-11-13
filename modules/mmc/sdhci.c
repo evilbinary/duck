@@ -79,7 +79,7 @@ static size_t sdhci_ioctl(device_t* dev, u32 cmd, ...) {
 
 int sdhci_init(void) {
   kprintf("sdhci_init\n");
-  device_t* dev = kmalloc(sizeof(device_t));
+  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "sata";
   dev->read = sdhci_read;
   dev->write = sdhci_write;
@@ -88,7 +88,7 @@ int sdhci_init(void) {
   dev->type = DEVICE_TYPE_BLOCK;
   device_add(dev);
 
-  sdhci_device_t* sdhci_dev = kmalloc(sizeof(sdhci_device_t));
+  sdhci_device_t* sdhci_dev = kmalloc(sizeof(sdhci_device_t),DEFAULT_TYPE);
   sdhci_dev->offseth = 0;
   sdhci_dev->offsetl = 0;
   dev->data = sdhci_dev;

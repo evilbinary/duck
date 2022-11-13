@@ -180,7 +180,7 @@ void sb16_handler(interrupt_context_t* context) {
 
 int sb16_init(void) {
   log_info("sb16 init\n");
-  device_t* dev = kmalloc(sizeof(device_t));
+  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "sb";
   dev->read = read;
   dev->write = write;

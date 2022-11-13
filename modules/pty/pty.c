@@ -142,7 +142,7 @@ int pty_slave_add(vnode_t *pts) {
 }
 
 int pty_create(vnode_t **ptm, vnode_t **pts) {
-  pty_t *pty = kmalloc(sizeof(pty_t));
+  pty_t *pty = kmalloc(sizeof(pty_t),DEFAULT_TYPE);
   pty->in =
       buffer_create(PTY_BUFFER, pty_buffer_write_wait, pty_buffer_read_wait,
                     pty_buffer_write_notify, pty_buffer_read_notify);

@@ -9,7 +9,7 @@
 
 int hello_init(void) {
   kprintf("Hello World\n");
-  // void* p=kmalloc(4096*10);
+  // void* p=kmalloc(4096*10,DEFAULT_TYPE);
   return 0;
 }
 

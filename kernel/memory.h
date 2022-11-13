@@ -52,6 +52,12 @@
 
 #define MEMORY_ALIGMENT 16
 
+
+#define DEFAULT_TYPE 1<<0
+#define KERNEL_TYPE 1<<1
+#define DEVICE_TYPE 1<<2
+
+
 typedef struct memory {
   ulong total;
   ulong free;
@@ -72,15 +78,15 @@ typedef struct vmemory_area {
 #define ALIGN(x, a) (x + (a - 1)) & ~(a - 1)
 
 #ifdef MALLOC_TRACE
-#define kmalloc(size) kmalloc_trace(size, __FILE__, __LINE__, __FUNCTION__)
-#define kmalloc_alignment(size, alignment) \
-  kmalloc_alignment_trace(size, alignment, __FILE__, __LINE__, __FUNCTION__)
+#define kmalloc(size,flag) kmalloc_trace(size,flag, __FILE__, __LINE__, __FUNCTION__)
+#define kmalloc_alignment(size, alignment,flag) \
+  kmalloc_alignment_trace(size, alignment,flag, __FILE__, __LINE__, __FUNCTION__)
 #define kfree(ptr) kfree_trace(ptr, __FILE__, __LINE__, __FUNCTION__)
 #define kfree_alignment(ptr) kfree_alignment_trace(ptr, __FILE__, __LINE__, __FUNCTION__)
 
 #else
-void* kmalloc(size_t size);
-void* kmalloc_alignment(size_t size, int alignment);
+void* kmalloc(size_t size, u32 flag)
+void* kmalloc_alignment(size_t size, int alignment,u32 flag);
 
 void kfree(void* ptr);
 void kfree_alignment(void* ptr);

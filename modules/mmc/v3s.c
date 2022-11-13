@@ -916,7 +916,7 @@ int sdhci_v3s_probe(sdhci_device_t *hci) {
 }
 
 void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
-  sdhci_v3s_pdata_t *pdat = kmalloc(sizeof(sdhci_v3s_pdata_t));
+  sdhci_v3s_pdata_t *pdat = kmalloc(sizeof(sdhci_v3s_pdata_t),DEFAULT_TYPE);
   sdhci_dev->data = pdat;
   pdat->high_capacity = 0;
   pdat->read_bl_len = BYTE_PER_SECTOR;

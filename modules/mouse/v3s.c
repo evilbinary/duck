@@ -110,7 +110,7 @@ void mouse_handler() {
 }
 
 int mouse_init(void) {
-  device_t* dev = kmalloc(sizeof(device_t));
+  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "mouse";
   dev->read = read;
   dev->id = DEVICE_MOUSE;

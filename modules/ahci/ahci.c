@@ -285,7 +285,7 @@ void ahci_dev_port_init(ahci_device_t* ahci_dev, int no) {
   //void* base_cmd = kmalloc(cmd_size);
   //base_cmd = kvirtual_to_physic(base_cmd,cmd_size);
   //use mm alloc
-  void* base_cmd =mm_alloc(cmd_size);
+  void* base_cmd =kmalloc(cmd_size,DEVICE_TYPE);
 
   ahci_dev->base_cmd = base_cmd;
   port->clb = base_cmd + (no << 10);
@@ -440,7 +440,7 @@ int ahci_init(void) {
   u32 bar5 = pci_dev_read32(pdev, PCI_BASE_ADDR5) & 0xFFFFFFF0;
 
   //分配一个设备玩一玩，骗你的呢，怎么会有人乱来，分配好后就添加到设备列表去。
-  device_t* dev = kmalloc(sizeof(device_t));
+  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "sata";
   dev->read = ahci_read;
   dev->write = ahci_write;
@@ -450,7 +450,7 @@ int ahci_init(void) {
   device_add(dev); //添加到设备列表去
 
   //初始化一下ahci私有设备结构体，图啥呢，玩呢，别问为什么，往下面看就知道了。
-  ahci_device_t* ahci_dev = kmalloc(sizeof(ahci_device_t));
+  ahci_device_t* ahci_dev = kmalloc(sizeof(ahci_device_t),DEFAULT_TYPE);
   ahci_dev->abar = bar5;//把ahci 传进去，用于后面转hba memory操作ata设备。
   dev->data = ahci_dev;//设置私有设备地址
   //初始化一下ahci设备

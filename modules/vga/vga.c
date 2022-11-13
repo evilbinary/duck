@@ -64,7 +64,7 @@ void vga_init_device(device_t* dev) {
   //     pci_read32(pdev->bus, pdev->slot, pdev->function, 0x18) & 0xFFFFFFF0;
 
   // kprintf("bar0:%x ", bar0);
-  vga_device_t* vga = kmalloc(sizeof(vga_device_t));
+  vga_device_t* vga = kmalloc(sizeof(vga_device_t),DEFAULT_TYPE);
   vga->frambuffer = bar0;
   dev->data = vga;
   u32 addr = bar0;
@@ -78,7 +78,7 @@ void vga_init_device(device_t* dev) {
 }
 
 int vga_init(void) {
-  device_t* dev = kmalloc(sizeof(device_t));
+  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "vga";
   dev->read = vga_read;
   dev->write = vga_write;

@@ -8,7 +8,7 @@
 
 int net_init(void) {
   kprintf("net init\n");
-  device_t* dev = kmalloc(sizeof(device_t));
+  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "net";
   dev->read = NULL;
   dev->write = NULL;

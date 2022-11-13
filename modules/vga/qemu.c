@@ -100,7 +100,7 @@ int qemu_init_device(device_t* dev, u32 vendor_id, u32 device_id) {
   u32 bar0 = pci_dev_read32(pdev, PCI_BASE_ADDR0) & 0xFFFFFFF0;
 
   // kprintf("bar0:%x ", bar0);
-  vga_device_t* vga = kmalloc(sizeof(vga_device_t));
+  vga_device_t* vga = kmalloc(sizeof(vga_device_t),DEFAULT_TYPE);
   dev->data = vga;
   u32 addr = bar0;
 
@@ -113,7 +113,8 @@ int qemu_init_device(device_t* dev, u32 vendor_id, u32 device_id) {
   vga->frambuffer = bar0;
   vga->flip_buffer = qemu_flip_screen;
   // qemu_read_reg(VBE_DISPI_INDEX_VIDEO_MEMORY_64K)
-  for (int i = 0; i < size * vga->framebuffer_count / PAGE_SIZE; i++) {
+  //todo
+  for (int i = 0; i < size * vga->framebuffer_count / PAGE_SIZE/8; i++) {
     map_page(addr, addr, PAGE_P | PAGE_USU | PAGE_RWW);
     addr += PAGE_SIZE;
   }
@@ -135,7 +136,7 @@ int qemu_init_device(device_t* dev, u32 vendor_id, u32 device_id) {
 }
 
 int qemu_init(void) {
-  device_t* dev = kmalloc(sizeof(device_t));
+  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "qemu";
   dev->read = vga_read;
   dev->write = vga_write;

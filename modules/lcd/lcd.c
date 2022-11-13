@@ -55,7 +55,7 @@ size_t lcd_ioctl(device_t* dev, u32 cmd, void* args) {
 }
 
 void lcd_init_device(device_t* dev) {
-  vga_device_t* vga = kmalloc(sizeof(vga_device_t));
+  vga_device_t* vga = kmalloc(sizeof(vga_device_t),DEFAULT_TYPE);
   vga->frambuffer = 0;
   dev->data = vga;
   lcd_init_mode(vga, VGA_MODE_128x128x16);
@@ -63,7 +63,7 @@ void lcd_init_device(device_t* dev) {
 }
 
 int lcd_init(void) {
-  device_t* dev = kmalloc(sizeof(device_t));
+  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "vga";
   dev->read = lcd_read;
   dev->write = lcd_write;

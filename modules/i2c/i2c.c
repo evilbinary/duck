@@ -40,7 +40,7 @@ size_t i2c_ioctl(device_t* dev, u32 cmd, void* args) {
 int i2c_init(void) {
   kprintf("i2c\n");
 
-  device_t* dev = kmalloc(sizeof(device_t));
+  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "i2c";
   dev->read = i2c_read;
   dev->write = i2c_write;

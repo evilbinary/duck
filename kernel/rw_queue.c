@@ -9,7 +9,7 @@
 #include "thread.h"
 
 rw_queue_t* rw_queue_create(u32 size) {
-  rw_queue_t* rwq = kmalloc(sizeof(rw_queue_t));
+  rw_queue_t* rwq = kmalloc(sizeof(rw_queue_t),KERNEL_TYPE);
   rwq->read_queue = cqueue_create(size, CQUEUE_DROP);
   rwq->write_queue = cqueue_create(size, CQUEUE_DROP);
   rwq->lock = 0;
