@@ -36,7 +36,7 @@ int context_init(context_t* context, u32* entry, u32 level, int cpu) {
     log_error("not suppport level %d\n", level);
   }
   u32 ksp_top = ((u32)context->ksp_end) - sizeof(interrupt_context_t);
-  u32 usp_top = context->usp_end;
+  u32 usp_top = context->usp;
   interrupt_context_t* ic = ksp_top;
   ic->ss = ds;          // ss
   ic->esp = usp_top;    // usp
@@ -129,7 +129,7 @@ void context_dump_interrupt(interrupt_context_t* ic) {
   kprintf("eax: %8x ebx: %8x\n", ic->eax, ic->ebx);
   kprintf("ecx: %8x edx: %8x\n", ic->ecx, ic->edx);
   kprintf("esi: %8x edi: %8x\n", ic->esi, ic->edi);
-  kprintf("esp: %8x ebp: %x\n", ic->esp, ic->ebp);
+  kprintf("esp: %8x ebp: %8x\n", ic->esp, ic->ebp);
   kprintf("--segment registers--\n");
   kprintf("cs: %2x ss: %x\n", cs, ss);
   kprintf("ds: %2x es: %x\n", ds, es);
@@ -183,17 +183,17 @@ int context_clone(context_t* des, context_t* src) {
     return -1;
   }
 
-  //这里重点关注 usp ksp page_dir 3个变量的复制
+  context_t* pdes=virtual_to_physic(des->upage,des);
 
+  //这里重点关注 usp ksp upage 3个变量的复制
   u32* ksp_end = (u32)des->ksp_end - sizeof(interrupt_context_t);
   u32* usp_end = des->usp_end;
 
   interrupt_context_t* ic = ksp_end;
   interrupt_context_t* is = src->ksp;
 
-  // not cover page_dir
+  // not cover upage
   void* page = des->upage;
-  *des = *src;
   des->upage = page;
 
   if (ic != NULL) {
@@ -202,7 +202,8 @@ int context_clone(context_t* des, context_t* src) {
   }
   // set ksp alias ustack
   des->ksp = (u32)ic;
-  des->usp = usp_end;
+  pdes->ksp= des->ksp;
+
   return 0;
 }
 

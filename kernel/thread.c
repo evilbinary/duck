@@ -162,8 +162,12 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
   //栈分配方式
   // kstack
   if (copy->context.ksp_start == NULL) {
-    copy->context.ksp_start = kmalloc(copy->context.ksp_size);
+    void* kstack = kmalloc(copy->context.ksp_size);
+    copy->context.ksp_start = kvirtual_to_physic(kstack, 0);
     copy->context.ksp_end = copy->context.ksp_size + copy->context.ksp_start;
+    if (thread == NULL) {
+      copy->context.ksp = kstack;
+    }
     if (thread != NULL && (flags & STACK_CLONE)) {
       kmemmove(copy->context.ksp_start, thread->context.ksp_start,
                thread->context.ksp_size);
@@ -191,14 +195,15 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     u32* copy_ustack = NULL;
     if (flags & STACK_ALLOC) {
       copy_ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE);
-      copy->context.usp = STACK_ADDR;
+      copy->context.usp = STACK_ADDR + copy->context.usp_size;
       copy->context.usp_start = copy_ustack;
       copy->context.usp_end = copy->context.usp_start + copy->context.usp_size;
     } else if (flags & STACK_CLONE) {
       copy_ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE);
-      kmemmove(copy_ustack, thread->context.usp, copy->context.usp_size);
-      copy->context.usp = STACK_ADDR;
-      copy->context.usp_start = copy_ustack;
+      kmemmove(copy_ustack, thread->context.usp_start, copy->context.usp_size);
+
+      copy->context.usp = thread->context.usp;
+      copy->context.usp_start = kvirtual_to_physic(copy_ustack, 0);
       copy->context.usp_end = copy->context.usp_start + copy->context.usp_size;
     } else if (flags & STACK_SAME) {
       copy_ustack = thread->context.usp_start;
@@ -229,6 +234,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
 
       //映射栈
       void* phy = kvirtual_to_physic(copy_ustack, 0);
+      copy->context.usp = thread->context.usp;
       thread_map(copy, STACK_ADDR, phy, copy->context.usp_size);
 
       //映射堆
@@ -254,7 +260,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     log_debug("kernel start before init\n");
     if (copy->level == KERNEL_MODE) {
       void* ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE);
-      copy->context.usp = STACK_ADDR + koffset;
+      copy->context.usp = STACK_ADDR + koffset + copy->context.usp_size;
       copy->context.usp_start = ustack;
       copy->context.usp_end = copy->context.usp + copy->context.usp_size;
 
@@ -266,24 +272,28 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       copy->context.upage = page_alloc_clone(NULL, copy->level);
     } else if (copy->level == USER_MODE) {
       void* ustack = kmalloc_alignment(copy->context.usp_size, PAGE_SIZE);
-      copy->context.usp = STACK_ADDR;
-      copy->context.usp_start = ustack;
+      void* phy = kvirtual_to_physic(ustack, 0);
+      copy->context.usp_start = phy;
       copy->context.usp_end = copy->context.usp_start + copy->context.usp_size;
 
-      void* phy = kvirtual_to_physic(ustack, 0);
-      thread_map(copy, STACK_ADDR, phy, copy->context.usp_size);
+      copy->context.usp = STACK_ADDR + copy->context.usp_size;
       copy->context.upage = page_alloc_clone(NULL, copy->level);
+      thread_map(copy, STACK_ADDR, phy, copy->context.usp_size);
     }
   }
-
+  
   // check thread data
   int ret = thread_check(copy);
   return ret;
 }
 
 void thread_map(thread_t* thread, u32 virt_addr, u32 phy_addr, u32 size) {
+  if (thread->context.upage == NULL) {
+    log_error("thread map faild for upage is null\n");
+    return;
+  }
   u32 offset = 0;
-  u32 pages = size / PAGE_SIZE + (size % PAGE_SIZE == 0 ? 0 : 1);
+  u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
   for (int i = 0; i < pages; i++) {
     map_page_on(thread->context.upage, virt_addr + offset, phy_addr + offset,
                 PAGE_P | PAGE_USU | PAGE_RWW);
@@ -303,7 +313,7 @@ int thread_check(thread_t* thread) {
     return -1;
   }
   if (thread->context.upage == NULL) {
-    log_error("create thread failt for page dir is null\n");
+    log_error("create thread failt for upage is null\n");
     return -1;
   }
   if (thread->context.usp_size <= 0) {
@@ -356,14 +366,18 @@ void thread_set_entry(thread_t* thread, void* entry) {
 
 void thread_set_arg(thread_t* thread, void* arg) {
   if (thread == NULL) return;
-  interrupt_context_t* context = thread->context.ksp;
-  context_ret(context) = arg;
+  interrupt_context_t* ic = thread->context.ksp;
+  context_ret(ic) = arg;
 }
 
 void thread_set_ret(thread_t* thread, u32 ret) {
   if (thread == NULL) return;
-  interrupt_context_t* context = thread->context.ksp;
-  context_ret(context) = 0;
+  interrupt_context_t* ic = thread->context.ksp;
+  if (ic == NULL) {
+    log_error("context is null cannot set ret\n");
+    return;
+  }
+  context_ret(ic) = 0;
 }
 
 void thread_set_params(thread_t* thread, void* args, int size) {
@@ -600,19 +614,19 @@ void thread_dump(thread_t* thread) {
   kprintf("priority %d\n", thread->priority);
   kprintf("counter  %d\n", thread->counter);
   kprintf("state    %d\n", thread->state);
-  kprintf("ksp      %x  %x - %x\n", thread->context.ksp,
+  kprintf("ksp      %08x  [%8x - %8x]\n", thread->context.ksp,
           thread->context.ksp_start, thread->context.ksp_end);
-  kprintf("usp      %x  %x - %x\n", thread->context.usp,
-          thread->context.ksp_start, thread->context.usp_end);
+  kprintf("usp      %08x  [%8x - %8x]\n", thread->context.usp,
+          thread->context.usp_start, thread->context.usp_end);
   kprintf("pid      %d\n", thread->pid);
   kprintf("fd_num   %d\n", thread->fd_number);
   kprintf("code     %d\n", thread->code);
   kprintf("--context--\n");
   context_dump(&thread->context);
   kprintf("--kstack--\n");
-  thread_dump_stack(thread->context.ksp_end - 0x100, 0x100);
+  thread_dump_stack(thread->context.ksp_start, thread->context.ksp_size);
   kprintf("--ustack--\n");
-  thread_dump_stack(thread->context.usp_end - 0x100, 0x100);
+  thread_dump_stack(thread->context.usp_start, thread->context.usp_size);
   kprintf("\n");
 }
 
