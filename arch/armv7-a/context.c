@@ -20,15 +20,25 @@ int context_get_mode(context_t* context) {
   return mode;
 }
 
-void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
-                  u32 level, int cpu) {
+int context_init(context_t* context, u32* entry, u32 level, int cpu) {
   if (context == NULL) {
-    return;
+    return -1;
   }
+  if (context->ksp_start == NULL || context->usp_start == NULL) {
+    log_error("ksp start or usp start is null\n");
+    return -1;
+  }
+  if (context->ksp_end == NULL || context->ksp_end == NULL) {
+    log_error("ksp end or usp end is null\n");
+    return -1;
+  }
+  u32 ksp_top = (u32)context->ksp_end;
+  u32 usp_top = context->usp;
+
   context->tss = NULL;
   context->eip = entry;
   context->level = level;
-  context->ksp = stack0;
+  context->ksp = ksp_top;
   u32 cs, ds;
   cpsr_t cpsr;
   cpsr.val = 0;
@@ -40,7 +50,6 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
     cpsr.I = 0;
     cpsr.F = 1;
     cpsr.M = 0x1f;
-    interrupt_context_t* c = stack0;
   } else if (level == 3) {
     cpsr.I = 0;
     cpsr.F = 0;
@@ -50,7 +59,7 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
     kprintf("not suppport level %d\n", level);
   }
 
-  interrupt_context_t* user = stack0;
+  interrupt_context_t* user = ksp_top;
   kmemset(user, 0, sizeof(interrupt_context_t));
   user->lr = entry;  // r14
   user->lr += 4;
@@ -68,10 +77,10 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
   user->r10 = 0x00100010;
   user->r11 = 0x00110011;  // fp
   user->r12 = 0x00120012;  // ip
-  user->sp = stack3;       // r13
+  user->sp = usp_top;      // r13
   user->lr0 = user->lr;
-  context->usp = stack3;
-  context->ksp = stack0;
+  context->usp = usp_top;
+  context->ksp = ksp_top;
 
   ulong addr = (ulong)boot_info->pdt_base;
   context->kpage = addr;
@@ -144,7 +153,15 @@ void context_dump_fault(interrupt_context_t* context, u32 fault_addr) {
   kprintf("----------------------------\n\n");
 }
 
-void context_clone(context_t* des, context_t* src) {
+int context_clone(context_t* des, context_t* src) {
+  if (src->ksp_start == NULL || src->usp_start == NULL) {
+    log_error("ksp top or usp top is null\n");
+    return -1;
+  }
+  if (des->ksp_start == NULL || des->usp_start == NULL) {
+    log_error("ksp top or usp top is null\n");
+    return -1;
+  }
   //这里重点关注 usp ksp upage 3个变量的复制
 
   interrupt_context_t* ic = des->ksp;
@@ -155,8 +172,10 @@ void context_clone(context_t* des, context_t* src) {
 #endif
   // not cover upage
   void* page = des->upage;
-  *des = *src;
+  kmemmove(des, src, sizeof(context_t));
   des->upage = page;
+
+  context_t* pdes = virtual_to_physic(des->upage, des);
 
   // ic = ((u32)ic) - sizeof(interrupt_context_t);
 

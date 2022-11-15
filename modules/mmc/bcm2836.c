@@ -1779,8 +1779,8 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   sdhci_dev_prob(sdhci_dev);
 
 #ifdef CACHE_ENABLED
-  sdhci_dev->cached_blocks = kmalloc(CACHE_ENTRIES);
-  sdhci_dev->cache_buffer = kmalloc(SECTOR_SIZE * CACHE_ENTRIES);
+  sdhci_dev->cached_blocks = kmalloc(CACHE_ENTRIES,DEFAULT_TYPE);
+  sdhci_dev->cache_buffer = kmalloc(SECTOR_SIZE * CACHE_ENTRIES,DEFAULT_TYPE);
   int i;
   for (i = 0; i < CACHE_ENTRIES; i++) {
     sdhci_dev->cached_blocks[i] = 0xFFFFFFFF;

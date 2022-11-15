@@ -3,7 +3,7 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
-#include "arch/mm.h"
+#include "arch/memory.h"
 
 #include "arch/cpu.h"
 #include "arch/display.h"
@@ -44,7 +44,8 @@ void mm_init_default() {
     map_page(address, address, 0);
     address += 0x1000;
   }
-  map_mem_block();
+  // map mem block 100 page 400k
+  map_mem_block(PAGE_SIZE * 100,0);
 
   address = boot_info->kernel_entry;
   kprintf("map kernel %x ", address);
@@ -114,17 +115,6 @@ void mm_test() {
   // kprintf("p=%x\n", *p);
 }
 
-void map_mem_block() {
-  mem_block_t* p = mmt.blocks;
-  for (; p != NULL; p = p->next) {
-    u32 address = p->origin_addr;
-    for (int i = 0; i < 1000; i++) {  // map block 400k
-      map_page(address, address, 0);
-      // kprintf("map addr %x %x\n", address, address);
-      address += 0x1000;
-    }
-  }
-}
 
 void* virtual_to_physic(void* page, void* vaddr) {
   void* phyaddr = NULL;

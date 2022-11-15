@@ -68,16 +68,6 @@ void unmap_page_on(page_dir_t* page, u32 virtualaddr) {
   }
 }
 
-void map_mem_block(u32 size) {
-  mem_block_t* p = mmt.blocks;
-  for (; p != NULL; p = p->next) {
-    u32 address = p->origin_addr;
-    map_range(address, address, size, PAGE_P | PAGE_USU | PAGE_RWW);
-    kprintf("map mem block addr range %x - %x\n", p->origin_addr,
-            p->origin_addr + size);
-    mmt.last_map_addr = address + size;
-  }
-}
 
 void mm_init_default() {
   boot_info->pdt_base = (ulong)kernel_page_dir_ptr_tab;
@@ -90,7 +80,7 @@ void mm_init_default() {
 
   unsigned int address = 0;
   // map mem block 100 page 400k
-  map_mem_block(PAGE_SIZE * 100);
+  map_mem_block(PAGE_SIZE * 100, PAGE_P | PAGE_USU | PAGE_RWW);
 
   // map 0 - 0x14000
   map_range(0, 0, PAGE_SIZE * 20, PAGE_P | PAGE_USU | PAGE_RWW);
@@ -126,14 +116,6 @@ void mm_init_default() {
   }
 }
 
-void map_range(u32 vaddr, u32 paddr, u32 size, u32 flag) {
-  int pages = size / PAGE_SIZE + (size % PAGE_SIZE > 0 ? 1 : 0);
-  for (int j = 0; j < pages; j++) {
-    map_page(vaddr, paddr, flag);
-    vaddr += PAGE_SIZE;
-    paddr += PAGE_SIZE;
-  }
-}
 
 void* virtual_to_physic(u64* page_dir_ptr_tab, void* vaddr) {
   u32 pdpte_index = (u32)vaddr >> 30 & 0x03;

@@ -87,7 +87,8 @@ void* ya_sbrk(size_t size) {
   if (mmt.last_map_addr > 0 &&
       ((u32)addr + PAGE_SIZE * (mmt.extend_phy_count + 10)) >
           mmt.last_map_addr) {
-    kprintf("extend kernel phy mem %x exten count:%d\n", addr,mmt.extend_phy_count);
+    kprintf("extend kernel phy mem %x exten count:%d\n", addr,
+            mmt.extend_phy_count);
     // extend 400k*mmt.extend_phy_count phy mem
     mmt.extend_phy_count++;
     for (int i = 0; i < 100 * mmt.extend_phy_count; i++) {
@@ -191,7 +192,8 @@ void ya_verify() {
     total++;
   }
   kprintf("-------------------------------\n");
-  kprintf("verify total %d free %dk used %dk\n", total, free/1024, used/1024, mmt);
+  kprintf("verify total %d free %dk used %dk\n", total, free / 1024,
+          used / 1024, mmt);
   mem_block_t* block = mmt.blocks;
   while (block) {
     kprintf("=>block:%x type:%d size:%d start: %x end:%x\n", block, block->type,
@@ -323,7 +325,7 @@ void* mm_alloc_zero_align(size_t size, u32 alignment) {
   if ((p1 = (void*)mm_alloc(size + offset)) == NULL) return NULL;
   p2 = (void**)(((size_t)(p1) + offset) & ~(alignment - 1));
   p2[-1] = p1;
-  //kmemset(p2, 0, size);
+  // kmemset(p2, 0, size);
 #ifdef DEBUG
   kprintf("alloc align %x size=%d\n", p2, size);
 #endif
@@ -621,3 +623,23 @@ u32 mm_get_block_size(void* addr) {
   }
 }
 #endif
+
+void map_mem_block(u32 size, u32 flags) {
+  mem_block_t* p = mmt.blocks;
+  for (; p != NULL; p = p->next) {
+    u32 address = p->origin_addr;
+    map_range(address, address, size, flags);
+    kprintf("map mem block addr range %x - %x\n", p->origin_addr,
+            p->origin_addr + size);
+    mmt.last_map_addr = address + size;
+  }
+}
+
+void map_range(u32 vaddr, u32 paddr, u32 size, u32 flag) {
+  int pages = size / PAGE_SIZE + (size % PAGE_SIZE > 0 ? 1 : 0);
+  for (int j = 0; j < pages; j++) {
+    map_page(vaddr, paddr, flag);
+    vaddr += PAGE_SIZE;
+    paddr += PAGE_SIZE;
+  }
+}
