@@ -191,7 +191,7 @@ void ya_verify() {
     total++;
   }
   kprintf("-------------------------------\n");
-  kprintf("verify total %d free %d used %d\n", total, free, used, mmt);
+  kprintf("verify total %d free %dk used %dk\n", total, free/1024, used/1024, mmt);
   mem_block_t* block = mmt.blocks;
   while (block) {
     kprintf("=>block:%x type:%d size:%d start: %x end:%x\n", block, block->type,
