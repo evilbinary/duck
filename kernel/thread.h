@@ -74,6 +74,7 @@ typedef struct thread {
   vfs_t* vfs;
   u32 level;
   u32 cpu_id;
+  u32 mem;
 } thread_t;
 
 void thread_init();

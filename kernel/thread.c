@@ -75,6 +75,7 @@ void thread_init_default(thread_t* thread, u32 level, u32* entry, void* data) {
   thread->fd_size = 40;
   thread->fd_number = 0;
   thread->data = data;
+  thread->mem = 0;
 }
 
 thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
@@ -664,7 +665,7 @@ void thread_dumps() {
   char* str = "unkown";
   kprintf(
       "id   pid  name       state     cpu  count  sleep   "
-      "vmm    nstack  file\n");
+      " vm   mem  nstack  file\n");
   for (int i = 0; i < MAX_CPU; i++) {
     for (thread_t* p = schedulable_head_thread[i]; p != NULL; p = p->next) {
       if (p->state <= THREAD_SLEEP) {
@@ -678,8 +679,9 @@ void thread_dumps() {
       } else {
         kprintf("   ");
       }
-      kprintf("%-8s %4d %6d %6d %4dk %4dk   %4d\n", str, p->cpu_id, p->counter,
+      kprintf("%-8s %4d %6d %6d %4dk %4dk %4dk  %4d\n", str, p->cpu_id, p->counter,
               p->sleep_counter, p->vmm != NULL ? p->vmm->alloc_size / 1024 : 0,
+              p->mem / 1024,
               p->context.usp_size / 1024, p->fd_number);
     }
   }

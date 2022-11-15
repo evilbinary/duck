@@ -33,6 +33,7 @@ void* phy_alloc(size_t size) {
   if (size == 0) return NULL;
   void* addr = NULL;
   addr = mm_alloc(size);
+  memory_static(size, MEMORY_TYPE_USE);
   return addr;
 }
 
@@ -40,6 +41,7 @@ void* phy_alloc_aligment(size_t size, int alignment) {
   if (size == 0) return NULL;
   void* addr = NULL;
   addr = mm_alloc_zero_align(size, alignment);
+  memory_static(size, MEMORY_TYPE_USE);
   return addr;
 }
 
@@ -50,7 +52,7 @@ void* vm_alloc(size_t size) {
   thread_t* current = thread_current();
   if (current == NULL) {
     //内核启动没有进程，使用内核物理内存
-    addr = mm_alloc(size);
+    addr = phy_alloc(size);
     return addr;
   }
   addr = current->vmm->alloc_addr;
@@ -69,7 +71,7 @@ void* vm_alloc_alignment(size_t size, int alignment) {
   thread_t* current = thread_current();
   if (current == NULL) {
     //内核启动没有进程，使用内核物理内存
-    addr = mm_alloc_zero_align(size, alignment);
+    addr = phy_alloc_aligment(size, alignment);
     return addr;
   }
   addr = current->vmm->alloc_addr;
@@ -148,7 +150,6 @@ void* kmalloc_alignment_trace(size_t size, int alignment, u32 flag, void* name,
       "kmalloca count:%04d total:%06dk size:%04d addr:%06x paddr:%06x %s:%d "
       "%s\n",
       alloc_count++, alloc_total / 1024, size, addr, paddr, name, no, fun);
-  memory_static(size, MEMORY_TYPE_USE);
   return addr;
 }
 
@@ -180,7 +181,6 @@ void* kmalloc(size_t size, u32 flag) {
   } else {
     addr = vm_alloc(size);
   }
-  memory_static(size, MEMORY_TYPE_USE);
   return addr;
 }
 
@@ -191,7 +191,6 @@ void* kmalloc_alignment(size_t size, int alignment, u32 flag) {
   } else {
     addr = vm_alloc_alignment(size, alignment);
   }
-  memory_static(size, MEMORY_TYPE_USE);
   return addr;
 }
 
@@ -214,8 +213,10 @@ void memory_static(u32 size, int type) {
   if (current != NULL) {
     if (type == MEMORY_TYPE_USE) {
       memory_summary.user_used += size;
+      current->mem += size;
     } else {
       memory_summary.user_used -= size;
+      current->mem -= size;
     }
   } else {
     if (type == MEMORY_TYPE_USE) {
@@ -246,12 +247,12 @@ void* valloc(void* addr, size_t size) {
 #ifdef USE_POOL
   void* phy_addr = queue_pool_poll(user_pool);
   if (phy_addr == NULL) {
-    phy_addr = mm_alloc_zero_align(size, PAGE_SIZE);
+    phy_addr = phy_alloc_aligment(size, PAGE_SIZE);
   } else {
     log_info("use pool addr %x\n", phy_addr);
   }
 #else
-  void* phy_addr = mm_alloc_zero_align(size, PAGE_SIZE);
+  void* phy_addr = phy_alloc_aligment(size, PAGE_SIZE);
 #endif
   void* paddr = phy_addr;
   for (int i = 0; i < size / PAGE_SIZE; i++) {
@@ -269,7 +270,6 @@ void* valloc(void* addr, size_t size) {
     vaddr += PAGE_SIZE;
     paddr += PAGE_SIZE;
   }
-  memory_static(size, MEMORY_TYPE_USE);
   return addr;
 }
 
