@@ -245,12 +245,12 @@ void* valloc(void* addr, size_t size) {
 #ifdef USE_POOL
   void* phy_addr = queue_pool_poll(user_pool);
   if (phy_addr == NULL) {
-    phy_addr = kmalloc_aligment(size, PAGE_SIZE,KERNEL_TYPE);
+    phy_addr = kmalloc_alignment(size, PAGE_SIZE,KERNEL_TYPE);
   } else {
     log_info("use pool addr %x\n", phy_addr);
   }
 #else
-  void* phy_addr = kmalloc_aligment(size, PAGE_SIZE,KERNEL_TYPE);
+  void* phy_addr = kmalloc_alignment(size, PAGE_SIZE,KERNEL_TYPE);
 #endif
   void* paddr = phy_addr;
   for (int i = 0; i < size / PAGE_SIZE; i++) {
