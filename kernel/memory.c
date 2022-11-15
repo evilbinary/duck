@@ -215,10 +215,10 @@ void memory_static(u32 size, int type) {
   if (current != NULL) {
     if (current->level == USER_MODE) {
       memory_summary.user_used += size * op;
-      current->umem += size * op;
+      current->mem += size * op;
     } else {
       memory_summary.kernel_used += size * op;
-      current->kmem += size * op;
+      current->mem += size * op;
     }
   } else {
     if (type == MEMORY_TYPE_USE) {
@@ -245,12 +245,12 @@ void* valloc(void* addr, size_t size) {
 #ifdef USE_POOL
   void* phy_addr = queue_pool_poll(user_pool);
   if (phy_addr == NULL) {
-    phy_addr = phy_alloc_aligment(size, PAGE_SIZE);
+    phy_addr = kmalloc_aligment(size, PAGE_SIZE,KERNEL_TYPE);
   } else {
     log_info("use pool addr %x\n", phy_addr);
   }
 #else
-  void* phy_addr = phy_alloc_aligment(size, PAGE_SIZE);
+  void* phy_addr = kmalloc_aligment(size, PAGE_SIZE,KERNEL_TYPE);
 #endif
   void* paddr = phy_addr;
   for (int i = 0; i < size / PAGE_SIZE; i++) {
