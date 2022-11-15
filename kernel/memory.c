@@ -96,16 +96,18 @@ void* vm_alloc_alignment(size_t size, int alignment) {
 
 void vm_free(void* ptr) {
   thread_t* current = thread_current();
-  if (current == NULL) {
-    // mm_free(ptr);
-  }
+  void* addr = kvirtual_to_physic(ptr, 0);
+  size_t size = mm_get_size(addr);
+  mm_free(addr);
+  memory_static(size, MEMORY_TYPE_FREE);
 }
 
 void vm_free_alignment(void* ptr) {
   thread_t* current = thread_current();
-  if (current == NULL) {
-    // mm_free_align(ptr);
-  }
+  void* addr = kvirtual_to_physic(ptr, 0);
+  size_t size = mm_get_size(addr);
+  mm_free_align(addr);
+  memory_static(size, MEMORY_TYPE_FREE);
 }
 
 #ifdef MALLOC_TRACE
@@ -194,11 +196,7 @@ void* kmalloc_alignment(size_t size, int alignment, u32 flag) {
   return addr;
 }
 
-void kfree(void* ptr) {
-  vm_free(ptr);
-  // size_t size = mm_get_size(ptr);
-  // memory_static(size, MEMORY_TYPE_FREE);
-}
+void kfree(void* ptr) { vm_free(ptr); }
 
 void kfree_alignment(void* ptr) {
   vm_free_alignment(ptr);
@@ -210,23 +208,23 @@ void kfree_alignment(void* ptr) {
 
 void memory_static(u32 size, int type) {
   thread_t* current = thread_current();
+  int op = 1;
+  if (type == MEMORY_TYPE_FREE) {
+    op = -1;
+  }
   if (current != NULL) {
-    if (type == MEMORY_TYPE_USE) {
-      memory_summary.user_used += size;
-      current->mem += size;
+    if (current->level == USER_MODE) {
+      memory_summary.user_used += size * op;
+      current->umem += size * op;
     } else {
-      memory_summary.user_used -= size;
-      current->mem -= size;
+      memory_summary.kernel_used += size * op;
+      current->kmem += size * op;
     }
   } else {
     if (type == MEMORY_TYPE_USE) {
-      // kprintf("sub kerenl %lu  + size %d\n", (u32)memory_summary.kernel_used,
-      // size);
-      memory_summary.kernel_used += size;
+      memory_summary.kernel_used += size*op;
     } else {
-      // kprintf("sub kerenl %lu  - size %d\n", (u32)memory_summary.kernel_used,
-      //         size);
-      memory_summary.kernel_used -= size;
+      memory_summary.kernel_used -= size*op;
     }
   }
 }
