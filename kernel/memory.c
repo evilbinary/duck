@@ -330,10 +330,8 @@ void map_alignment(void* page, void* vaddr, void* buf, u32 size) {
 }
 
 void page_clone_user(u64* page, u64* page_dir_ptr_tab) {
-  use_kernel_page();
   page_clone(page, page_dir_ptr_tab);
   // unmap_mem_block(page_dir_ptr_tab, 0x200000);
-  use_user_page();
 }
 
 void kpool_init() {
@@ -354,20 +352,4 @@ void* kpool_poll() {
     log_error("kpool poll is null\n");
   }
   return e;
-}
-
-void use_kernel_page() {
-  context_t* context = thread_current_context();
-  if (context != NULL && cpu_cpl() == KERNEL_MODE) {
-    context->tss->cr3 = context->kpage;
-    context_switch_page(context->kpage);
-  }
-}
-
-void use_user_page() {
-  context_t* context = thread_current_context();
-  if (context != NULL && cpu_cpl() == KERNEL_MODE) {
-    context->tss->cr3 = context->upage;
-    context_switch_page(context->upage);
-  }
 }

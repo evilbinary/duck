@@ -37,7 +37,6 @@ int context_init(context_t* context, u32* entry, u32 level, int cpu) {
 
   u32 usp_top = context->usp;
 
-  context->tss = NULL;
   context->eip = entry;
   context->level = level;
   context->ksp = ksp_top;

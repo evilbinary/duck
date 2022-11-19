@@ -39,10 +39,8 @@ typedef struct interrupt_context {
 
 typedef struct context_t {
   interrupt_context_t* ksp;
-  u32 ss0, ds0;
-  u32 usp, ss, ds;
+  u32 usp;
   u32 eip;
-  tss_t* tss;
   u32* upage;
   u32* kpage;
   u32 level;
