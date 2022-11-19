@@ -160,9 +160,9 @@ void* ya_alloc(size_t size) {
   mmt.alloc_size += size;
 
 #ifdef DEBUG
-  kprintf("alloc %x size=%d count=%d total=%dk  baddr=%x bsize=%d bcount=%d\n",
+  kprintf("alloc %x size=%d count=%d total=%dk  baddr=%x bsize=%d bcount=%d last map=%x\n",
           addr, size, mmt.alloc_count, mmt.alloc_size / 1024, block,
-          block->size, block->count);
+          block->size, block->count,mmt.last_map_addr);
   ya_verify();
   // kprintf("ya_alloc(%d);//no %d addr %x \n", size, block->no, addr);
 #endif
@@ -642,4 +642,19 @@ void map_range(u32 vaddr, u32 paddr, u32 size, u32 flag) {
     vaddr += PAGE_SIZE;
     paddr += PAGE_SIZE;
   }
+}
+
+void map_kernel(u32 flags) {
+  unsigned int address = 0;
+  // map kernel
+  kprintf("map kernel start\n");
+  for (int i = 0; i < boot_info->segments_number; i++) {
+    u32 size = boot_info->segments[i].size;
+    address = boot_info->segments[i].start;
+    map_range(address, address, size, flags);
+
+    kprintf("map kernel %d range %x  - %x\n", i, boot_info->segments[i].start,
+            address + size);
+  }
+  kprintf("map kernel end %d\n", boot_info->segments_number);
 }

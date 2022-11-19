@@ -32,7 +32,9 @@ int context_init(context_t* context, u32* entry, u32 level, int cpu) {
     log_error("ksp end or usp end is null\n");
     return -1;
   }
-  u32 ksp_top = (u32)context->ksp_end;
+  // u32 ksp_top = (u32)context->ksp_end;
+  u32 ksp_top = ((u32)context->ksp_end) - sizeof(interrupt_context_t);
+
   u32 usp_top = context->usp;
 
   context->tss = NULL;
@@ -59,28 +61,28 @@ int context_init(context_t* context, u32* entry, u32 level, int cpu) {
     kprintf("not suppport level %d\n", level);
   }
 
-  interrupt_context_t* user = ksp_top;
-  kmemset(user, 0, sizeof(interrupt_context_t));
-  user->lr = entry;  // r14
-  user->lr += 4;
-  user->psr = cpsr.val;
-  user->r0 = 0;
-  user->r1 = 0x00010001;
-  user->r2 = 0x00020002;
-  user->r3 = 0x00030003;
-  user->r4 = 0x00040004;
-  user->r5 = 0x00050006;
-  user->r6 = 0x00060006;
-  user->r7 = 0x00070007;
-  user->r8 = 0x00080008;
-  user->r9 = 0x00090009;
-  user->r10 = 0x00100010;
-  user->r11 = 0x00110011;  // fp
-  user->r12 = 0x00120012;  // ip
-  user->sp = usp_top;      // r13
-  user->lr0 = user->lr;
+  interrupt_context_t* ic = ksp_top;
+  kmemset(ic, 0, sizeof(interrupt_context_t));
+  ic->lr = entry;  // r14
+  ic->lr += 4;
+  ic->psr = cpsr.val;
+  ic->r0 = 0;
+  ic->r1 = 0x00010001;
+  ic->r2 = 0x00020002;
+  ic->r3 = 0x00030003;
+  ic->r4 = 0x00040004;
+  ic->r5 = 0x00050006;
+  ic->r6 = 0x00060006;
+  ic->r7 = 0x00070007;
+  ic->r8 = 0x00080008;
+  ic->r9 = 0x00090009;
+  ic->r10 = 0x00100010;
+  ic->r11 = 0x00110011;  // fp
+  ic->r12 = 0x00120012;  // ip
+  ic->sp = usp_top;      // r13
+  ic->lr0 = ic->lr;
   context->usp = usp_top;
-  context->ksp = ksp_top;
+  context->ksp = ic;
 
   ulong addr = (ulong)boot_info->pdt_base;
   context->kpage = addr;
@@ -94,16 +96,16 @@ int context_init(context_t* context, u32* entry, u32 level, int cpu) {
 }
 
 // #define DEBUG 1
-void context_switch(interrupt_context_t* context, context_t** current,
+void context_switch(interrupt_context_t* ic, context_t** current,
                     context_t* next_context) {
   context_t* current_context = *current;
 #if DEBUG
   kprintf("-----switch dump current------\n");
   context_dump(current_context);
 #endif
-  current_context->ksp = context;
-  current_context->usp = context->sp;
-  current_context->eip = context->lr;
+  current_context->ksp = ic;
+  current_context->usp = ic->sp;
+  current_context->eip = ic->lr;
   *current = next_context;
   context_switch_page(next_context->upage);
 #if DEBUG

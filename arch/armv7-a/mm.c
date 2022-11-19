@@ -47,15 +47,11 @@ void mm_init_default() {
   // map mem block 100 page 400k
   map_mem_block(PAGE_SIZE * 100,0);
 
-  address = boot_info->kernel_entry;
-  kprintf("map kernel %x ", address);
-  int i;
-  for (i = 0; i < (((u32)boot_info->kernel_size) / 0x1000 + 6); i++) {
-    map_page(address, address, L2_TEXT_1 | L2_CB);
-    address += 0x1000;
-  }
-  kprintf("- %x\n", address);
-
+  map_range(0, 0, PAGE_SIZE * 20, PAGE_P | PAGE_USU | PAGE_RWW);
+  
+  //map kernel
+  map_kernel(L2_TEXT_1 | L2_CB);
+ 
   map_page(MMIO_BASE, MMIO_BASE, 0);
 
 #ifdef RASPI2

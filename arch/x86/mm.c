@@ -85,17 +85,7 @@ void mm_init_default() {
   // map 0 - 0x14000
   map_range(0, 0, PAGE_SIZE * 20, PAGE_P | PAGE_USU | PAGE_RWW);
 
-  // map kernel
-  kprintf("map kernel start\n");
-  for (int i = 0; i < boot_info->segments_number; i++) {
-    u32 size = boot_info->segments[i].size;
-    address = boot_info->segments[i].start;
-    map_range(address, address, size, PAGE_P | PAGE_USU | PAGE_RWW);
-
-    kprintf("map kernel %d range %x  - %x\n", i, boot_info->segments[i].start,
-            address + size);
-  }
-  kprintf("map kernel end %d\n", boot_info->segments_number);
+  map_kernel( PAGE_P | PAGE_USU | PAGE_RWW);
 
   map_page(boot_info->kernel_stack, boot_info->kernel_stack,
            PAGE_P | PAGE_USU | PAGE_RWW);
