@@ -36,13 +36,13 @@ void map_page(u32 virtualaddr, u32 physaddr, u32 flags) {
 void mm_init_default() {
   mm_test();
   boot_info->pdt_base = kernel_page_dir;
-  kmemset(kernel_page_dir, 0, sizeof(PAGE_DIR_NUMBER));
+  kmemset(kernel_page_dir, 0, sizeof(u32)* PAGE_DIR_NUMBER);
 
   u32 address = 0;
-  kprintf("map %x - %x\n", address, 1024 * 1000);
-  for (int j = 0; j < 1000; j++) {
+  kprintf("map %x - %x\n", address, 20 * PAGE_SIZE);
+  for (int j = 0; j < 20; j++) {
     map_page(address, address, 0);
-    address += 0x1000;
+    address += PAGE_SIZE;
   }
   // map mem block 100 page 400k
   map_mem_block(PAGE_SIZE * 100,0);
