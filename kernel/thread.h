@@ -45,13 +45,6 @@
 #define THREAD_CLONE (PAGE_CLONE | FS_CLONE)
 #define THREAD_VFORK (PAGE_CLONE | VM_CLONE_ALL)
 
-#ifndef KERNEL_THREAD_STACK_SIZE
-#define KERNEL_THREAD_STACK_SIZE 1024 * 2
-#endif
-
-#ifndef THREAD_STACK_SIZE
-#define THREAD_STACK_SIZE PAGE_SIZE
-#endif
 typedef struct thread {
   u32 id;
   u8* name;

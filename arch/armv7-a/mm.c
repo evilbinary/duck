@@ -10,7 +10,7 @@
 #include "cpu.h"
 #include "gpio.h"
 
-#define PAGE_DIR_NUMBER 4096 * 4
+#define PAGE_DIR_NUMBER 4096
 
 extern boot_info_t* boot_info;
 extern memory_manager_t mmt;
@@ -59,26 +59,26 @@ void mm_init_default() {
   map_page(CORE0_TIMER_IRQCNTL & ~0xfff, CORE0_TIMER_IRQCNTL & ~0xfff, 0);
 #endif
 #if defined(V3S) || defined(CUBIEBOARD2)
-  map_page(UART0_DR, UART0_DR, 0);
-  map_page(CORE0_TIMER_IRQCNTL, CORE0_TIMER_IRQCNTL, 0);
+  map_page(UART0_DR, UART0_DR, L2_NCB);
+  map_page(CORE0_TIMER_IRQCNTL, CORE0_TIMER_IRQCNTL, L2_NCB);
   // memory
-  address = 0x40000000;
-  kprintf("map memory %x ", address);
-  for (int i = 0; i < 0x2000000 / 0x1000; i++) {
-    map_page(address, address, L2_TEXT_1 | L2_NCB);
-    address += 0x1000;
-  }
-  kprintf("- %x\n", address);
+  // address = 0x40000000;
+  // kprintf("map memory %x ", address);
+  // for (int i = 0; i < 0x2000000 / 0x1000; i++) {
+  //   map_page(address, address, L2_TEXT_1 | L2_NCB);
+  //   address += 0x1000;
+  // }
+  // kprintf("- %x\n", address);
 
   // ccu -pio timer
-  map_page(0x01C20000, 0x01C20000, 0);
+  map_page(0x01C20000, 0x01C20000, L2_NCB);
   // uart
-  map_page(0x01C28000, 0x01C28000, 0);
+  map_page(0x01C28000, 0x01C28000, L2_NCB);
   // timer
-  map_page(0x01C20C00, 0x01C20C00, 0);
+  map_page(0x01C20C00, 0x01C20C00, L2_NCB);
   // gic
-  map_page(0x01C81000, 0x01C81000, 0);
-  map_page(0x01C82000, 0x01C82000, 0);
+  map_page(0x01C81000, 0x01C81000, L2_NCB);
+  map_page(0x01C82000, 0x01C82000, L2_NCB);
 
 #endif
 
@@ -163,7 +163,7 @@ u32* page_alloc_clone(u32* old_page_dir, u32 level) {
   }
   if (level == USER_MODE) {
     u32* page_dir_ptr_tab =
-        mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, 0x4000);
+        mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, PAGE_SIZE);
 
     if (old_page_dir == NULL) {
       old_page_dir = kernel_page_dir;
@@ -172,12 +172,12 @@ u32* page_alloc_clone(u32* old_page_dir, u32 level) {
     return page_dir_ptr_tab;
   }
   if (level == -1) {
-    u32* page_dir_ptr_tab = mm_alloc_zero_align(sizeof(u64) * 4, 0x1000);
+    u32* page_dir_ptr_tab = mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, PAGE_SIZE);
     page_clone(old_page_dir, page_dir_ptr_tab);
     return page_dir_ptr_tab;
   }
   if (level == -2) {
-    u32* page_dir_ptr_tab = mm_alloc_zero_align(sizeof(u64) * 4, 0x1000);
+    u32* page_dir_ptr_tab = mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, PAGE_SIZE);
     return page_dir_ptr_tab;
   }
   return NULL;

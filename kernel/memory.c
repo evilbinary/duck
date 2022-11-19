@@ -157,7 +157,6 @@ void* kmalloc_alignment_trace(size_t size, int alignment, u32 flag, void* name,
 
 void kfree_trace(void* ptr, void* name, void* no, void* fun) {
   size_t size = mm_get_size(ptr);
-  u32 tid = -1;
   log_debug("kfree count:%d total:%dk size:%d addr:%x %s:%d %s\n", free_count++,
             free_total / 1024, size, ptr, name, no, fun);
 

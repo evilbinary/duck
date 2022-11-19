@@ -8,7 +8,7 @@
 #define NO_INSTRUMENT_FUNCTION __attribute__((__no_instrument_function__))
 
 void NO_INSTRUMENT_FUNCTION __cyg_profile_func_enter(void *func, void *caller) {
-  int tid = -1;
+  int tid = 0;
   thread_t *current = thread_current();
   if (current != NULL) {
     tid = current->id;
@@ -18,7 +18,7 @@ void NO_INSTRUMENT_FUNCTION __cyg_profile_func_enter(void *func, void *caller) {
 }
 
 void NO_INSTRUMENT_FUNCTION __cyg_profile_func_exit(void *func, void *caller) {
-  int tid = -1;
+  int tid = 0;
   thread_t *current = thread_current();
   if (current != NULL) {
     tid = current->id;

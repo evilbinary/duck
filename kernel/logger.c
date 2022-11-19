@@ -16,7 +16,7 @@ const char* log_level_color[] = {LOG_CYAN, LOG_GREEN, LOG_YELLOW, LOG_PURPLE};
 
 void log_default(int tag, const char* message, va_list args) {
   int ticks = schedule_get_ticks();
-  int tid = -1;
+  int tid = 0;
   thread_t* current = thread_current();
   if (current != NULL) {
     tid = current->id;
@@ -38,7 +38,7 @@ void log_default(int tag, const char* message, va_list args) {
 
 void log_default_color(int tag, const char* message, va_list args) {
   int ticks = schedule_get_ticks();
-  int tid = -1;
+  int tid = 0;
   thread_t* current = thread_current();
   if (current != NULL) {
     tid = current->id;
