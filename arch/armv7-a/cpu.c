@@ -304,9 +304,9 @@ int cpu_tas(volatile int* addr, int newval) {
   return result;
 }
 
-void cpu_backtrace(void) {
+void cpu_backtrace(void* fp, void** buf, int size) {
   int topfp = read_fp();
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < size; i++) {
     u32 fp = *(((u32*)topfp) - 3);
     u32 sp = *(((u32*)topfp) - 2);
     u32 lr = *(((u32*)topfp) - 1);
