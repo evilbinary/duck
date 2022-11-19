@@ -103,9 +103,14 @@ void context_switch(interrupt_context_t* ic, context_t** current,
   kprintf("-----switch dump current------\n");
   context_dump(current_context);
 #endif
-  current_context->ksp = ic;
-  current_context->usp = ic->sp;
-  current_context->eip = ic->lr;
+  if (ic == NULL) {
+    ic = current_context->ksp;
+    ic->sp = current_context->usp;
+  } else {
+    current_context->ksp = ic;
+    current_context->usp = ic->sp;
+    current_context->eip = ic->lr;
+  }
   *current = next_context;
   context_switch_page(next_context->upage);
 #if DEBUG
@@ -164,9 +169,13 @@ int context_clone(context_t* des, context_t* src) {
     log_error("ksp top or usp top is null\n");
     return -1;
   }
-  //这里重点关注 usp ksp upage 3个变量的复制
+  context_t* pdes = virtual_to_physic(des->upage, des);
 
-  interrupt_context_t* ic = des->ksp;
+  //这里重点关注 usp ksp upage 3个变量的复制
+  u32* ksp_end = (u32)des->ksp_end - sizeof(interrupt_context_t);
+  u32* usp_end = des->usp_end;
+
+  interrupt_context_t* ic = ksp_end;
   interrupt_context_t* is = src->ksp;
 #if DEBUG
   kprintf("------context clone dump src--------------\n");
@@ -176,10 +185,7 @@ int context_clone(context_t* des, context_t* src) {
   void* page = des->upage;
   kmemmove(des, src, sizeof(context_t));
   des->upage = page;
-
-  context_t* pdes = virtual_to_physic(des->upage, des);
-
-  // ic = ((u32)ic) - sizeof(interrupt_context_t);
+  pdes->upage= page;
 
   if (ic != NULL) {
     // set usp alias ustack and ip cs ss and so on
@@ -198,7 +204,10 @@ int context_clone(context_t* des, context_t* src) {
     ic->sp = src->usp;
   }
   des->ksp = (u32)ic;  // set ksp alias ustack
-  des->usp = src->usp;
+  pdes->ksp= des->ksp;
+
+  // des->usp = src->usp;
+
 #if DEBUG
   kprintf("------context clone dump des--------------\n");
 #endif
