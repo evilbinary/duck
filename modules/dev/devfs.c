@@ -69,7 +69,7 @@ int devfs_init(void) {
   return 0;
 }
 
-void devfs_exit(void) { kprintf("devfs exit\n"); }
+void devfs_exit(void) { log_debug("devfs exit\n"); }
 
 module_t devfs_module = {
     .name = "devfs", .init = devfs_init, .exit = devfs_exit};

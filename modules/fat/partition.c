@@ -70,12 +70,12 @@ struct partition_struct* partition_open(device_read_t device_read, device_read_i
     {
         /* read specified partition table index */
         if(!device_read(0x01be + index * 0x10, buffer, sizeof(buffer))){
-            kprintf("read partition table index failed\n");
+            log_error("read partition table index failed\n");
             return 0;
         }
         /* abort on empty partition entry */
         if(buffer[4] == 0x00){
-            kprintf("empty partition entry\n");
+            log_debug("empty partition entry\n");
             return 0;
         }
     }

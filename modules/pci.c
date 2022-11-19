@@ -41,7 +41,7 @@ void pci_add_device(pci_device_t* pdev) {
   if (pci_number < MAX_PCI_NUMBER) {
     pci_device[pci_number++] = pdev;
   } else {
-    kprintf("max pci limit %d\n",pci_number);
+    log_error("max pci limit %d\n",pci_number);
   }
 }
 
@@ -83,7 +83,7 @@ pci_device_t* pci_find_vendor_device(u32 vendor, u32 device) {
       return pci_device[i];
     }
   }
-  kprintf("not fond pci device vendor id: 0x%x device id:0x%x\n", vendor,device);
+  log_error("not fond pci device vendor id: 0x%x device id:0x%x\n", vendor,device);
   return NULL;
 }
 
@@ -93,7 +93,7 @@ pci_device_t* pci_find_class(u32 class) {
       return pci_device[i];
     }
   }
-  kprintf("not fond pci device class id:0x%x\n", class);
+  log_error("not fond pci device class id:0x%x\n", class);
   return NULL;
 }
 
@@ -110,6 +110,6 @@ int pci_init(void) {
   return 0;
 }
 
-void pci_exit(void) { kprintf("pci exit\n"); }
+void pci_exit(void) { log_debug("pci exit\n"); }
 
 module_t pci_module = {.name = "pci", .init = pci_init, .exit = pci_exit};

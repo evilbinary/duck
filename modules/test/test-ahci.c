@@ -26,7 +26,7 @@ void test_ahci_port_read() {
   kmemset(buf, 0, 1024);
   ret = ahci_dev_port_read(ahci_dev, 0, sector, count, buf);
   if (ret < 0) {
-    kprintf("test error at read %d\n", ret);
+    log_error("test error at read %d\n", ret);
   }
   for (int i = 0; i < 1024; i++) {
     if (buf[i] != (i % 128)) {

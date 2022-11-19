@@ -23,6 +23,6 @@ int vbox_init(void) {
   return 0;
 }
 
-void vbox_exit(void) { kprintf("vga exit\n"); }
+void vbox_exit(void) { log_debug("vga exit\n"); }
 
 module_t vbox_module = {.name = "vga", .init = vbox_init, .exit = vbox_exit};

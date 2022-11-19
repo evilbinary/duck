@@ -16,7 +16,7 @@ size_t vga_write(device_t* dev, const void* buf, size_t len) {
   u32 ret = 0;
   vga_device_t* vga = dev->data;
   if (vga == NULL) {
-    kprintf("not found vga\n");
+    log_error("not found vga\n");
     return ret;
   }
   kstrncpy(vga->frambuffer, (const char*)buf, len);
@@ -27,7 +27,7 @@ size_t vga_ioctl(device_t* dev, u32 cmd, void* args) {
   u32 ret = 0;
   vga_device_t* vga = dev->data;
   if (vga == NULL) {
-    kprintf("not found vga\n");
+    log_error("not found vga\n");
     return ret;
   }
   if (cmd == IOC_READ_FRAMBUFFER) {
@@ -54,7 +54,7 @@ size_t vga_ioctl(device_t* dev, u32 cmd, void* args) {
 void vga_init_device(device_t* dev) {
   pci_device_t* pdev = pci_find_class(0x300);
   if (pdev == NULL) {
-    kprintf("can not find pci vga device\n");
+    log_error("can not find pci vga device\n");
     return;
   }
   u32 bar0 = pci_dev_read32(pdev, PCI_BASE_ADDR0) & 0xFFFFFFF0;
@@ -100,12 +100,12 @@ int vga_init(void) {
     frambuffer->device = fb_dev;
     frambuffer->op = &device_operator;
   } else {
-    kprintf("dev fb not found\n");
+    log_error("dev fb not found\n");
   }
 
   return 0;
 }
 
-void vga_exit(void) { kprintf("vga exit\n"); }
+void vga_exit(void) { log_debug("vga exit\n"); }
 
 module_t vga_module = {.name = "vga", .init = vga_init, .exit = vga_exit};

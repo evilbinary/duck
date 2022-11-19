@@ -191,7 +191,7 @@ static inline void v3s_tcon_set_mode(v3s_lcd_t *lcd) {
 }
 
 int v3s_lcd_init(vga_device_t *vga) {
-  kprintf("v3s_lcd_init\n");
+  log_info("v3s_lcd_init\n");
   v3s_lcd_t *lcd = kmalloc(sizeof(v3s_lcd_t),DEFAULT_TYPE);
   vga->priv = lcd;
 
@@ -259,7 +259,7 @@ int v3s_lcd_init(vga_device_t *vga) {
 
   v3s_de_set_address(lcd, lcd->vram[0]);
   v3s_de_enable(lcd);
-  kprintf("v3s_lcd_init end\n");
+  log_info("v3s_lcd_init end\n");
 }
 
 void gpu_flush(vga_device_t *vga, u32 index) {
@@ -296,7 +296,7 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
     vga->height = 768;
     vga->bpp = 32;
   } else {
-    kprintf("no support mode %x\n");
+    log_error("no support mode %x\n");
   }
   vga->mode = mode;
   vga->write = NULL;
@@ -309,7 +309,7 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
 
   v3s_lcd_init(vga);
 
-  kprintf("fb addr:%x end:%x len:%x\n", vga->frambuffer,vga->frambuffer+vga->framebuffer_length, vga->framebuffer_length);
+  log_info("fb addr:%x end:%x len:%x\n", vga->frambuffer,vga->frambuffer+vga->framebuffer_length, vga->framebuffer_length);
 
 
   // u8 *buffer = vga->frambuffer;

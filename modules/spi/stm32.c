@@ -68,9 +68,9 @@ static void stm32_spi_init() {
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
   hspi1.Init.CRCPolynomial = 10;
   if (HAL_SPI_Init(&hspi1) != HAL_OK) {
-    kprintf("spi init error\n");
+    log_error("spi init error\n");
   } else {
-    kprintf("spi init success\n");
+    log_debug("spi init success\n");
   }
 }
 

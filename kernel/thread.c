@@ -279,6 +279,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       // copy->context.usp_size;
       copy->context.upage = page_alloc_clone(NULL, copy->level);
     } else if (copy->level == USER_MODE) {
+      log_debug("alloc usp size %x\n",copy->context.usp_size);
       void* ustack =
           kmalloc_alignment(copy->context.usp_size, PAGE_SIZE, DEFAULT_TYPE);
       void* phy = kvirtual_to_physic(ustack, 0);

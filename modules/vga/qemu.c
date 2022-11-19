@@ -72,7 +72,7 @@ void qemu_init_mode(pci_device_t* pdev, vga_device_t* vga, int mode) {
   u32 res_io = pci_dev_read32(pdev, PCI_BASE_ADDR2) & 0xFFFFFFF0;
   u16 id = qemu_read_reg(VBE_DISPI_INDEX_ID);
   if ((id & 0xfff0) != VBE_DISPI_ID0) {
-    kprintf("qemu get error\n");
+    log_error("qemu get error\n");
   }
   qemu_write_reg(VBE_DISPI_INDEX_ENABLE, 0);
   qemu_write_reg(VBE_DISPI_INDEX_BANK, 0);
@@ -94,7 +94,7 @@ void qemu_init_mode(pci_device_t* pdev, vga_device_t* vga, int mode) {
 int qemu_init_device(device_t* dev, u32 vendor_id, u32 device_id) {
   pci_device_t* pdev = pci_find_vendor_device(vendor_id, device_id);
   if (pdev == NULL) {
-    kprintf("can not find pci qemu device\n");
+    log_error("can not find pci qemu device\n");
     return -1;
   }
   u32 bar0 = pci_dev_read32(pdev, PCI_BASE_ADDR0) & 0xFFFFFFF0;
@@ -161,12 +161,12 @@ int qemu_init(void) {
     frambuffer->device = fb_dev;
     frambuffer->op = &device_operator;
   } else {
-    kprintf("dev fb not found\n");
+    log_error("dev fb not found\n");
   }
 
   return ret;
 }
 
-void qemu_exit(void) { kprintf("vga exit\n"); }
+void qemu_exit(void) { log_info("vga exit\n"); }
 
 module_t qemu_module = {.name = "vga", .init = qemu_init, .exit = qemu_exit};

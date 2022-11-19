@@ -16,7 +16,7 @@ int find_cmdslot(ahci_device_t* ahci_dev, int no) {
     if ((slots & 1) == 0) return i;
     slots >>= 1;
   }
-  kprintf("Cannot find free command list entry\n");
+  log_error("Cannot find free command list entry\n");
   return -1;
 }
 
@@ -112,7 +112,7 @@ table, ignoring any additional padding.**/
     if ((port->ci & (1 << slot)) == 0) break;
     if (port->is & HBA_PxIS_TFES)  // Task file error
     {
-      kprintf("write disk error startl:%x\n", sector.startl);
+      log_error("write disk error startl:%x\n", sector.startl);
       return 0;
     }
   }
@@ -120,7 +120,7 @@ table, ignoring any additional padding.**/
   //   print("\nafter issue : %d" , port->tfd);
   // Check again
   if (port->is & HBA_PxIS_TFES) {
-    kprintf("write disk error startl:%x\n", sector.startl);
+    log_error("write disk error startl:%x\n", sector.startl);
     return 0;
   }
 
@@ -142,7 +142,7 @@ int ahci_dev_port_read(ahci_device_t* ahci_dev, int no, sector_t sector,
   int spin = 0;        // Spin lock timeout counter
   int slot = find_cmdslot(ahci_dev, no); //查找可以用的slot
   if (slot == -1){
-    kprintf("not slot found\n");
+    log_error("not slot found\n");
     return 0;
   }
   uint64_t addr = 0;
@@ -212,7 +212,7 @@ int ahci_dev_port_read(ahci_device_t* ahci_dev, int no, sector_t sector,
     spin++;
   }
   if (spin == 1000000) {
-    kprintf("Port is hung\n");
+    log_error("Port is hung\n");
     return 0;
   }
 
@@ -225,14 +225,14 @@ int ahci_dev_port_read(ahci_device_t* ahci_dev, int no, sector_t sector,
     if ((port->ci & (1 << slot)) == 0) break;
     if (port->is & HBA_PxIS_TFES)  // Task file error
     {
-      kprintf("read disk error startl:%x\n", sector.startl);
+      log_error("read disk error startl:%x\n", sector.startl);
       return 0;
     }
   }
 
   // Check again
   if (port->is & HBA_PxIS_TFES) {
-    kprintf("read disk error startl:%x\n", sector.startl);
+    log_error("read disk error startl:%x\n", sector.startl);
     return 0;
   }
 
@@ -353,7 +353,7 @@ void ahci_dev_prob(ahci_device_t* ahci_dev) {
       ahci_dev_port_init(ahci_dev, i);
     } else if (type == AHCI_DEV_NULL) {
     } else {
-      kprintf("type not support %d\n", type);
+      log_error("type not support %d\n", type);
     }
   }
 }
@@ -366,7 +366,7 @@ static size_t ahci_read(device_t* dev, void* buf, size_t len) {
   u32 count = len / BYTE_PER_SECTOR;
   u32 rest = len % BYTE_PER_SECTOR;
   if (rest > 0) {
-    kprintf("ahci read is more, may have error\n");
+    log_error("ahci read is more, may have error\n");
     count++;
   }
   u32 ret = 0;
@@ -388,7 +388,7 @@ static size_t ahci_write(device_t* dev, void* buf, size_t len) {
   u32 count = len / BYTE_PER_SECTOR;
   u32 rest = len % BYTE_PER_SECTOR;
   if (rest > 0) {
-    kprintf("ahci write is more, may have error\n");
+    log_error("ahci write is more, may have error\n");
     count++;
   }
   u32 ret = 0;
@@ -407,7 +407,7 @@ static size_t ahci_ioctl(device_t* dev, u32 cmd, ...) {
   ahci_device_t* ahci_dev = dev->data;
   int no = dev->id - DEVICE_SATA;
   if (ahci_dev == NULL) {
-    kprintf("not found vga\n");
+    log_error("not found vga\n");
     return ret;
   }
   va_list ap;
@@ -433,7 +433,7 @@ int ahci_init(void) {
   //根据 pci 的ahci class 为0x0106，分类为01是大容量设备，0x6 是串行ata控制 Serial ATA Controller，所以为0x0106
   pci_device_t* pdev = pci_find_class(0x0106);
   if (pdev == NULL) {
-    kprintf("can not find ahci device\n");
+    log_error("can not find ahci device\n");
     return 0;
   }
   //获取bar5的地址，别问为什么，规范说bar5是pci为0x24的AHCI Base Address <BAR5>，获取后可以通过内存操作ata设备
@@ -459,6 +459,6 @@ int ahci_init(void) {
   return 0;
 }
 
-void ahci_exit(void) { kprintf("ahci exit\n"); }
+void ahci_exit(void) { log_debug("ahci exit\n"); }
 
 module_t ahci_module = {.name = "ahci", .init = ahci_init, .exit = ahci_exit};

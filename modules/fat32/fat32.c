@@ -184,7 +184,7 @@ u32 fat32_find_free_fat(vnode_t *node, u32 cluster) {
       fat32_read_bytes(node, read_offset, 512, fat_entry);
     }
     fat = &fat_entry[i];
-    kprintf("%d %x\n", i, *fat);
+    log_debug("%d %x\n", i, *fat);
     if ((*fat & 0x0fffffff) == FAT32_CLUSTER_FREE) {
       return i;
     }
@@ -193,11 +193,11 @@ u32 fat32_find_free_fat(vnode_t *node, u32 cluster) {
 }
 
 void fat32_printf_buffer(char *str, char *buffer, size_t size) {
-  kprintf("=====>%s\n", str);
+  log_debug("=====>%s\n", str);
   for (int i = 0; i < size; i++) {
-    kprintf("%c", buffer[i]);
+    log_debug("%c", buffer[i]);
   }
-  kprintf("\n======\n\n");
+  log_debug("\n======\n\n");
 }
 
 fat32_t fat32_set_fat(vnode_t *node, u32 cluster, u32 fat_index,
@@ -221,7 +221,7 @@ u32 fat32_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   file_info_t *file_info = node->data;
   dir_entry_t *e = file_info->entry;
   if (e == NULL) {
-    kprintf("read file %s entry error\n", name);
+    log_error("read file %s entry error\n", name);
     return 0;
   }
   u32 bytes = fat32_info->bytes_per_cluster;
@@ -230,7 +230,7 @@ u32 fat32_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
     read_buffer = kmalloc(bytes,DEFAULT_TYPE);
   }
 #ifdef DEUBG
-  kprintf("read %s ", name);
+  log_debug("read %s ", name);
 #endif
   fat32_t first_cluster = cluster_no(e);
   fat32_t *fat = &first_cluster;

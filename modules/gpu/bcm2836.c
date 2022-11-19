@@ -50,7 +50,7 @@ int bcm2836_init(vga_device_t* vga) {
   mailbox_write_read(BCM2835_MAILBOX_PROP_CHANNEL, mailbuffer);
 
   if (mailbuffer[1] != BCM2835_MAILBOX_SUCCESS) {
-    kprintf("init bcm error\n");
+    log_error("init bcm error\n");
     return -1;
   }
 
@@ -91,19 +91,19 @@ int gpu_init_mode(vga_device_t* vga, int mode) {
     vga->height = 768;
     vga->bpp = 32;
   }else{
-    kprintf("no support mode %x\n");
+    log_error("no support mode %x\n");
   }
   vga->mode = mode;
   vga->write = NULL;
 
-  kprintf("map box %x\n", BCM2835_MAILBOX_BASE & ~0xfff);
-  map_page(BCM2835_MAILBOX_BASE & ~0xfff, BCM2835_MAILBOX_BASE & ~0xfff, 0);
+  log_debug("map box %x\n", BCM2835_MAILBOX_BASE & ~0xfff);
+  map_page(BCM2835_MAILBOX_BASE & ~0xfff, BCM2835_MAILBOX_BASE & ~0xfff, L2_NCNB);
 
   bcm2836_init(vga);
 
   vga->framebuffer_index = 0;
   vga->framebuffer_count = 1;
-  kprintf("fb addr:%x end:%x len:%x\n", vga->frambuffer,vga->frambuffer+vga->framebuffer_length, vga->framebuffer_length);
+  log_debug("fb addr:%x end:%x len:%x\n", vga->frambuffer,vga->frambuffer+vga->framebuffer_length, vga->framebuffer_length);
   u32 addr = vga->frambuffer;
   for (int i = 0; i < vga->framebuffer_length*8 / PAGE_SIZE; i++) {
     map_page(addr, addr, 0);

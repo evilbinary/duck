@@ -9,7 +9,7 @@ size_t spi_read(device_t* dev, void* buf, size_t len) {
   u32 ret = 0;
   spi_t* spi = dev->data;
   if (spi == NULL) {
-    kprintf("spi is null\n");
+    log_error("spi is null\n");
     return ret;
   }
   spi->read(spi, buf, len);
@@ -20,7 +20,7 @@ size_t spi_write(device_t* dev, const void* buf, size_t len) {
   u32 ret = 0;
   spi_t* spi = dev->data;
   if (spi == NULL) {
-    kprintf("spi is null\n");
+    log_error("spi is null\n");
     return ret;
   }
   spi->write(spi, buf, len);
@@ -31,14 +31,14 @@ size_t spi_ioctl(device_t* dev, u32 cmd, void* args) {
   u32 ret = 0;
   spi_t* spi = dev->data;
   if (spi == NULL) {
-    kprintf("spi is null\n");
+    log_error("spi is null\n");
     return ret;
   }
   return ret;
 }
 
 int spi_init(void) {
-  kprintf("spi\n");
+  log_debug("spi\n");
 
   device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "spi";
@@ -54,6 +54,6 @@ int spi_init(void) {
   return 0;
 }
 
-void spi_exit(void) { kprintf("spi exit\n"); }
+void spi_exit(void) { log_debug("spi exit\n"); }
 
 module_t spi_module = {.name = "spi", .init = spi_init, .exit = spi_exit};
