@@ -128,7 +128,7 @@ typedef struct context_t {
 #define context_fn(context) context->r7
 #define context_ret(context) context->r0
 #define context_set_entry(context, entry) \
-  (((context_t*)context)->ksp->lr = entry + 4);
+  (((context_t*)context)->ksp->pc = entry + 4);
 
 #define context_restore(duck_context) interrupt_exit_context(duck_context);
 

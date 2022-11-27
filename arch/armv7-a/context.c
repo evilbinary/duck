@@ -182,7 +182,6 @@ int context_clone(context_t* des, context_t* src) {
     cpsr.I = 1;
     cpsr.F = 1;
     cpsr.T = 0;
-
     cpsr.M = 0x13;
     ic->psr = cpsr.val;
   }

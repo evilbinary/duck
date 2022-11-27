@@ -122,7 +122,7 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   copy->data = thread->data;
   copy->pid = thread->id;
   copy->name = thread->name;
-  copy->counter = 0;
+  copy->counter = thread->counter;
   copy->fault_count = 0;
   copy->sleep_counter = 0;
 

@@ -57,7 +57,7 @@ void mm_init_default() {
   map_page(UART0_DR, UART0_DR, L2_NCB);
   map_page(CORE0_TIMER_IRQCNTL, CORE0_TIMER_IRQCNTL, L2_NCB);
   // memory
-  address = 0x40000000;
+  u32 address = 0x40000000;
   kprintf("map memory %x ", address);
   for (int i = 0; i < 0x2000000 / 0x1000; i++) {
     map_page(address, address, L2_TEXT_1 | L2_NCB);

@@ -16,7 +16,9 @@ const char* logo =
     "   |_|     |_| \\__/\\_\\\n\n"
     "2021 - 2080 Copyright by evilbinary \n";
 
-const char* build_str = "version " VERSION " " __DATE__ " " __TIME__ "\n";
+const char* build_str = "version " VERSION " " __DATE__ " " __TIME__
+                        "\n"
+                        "https://github.com/evilbinary/YiYiYa\n";
 
 const char* welcome = "\nWelcome to YiYiYa Os ^_^! \n\n";
 
@@ -44,7 +46,7 @@ int do_exec(char* cmd, int count) {
   const char* split = " ";
   char* ptr = kstrtok(cmd, split);
   argv[i++] = ptr;
-  if(argv[1]==' '|| argv[0]==NULL){
+  if (argv[1] == ' ' || argv[0] == NULL) {
     return 0;
   }
   sprintf(buf, "/%s", argv[0]);
@@ -57,10 +59,18 @@ int do_exec(char* cmd, int count) {
     int p = syscall0(SYS_GETPID);
     kprintf("child current p=%d pid=%d\n", p, pid);
     syscall2(SYS_EXEC, buf, &argv[1]);
-    syscall1(SYS_EXIT,0);
+    syscall1(SYS_EXIT, 0);
   } else {
     int p = syscall0(SYS_GETPID);
     kprintf("parent current p=%d pid=%d\n", p, pid);
+  }
+
+  while (true) {
+    int p = syscall0(SYS_GETPID);
+    kprintf("get pid=%d\n", pid);
+    if (p != 0) {
+      break;
+    }
   }
 
   return pid;

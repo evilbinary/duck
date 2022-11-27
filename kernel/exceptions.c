@@ -224,7 +224,7 @@ void sys_pendsv_handler() {
   interrupt_exit();
 }
 
-#else
+#else //armv7a
 
 INTERRUPT_SERVICE
 void reset_handler() {
