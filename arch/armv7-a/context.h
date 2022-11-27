@@ -16,6 +16,7 @@ typedef struct interrupt_context {
   u32 code;
 
   u32 psr;
+  u32 pc;  // return to user addr
 
   u32 r0;
   u32 r1;
@@ -30,11 +31,8 @@ typedef struct interrupt_context {
   u32 r10;
   u32 r11;  // fp
   u32 r12;  // ip
-  u32 lr0;
-
-  u32 sp;  // sp
-  u32 lr;  // r14
-
+  u32 sp;   // r13 user sp
+  u32 lr;   // r14 user lr
 } __attribute__((packed)) interrupt_context_t;
 
 typedef struct context_t {
@@ -66,11 +64,10 @@ typedef struct context_t {
 
 #define interrupt_entering_code(VEC, CODE) \
   asm volatile(                            \
-      "stmfd sp, {sp,lr}^ \n"              \
-      "sub sp,sp,#8\n"                     \
-      "stmfd sp!, {r0-r12,lr}\n"           \
+      "stmfd sp, {r0-r12,sp,lr}^\n"        \
+      "subs sp,sp,#60\n"                   \
       "mrs r0,spsr\n"                      \
-      "stmfd sp!, {r0} \n"                 \
+      "stmfd sp!, {r0,lr} \n"              \
       "mov r1,%0\n"                        \
       "mov r2,%1\n"                        \
       "stmfd sp!, {r1,r2} \n"              \
@@ -82,56 +79,51 @@ typedef struct context_t {
   asm volatile(                              \
       "ldr sp,%0 \n"                         \
       "ldmfd sp!,{r1,r2}\n"                  \
-      "ldmfd sp!,{r0}\n"                     \
+      "ldmfd sp!,{r0,lr}\n"                  \
       "msr spsr,r0\n"                        \
-      "ldmfd sp!,{r0-r12,lr}\n"              \
-      "ldmfd sp,{sp,lr}^\n"                  \
-      "add sp,sp,#8\n"                       \
+      "ldmfd sp,{r0-r12,sp,lr}^\n"           \
+      "add sp,sp,#60\n"                      \
       "subs pc,lr,#4\n"                      \
       :                                      \
       : "m"(duck_context->ksp))
 
-#define interrupt_exit_ret()    \
-  asm volatile(                 \
-      "mov sp,r0 \n"            \
-      "ldmfd sp!,{r1,r2}\n"     \
-      "ldmfd sp!,{r0}\n"        \
-      "msr spsr,r0\n"           \
-      "ldmfd sp!,{r0-r12,lr}\n" \
-      "ldmfd sp,{sp,lr}^\n"     \
-      "add sp,sp,#8\n"          \
-      "subs pc,lr,#4\n"         \
-      :                         \
+#define interrupt_exit_ret()       \
+  asm volatile(                    \
+      "mov sp,r0 \n"               \
+      "ldmfd sp!,{r1,r2}\n"        \
+      "ldmfd sp!,{r0,lr}\n"        \
+      "msr spsr,r0\n"              \
+      "ldmfd sp,{r0-r12,sp,lr}^\n" \
+      "add sp,sp,#60\n"            \
+      "subs pc,lr,#4\n"            \
+      :                            \
+      :)
+
+#define interrupt_exit()           \
+  asm volatile(                    \
+      "ldmfd sp!,{r1,r2}\n"        \
+      "ldmfd sp!,{r0,lr}\n"        \
+      "msr spsr,r0\n"              \
+      "ldmfd sp,{r0-r12,sp,lr}^\n" \
+      "add sp,sp,#60\n"            \
+      "subs pc,lr,#0\n"            \
+      :                            \
+      :)
+
+#define interrupt_exit2()          \
+  asm volatile(                    \
+      "ldmfd sp!,{r1,r2}\n"        \
+      "ldmfd sp!,{r0,lr}\n"        \
+      "msr spsr,r0\n"              \
+      "ldmfd sp,{r0-r12,sp,lr}^\n" \
+      "add sp,sp,#60\n"            \
+      "subs pc,lr,#8\n"            \
+      :                            \
       :)
 
 #define interrupt_entering(VEC) interrupt_entering_code(VEC, 0)
 
-#define interrupt_exit()        \
-  asm volatile(                 \
-      "ldmfd sp!,{r1,r2}\n"     \
-      "ldmfd sp!,{r0}\n"        \
-      "msr spsr,r0\n"           \
-      "ldmfd sp!,{r0-r12,lr}\n" \
-      "ldmfd sp,{sp,lr}^\n"     \
-      "add sp,sp,#8\n"          \
-      "subs pc,lr,#0\n"         \
-      :                         \
-      :)
-
-#define interrupt_exit2()       \
-  asm volatile(                 \
-      "ldmfd sp!,{r1,r2}\n"     \
-      "ldmfd sp!,{r0}\n"        \
-      "msr spsr,r0\n"           \
-      "ldmfd sp!,{r0-r12,lr}\n" \
-      "ldmfd sp,{sp,lr}^\n"     \
-      "add sp,sp,#8\n"          \
-      "subs pc,lr,#8\n"         \
-      :                         \
-      :)
-
-#define context_switch_page(page_dir) \
-  cpu_set_page(page_dir)  // asm volatile("mov %0, %%cr3" : : "r" (page_dir))
+#define context_switch_page(page_dir) cpu_set_page(page_dir)
 
 #define context_fn(context) context->r7
 #define context_ret(context) context->r0

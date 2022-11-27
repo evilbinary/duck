@@ -4,8 +4,9 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "exceptions.h"
-#include "thread.h"
+
 #include "page.h"
+#include "thread.h"
 
 interrupt_handler_t *exception_handlers[EXCEPTION_NUMBER];
 void exception_regist(u32 vec, interrupt_handler_t handler) {
@@ -21,10 +22,11 @@ void exception_info(interrupt_context_t *context) {
       "NONE", "NONE",  "NONE", "SVC",  "NONE", "NONE", "SYS PENDSV", "SYS TICK",
   };
   if (context->no < sizeof exception_msg) {
-    kprintf("exception cpu %d no %d: %s\n----------------------------\n",cpu, context->no,
-            exception_msg[context->no]);
+    kprintf("exception cpu %d no %d: %s\n----------------------------\n", cpu,
+            context->no, exception_msg[context->no]);
   } else {
-    kprintf("exception cpu %d no %d:\n----------------------------\n",cpu, context->no);
+    kprintf("exception cpu %d no %d:\n----------------------------\n", cpu,
+            context->no);
   }
 
 #else
@@ -32,18 +34,20 @@ void exception_info(interrupt_context_t *context) {
                                         "PREF ABORT", "DATA ABORT", "NOT USE",
                                         "IRQ",        "FIQ"};
   if (context->no < sizeof exception_msg) {
-    kprintf("exception cpu %d no %d: %s\n----------------------------\n",cpu, context->no,
-            exception_msg[context->no]);
+    kprintf("exception cpu %d no %d: %s\n----------------------------\n", cpu,
+            context->no, exception_msg[context->no]);
   } else {
-    kprintf("exception cpu %d no %d:\n----------------------------\n",cpu, context->no);
+    kprintf("exception cpu %d no %d:\n----------------------------\n", cpu,
+            context->no);
   }
   thread_t *current = thread_current();
   if (current != NULL) {
-    kprintf("tid:%d %s cpu:%d\n", current->id, current->name,current->cpu_id);
+    kprintf("tid:%d %s cpu:%d\n", current->id, current->name, current->cpu_id);
   }
+  kprintf("current pc: %x\n", read_pc());
+
   kprintf("ifsr: %x dfsr: %x dfar: %x\n", read_ifsr(), read_dfsr(),
           read_dfar());
-  kprintf("pc: %x\n", read_pc());
   context_dump_interrupt(context);
 #endif
 
@@ -59,17 +63,19 @@ void exception_info(interrupt_context_t *context) {
       "PAGE FAULT",        "REVERSED",
       "COPROCESSOR_ERROR",
   };
-  //cls();
+  // cls();
   if (context->no != 14) {
     thread_t *current = thread_current();
     if (context->no < sizeof exception_msg) {
-      kprintf("exception cpu %d no %d: code: %d %s",cpu, context->no,context->code, exception_msg[context->no]);
+      kprintf("exception cpu %d no %d: code: %d %s", cpu, context->no,
+              context->code, exception_msg[context->no]);
 
     } else {
-      kprintf("interrupt cpu %d %d", cpu,context->no);
+      kprintf("interrupt cpu %d %d", cpu, context->no);
     }
     if (current != NULL) {
-      kprintf("\ntid %d %s cpu %d", current->id, current->name,current->cpu_id);
+      kprintf("\ntid %d %s cpu %d", current->id, current->name,
+              current->cpu_id);
       thread_stop(current);
     }
     kprintf("\n----------------------------\n");
@@ -285,9 +291,7 @@ void frq_handler() {
   cpu_halt();
 }
 
-void do_page_fault(interrupt_context_t *context) {
-  page_fault_handle(context);
-}
+void do_page_fault(interrupt_context_t *context) { page_fault_handle(context); }
 #endif
 
 #elif defined(X86)

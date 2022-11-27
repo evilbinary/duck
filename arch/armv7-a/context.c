@@ -63,7 +63,7 @@ int context_init(context_t* context, u32* entry, u32 level, int cpu) {
   interrupt_context_t* ic = ksp_top;
   kmemset(ic, 0, sizeof(interrupt_context_t));
   ic->lr = entry;  // r14
-  ic->lr += 4;
+  ic->pc += ic->lr + 4;
   ic->psr = cpsr.val;
   ic->r0 = 0;
   ic->r1 = 0x00010001;
@@ -79,7 +79,6 @@ int context_init(context_t* context, u32* entry, u32 level, int cpu) {
   ic->r11 = 0x00110011;  // fp
   ic->r12 = 0x00120012;  // ip
   ic->sp = usp_top;      // r13
-  ic->lr0 = ic->lr;
   context->usp = usp_top;
   context->ksp = ic;
 
@@ -107,8 +106,11 @@ void context_dump(context_t* c) {
 }
 
 void context_dump_interrupt(interrupt_context_t* ic) {
-  kprintf("lr:  %x cpsr:%x\n", ic->lr, ic->psr);
+  kprintf("pc:  %x\n", ic->pc);
+  kprintf("cpsr:  %x\n", ic->psr);
+
   kprintf("sp:  %x\n", ic->sp);
+  kprintf("lr:  %x\n", ic->lr);
   kprintf("r0:  %x\n", ic->r0);
   kprintf("r1:  %x\n", ic->r1);
   kprintf("r2:  %x\n", ic->r2);
@@ -137,7 +139,7 @@ void context_dump_fault(interrupt_context_t* context, u32 fault_addr) {
   kprintf("----------------------------\n");
   kprintf("ifsr: %x dfsr: %x dfar: %x\n", read_ifsr(), read_dfsr(),
           read_dfar());
-  kprintf("pc: %x\n", read_pc());
+  kprintf("current pc: %x\n", read_pc());
   context_dump_interrupt(context);
   kprintf("fault: 0x%x \n", fault_addr);
   kprintf("----------------------------\n\n");

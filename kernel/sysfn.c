@@ -298,14 +298,12 @@ int sys_fork() {
   }
   thread_t* copy_thread = thread_copy(current, THREAD_FORK);
   thread_set_ret(copy_thread, 0);
-
 #ifdef LOG_DEBUG
   log_debug("-------dump current thread %d %s-------------\n", current->id);
   thread_dump(current);
   log_debug("-------dump clone thread %d-------------\n", copy_thread->id);
   thread_dump(copy_thread);
 #endif
-
   thread_run(copy_thread);
   return current->id;
 }
