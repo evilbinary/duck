@@ -128,12 +128,21 @@ void* syscall5(u32 num, void* arg0, void* arg1, void* arg2, void* arg3,
 #else
 void* syscall0(u32 num) {
   int ret;
-  asm volatile(
+  // asm volatile(
+  //     "mov r7,%1 \n\t"
+  //     "svc 0x0\n\t"
+  //     "mov %0,r0\n\t"
+  //     : "=r"(ret)
+  //     : "r"(num)
+  //     : "r0", "r1", "r2", "r3", "r4", "r7");
+  // return ret;
+   asm volatile(
       "mov r7,%1 \n\t"
+      "mov r0,%2 \n\t"
       "svc 0x0\n\t"
       "mov %0,r0\n\t"
       : "=r"(ret)
-      : "r"(num)
+      : "r"(num), "r"(0)
       : "r0", "r1", "r2", "r3", "r4", "r7");
   return ret;
 }
