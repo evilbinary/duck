@@ -175,15 +175,9 @@ int context_clone(context_t* des, context_t* src) {
     // set usp alias ustack and ip cs ss and so on
     kmemmove(ic, is, sizeof(interrupt_context_t));
     cpsr_t cpsr;
-    cpsr.val = 0;
-    cpsr.Z = 1;
-    cpsr.C = 1;
-    cpsr.A = 1;
-    cpsr.I = 1;
-    cpsr.F = 1;
-    cpsr.T = 0;
-    cpsr.M = 0x13;
-    ic->psr = cpsr.val;
+    cpsr.val = ic->psr;
+    ic->psr=cpsr.val;
+    // ic->pc+=8;
   }
   des->ksp = (u32)ic;  // set ksp alias ustack
   pdes->ksp = des->ksp;
