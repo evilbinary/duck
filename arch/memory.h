@@ -87,11 +87,7 @@ void page_clone(u32* old_page, u32* new_page);
   kfree_alignment_trace(ptr, __FILE__, __LINE__, __FUNCTION__)
 
 #else
-void* kmalloc(size_t size);
-void* kmalloc_alignment(size_t size, int alignment);
 
-void kfree(void* ptr);
-void kfree_alignment(void* ptr);
 #endif
 
 void mm_init();

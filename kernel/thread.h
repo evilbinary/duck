@@ -52,7 +52,7 @@ typedef struct thread {
   int counter;
   int state;
   int sleep_counter;
-  struct thread_s* next;
+  struct thread* next;
   void* data;
   void* exec;
   context_t context;

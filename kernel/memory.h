@@ -85,7 +85,7 @@ typedef struct vmemory_area {
 #define kfree_alignment(ptr) kfree_alignment_trace(ptr, __FILE__, __LINE__, __FUNCTION__)
 
 #else
-void* kmalloc(size_t size, u32 flag)
+void* kmalloc(size_t size, u32 flag);
 void* kmalloc_alignment(size_t size, int alignment,u32 flag);
 
 void kfree(void* ptr);

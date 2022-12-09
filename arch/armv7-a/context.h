@@ -133,7 +133,7 @@ typedef struct context_t {
 #define context_restore(duck_context) interrupt_exit_context(duck_context);
 
 int context_clone(context_t* context, context_t* src);
-int context_init(context_t* context, u32* entry, u32 level, int cpu);
-void context_dump(context_t* c);
+      int context_init(context_t* context, u32* entry, u32 level, int cpu);
+      void context_dump(context_t* c);
 
 #endif

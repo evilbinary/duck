@@ -56,23 +56,17 @@ int do_exec(char* cmd, int count) {
   }
   int pid = syscall0(SYS_FORK);
   if (pid == 0) {  //子进程
-    int p = syscall0(SYS_GETPID);
-    kprintf("child current p=%d pid=%d\n", p, pid);
-    syscall2(SYS_EXEC, buf, &argv[1]);
-    syscall1(SYS_EXIT, 0);
+    //int p = syscall0(SYS_GETPID);
+    //kprintf("child current p=%d pid=%d\n", p, pid);
+    // syscall2(SYS_EXEC, buf, &argv[1]);
+    for(;;){
+       kprintf("child current pid=%d\n", pid);
+    }
+    //syscall1(SYS_EXIT, 0);
   } else {
     int p = syscall0(SYS_GETPID);
     kprintf("parent current p=%d pid=%d\n", p, pid);
   }
-
-  while (true) {
-    int p = syscall0(SYS_GETPID);
-    kprintf("get pid=%d\n", pid);
-    if (p != 0) {
-      break;
-    }
-  }
-
   return pid;
 }
 

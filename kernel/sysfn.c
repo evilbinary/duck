@@ -206,6 +206,7 @@ void sys_vfree(void* addr) {
 
 u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   thread_t* current = thread_current();
+  thread_stop(current);
   current->name = kmalloc(kstrlen(filename),KERNEL_TYPE);
   kstrcpy(current->name,filename);
   int fd = sys_open(filename, 0);
@@ -288,7 +289,7 @@ int sys_vfork() {
   return current->id;
 }
 
-#define LOG_DEBUG 1
+// #define LOG_DEBUG 1
 
 int sys_fork() {
   thread_t* current = thread_current();
@@ -296,6 +297,7 @@ int sys_fork() {
     log_error("current is null\n");
     return -1;
   }
+  thread_stop(current);
   thread_t* copy_thread = thread_copy(current, THREAD_FORK);
   thread_set_ret(copy_thread, 0);
 #ifdef LOG_DEBUG
@@ -305,6 +307,7 @@ int sys_fork() {
   thread_dump(copy_thread);
 #endif
   thread_run(copy_thread);
+  thread_run(current);
   return current->id;
 }
 

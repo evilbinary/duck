@@ -9,7 +9,7 @@
 #include "loader.h"
 #include "syscall.h"
 
-thread_t* current_thread[MAX_CPU] = {0};
+thread_t* current_threads[MAX_CPU] = {0};
 thread_t* schedulable_head_thread[MAX_CPU] = {0};
 thread_t* schedulable_tail_thread[MAX_CPU] = {0};
 
@@ -122,7 +122,7 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   copy->data = thread->data;
   copy->pid = thread->id;
   copy->name = thread->name;
-  copy->counter = thread->counter;
+  copy->counter = 0;
   copy->fault_count = 0;
   copy->sleep_counter = 0;
 
@@ -352,7 +352,7 @@ void thread_sleep(thread_t* thread, u32 count) {
 
 void thread_wait(thread_t* thread) {
 #ifdef DEBUG_THREAD
-  log_debug("thread %d wait==============> %d\n", current_thread[cpu_id]->id,
+  log_debug("thread %d wait==============> %d\n", current_threads[cpu_id]->id,
             thread->id);
 #endif
   thread->state = THREAD_WAITING;
@@ -361,7 +361,7 @@ void thread_wait(thread_t* thread) {
 
 void thread_wake(thread_t* thread) {
 #ifdef DEBUG_THREAD
-  log_debug("thread %d wake==============> %d\n", current_thread[cpu_id]->id,
+  log_debug("thread %d wake==============> %d\n", current_threads[cpu_id]->id,
             thread->id);
 #endif
   thread->state = THREAD_RUNNING;
@@ -400,7 +400,7 @@ void thread_reset_user_stack(thread_t* thread, u32* ustack) {
 }
 
 void thread_add(thread_t* thread) {
-  lock_acquire(&thread_lock);
+  //lock_acquire(&thread_lock);
 
   //内核需要物理地址
   thread = kvirtual_to_physic(thread, 0);
@@ -413,19 +413,19 @@ void thread_add(thread_t* thread) {
     schedulable_tail_thread[cpu_id] = thread;
   }
   thread->state = THREAD_RUNABLE;
-  if (current_thread[cpu_id] == NULL) {
+  if (current_threads[cpu_id] == NULL) {
     if (schedulable_head_thread[cpu_id] == NULL) {
       log_error("no thread please create a thread\n");
       cpu_halt();
     }
-    current_thread[cpu_id] = schedulable_head_thread[cpu_id];
-    // current_context = &current_thread[cpu_id]->context;
+    current_threads[cpu_id] = schedulable_head_thread[cpu_id];
+    // current_context = &current_threads[cpu_id]->context;
   }
-  lock_release(&thread_lock);
+  //lock_release(&thread_lock);
 }
 
 void thread_remove(thread_t* thread) {
-  lock_acquire(&thread_lock);
+  //lock_acquire(&thread_lock);
   int cpu_id = cpu_get_id();
   thread_t* prev = schedulable_head_thread[cpu_id];
   thread_t* v = prev->next;
@@ -436,7 +436,7 @@ void thread_remove(thread_t* thread) {
     schedulable_head_thread[cpu_id] = NULL;
     schedulable_tail_thread[cpu_id] = NULL;
     thread->next = NULL;
-    lock_release(&thread_lock);
+    //lock_release(&thread_lock);
 
     return;
   }
@@ -452,7 +452,7 @@ void thread_remove(thread_t* thread) {
     }
     prev = v;
   }
-  lock_release(&thread_lock);
+  //lock_release(&thread_lock);
 }
 
 void thread_destroy(thread_t* thread) {
@@ -515,6 +515,8 @@ void thread_run(thread_t* thread) {
   }
   if (thread->state == THREAD_RUNABLE) {
     thread->state = THREAD_RUNNING;
+  }else if (thread->state == THREAD_STOPPED) {
+    thread->state = THREAD_RUNNING;
   }
 }
 
@@ -532,23 +534,23 @@ void thread_yield() {
 thread_t* thread_current() {
   // lock_acquire(&thread_lock);
   int cpu_id = cpu_get_id();
-  thread_t* t = current_thread[cpu_id];
+  thread_t* t = current_threads[cpu_id];
   // lock_release(&thread_lock);
   return t;
 }
 
 void thread_set_current(thread_t* thread) {
-  lock_acquire(&thread_lock);
+  //lock_acquire(&thread_lock);
   int cpu_id = cpu_get_id();
-  current_thread[cpu_id] = thread;
-  lock_release(&thread_lock);
+  current_threads[cpu_id] = thread;
+  //lock_release(&thread_lock);
 }
 
 context_t* thread_current_context() {
-  lock_acquire(&thread_lock);
+  //lock_acquire(&thread_lock);
   int cpu_id = cpu_get_id();
-  thread_t* t = current_thread[cpu_id];
-  lock_release(&thread_lock);
+  thread_t* t = current_threads[cpu_id];
+  //lock_release(&thread_lock);
   return &t->context;
 }
 

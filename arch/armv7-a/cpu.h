@@ -44,8 +44,8 @@ typedef u32 (*sys_call_fn)(u32 arg1, u32 arg2, u32 arg3, u32 arg4, u32 arg5,
                       duck_interrupt_context->r2, duck_interrupt_context->r3, \
                       duck_interrupt_context->r4, duck_interrupt_context->r5);
 
-#define cpu_cli() asm("cpsid i" : : : "memory", "cc")
-#define cpu_sti() asm("cpsie i" : : : "memory", "cc")
+#define cpu_cli() asm("cpsid if" : : : "memory", "cc")
+#define cpu_sti() asm("cpsie if" : : : "memory", "cc")
 #define cpu_cpl() (cpu_get_cs() & 0x3)
 
 
