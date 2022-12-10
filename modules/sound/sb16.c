@@ -188,7 +188,7 @@ int sb16_init(void) {
   dev->type = DEVICE_TYPE_BLOCK;
   device_add(dev);
 
-  interrutp_regist(MIXER_IRQ, sb16_handler);
+  interrupt_regist(MIXER_IRQ, sb16_handler);
 
   // // set irq
   io_write8(DSP_ADDR_PORT, DSP_IRQ);

@@ -86,15 +86,9 @@ void* do_schedule(interrupt_context_t* interrupt_context) {
   return c->ksp;
 }
 
-INTERRUPT_SERVICE
-void do_timer() {
-  interrupt_entering_code(ISR_TIMER, 0);
-  interrupt_process(do_schedule);
-  interrupt_exit_ret();
-}
 
 void schedule_init() {
   lock_init(&schedule_lock);
-  interrutp_regist(ISR_TIMER, do_timer);
+  exception_regist(EX_TIMER, do_schedule);
   timer_init(SCHEDULE_FREQUENCY);
 }

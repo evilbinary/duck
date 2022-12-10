@@ -50,7 +50,7 @@ int keyboard_init(void) {
   device_add(dev);
   scan_code_index=0;
 
-  interrutp_regist(ISR_KEYBOARD, keyboard_handler);
+  interrupt_regist(ISR_KEYBOARD, keyboard_handler);
   //io_write8(PIC1_DATA,io_read8(PIC1_DATA) & 0xfd);
   pic_enable(ISR_KEYBOARD);
   return 0;

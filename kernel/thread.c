@@ -273,11 +273,11 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       copy->context.usp_end = copy->context.usp + copy->context.usp_size;
 
       void* phy = kvirtual_to_physic(ustack, 0);
+      copy->context.upage = page_alloc_clone(NULL, copy->level);
       thread_map(copy, STACK_ADDR + koffset, phy, copy->context.usp_size);
       // copy->context.usp_start = kmalloc(copy->context.usp_size);
       // copy->context.usp_end = copy->context.usp_start +
       // copy->context.usp_size;
-      copy->context.upage = page_alloc_clone(NULL, copy->level);
     } else if (copy->level == USER_MODE) {
       log_debug("alloc usp size %x\n",copy->context.usp_size);
       void* ustack =

@@ -5,9 +5,10 @@
  ********************************************************************/
 
 #include "../interrupt.h"
-#include "gpio.h"
+
 #include "context.h"
 #include "cpu.h"
+#include "gpio.h"
 
 extern boot_info_t* boot_info;
 
@@ -23,16 +24,64 @@ void interrupt_init() {
   }
   u32 val = idt;
 
-  SCB->VTOR=val;
-  
+  SCB->VTOR = val;
 }
 
-void interrutp_regist(u32 vec, interrupt_handler_t handler) {
+void interrupt_regist(u32 vec, interrupt_handler_t handler) {
   interrutp_handlers[vec] = handler;
   interrutp_set(vec);
 }
 
 void interrutp_set(int i) {
   u32 base = (u32)interrutp_handlers[i];
-    idt[i] = base;
+  idt[i] = base;
+}
+
+INTERRUPT_SERVICE
+void reset_handler() {
+  interrupt_entering_code(0, 0);
+  interrupt_process(exception_handler);
+  cpu_halt();
+}
+
+INTERRUPT_SERVICE
+void svc_handler() {
+  interrupt_entering_code(2, 0);
+  interrupt_process(exception_handler);
+  interrupt_exit();
+}
+
+INTERRUPT_SERVICE
+void sys_tick_handler() {
+  interrupt_entering_code(2, 0);
+  interrupt_process(exception_handler);
+  interrupt_exit_ret();
+}
+
+INTERRUPT_SERVICE
+void sys_pendsv_handler() {
+  interrupt_entering_code(2, 0);
+  interrupt_process(exception_handler);
+  interrupt_exit();
+}
+
+void exception_info() {
+  static const char* exception_msg[] = {
+      "NONE", "RESET", "NONE", "NONE", "NONE", "NONE", "NONE",       "NONE",
+      "NONE", "NONE",  "NONE", "SVC",  "NONE", "NONE", "SYS PENDSV", "SYS TICK",
+  };
+  if (context->no < sizeof exception_msg) {
+    kprintf("exception cpu %d no %d: %s\n----------------------------\n", cpu,
+            context->no, exception_msg[context->no]);
+  } else {
+    kprintf("exception cpu %d no %d:\n----------------------------\n", cpu,
+            context->no);
+  }
+}
+
+void interrupt_regist_all() {
+  interrupt_regist(1, reset_handler);        // reset
+  interrupt_regist(11, svc_handler);         // svc_handler
+  interrupt_regist(14, sys_pendsv_handler);  // sys_pendsv_handler
+  interrupt_regist(15, sys_tick_handler);    // sys_tick_handler
 }

@@ -28,7 +28,7 @@ void interrupt_init() {
 }
 
 //注册中断
-void interrutp_regist(u32 vec, interrupt_handler_t handler) {
+void interrupt_regist(u32 vec, interrupt_handler_t handler) {
   interrutp_handlers[vec] = handler;
   interrutp_set(vec);
 }

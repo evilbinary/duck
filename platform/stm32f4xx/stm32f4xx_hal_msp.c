@@ -110,7 +110,7 @@ void MX_DMA_Init(void) {
   /* DMA controller clock enable */
   __HAL_RCC_DMA2_CLK_ENABLE();
 
-  interrutp_regist(DMA2_Stream3_IRQn+16, dma2_stream3_excetpion_handler);
+  interrupt_regist(DMA2_Stream3_IRQn+16, dma2_stream3_excetpion_handler);
   
   /* DMA interrupt init */
   /* DMA2_Stream3_IRQn interrupt configuration */

@@ -7,17 +7,29 @@
 #define ARCH_INTERRUPT_H
 
 #include "boot.h"
-#include "libs/include/types.h"
 #include "context.h"
+#include "libs/include/types.h"
 
-typedef void (*interrupt_handler_t)(interrupt_context_t* context);
+typedef void* (*interrupt_handler_t)(interrupt_context_t* context);
 
 void timer_init(int hz);
 
 #define INTERRUPT_SERVICE __attribute__((naked))
 
-void interrutp_regist(u32 vec, interrupt_handler_t handler);
+enum {
+  EX_RESET = 1,
+  EX_DATA_FAULT = 2,
+  EX_SYS_CALL = 3,
+  EX_TIMER = 4,
+  EX_UNDEF = 5,
+  EX_OTHER = 6,
+  EX_PREF_ABORT=7,
+};
+
+void interrupt_regist(u32 vec, interrupt_handler_t handler);
 
 void interrupt_init();
+
+void interrupt_regist_service(interrupt_handler_t handler);
 
 #endif

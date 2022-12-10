@@ -55,7 +55,7 @@ void timer_init(int hz);
 
 #define INTERRUPT_SERVICE __attribute__((naked))
 
-void interrutp_regist(u32 vec, interrupt_handler_t handler);
+void interrupt_regist(u32 vec, interrupt_handler_t handler);
 
 #if defined(__WIN32__)
 

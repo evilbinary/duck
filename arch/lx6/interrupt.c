@@ -26,7 +26,7 @@ void interrupt_init() {
   cpu_set_vector(pidt);
 }
 
-void interrutp_regist(u32 vec, interrupt_handler_t handler) {
+void interrupt_regist(u32 vec, interrupt_handler_t handler) {
   interrutp_handlers[vec] = handler;
   interrutp_set(vec);
 }
@@ -35,4 +35,96 @@ void interrutp_set(int i) {
   u32 base = (u32)interrutp_handlers[i];
   u64* idt_base=boot_info->idt_base;
   idt_base[i] = base;
+}
+
+
+INTERRUPT_SERVICE
+void reset_handler() {
+  interrupt_entering_code(0, 0);
+  interrupt_process(exception_info);
+  cpu_halt();
+}
+
+INTERRUPT_SERVICE
+void l1_handler() {
+  interrupt_entering_code(0, 0);
+  interrupt_process(exception_info);
+  cpu_halt();
+}
+
+INTERRUPT_SERVICE
+void l2_handler() {
+  interrupt_entering_code(0, 0);
+  interrupt_process(exception_info);
+  cpu_halt();
+}
+
+INTERRUPT_SERVICE
+void l3_handler() {
+  interrupt_entering_code(0, 0);
+  interrupt_process(exception_info);
+  cpu_halt();
+}
+
+INTERRUPT_SERVICE
+void l4_handler() {
+  interrupt_entering_code(0, 0);
+  interrupt_process(exception_info);
+  cpu_halt();
+}
+
+INTERRUPT_SERVICE
+void l5_handler() {
+  interrupt_entering_code(0, 0);
+  interrupt_process(exception_info);
+  cpu_halt();
+}
+
+INTERRUPT_SERVICE
+void debug_excetpion_handler() {
+  interrupt_entering_code(0, 0);
+  interrupt_process(exception_info);
+  cpu_halt();
+}
+
+INTERRUPT_SERVICE
+void nmi_excetpion_handler() {
+  interrupt_entering_code(0, 0);
+  interrupt_process(exception_info);
+  cpu_halt();
+}
+
+INTERRUPT_SERVICE
+void kernel_excetpion_handler() {
+  interrupt_entering_code(0, 0);
+  interrupt_process(exception_info);
+  cpu_halt();
+}
+
+INTERRUPT_SERVICE
+void user_excetpion_handler() {
+  interrupt_entering_code(0, 0);
+  interrupt_process(exception_info);
+  cpu_halt();
+}
+
+INTERRUPT_SERVICE
+void double_excetpion_handler() {
+  interrupt_entering_code(0, 0);
+  interrupt_process(exception_info);
+  cpu_halt();
+}
+
+void interrupt_regist_all() {
+  interrupt_regist(0, reset_handler);  // reset
+  interrupt_regist(6, l2_handler);
+  interrupt_regist(7, l3_handler);
+  interrupt_regist(8, l4_handler);
+  interrupt_regist(9, l5_handler);
+
+  interrupt_regist(10, debug_excetpion_handler);
+  interrupt_regist(11, nmi_excetpion_handler);
+  interrupt_regist(12, kernel_excetpion_handler);
+  interrupt_regist(15, user_excetpion_handler);
+  interrupt_regist(16, double_excetpion_handler);
 }

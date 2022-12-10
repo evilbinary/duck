@@ -58,7 +58,7 @@ int do_exec(char* cmd, int count) {
   if (pid == 0) {  //子进程
     //int p = syscall0(SYS_GETPID);
     //kprintf("child current p=%d pid=%d\n", p, pid);
-    // syscall2(SYS_EXEC, buf, &argv[1]);
+    syscall2(SYS_EXEC, buf, &argv[1]);
     for(;;){
        kprintf("child current pid=%d\n", pid);
     }

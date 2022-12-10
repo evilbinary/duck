@@ -66,7 +66,7 @@ int mouse_init(void) {
   dev->data = &mouse_device;
 
   device_add(dev);
-  interrutp_regist(ISR_MOUSE, mouse_handler);
+  interrupt_regist(ISR_MOUSE, mouse_handler);
 
   mouse_device.events = cqueue_create(EVENT_NUMBER, CQUEUE_DROP);
 

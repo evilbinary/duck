@@ -9,27 +9,27 @@
 void kernel_init() {
   int cpu=cpu_get_id();
   if(cpu==0){
-    kprintf("kernel init\n");
-    kprintf("log init\n");
+    log_info("kernel init\n");
+    log_info("log init\n");
     log_init();
-    kprintf("exception init\n");
+    log_info("exception init\n");
     exception_init();
-    kprintf("page init\n");
+    log_info("page init\n");
     page_init();
-    kprintf("syscall init\n");
+    log_info("syscall init\n");
     syscall_init();
-    kprintf("schedule init\n");
+    log_info("schedule init\n");
     schedule_init();
-    kprintf("module init\n");
+    log_info("module init\n");
     module_init();
-    kprintf("memory init\n");
+    log_info("memory init\n");
     memory_init();
-    kprintf("vfs init\n");
+    log_info("vfs init\n");
     vfs_init();
-    kprintf("kernel init end\n");
+    log_info("kernel init end\n");
     thread_init();
   }else{
-    kprintf("ap kernel init\n");
+    log_info("ap kernel init\n");
     schedule_init();
   }
 }

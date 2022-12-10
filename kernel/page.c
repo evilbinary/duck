@@ -64,4 +64,6 @@ void page_fault_handle(interrupt_context_t *context) {
   }
 }
 
-void page_init() {}
+void page_init() {
+  exception_regist(EX_DATA_FAULT,page_fault_handle);
+}

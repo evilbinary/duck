@@ -72,7 +72,7 @@ void lapic_timer_init() {
 
   if ((mem_read32(APIC_BASE + LAPIC_TIMER) & APIC_LVT_MASKED) == 0) {
     kprintf("init local timer success\n");
-    interrutp_regist(0x60, lapic_do_timer);
+    interrupt_regist(0x60, lapic_do_timer);
 
     // mem_write32(APIC_BASE+LAPIC_ESR,0);
 
