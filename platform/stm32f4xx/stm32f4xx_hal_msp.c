@@ -98,7 +98,7 @@ void dma2_stream3_irq_handler(void) {
 
 INTERRUPT_SERVICE
 void dma2_stream3_excetpion_handler() {
-  interrupt_entering_code(0, 0);
+  interrupt_entering(0);
   interrupt_process(dma2_stream3_irq_handler);
   interrupt_exit();
 }

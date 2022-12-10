@@ -72,14 +72,14 @@ void interrutp_set(int i) {
 
 INTERRUPT_SERVICE
 void reset_handler() {
-  interrupt_entering_code(EX_RESET, 0);
+  interrupt_entering_code(EX_RESET, 0, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void undefined_handler() {
-  interrupt_entering_code(EX_UNDEF, 0);
+  interrupt_entering_code(EX_UNDEF, 0, 0);
   interrupt_process(interrupt_default_handler);
   interrupt_exit();
   // cpu_halt();
@@ -87,30 +87,28 @@ void undefined_handler() {
 
 INTERRUPT_SERVICE
 void svc_handler() {
-  interrupt_entering_code(EX_SYS_CALL, 0);
+  interrupt_entering_code(EX_SYS_CALL, 0, 0);
   interrupt_process(interrupt_default_handler);
   interrupt_exit();
 }
 
 INTERRUPT_SERVICE
 void pref_abort_handler() {
-  interrupt_entering_code(EX_PREF_ABORT, 0);
+  interrupt_entering_code(EX_PREF_ABORT, 0, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void data_abort_handler() {
-  interrupt_entering_code(EX_DATA_FAULT, 0);
+  interrupt_entering_code(EX_DATA_FAULT, 0, 8);
   interrupt_process(interrupt_default_handler);
-  // cpu_halt();
-  // interrupt_exit();
-  interrupt_exit2();
+  interrupt_exit();
 }
 
 INTERRUPT_SERVICE
 void unuse_handler() {
-  interrupt_entering_code(EX_OTHER, 0);
+  interrupt_entering_code(EX_OTHER, 0, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
@@ -121,14 +119,14 @@ void irq_handler() {
   // interrupt_process(do_irq);
   // cpu_halt();
   // interrupt_exit();
-  interrupt_entering_code(EX_TIMER, 0);
+  interrupt_entering_code(EX_TIMER, 0 , 4);
   interrupt_process(interrupt_default_handler);
   interrupt_exit_ret();
 }
 
 INTERRUPT_SERVICE
 void frq_handler() {
-  interrupt_entering_code(EX_OTHER, 0);
+  interrupt_entering_code(EX_OTHER, 0, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }

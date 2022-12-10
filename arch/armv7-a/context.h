@@ -62,18 +62,19 @@ typedef struct context_t {
       :                      \
       :)
 
-#define interrupt_entering_code(VEC, CODE) \
-  asm volatile(                            \
-      "stmfd sp, {r0-r12,sp,lr}^\n"        \
-      "subs sp,sp,#60\n"                   \
-      "mrs r0,spsr\n"                      \
-      "stmfd sp!, {r0,lr} \n"              \
-      "mov r1,%0\n"                        \
-      "mov r2,%1\n"                        \
-      "stmfd sp!, {r1,r2} \n"              \
-      "mov r0,sp\n"                        \
-      :                                    \
-      : "i"(VEC), "i"(CODE))
+#define interrupt_entering_code(VEC, CODE, TYPE) \
+  asm volatile(                                  \
+      "stmfd sp, {r0-r12,sp,lr}^\n"              \
+      "sub  lr, lr, %2\n"                        \
+      "subs sp,sp,#60\n"                         \
+      "mrs r0,spsr\n"                            \
+      "stmfd sp!, {r0,lr} \n"                    \
+      "mov r1,%0\n"                              \
+      "mov r2,%1\n"                              \
+      "stmfd sp!, {r1,r2} \n"                    \
+      "mov r0,sp\n"                              \
+      :                                          \
+      : "i"(VEC), "i"(CODE), "i"(TYPE))
 
 #define interrupt_exit_context(duck_context) \
   asm volatile(                              \
@@ -95,7 +96,7 @@ typedef struct context_t {
       "msr spsr,r0\n"              \
       "ldmfd sp,{r0-r12,sp,lr}^\n" \
       "add sp,sp,#60\n"            \
-      "subs pc,lr,#4\n"            \
+      "subs pc,lr,#0\n"            \
       :                            \
       :)
 
@@ -110,18 +111,7 @@ typedef struct context_t {
       :                            \
       :)
 
-#define interrupt_exit2()          \
-  asm volatile(                    \
-      "ldmfd sp!,{r1,r2}\n"        \
-      "ldmfd sp!,{r0,lr}\n"        \
-      "msr spsr,r0\n"              \
-      "ldmfd sp,{r0-r12,sp,lr}^\n" \
-      "add sp,sp,#60\n"            \
-      "subs pc,lr,#8\n"            \
-      :                            \
-      :)
-
-#define interrupt_entering(VEC) interrupt_entering_code(VEC, 0)
+#define interrupt_entering(VEC) interrupt_entering_code(VEC, 0, 0)
 
 #define context_switch_page(page_dir) cpu_set_page(page_dir)
 
@@ -133,7 +123,7 @@ typedef struct context_t {
 #define context_restore(duck_context) interrupt_exit_context(duck_context);
 
 int context_clone(context_t* context, context_t* src);
-      int context_init(context_t* context, u32* entry, u32 level, int cpu);
-      void context_dump(context_t* c);
+int context_init(context_t* context, u32* entry, u32 level, int cpu);
+void context_dump(context_t* c);
 
 #endif

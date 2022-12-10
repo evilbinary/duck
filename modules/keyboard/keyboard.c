@@ -30,7 +30,7 @@ static size_t read(device_t* dev, void* buf, size_t len) {
 
 INTERRUPT_SERVICE
 void keyboard_handler() {
-  interrupt_entering_code(ISR_KEYBOARD, 0);
+  interrupt_entering(ISR_KEYBOARD);
   interrupt_process(do_keyboard);
   interrupt_exit();
 }

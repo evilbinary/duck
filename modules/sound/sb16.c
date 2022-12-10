@@ -173,7 +173,7 @@ void do_sb16(interrupt_context_t* context) {
 
 INTERRUPT_SERVICE
 void sb16_handler(interrupt_context_t* context) {
-  interrupt_entering_code(MIXER_IRQ, 0);
+  interrupt_entering(MIXER_IRQ);
   interrupt_process(do_sb16);
   interrupt_exit();
 }
