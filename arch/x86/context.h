@@ -8,6 +8,7 @@
 
 #include "arch/boot.h"
 #include "libs/include/types.h"
+#include "arch/interrupt.h"
 
 typedef struct interrupt_context {
   // ds
@@ -49,13 +50,11 @@ typedef struct context_t {
   u32 ksp_size;
 } context_t;
 
-typedef void (*interrupt_handler_t)(interrupt_context_t* context);
 
 void timer_init(int hz);
 
 #define INTERRUPT_SERVICE __attribute__((naked))
 
-void interrupt_regist(u32 vec, interrupt_handler_t handler);
 
 #if defined(__WIN32__)
 
@@ -80,7 +79,7 @@ void interrupt_regist(u32 vec, interrupt_handler_t handler);
 
 
 
-#define interrupt_entering_code(VEC, CODE) \
+#define interrupt_entering_code(VEC, CODE,TYPE) \
   asm volatile(                            \
       "cli\n"                              \
       "push %0 \n"                         \

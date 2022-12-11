@@ -95,110 +95,125 @@ void interrutp_set(int i) {
 
 INTERRUPT_SERVICE
 void divide_error() {
-  interrupt_entering_code(0, 0);
+  interrupt_entering_code(EX_OTHER, 0, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 INTERRUPT_SERVICE
 void debug_exception() {
-  interrupt_entering_code(1, 0);
+  interrupt_entering_code(EX_OTHER, 0, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 INTERRUPT_SERVICE
 void nmi() {
-  interrupt_entering_code(2, 0);
+  interrupt_entering_code(EX_OTHER, 0, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 INTERRUPT_SERVICE
 void breakpoint() {
-  interrupt_entering_code(3, 0);
+  interrupt_entering_code(EX_OTHER, 0, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 INTERRUPT_SERVICE
 void overflow() {
-  interrupt_entering_code(4, 0);
+  interrupt_entering_code(EX_OTHER, 0, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 INTERRUPT_SERVICE
 void bounds_check() {
-  interrupt_entering_code(5, 0);
+  interrupt_entering_code(EX_OTHER, 0, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void invalid_opcode() {
-  interrupt_entering_code(6, 0);
+  interrupt_entering_code(EX_PREF_ABORT, 0, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 INTERRUPT_SERVICE
 void cop_not_avalid() {
-  interrupt_entering_code(7, 0);
+  interrupt_entering_code(EX_OTHER, 0, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 INTERRUPT_SERVICE
 void double_fault() {
-  interrupt_entering(8);
+  interrupt_entering(EX_OTHER);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 INTERRUPT_SERVICE
 void overrun() {
-  interrupt_entering_code(9, 0);
+  interrupt_entering_code(EX_OTHER, 0, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 INTERRUPT_SERVICE
 void invalid_tss() {
-  interrupt_entering(10);
+  interrupt_entering(EX_OTHER);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 INTERRUPT_SERVICE
 void seg_not_present() {
-  interrupt_entering(11);
+  interrupt_entering(EX_OTHER);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 INTERRUPT_SERVICE
 void stack_exception() {
-  interrupt_entering(12);
+  interrupt_entering(EX_OTHER);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 INTERRUPT_SERVICE
 void general_protection() {
-  interrupt_entering(13);
+  interrupt_entering(EX_PERMISSION);
   interrupt_process(interrupt_default_handler);
   interrupt_exit();
 }
 
 INTERRUPT_SERVICE void page_fault() {
-  interrupt_entering(14);
+  interrupt_entering(EX_DATA_FAULT);
   interrupt_process(interrupt_default_handler);
   // cpu_halt();
   interrupt_exit();
 }
 INTERRUPT_SERVICE
 void reversed() {
-  interrupt_entering_code(15, 0);
+  interrupt_entering_code(EX_OTHER, 0, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 INTERRUPT_SERVICE
 void coprocessor_error() {
-  interrupt_entering_code(16, 0);
+  interrupt_entering_code(EX_OTHER, 0, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
-void exception_info(interrupt_context_t* ic){
+INTERRUPT_SERVICE
+void syscall_handler() {
+  interrupt_entering_code(EX_SYS_CALL, 0, 0);
+  interrupt_process(interrupt_default_handler);
+  interrupt_exit();
+  // interrupt_exit_context(current_context);
+}
+
+INTERRUPT_SERVICE
+void timer_handler() {
+  interrupt_entering_code(EX_TIMER, 0, 0);
+  interrupt_process(interrupt_default_handler);
+  interrupt_exit_ret();
+}
+
+void exception_info(interrupt_context_t* ic) {
   static const char* exception_msg[] = {
       "DIVIDE ERROR",      "DEBUG EXCEPTION",
       "BREAKPOINT",        "NMI",
@@ -210,10 +225,10 @@ void exception_info(interrupt_context_t* ic){
       "PAGE FAULT",        "REVERSED",
       "COPROCESSOR_ERROR",
   };
-
+  int cpu = cpu_get_id();
   if (ic->no < sizeof exception_msg) {
-    kprintf("exception cpu %d no %d: code: %d %s", cpu, ic->no,
-            ic->code, exception_msg[ic->no]);
+    kprintf("exception cpu %d no %d: code: %d %s", cpu, ic->no, ic->code,
+            exception_msg[ic->no]);
   } else {
     kprintf("interrupt cpu %d %d", cpu, ic->no);
   }
@@ -242,6 +257,6 @@ void interrupt_regist_all() {
   interrupt_regist(17, reversed);
   interrupt_regist(18, reversed);
 
-  // exception
-  exception_regist(14, do_page_fault);
+  interrupt_regist(ISR_SYSCALL, syscall_handler);  // 2
+  interrupt_regist(ISR_TIMER, timer_handler);           // 50
 }

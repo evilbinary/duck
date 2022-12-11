@@ -23,7 +23,8 @@ enum {
   EX_TIMER = 4,
   EX_UNDEF = 5,
   EX_OTHER = 6,
-  EX_PREF_ABORT=7,
+  EX_PREF_ABORT = 7,
+  EX_PERMISSION = 8,
 };
 
 void interrupt_regist(u32 vec, interrupt_handler_t handler);

@@ -183,7 +183,7 @@ int context_clone(context_t* des, context_t* src) {
     return -1;
   }
 
-  context_t* pdes=virtual_to_physic(des->upage,des);
+  context_t* pdes = virtual_to_physic(des->upage, des);
 
   //这里重点关注 usp ksp upage 3个变量的复制
   u32* ksp_end = (u32)des->ksp_end - sizeof(interrupt_context_t);
@@ -195,7 +195,7 @@ int context_clone(context_t* des, context_t* src) {
   // not cover upage
   void* page = des->upage;
   des->upage = page;
-  pdes->upage= page;
+  pdes->upage = page;
 
   if (ic != NULL) {
     *ic = *is;  // set usp alias ustack and ip cs ss and so on
@@ -203,28 +203,27 @@ int context_clone(context_t* des, context_t* src) {
   }
   // set ksp alias ustack
   des->ksp = (u32)ic;
-  pdes->ksp= des->ksp;
+  pdes->ksp = des->ksp;
 
   return 0;
 }
 
-void context_switch(interrupt_context_t* ic, context_t** current,
-                    context_t* next_context) {
-  context_t* current_context = *current;
-
-  if (ic == NULL) {
-    ic = current_context->ksp;
-    ic->esp = current_context->usp;
-  } else {
-    current_context->ksp = ic;
-    current_context->usp = ic->esp;
-  }
-  *current = next_context;
+void context_switch(context_t* next_context) {
   if (next_context->upage != NULL) {
     tss_t* tss = next_context->tss;
     tss->esp0 = (u32)next_context->ksp + sizeof(interrupt_context_t);
     tss->ss0 = next_context->ss0;
     tss->cr3 = next_context->upage;
     context_switch_page(next_context->upage);
+  }
+}
+
+void context_save(interrupt_context_t* ic, context_t* current) {
+  if (ic == NULL) {
+    ic = current->ksp;
+    ic->esp = current->usp;
+  } else {
+    current->ksp = ic;
+    current->usp = ic->esp;
   }
 }

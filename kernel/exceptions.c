@@ -13,23 +13,54 @@ void exception_regist(u32 vec, interrupt_handler_t handler) {
   exception_handlers[vec] = handler;
 }
 
-void *exception_process(interrupt_context_t *context) {
-  if (context->no == EX_OTHER) {
+void *exception_process(interrupt_context_t *ic) {
+  if (ic->no == EX_OTHER) {
     int cpu = cpu_get_id();
-    kprintf("exception cpu %d no %d\n", cpu, context->no);
+    kprintf("exception cpu %d no %d\n", cpu, ic->no);
     thread_t *current = thread_current();
     if (current != NULL) {
       kprintf("tid:%d %s cpu:%d\n", current->id, current->name,
               current->cpu_id);
     }
+  } else if (ic->no == EX_SYS_CALL || ic->no == EX_TIMER) {
+    thread_t *current = thread_current();
+    if (current != NULL) {
+      context_save(ic, current);
+    }
   }
-  if (exception_handlers[context->no] != 0) {
-    interrupt_handler_t handler = exception_handlers[context->no];
+  if (exception_handlers[ic->no] != 0) {
+    interrupt_handler_t handler = exception_handlers[ic->no];
     if (handler != NULL) {
-      return handler(context);
+      return handler(ic);
     }
   }
   return NULL;
 }
 
-void exception_init() { interrupt_regist_service(exception_process); }
+void exception_on_permission(interrupt_context_t *ic) {
+  int cpu = cpu_get_id();
+  kprintf("exception permission on cpu %d no %d\n", cpu, ic->no);
+  thread_t *current = thread_current();
+  if (current != NULL) {
+    kprintf("tid:%d %s cpu:%d\n", current->id, current->name, current->cpu_id);
+  }
+  context_dump_interrupt(ic);
+  thread_dump();
+
+  cpu_halt();
+}
+
+void exception_on_other(interrupt_context_t *ic){
+  int cpu = cpu_get_id();
+  kprintf("exception other on cpu %d no %d\n", cpu, ic->no);
+}
+
+void exception_init() {
+  interrupt_regist_service(exception_process);
+
+  exception_regist(EX_PERMISSION, exception_on_permission);
+  exception_regist(EX_OTHER, exception_on_other);
+  exception_regist(EX_PREF_ABORT, exception_on_other);
+  exception_regist(EX_RESET, exception_on_other);
+
+}

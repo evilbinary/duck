@@ -28,7 +28,7 @@ u32 acpi_get_id() {
 
 INTERRUPT_SERVICE
 void lapic_do_timer() {
-  interrupt_entering_code(0x60, 0);
+  interrupt_entering_code(0x60, 0,0);
   kprintf("lapic_do_timer\n");
   // interrupt_process(do_schedule);
   //   interrupt_exit_context();

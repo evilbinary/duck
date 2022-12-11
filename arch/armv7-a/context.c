@@ -63,7 +63,7 @@ int context_init(context_t* context, u32* entry, u32 level, int cpu) {
   interrupt_context_t* ic = ksp_top;
   kmemset(ic, 0, sizeof(interrupt_context_t));
   ic->lr = entry;  // r14
-  ic->pc += ic->lr + 4;
+  ic->pc = ic->lr;
   ic->psr = cpsr.val;
   ic->r0 = 0;
   ic->r1 = 0x00010001;
@@ -103,7 +103,7 @@ void context_dump(context_t* c) {
   kprintf("kernel upage: %x\n", c->kpage);
   kprintf("--interrupt context--\n");
   interrupt_context_t* ic = c->ksp;
-  if(ic!=NULL){
+  if (ic != NULL) {
     context_dump_interrupt(ic);
   }
 }
@@ -191,26 +191,11 @@ int context_clone(context_t* des, context_t* src) {
 #endif
 }
 
-// #define DEBUG 1
-void context_switch(interrupt_context_t* ic, context_t** current,
-                    context_t* next_context) {
-  context_t* current_context = *current;
-#if DEBUG_SWITCH
-  kprintf("-----switch dump current------\n");
-  context_dump(current_context);
-#endif
-  if (ic == NULL) {
-    ic = current_context->ksp;
-    ic->sp = current_context->usp;
-  } else {
-    current_context->ksp = ic;
-    current_context->usp = ic->sp;
-  }
-  *current = next_context;
+void context_switch(context_t* next_context) {
   context_switch_page(next_context->upage);
-#if DEBUG_SWITCH
-  kprintf("-----switch dump next------\n");
-  context_dump(next_context);
-  kprintf("\n");
-#endif
+}
+
+void context_save(interrupt_context_t* ic, context_t* current) {
+  current->context.ksp = ic;
+  current->context.usp = ic->sp;
 }

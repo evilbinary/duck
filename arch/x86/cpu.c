@@ -3,7 +3,10 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
-#include "../cpu.h"
+#include "arch/cpu.h"
+#include "cpu.h"
+#include "platform/platform.h"
+
 
 extern boot_info_t* boot_info;
 
