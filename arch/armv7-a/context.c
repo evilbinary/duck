@@ -196,6 +196,11 @@ void context_switch(context_t* next_context) {
 }
 
 void context_save(interrupt_context_t* ic, context_t* current) {
-  current->context.ksp = ic;
-  current->context.usp = ic->sp;
+  if (ic == NULL) {
+    ic = current->ksp;
+    ic->sp = current->usp;
+  } else {
+    current->ksp = ic;
+    current->usp = ic->sp;
+  }
 }

@@ -87,6 +87,7 @@ void undefined_handler() {
 
 INTERRUPT_SERVICE
 void svc_handler() {
+  // asm("msr   cpsr, #0xD3 \n");
   interrupt_entering_code(EX_SYS_CALL, 0, 0);
   interrupt_process(interrupt_default_handler);
   interrupt_exit();
@@ -115,6 +116,7 @@ void unuse_handler() {
 
 INTERRUPT_SERVICE
 void irq_handler() {
+  // asm("msr   cpsr, #0xD2  \n");
   interrupt_entering_code(EX_TIMER, 0 , 4);
   interrupt_process(interrupt_default_handler);
   interrupt_exit_ret();
