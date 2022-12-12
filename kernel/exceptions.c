@@ -22,10 +22,10 @@ void *exception_process(interrupt_context_t *ic) {
       kprintf("tid:%d %s cpu:%d\n", current->id, current->name,
               current->cpu_id);
     }
-  } else if (ic->no == EX_SYS_CALL || ic->no == EX_TIMER) {
+  } else if (ic->no == EX_SYS_CALL ) {
     thread_t *current = thread_current();
     if (current != NULL) {
-      //context_save(ic, current);
+      current->context.ksp= ic;
     }
   }
   if (exception_handlers[ic->no] != 0) {
