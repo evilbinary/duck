@@ -79,7 +79,7 @@ void reset_handler() {
 
 INTERRUPT_SERVICE
 void undefined_handler() {
-  interrupt_entering_code(EX_UNDEF, 0, 0);
+  interrupt_entering_code(EX_UNDEF, 0, 4);
   interrupt_process(interrupt_default_handler);
   interrupt_exit();
   // cpu_halt();
@@ -94,7 +94,7 @@ void svc_handler() {
 
 INTERRUPT_SERVICE
 void pref_abort_handler() {
-  interrupt_entering_code(EX_PREF_ABORT, 0, 0);
+  interrupt_entering_code(EX_PREF_ABORT, 0, 4);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
@@ -108,25 +108,21 @@ void data_abort_handler() {
 
 INTERRUPT_SERVICE
 void unuse_handler() {
-  interrupt_entering_code(EX_OTHER, 0, 0);
+  interrupt_entering_code(EX_OTHER, 0, 4);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void irq_handler() {
-  // interrupt_entering_code(0, 0);
-  // interrupt_process(do_irq);
-  // cpu_halt();
-  // interrupt_exit();
   interrupt_entering_code(EX_TIMER, 0 , 4);
   interrupt_process(interrupt_default_handler);
   interrupt_exit_ret();
 }
 
 INTERRUPT_SERVICE
-void frq_handler() {
-  interrupt_entering_code(EX_OTHER, 0, 0);
+void fiq_handler() {
+  interrupt_entering_code(EX_OTHER, 0, 4);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
@@ -159,5 +155,5 @@ void interrupt_regist_all() {
   interrupt_regist(4, data_abort_handler);  // data abort
   interrupt_regist(5, unuse_handler);       // not use
   interrupt_regist(6, irq_handler);         // irq
-  interrupt_regist(7, frq_handler);         // fiq
+  interrupt_regist(7, fiq_handler);         // fiq
 }
