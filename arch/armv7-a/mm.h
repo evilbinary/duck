@@ -25,6 +25,7 @@
 
 #define L2_AP_ACCESS (3 << 4)
 #define L2_AP_RW (0 << 9)  // read write any privilege level
+#define L2_AP_R  0x2
 #define L2_TEXT (7 << 6)
 
 #define L2_TEXT_0 (0 << 6)
@@ -42,6 +43,7 @@
   (L2_XN | L2_SMALL_PAGE | L2_NCNB | L2_AP_ACCESS | L2_AP_RW | L2_S | L2_G)
 
 #define PAGE_P   0
+#define PAGE_R  L2_AP_R
 #define PAGE_RWR   0 //读执行
 #define PAGE_RWW   0 //读/写/执行
 #define PAGE_USS   (L2_TEXT_1|L2_CB) //系统级

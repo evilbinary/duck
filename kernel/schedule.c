@@ -74,16 +74,15 @@ void* do_schedule(interrupt_context_t* ic) {
     kprintf("schedule error next\n");
     return NULL;
   }
-  context_t* c = &next_thread->context;
   timer_ticks[cpu]++;
-  context_switch(&next_thread->context);
+  context_switch(ic,&current_thread->context,&next_thread->context);
   thread_set_current(next_thread);
   timer_end();
   if(next_thread->id==2){
     int i=0;
     //log_debug("next tid %d pc %x pc %x\n",next_thread->id,next_thread->context.ksp->pc,c->ksp->pc);
   }
-  return c->ksp;
+  return next_thread->context.ksp;
 }
 
 

@@ -191,16 +191,12 @@ int context_clone(context_t* des, context_t* src) {
 #endif
 }
 
-void context_switch(context_t* next_context) {
-  context_switch_page(next_context->upage);
+void context_switch(interrupt_context_t* ic,context_t* current,context_t* next) {
+  context_save(ic,current);
+  context_switch_page(next->upage);
 }
 
 void context_save(interrupt_context_t* ic, context_t* current) {
-  if (ic == NULL) {
-    ic = current->ksp;
-    ic->sp = current->usp;
-  } else {
-    current->ksp = ic;
-    current->usp = ic->sp;
-  }
+  current->ksp = ic;
+  current->usp = ic->sp;
 }

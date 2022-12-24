@@ -259,7 +259,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       for (int i = 0; i < pages; i++) {
         void* phy = kvirtual_to_physic(address, 0);
         map_page_on(copy->context.upage, address, phy,
-                    PAGE_P | PAGE_USU | PAGE_RWR);
+                    PAGE_P | PAGE_USU | PAGE_R);
         address += PAGE_SIZE;
       }
     }
