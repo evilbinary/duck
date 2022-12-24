@@ -38,8 +38,8 @@ void mm_init_default() {
   boot_info->pdt_base = kernel_page_dir;
   kmemset(kernel_page_dir, 0, sizeof(u32)* PAGE_DIR_NUMBER);
 
-  // map mem block 100 page 400k
-  map_mem_block(PAGE_SIZE * 100,0);
+  // map mem block 100 page 4000k
+  map_mem_block(PAGE_SIZE * 1000,0);
 
   // map 0 - 0x80000
   map_range(0, 0, PAGE_SIZE * 20, 0);
