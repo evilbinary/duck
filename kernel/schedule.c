@@ -80,7 +80,7 @@ void* do_schedule(interrupt_context_t* ic) {
   timer_end();
   if(next_thread->id==2){
     int i=0;
-    //log_debug("next tid %d pc %x pc %x\n",next_thread->id,next_thread->context.ksp->pc,c->ksp->pc);
+    // log_debug("next tid %d pc %x pc %x\n",next_thread->id,next_thread->context.ksp->pc,ic->pc);
   }
   return next_thread->context.ksp;
 }

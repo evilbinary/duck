@@ -13,6 +13,9 @@
 
 #define LOAD_ELF_DEBUG
 
+#define log_debug kprintf
+#define log_error kprintf
+
 int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
   #ifdef LOAD_ELF_DEBUG
   log_debug("load elf %d\n",fd);

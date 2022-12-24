@@ -246,6 +246,9 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   current->exec = data;
   // thread_set_arg(t, data);
   thread_run(current);
+
+  kmemmove(current->context.ic,current->context.ksp,sizeof(interrupt_context_t));
+
   return 0;
 }
 

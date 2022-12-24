@@ -36,6 +36,7 @@ typedef struct interrupt_context {
 } __attribute__((packed)) interrupt_context_t;
 
 typedef struct context_t {
+  interrupt_context_t* ic;
   interrupt_context_t* ksp;
   u32 usp;
   u32 eip;
@@ -86,7 +87,7 @@ typedef struct context_t {
       "add sp,sp,#60\n"                      \
       "subs pc,lr,#0\n"                      \
       :                                      \
-      : "m"(duck_context->ksp))
+      : "m"(((context_t*)duck_context)->ksp))
 
 #define interrupt_exit_ret()       \
   asm volatile(                    \

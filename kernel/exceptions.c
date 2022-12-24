@@ -25,6 +25,7 @@ void *exception_process(interrupt_context_t *ic) {
   } else if (ic->no == EX_SYS_CALL ) {
     thread_t *current = thread_current();
     if (current != NULL) {
+      current->context.ic=ic;
       kmemmove(current->context.ksp, ic,sizeof(interrupt_context_t));
     }
   }
