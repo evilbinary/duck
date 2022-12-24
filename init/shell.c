@@ -5,7 +5,7 @@
  ********************************************************************/
 #include "main.h"
 
-#define VERSION "1.2"
+#define VERSION "1.3"
 
 const char* logo =
     " _  _  _ _  _  _      \n"
