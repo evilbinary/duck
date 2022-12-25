@@ -13,7 +13,10 @@
 #define EXEC_ADDR  0x40000000 //1gb exec space to stack
 #define STACK_ADDR 0x80000000
 #define HEAP_ADDR  0x82000000
+#define KERNEL_OFFSET 0x10000000
+
 #elif defined(ARM)
+#define KERNEL_OFFSET 0x10000000
 
 #define EXEC_ADDR  0x71000000
 #define STACK_ADDR 0x70000000

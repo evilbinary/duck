@@ -146,6 +146,11 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     return -1;
   }
 
+  u32 koffset = 0;
+  if (copy->level == KERNEL_MODE) {
+    koffset += KERNEL_OFFSET;
+  }
+
   // 文件分配方式
   if (flags & FS_CLONE) {
     // copy file
@@ -180,7 +185,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
   } else if (flags & VM_SAME) {
     copy->vmm = thread->vmm;
   } else {
-    copy->vmm = vmemory_create_default(copy->context.usp_size, 0);
+    copy->vmm = vmemory_create_default(copy->context.usp_size, koffset);
   }
 
   // page 分配方式
@@ -259,15 +264,32 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       }
     }
   } else {
-      log_debug("thread init %s usp size %x\n",copy->name, copy->context.usp_size);
+    log_debug("kernel start before init\n");
+    if (copy->level == KERNEL_MODE) {
+      void* ustack =
+          kmalloc_alignment(copy->context.usp_size, PAGE_SIZE, DEFAULT_TYPE);
+      copy->context.usp = STACK_ADDR + koffset + copy->context.usp_size;
+      copy->context.usp_start = ustack;
+      copy->context.usp_end = copy->context.usp + copy->context.usp_size;
+
+      void* phy = kvirtual_to_physic(ustack, 0);
+      copy->context.upage = page_alloc_clone(NULL, copy->level);
+      thread_map(copy, STACK_ADDR + koffset, phy, copy->context.usp_size);
+      // copy->context.usp_start = kmalloc(copy->context.usp_size);
+      // copy->context.usp_end = copy->context.usp_start +
+      // copy->context.usp_size;
+    } else if (copy->level == USER_MODE) {
+      log_debug("alloc usp size %x\n", copy->context.usp_size);
       void* ustack =
           kmalloc_alignment(copy->context.usp_size, PAGE_SIZE, DEFAULT_TYPE);
       void* phy = kvirtual_to_physic(ustack, 0);
       copy->context.usp_start = phy;
       copy->context.usp_end = copy->context.usp_start + copy->context.usp_size;
+
       copy->context.usp = STACK_ADDR + copy->context.usp_size;
       copy->context.upage = page_alloc_clone(NULL, copy->level);
       thread_map(copy, STACK_ADDR, phy, copy->context.usp_size);
+    }
   }
 
   // check thread data
