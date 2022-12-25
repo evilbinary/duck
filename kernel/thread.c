@@ -146,11 +146,6 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     return -1;
   }
 
-  u32 koffset = 0;
-  if (copy->level == KERNEL_MODE) {
-    koffset += KERNEL_OFFSET;
-  }
-
   // 文件分配方式
   if (flags & FS_CLONE) {
     // copy file
@@ -160,8 +155,8 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     kmemmove(copy->fds, thread->fds, sizeof(fd_t) * thread->fd_size);
   }
 
-  //栈分配方式
-  // kstack
+  // 栈分配方式
+  //  kstack
   if (copy->context.ksp_start == NULL) {
     void* kstack = kmalloc(copy->context.ksp_size, KERNEL_TYPE);
     copy->context.ksp_start = kvirtual_to_physic(kstack, 0);
@@ -185,7 +180,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
   } else if (flags & VM_SAME) {
     copy->vmm = thread->vmm;
   } else {
-    copy->vmm = vmemory_create_default(copy->context.usp_size, koffset);
+    copy->vmm = vmemory_create_default(copy->context.usp_size, 0);
   }
 
   // page 分配方式
@@ -212,7 +207,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       copy_ustack = thread->context.usp_start;
     }
 
-    //堆栈分配方式
+    // 堆栈分配方式
     u32* copy_heap = NULL;
     int heap_size = thread->vmm->alloc_size;
     if (copy->vmm->alloc_size > 0) {
@@ -231,16 +226,16 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     }
 
     if (flags & PAGE_CLONE) {
-      //分配页
+      // 分配页
       copy->context.upage =
           page_alloc_clone(thread->context.upage, thread->level);
 
-      //映射栈
+      // 映射栈
       void* phy = kvirtual_to_physic(copy_ustack, 0);
       copy->context.usp = thread->context.usp;
       thread_map(copy, STACK_ADDR, phy, copy->context.usp_size);
 
-      //映射堆
+      // 映射堆
       phy = kvirtual_to_physic(copy_heap, 0);
       thread_map(copy, HEAP_ADDR, phy, copy->vmm->alloc_size);
 
@@ -264,32 +259,15 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       }
     }
   } else {
-    log_debug("kernel start before init\n");
-    if (copy->level == KERNEL_MODE) {
-      void* ustack =
-          kmalloc_alignment(copy->context.usp_size, PAGE_SIZE, DEFAULT_TYPE);
-      copy->context.usp = STACK_ADDR + koffset + copy->context.usp_size;
-      copy->context.usp_start = ustack;
-      copy->context.usp_end = copy->context.usp + copy->context.usp_size;
-
-      void* phy = kvirtual_to_physic(ustack, 0);
-      copy->context.upage = page_alloc_clone(NULL, copy->level);
-      thread_map(copy, STACK_ADDR + koffset, phy, copy->context.usp_size);
-      // copy->context.usp_start = kmalloc(copy->context.usp_size);
-      // copy->context.usp_end = copy->context.usp_start +
-      // copy->context.usp_size;
-    } else if (copy->level == USER_MODE) {
-      log_debug("alloc usp size %x\n",copy->context.usp_size);
+      log_debug("thread init %s usp size %x\n",copy->name, copy->context.usp_size);
       void* ustack =
           kmalloc_alignment(copy->context.usp_size, PAGE_SIZE, DEFAULT_TYPE);
       void* phy = kvirtual_to_physic(ustack, 0);
       copy->context.usp_start = phy;
       copy->context.usp_end = copy->context.usp_start + copy->context.usp_size;
-
       copy->context.usp = STACK_ADDR + copy->context.usp_size;
       copy->context.upage = page_alloc_clone(NULL, copy->level);
       thread_map(copy, STACK_ADDR, phy, copy->context.usp_size);
-    }
   }
 
   // check thread data
@@ -400,9 +378,9 @@ void thread_reset_user_stack(thread_t* thread, u32* ustack) {
 }
 
 void thread_add(thread_t* thread) {
-  //lock_acquire(&thread_lock);
+  // lock_acquire(&thread_lock);
 
-  //内核需要物理地址
+  // 内核需要物理地址
   thread = kvirtual_to_physic(thread, 0);
   int cpu_id = cpu_get_id();
   if (schedulable_head_thread[cpu_id] == NULL) {
@@ -421,11 +399,11 @@ void thread_add(thread_t* thread) {
     current_threads[cpu_id] = schedulable_head_thread[cpu_id];
     // current_context = &current_threads[cpu_id]->context;
   }
-  //lock_release(&thread_lock);
+  // lock_release(&thread_lock);
 }
 
 void thread_remove(thread_t* thread) {
-  //lock_acquire(&thread_lock);
+  // lock_acquire(&thread_lock);
   int cpu_id = cpu_get_id();
   thread_t* prev = schedulable_head_thread[cpu_id];
   thread_t* v = prev->next;
@@ -436,7 +414,7 @@ void thread_remove(thread_t* thread) {
     schedulable_head_thread[cpu_id] = NULL;
     schedulable_tail_thread[cpu_id] = NULL;
     thread->next = NULL;
-    //lock_release(&thread_lock);
+    // lock_release(&thread_lock);
 
     return;
   }
@@ -452,7 +430,7 @@ void thread_remove(thread_t* thread) {
     }
     prev = v;
   }
-  //lock_release(&thread_lock);
+  // lock_release(&thread_lock);
 }
 
 void thread_destroy(thread_t* thread) {
@@ -515,7 +493,7 @@ void thread_run(thread_t* thread) {
   }
   if (thread->state == THREAD_RUNABLE) {
     thread->state = THREAD_RUNNING;
-  }else if (thread->state == THREAD_STOPPED) {
+  } else if (thread->state == THREAD_STOPPED) {
     thread->state = THREAD_RUNNING;
   }
 }
@@ -540,17 +518,17 @@ thread_t* thread_current() {
 }
 
 void thread_set_current(thread_t* thread) {
-  //lock_acquire(&thread_lock);
+  // lock_acquire(&thread_lock);
   int cpu_id = cpu_get_id();
   current_threads[cpu_id] = thread;
-  //lock_release(&thread_lock);
+  // lock_release(&thread_lock);
 }
 
 context_t* thread_current_context() {
-  //lock_acquire(&thread_lock);
+  // lock_acquire(&thread_lock);
   int cpu_id = cpu_get_id();
   thread_t* t = current_threads[cpu_id];
-  //lock_release(&thread_lock);
+  // lock_release(&thread_lock);
   return &t->context;
 }
 
@@ -688,8 +666,8 @@ void thread_dumps() {
       }
       kprintf("%-8s %4d %6d %4dk %4dk %4dk %4d %6d\n", str, p->cpu_id,
               p->counter, p->vmm != NULL ? p->vmm->alloc_size / 1024 : 0,
-              p->mem / 1024, p->context.usp_size / 1024,
-              p->fd_number, p->sleep_counter);
+              p->mem / 1024, p->context.usp_size / 1024, p->fd_number,
+              p->sleep_counter);
     }
   }
 }

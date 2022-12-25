@@ -6,6 +6,7 @@
 #ifndef X86_MM_H
 #define X86_MM_H
 
+#define PAGE_R  0
 #define PAGE_P   1
 #define PAGE_RWR   0 //读执行
 #define PAGE_RWW   2 //读/写/执行

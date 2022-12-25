@@ -41,6 +41,7 @@ void module_run_all() {
   for (int i = 0; i < module_number; i++) {
     module_t* mod =modules[i];
     if (mod !=NULL && mod->init != NULL) {
+      log_info("module run %s\n",mod->name);
       mod->init();
     }
   }

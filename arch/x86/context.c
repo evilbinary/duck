@@ -208,13 +208,14 @@ int context_clone(context_t* des, context_t* src) {
   return 0;
 }
 
-void context_switch(context_t* next_context) {
-  if (next_context->upage != NULL) {
-    tss_t* tss = next_context->tss;
-    tss->esp0 = (u32)next_context->ksp + sizeof(interrupt_context_t);
-    tss->ss0 = next_context->ss0;
-    tss->cr3 = next_context->upage;
-    context_switch_page(next_context->upage);
+void context_switch(interrupt_context_t* ic,context_t* current,context_t* next) {
+  context_save(ic,current);
+  if (next->upage != NULL) {
+    tss_t* tss = next->tss;
+    tss->esp0 = (u32)next->ksp + sizeof(interrupt_context_t);
+    tss->ss0 = next->ss0;
+    tss->cr3 = next->upage;
+    context_switch_page(next->upage);
   }
 }
 
