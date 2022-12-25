@@ -97,7 +97,7 @@ void modules_init(void) {
   module_regist(&rtc_module);
   // module_regist(&vga_module);
   module_regist(&qemu_module);
-  // module_regist(&mouse_module);
+  module_regist(&mouse_module);
   module_regist(&pty_module);
   module_regist(&sb16_module);
   module_regist(&ahci_module);

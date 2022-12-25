@@ -83,7 +83,7 @@ void mm_init_default() {
   map_mem_block(PAGE_SIZE * 100000, PAGE_P | PAGE_USU | PAGE_RWW);
 
   // map 0 - 0x14000
-  map_range(0, 0, PAGE_SIZE * 20, PAGE_P | PAGE_USU | PAGE_RWW);
+  map_range(0, 0, PAGE_SIZE * 200, PAGE_P | PAGE_USU | PAGE_RWW);
 
   map_kernel( PAGE_P | PAGE_USU | PAGE_RWW);
 

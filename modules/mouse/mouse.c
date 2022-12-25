@@ -79,6 +79,9 @@ int mouse_init(void) {
   io_write8(MOUSE_COMMAND, 0xa8);
   mouse_wait(1);
 
+
+/* todo fix this 
+
   // Read "byte 0" from internal RAM
   io_write8(MOUSE_COMMAND, 0x20);
   mouse_wait(0);
@@ -100,6 +103,7 @@ int mouse_init(void) {
   // Enable Data Reporting
   mouse_write(0xf4);
   mouse_read();
+  */
 
   // mouse
   device_t* mouse_dev = device_find(DEVICE_MOUSE);
