@@ -66,7 +66,6 @@ int mouse_init(void) {
   dev->data = &mouse_device;
 
   device_add(dev);
-  interrupt_regist(ISR_MOUSE, mouse_handler);
 
   mouse_device.events = cqueue_create(EVENT_NUMBER, CQUEUE_DROP);
 
@@ -102,8 +101,6 @@ int mouse_init(void) {
   mouse_write(0xf4);
   mouse_read();
 
-  pic_enable(ISR_MOUSE);
-
   // mouse
   device_t* mouse_dev = device_find(DEVICE_MOUSE);
   if (mouse_dev != NULL) {
@@ -114,6 +111,9 @@ int mouse_init(void) {
   } else {
     kprintf("dev mouse not found\n");
   }
+
+  interrupt_regist(ISR_MOUSE, mouse_handler);
+  pic_enable(ISR_MOUSE);
 
   return 0;
 }

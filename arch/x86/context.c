@@ -214,17 +214,13 @@ void context_switch(interrupt_context_t* ic,context_t* current,context_t* next) 
     tss_t* tss = next->tss;
     tss->esp0 = (u32)next->ksp + sizeof(interrupt_context_t);
     tss->ss0 = next->ss0;
+    tss->esp = next->usp;
     tss->cr3 = next->upage;
     context_switch_page(next->upage);
   }
 }
 
 void context_save(interrupt_context_t* ic, context_t* current) {
-  if (ic == NULL) {
-    ic = current->ksp;
-    ic->esp = current->usp;
-  } else {
-    current->ksp = ic;
-    current->usp = ic->esp;
-  }
+  current->ksp = ic;
+  current->usp = ic->esp;
 }

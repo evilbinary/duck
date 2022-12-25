@@ -79,8 +79,8 @@ void mm_init_default() {
   }
 
   unsigned int address = 0;
-  // map mem block 100 page 400k
-  map_mem_block(PAGE_SIZE * 100, PAGE_P | PAGE_USU | PAGE_RWW);
+  // map mem block 100 page 4000k
+  map_mem_block(PAGE_SIZE * 1000, PAGE_P | PAGE_USU | PAGE_RWW);
 
   // map 0 - 0x14000
   map_range(0, 0, PAGE_SIZE * 20, PAGE_P | PAGE_USU | PAGE_RWW);

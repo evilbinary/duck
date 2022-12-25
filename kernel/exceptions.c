@@ -40,7 +40,7 @@ void *exception_process(interrupt_context_t *ic) {
 
 void exception_on_permission(interrupt_context_t *ic) {
   int cpu = cpu_get_id();
-  kprintf("exception permission on cpu %d no %d\n", cpu, ic->no);
+  kprintf("exception permission on cpu %d no %d code %x\n", cpu, ic->no, ic->code );
   thread_t *current = thread_current();
   if (current != NULL) {
     kprintf("tid:%d %s cpu:%d\n", current->id, current->name, current->cpu_id);
@@ -53,7 +53,7 @@ void exception_on_permission(interrupt_context_t *ic) {
 
 void exception_on_other(interrupt_context_t *ic){
   int cpu = cpu_get_id();
-  kprintf("exception other on cpu %d no %d\n", cpu, ic->no);
+  kprintf("exception other on cpu %d no %d code %x\n", cpu, ic->no,ic->code);
 }
 
 void exception_init() {
