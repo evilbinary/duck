@@ -149,12 +149,7 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
       log_debug("NOBITS start:%x vaddr:%x sh_size:%x \n\r", start, vaddr,
                 shdr[i].sh_size);
 #endif
-      if (shdr[i].sh_flags & SHF_ALLOC) {
-        // kmemset(vaddr, 0, shdr[i].sh_size );
-        // syscall3(SYS_SEEK, fd, start, 0);
-        //u32 ret = syscall3(SYS_READ, fd, vaddr, shdr[i].sh_size);
-      }
-      // map_alignment(page,vaddr,buf,shdr[i].sh_size);
+      kmemset(vaddr, 0, shdr[i].sh_size );
     } else if ((shdr[i].sh_type & SHT_PROGBITS == SHT_PROGBITS) &&
                (shdr[i].sh_flags &
                 SHF_ALLOC == SHF_ALLOC)) {  //&& (shdr[i].sh_flags &
@@ -167,7 +162,6 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
 #endif
       syscall3(SYS_SEEK, fd, start, 0);
       u32 ret = syscall3(SYS_READ, fd, vaddr, shdr[i].sh_size);
-      // map_alignment(page,vaddr,buf,shdr[i].sh_size);
     }
   }
   return 0;
