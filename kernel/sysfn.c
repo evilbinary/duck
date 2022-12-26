@@ -175,6 +175,10 @@ void sys_exit(int status) {
   // thread_dumps();
   log_debug("sys exit tid %d %s status %d\n", current->id, current->name,
             status);
+  while(current == thread_current()){
+    cpu_sti();
+  }
+  cpu_cli();
 }
 
 void* sys_vmap(void* addr, size_t size) {
