@@ -388,12 +388,13 @@ void* sys_sbrk(int increment) {
   }
   vm->alloc_addr += increment;
   vm->alloc_size += increment;
+  log_debug("sys sbrk tid:%x addr:%x increment %d\n", current->id,vm->alloc_addr, increment);
   return vm->alloc_addr;
 }
 
 int sys_brk(u32 end) {
   thread_t* current = thread_current();
-  log_debug("sys sbrk tid:%x addr:%x\n", current->id, end);
+  log_debug("sys brk tid:%x addr:%x\n", current->id, end);
 
   vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
   if (vm == NULL) {
@@ -405,16 +406,16 @@ int sys_brk(u32 end) {
       vm->alloc_addr = vm->vaddr + end;
     }
     end = vm->alloc_addr;
-    log_debug("sys sbrk return first addr:%x\n", end);
+    log_debug("sys brk return first addr:%x\n", end);
     return 0;
   }
   if (end < vm->alloc_addr) {
     // todo free map age
-    log_debug("sbrk need to free\n");
+    log_debug("brk need to free\n");
   }
   vm->alloc_size += end - (u32)vm->alloc_addr;
   vm->alloc_addr = end;
-  log_debug("sys sbrk return addr:%x\n", vm->alloc_addr);
+  log_debug("sys brk return addr:%x\n", vm->alloc_addr);
   return 0;
 }
 
