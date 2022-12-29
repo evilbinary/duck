@@ -407,7 +407,7 @@ int sys_brk(u32 end) {
     }
     end = vm->alloc_addr;
     log_debug("sys brk return first addr:%x\n", end);
-    return 0;
+    return end;
   }
   if (end < vm->alloc_addr) {
     // todo free map age
@@ -415,8 +415,8 @@ int sys_brk(u32 end) {
   }
   vm->alloc_size += end - (u32)vm->alloc_addr;
   vm->alloc_addr = end;
-  log_debug("sys brk return addr:%x\n", vm->alloc_addr);
-  return 0;
+  log_debug("sys brk alloc addr:%x\n", vm->alloc_addr);
+  return vm->alloc_addr;
 }
 
 int sys_readv(int fd, iovec_t* vector, int count) {
@@ -460,14 +460,23 @@ int sys_chdir(const char* path) {
 void* sys_mmap2(void* addr, int length, int prot, int flags, int fd,
                 int pgoffset) {
   int ret = 0;
-  ret = addr;
-  if (fd >= 0 || pgoffset > 0) {
-    log_error("mmap2 system call : fd = %d, prot = %x, pgoffset = %d\n", fd,
+  thread_t* current = thread_current();
+  vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
+  if (vm == NULL) {
+    log_error("sys mmap2 not found vm\n");
+    return 0;
+  }
+  log_debug("mmap2 system call : addr=%x length=%d fd = %d, prot = %x, pgoffset = %d \n",addr,length, fd,
               prot, pgoffset);
-    return -1;
+ 
+  //匿名内存
+  if(flags& MAP_ANON){
+    vm->alloc_addr+= length;
+    vm->alloc_size+= length;
+    return vm->alloc_addr;
   }
 
-  return ret;
+  return MAP_FAILED;
 }
 
 int sys_mprotect(const void* start, size_t len, int prot) {

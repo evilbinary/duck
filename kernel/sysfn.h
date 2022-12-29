@@ -48,9 +48,10 @@ enum {
   SYS_MMAP2 = 192,
   SYS_MPROTECT = 125,
   SYS_RT_SIGPROCMASK = 175,
-  SYS_GETDENTS64 = 217,
+  SYS_GETDENTS = 141,
   SYS_MUNMAP = 91,
   SYS_FCNT64 = 221,
+  SYS_GETDENTS64 = 220,
   SYS_CLOCK_NANOSLEEP = 230,
   SYS_SET_THREAD_AREA = 243,
   SYS_PRINT = 400,
@@ -107,9 +108,10 @@ enum {
   SYS_MMAP2 = 192,
   SYS_MPROTECT = 125,
   SYS_RT_SIGPROCMASK = 175,
-  SYS_GETDENTS64 = 217,
+  SYS_GETDENTS = 141,
   SYS_MUNMAP = 91,
   SYS_FCNT64 = 221,
+  SYS_GETDENTS64 = 220,
   SYS_CLOCK_NANOSLEEP = 230,
   SYS_SET_THREAD_AREA = 243,
   SYS_PRINT = 400,
@@ -128,6 +130,13 @@ enum {
   SYS_MEMINFO = 413,
 };
 #endif
+
+
+#define MAP_FIXED      0x10
+#define MAP_ANON       0x20
+#define MAP_SHARED     0x01
+#define MAP_PRIVATE    0x02
+#define MAP_FAILED ((void *) -1)
 
 typedef struct iovec {
   void* iov_base;
