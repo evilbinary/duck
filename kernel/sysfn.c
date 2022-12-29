@@ -627,6 +627,13 @@ int sys_clock_nanosleep(int clock, int flag, struct timespec* req,
   return 0;
 }
 
+int sys_nanosleep(struct timespec* req,
+                        struct timespec* rem){
+
+  schedule_sleep(req->tv_sec * 1000 * 1000 * 1000 + req->tv_nsec);
+  return 0;
+}
+
 int sys_mem_info() {
   memory_t* mem = memory_info();
   kprintf("total       %6dk\n", mem->total / 1024);
@@ -707,6 +714,8 @@ void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_SELF] = &sys_self;
 
   syscall_table[SYS_CLOCK_NANOSLEEP] = &sys_clock_nanosleep;
+  syscall_table[SYS_NANOSLEEP] = &sys_nanosleep;
+
 
   syscall_table[SYS_SYSINFO] = &sys_info;
   syscall_table[SYS_MEMINFO] = &sys_mem_info;
