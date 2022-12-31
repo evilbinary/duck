@@ -5,7 +5,7 @@
  ********************************************************************/
 #include "page.h"
 
-// #define DEBUG
+#define DEBUG
 
 void page_fault_handle(interrupt_context_t *context) {
   u32 *fault_addr = cpu_get_fault();
@@ -33,6 +33,7 @@ void page_fault_handle(interrupt_context_t *context) {
           thread_exit(current, -1);
           log_error("%s memory fault at %x\n", current->name, fault_addr);
           context_dump_fault(context, fault_addr);
+          thread_dump(current);
           current->fault_count++;
           // cpu_halt();
         } else if (current->fault_count == 3) {

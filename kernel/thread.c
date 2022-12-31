@@ -196,13 +196,13 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     u32* copy_ustack = NULL;
     if (flags & STACK_ALLOC) {
       copy_ustack =
-          kmalloc_alignment(copy->context.usp_size, PAGE_SIZE, DEFAULT_TYPE);
+          kmalloc_alignment(copy->context.usp_size, PAGE_SIZE, KERNEL_TYPE);
       copy->context.usp = STACK_ADDR + copy->context.usp_size;
       copy->context.usp_start = copy_ustack;
       copy->context.usp_end = copy->context.usp_start + copy->context.usp_size;
     } else if (flags & STACK_CLONE) {
       copy_ustack =
-          kmalloc_alignment(copy->context.usp_size, PAGE_SIZE, DEFAULT_TYPE);
+          kmalloc_alignment(copy->context.usp_size, PAGE_SIZE, KERNEL_TYPE);
       kmemmove(copy_ustack, thread->context.usp_start, copy->context.usp_size);
 
       copy->context.usp = thread->context.usp;
@@ -238,20 +238,31 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       // 映射栈
       void* phy = kvirtual_to_physic(copy_ustack, 0);
       copy->context.usp = thread->context.usp;
-      thread_map(copy, STACK_ADDR, phy, copy->context.usp_size);
+      if (phy != NULL) {
+        thread_map(copy, STACK_ADDR, phy, copy->context.usp_size);
+      } else {
+        log_error("ustack phy is null\n");
+      }
 
-      // 映射堆
-      phy = kvirtual_to_physic(copy_heap, 0);
-      thread_map(copy, HEAP_ADDR, phy, copy->vmm->alloc_size);
+      if (!flags & HEAP_SAME) {
+        // 映射堆
+        void* phy = kvirtual_to_physic(copy_heap, 0);
+        if (phy != NULL) {
+          thread_map(copy, HEAP_ADDR, phy, copy->vmm->alloc_size);
+        } else {
+          log_error("heap phy is null\n");
+        }
+      }
 
       // update heap addr
       copy->vmm->alloc_addr = thread->vmm->alloc_addr;
-      copy->vmm->alloc_size = thread->vmm->alloc_size;
+      copy->vmm->alloc_size = 0;
 
     } else if (flags & PAGE_SAME) {
       copy->context.upage = thread->context.upage;
     } else if (flags & PAGE_ALLOC) {
       copy->context.upage = page_alloc_clone(NULL, copy->level);
+
     } else if (flags & PAGE_COPY_ON_WRITE) {
       // todo check
       u32 pages = thread->vmm->alloc_size / PAGE_SIZE + 1;
@@ -307,7 +318,7 @@ void thread_map(thread_t* thread, u32 virt_addr, u32 phy_addr, u32 size) {
   for (int i = 0; i < pages; i++) {
     map_page_on(thread->context.upage, virt_addr + offset, phy_addr + offset,
                 PAGE_P | PAGE_USU | PAGE_RWW);
-    log_debug("thread %d map vaddr: %x - paddr: %x\n", thread->id,
+    log_debug("thread %d map %d vaddr: %x - paddr: %x\n", thread->id, i,
               virt_addr + offset, phy_addr + offset);
     offset += PAGE_SIZE;
   }

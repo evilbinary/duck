@@ -29,10 +29,18 @@ memory_t* memory_info() {
   return &memory_summary;
 }
 
+void check_addr(void* addr){
+  if(addr==NULL){
+    log_error("malloc error add return null\n");
+    cpu_halt();
+  }
+}
+
 void* phy_alloc(size_t size) {
   if (size == 0) return NULL;
   void* addr = NULL;
   addr = mm_alloc(size);
+  check_addr(addr);
   memory_static(size, MEMORY_TYPE_USE);
   return addr;
 }
@@ -41,6 +49,7 @@ void* phy_alloc_aligment(size_t size, int alignment) {
   if (size == 0) return NULL;
   void* addr = NULL;
   addr = mm_alloc_zero_align(size, alignment);
+  check_addr(addr);
   memory_static(size, MEMORY_TYPE_USE);
   return addr;
 }
@@ -53,11 +62,14 @@ void* vm_alloc(size_t size) {
   if (current == NULL) {
     //内核启动没有进程，使用内核物理内存
     addr = phy_alloc(size);
+    check_addr(addr);
     return addr;
   }
   addr = current->vmm->alloc_addr;
   current->vmm->alloc_addr += size;
   current->vmm->alloc_size += size;
+
+  check_addr(addr);
 
   // log_debug("vm alloc page:%x size:%d addr:%x\n", current->context.upage,
   //           size, addr);
@@ -72,6 +84,7 @@ void* vm_alloc_alignment(size_t size, int alignment) {
   if (current == NULL) {
     //内核启动没有进程，使用内核物理内存
     addr = phy_alloc_aligment(size, alignment);
+    check_addr(addr);
     return addr;
   }
   addr = current->vmm->alloc_addr;
@@ -90,6 +103,7 @@ void* vm_alloc_alignment(size_t size, int alignment) {
 
   // log_debug("vm alloc a page:%x size:%d addr:%x\n", current->context.upage,
   //           new_size, new_addr);
+  check_addr(new_addr);
 
   return new_addr;
 }
@@ -192,6 +206,7 @@ void* kmalloc_alignment(size_t size, int alignment, u32 flag) {
   } else {
     addr = vm_alloc_alignment(size, alignment);
   }
+
   return addr;
 }
 
@@ -228,18 +243,15 @@ void memory_static(u32 size, int type) {
   }
 }
 
+#define DEBUG
+
 // alloc physic right now on virtual
 void* valloc(void* addr, size_t size) {
   thread_t* current = thread_current();
-  if (size < PAGE_SIZE) {
-    size = PAGE_SIZE;
-  }
-  if ((size % PAGE_SIZE) > 0) {
-    size += PAGE_SIZE;
-  }
   u32 page_alignt = PAGE_SIZE - 1;
   void* vaddr = (u32)addr & (~page_alignt);
   // void* vaddr = ALIGN((u32)addr, PAGE_SIZE);
+  u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
 
 #ifdef USE_POOL
   void* phy_addr = queue_pool_poll(user_pool);
@@ -252,7 +264,8 @@ void* valloc(void* addr, size_t size) {
   void* phy_addr = kmalloc_alignment(size, PAGE_SIZE, KERNEL_TYPE);
 #endif
   void* paddr = phy_addr;
-  for (int i = 0; i < size / PAGE_SIZE; i++) {
+
+  for (int i = 0; i < pages; i++) {
 #ifdef DEBUG
     log_debug("map page:%x vaddr:%x paddr:%x\n", current->context.upage, vaddr,
               paddr);
@@ -295,7 +308,7 @@ void* kvirtual_to_physic(void* addr, int size) {
   if (current != NULL) {
     phy = virtual_to_physic(current->context.upage, addr);
     if (phy == NULL) {
-      log_error("get phy null\n");
+      log_error("get page: %x addr %x phy null\n",current->context.upage, addr);
       if (size > 0) {
         kmemset(addr, 0, size);
       }

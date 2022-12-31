@@ -175,7 +175,7 @@ void sys_exit(int status) {
   // thread_dumps();
   log_debug("sys exit tid %d %s status %d\n", current->id, current->name,
             status);
-  while(current == thread_current()){
+  while (current == thread_current()) {
     cpu_sti();
   }
   cpu_cli();
@@ -249,7 +249,8 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   // thread_set_arg(t, data);
   thread_run(current);
 
-  kmemmove(current->context.ic,current->context.ksp,sizeof(interrupt_context_t));
+  kmemmove(current->context.ic, current->context.ksp,
+           sizeof(interrupt_context_t));
 
   return 0;
 }
@@ -388,7 +389,8 @@ void* sys_sbrk(int increment) {
   }
   vm->alloc_addr += increment;
   vm->alloc_size += increment;
-  log_debug("sys sbrk tid:%x addr:%x increment %d\n", current->id,vm->alloc_addr, increment);
+  log_debug("sys sbrk tid:%x addr:%x increment %d\n", current->id,
+            vm->alloc_addr, increment);
   return vm->alloc_addr;
 }
 
@@ -466,14 +468,29 @@ void* sys_mmap2(void* addr, int length, int prot, int flags, int fd,
     log_error("sys mmap2 not found vm\n");
     return 0;
   }
-  log_debug("mmap2 system call : addr=%x length=%d fd = %d, prot = %x, pgoffset = %d \n",addr,length, fd,
-              prot, pgoffset);
- 
-  //匿名内存
-  if(flags& MAP_ANON){
-    vm->alloc_addr+= length;
-    vm->alloc_size+= length;
-    return vm->alloc_addr;
+  log_debug(
+      "mmap2 system call : addr=%x length=%d fd = %d, prot = %x, pgoffset = %d "
+      "\n",
+      addr, length, fd, prot, pgoffset);
+
+  if ((flags & MAP_FIXED) == MAP_FIXED) {
+    log_debug("map fix %x\n", addr);
+    return addr;
+  }
+  // 匿名内存
+  if ((flags & MAP_ANON) == MAP_ANON) {
+    addr = vm->alloc_addr;
+    vm->alloc_addr += length;
+    vm->alloc_size += length;
+    log_debug("map anon %x\n", addr);
+    return addr;
+  } else if ((flags & MAP_ANON) == 0) {
+    // 有名
+    fd_t* f = thread_find_fd_id(current, fd);
+    if (f == NULL) {
+      log_error("sys mmap not found fd %d tid %d\n", fd, current->id);
+      return MAP_FAILED;
+    }
   }
 
   return MAP_FAILED;
@@ -627,9 +644,7 @@ int sys_clock_nanosleep(int clock, int flag, struct timespec* req,
   return 0;
 }
 
-int sys_nanosleep(struct timespec* req,
-                        struct timespec* rem){
-
+int sys_nanosleep(struct timespec* req, struct timespec* rem) {
   schedule_sleep(req->tv_sec * 1000 * 1000 * 1000 + req->tv_nsec);
   return 0;
 }
@@ -715,7 +730,6 @@ void sys_fn_init(void** syscall_table) {
 
   syscall_table[SYS_CLOCK_NANOSLEEP] = &sys_clock_nanosleep;
   syscall_table[SYS_NANOSLEEP] = &sys_nanosleep;
-
 
   syscall_table[SYS_SYSINFO] = &sys_info;
   syscall_table[SYS_MEMINFO] = &sys_mem_info;

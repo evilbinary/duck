@@ -142,7 +142,7 @@ void cpu_init(int cpu) {
 void cpu_halt() { asm("hlt\n"); }
 
 void cpu_wait() {
-  // asm("hlt\n");
+  asm("hlt\n");
 }
 
 int cpu_tas(volatile int* addr, int newval) {
