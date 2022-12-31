@@ -325,7 +325,7 @@ void* mm_alloc_zero_align(size_t size, u32 alignment) {
   if ((p1 = (void*)mm_alloc(size + offset)) == NULL) return NULL;
   p2 = (void**)(((size_t)(p1) + offset) & ~(alignment - 1));
   p2[-1] = p1;
-  // kmemset(p2, 0, size);
+  kmemset(p2, 0, size);
 #ifdef DEBUG
   kprintf("alloc align %x size=%d\n", p2, size);
 #endif

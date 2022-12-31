@@ -243,7 +243,7 @@ void memory_static(u32 size, int type) {
   }
 }
 
-#define DEBUG
+// #define DEBUG
 
 // alloc physic right now on virtual
 void* valloc(void* addr, size_t size) {

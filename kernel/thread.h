@@ -45,6 +45,15 @@
 #define THREAD_CLONE (PAGE_CLONE | FS_CLONE)
 #define THREAD_VFORK (PAGE_CLONE | VM_CLONE_ALL)
 
+typedef struct thread_info{
+  struct thread_info *self;
+  struct thread_info *prev, *next;
+	uintptr_t sysinfo;
+  u32 tid;
+  u32 errno;
+  u32 reversed[128];
+}thread_info_t;
+
 typedef struct thread {
   u32 id;
   u8* name;
@@ -68,6 +77,7 @@ typedef struct thread {
   u32 level;
   u32 cpu_id;
   u32 mem;
+  thread_info_t* info;
 } thread_t;
 
 void thread_init();

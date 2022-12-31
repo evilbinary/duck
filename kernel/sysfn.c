@@ -67,6 +67,13 @@ u32 sys_open(char* name, int attr) {
     log_error(" cannot find current thread\n");
     return -1;
   }
+  // current pwd
+  vnode_t* pwd = NULL;
+  if (kstrlen(name) >= 2 && name[0] == '.' && name[1] == '/') {
+    pwd = current->vfs->pwd;
+    kstrcpy(name, &name[2]);
+  }
+
   int f = thread_find_fd_name(current, name);
   if (f >= 0) {
     fd_t* fd = thread_find_fd_id(current, f);
@@ -74,7 +81,7 @@ u32 sys_open(char* name, int attr) {
     log_debug("sys open name return : %s fd: %d\n", name, f);
     return f;
   }
-  vnode_t* file = vfs_open_attr(NULL, name, attr);
+  vnode_t* file = vfs_open_attr(pwd, name, attr);
   if (file == NULL) {
     log_error("sys open file %s error, attr %x \n", name, attr);
     return -1;
@@ -211,9 +218,9 @@ void sys_vfree(void* addr) {
 u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   thread_t* current = thread_current();
   current->name = filename;
-  char* name=kmalloc(kstrlen(filename),KERNEL_TYPE);
-  kstrcpy(name,filename);
-  current->name=name;
+  char* name = kmalloc(kstrlen(filename), KERNEL_TYPE);
+  kstrcpy(name, filename);
+  current->name = name;
 
   int fd = sys_open(filename, 0);
   if (fd < 0) {
@@ -669,6 +676,48 @@ int sys_info(sysinfo_t* info) {
   return 0;
 }
 
+int sys_thread_self() {
+  thread_t* current = thread_current();
+  if (current->info == NULL) {
+    current->info = kmalloc(sizeof(thread_info_t), KERNEL_TYPE);
+    current->info->self = current->info;
+    current->info->tid = current->id;
+    current->info->errno = 0;
+  }
+  return current->info;
+}
+
+void* sys_mremap(void* old_address, size_t old_size, size_t new_size, int flags,
+                 ... /* void *new_address */) {
+  thread_t* current = thread_current();
+  vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
+  if (vm == NULL) {
+    log_error("sys mremap not found vm\n");
+    return MAP_FAILED;
+  }
+
+  log_debug("sys mremap old addr %x old size %d new size %d\n", old_address,
+            old_size, new_size);
+
+  if ((flags & MREMAP_MAYMOVE) == MREMAP_MAYMOVE) {
+    return old_address;
+  }
+
+  if ((flags & MREMAP_FIXED) == MREMAP_FIXED) {
+    return old_address;
+  }
+
+  return MAP_FAILED;
+}
+
+int sys_statx(int dirfd, const char* restrict pathname, int flags,
+              unsigned int mask, struct statx* restrict statxbuf) {
+  
+  log_debug("sys statx not impl pathname %s\n", pathname);
+
+  return 0;
+}
+
 void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_READ] = &sys_read;
   syscall_table[SYS_WRITE] = &sys_write;
@@ -735,6 +784,10 @@ void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_CLOCK_NANOSLEEP] = &sys_clock_nanosleep;
   syscall_table[SYS_NANOSLEEP] = &sys_nanosleep;
 
+  syscall_table[SYS_MREMAP] = &sys_mremap;
+  syscall_table[SYS_STATX] = &sys_statx;
+
   syscall_table[SYS_SYSINFO] = &sys_info;
   syscall_table[SYS_MEMINFO] = &sys_mem_info;
+  syscall_table[SYS_THREAD_SELF] = &sys_thread_self;
 }

@@ -7,8 +7,8 @@
 #define SYSFN_H
 
 #include "kernel.h"
-#include "kernel/time.h"
 #include "kernel/sysinfo.h"
+#include "kernel/time.h"
 #include "types.h"
 
 #if defined(ARM) || defined(X86)
@@ -48,6 +48,7 @@ enum {
   SYS_MMAP2 = 192,
   SYS_MPROTECT = 125,
   SYS_NANOSLEEP = 162,
+  SYS_MREMAP = 163,
   SYS_RT_SIGPROCMASK = 175,
   SYS_GETDENTS = 141,
   SYS_MUNMAP = 91,
@@ -55,6 +56,7 @@ enum {
   SYS_GETDENTS64 = 220,
   SYS_CLOCK_NANOSLEEP = 230,
   SYS_SET_THREAD_AREA = 243,
+  SYS_STATX = 383,
   SYS_PRINT = 400,
   SYS_PRINT_AT = 401,
   SYS_DEV_READ = 402,
@@ -69,6 +71,7 @@ enum {
   SYS_DUMPS = 411,
   SYS_SELF = 412,
   SYS_MEMINFO = 413,
+  SYS_THREAD_SELF = 414,
 
 };
 
@@ -130,15 +133,19 @@ enum {
   SYS_DUMPS = 411,
   SYS_SELF = 412,
   SYS_MEMINFO = 413,
+  SYS_THREAD_SELF = 414,
 };
 #endif
 
+#define MAP_FIXED 0x10
+#define MAP_ANON 0x20
+#define MAP_SHARED 0x01
+#define MAP_PRIVATE 0x02
+#define MAP_FAILED ((void*)-1)
 
-#define MAP_FIXED      0x10
-#define MAP_ANON       0x20
-#define MAP_SHARED     0x01
-#define MAP_PRIVATE    0x02
-#define MAP_FAILED ((void *) -1)
+#define MREMAP_MAYMOVE 1
+#define MREMAP_FIXED 2
+#define MREMAP_DONTUNMAP 4
 
 typedef struct iovec {
   void* iov_base;

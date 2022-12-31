@@ -318,8 +318,10 @@ void thread_map(thread_t* thread, u32 virt_addr, u32 phy_addr, u32 size) {
   for (int i = 0; i < pages; i++) {
     map_page_on(thread->context.upage, virt_addr + offset, phy_addr + offset,
                 PAGE_P | PAGE_USU | PAGE_RWW);
+    #ifdef DEBUG
     log_debug("thread %d map %d vaddr: %x - paddr: %x\n", thread->id, i,
               virt_addr + offset, phy_addr + offset);
+    #endif
     offset += PAGE_SIZE;
   }
 }

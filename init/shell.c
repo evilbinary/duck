@@ -180,7 +180,7 @@ void pre_launch() {
   char* mgba_argv[] = {"mgba", "/mario.gba", NULL};
   char* cat_argv[] = {"/cat", "hello.lua", NULL};
   char* showimg_argv[] = {"/showimage", "/pngtest.png", NULL};
-  char* gnuboy_argv[] = {"/gnuboy", "/pokemon.gbc", NULL};
+  char* gnuboy_argv[] = {"/gnuboy", "./pokemon.gbc", NULL};
   char* nes_argv[] = {"infones", "/mario.nes", NULL};
 
 #ifdef X86
@@ -198,7 +198,7 @@ void pre_launch() {
 
   // syscall3(SYS_EXEC, "/etk", NULL);
   // syscall3(SYS_EXEC,"/test-rs",NULL,NULL);
-  // syscall3(SYS_EXEC, "/lua", lua_argv);
+  // syscall3(SYS_EXEC, "/lua", lua_argv,NULL);
   // syscall3(SYS_EXEC,"/launcher",NULL,NULL);
   // syscall3(SYS_EXEC,"/track",NULL,NULL);
   // syscall3(SYS_EXEC,"/test",NULL,NULL);
@@ -206,12 +206,12 @@ void pre_launch() {
   // syscall3(SYS_EXEC,"/lvgl",NULL,NULL);
   // kprintf("fd=>%d\n",fd);
 
-  // syscall3(SYS_EXEC, "/infones", nes_argv);
-  // syscall3(SYS_EXEC, "/mgba", mgba_argv);
-  // syscall3(SYS_EXEC, "/scheme", scm_argv);
-  // syscall3(SYS_EXEC, "/sdl2", NULL);
-  // syscall3(SYS_EXEC, "/showimage", showimg_argv);
-  // syscall3(SYS_EXEC, "/gnuboy", gnuboy_argv);
+  // syscall3(SYS_EXEC, "/infones", nes_argv,NULL);
+  syscall3(SYS_EXEC, "/mgba", mgba_argv,NULL);
+  // syscall3(SYS_EXEC, "/scheme", scm_argv,NULL);
+  // syscall3(SYS_EXEC, "/sdl2", NULL,NULL);
+  // syscall3(SYS_EXEC, "/showimage", showimg_argv,NULL);
+  // syscall3(SYS_EXEC, "/gnuboy", gnuboy_argv,NULL);
 
   // for (;;)
   //   ;
@@ -232,15 +232,15 @@ void pre_launch() {
   //  syscall3(SYS_EXEC,"/test",NULL,NULL);
   //  syscall3(SYS_EXEC,"/microui",NULL,NULL);
 
-  // syscall3(SYS_EXEC, "/lua", lua_argv);
+  // syscall3(SYS_EXEC, "/lua", lua_argv,NULL);
 
   // syscall3(SYS_EXEC,"/test-musl",NULL,NULL);
-  // syscall3(SYS_EXEC, "/scheme", scm_argv);
+  // syscall3(SYS_EXEC, "/scheme", scm_argv,NULL);
   // syscall3(SYS_EXEC, "/sdl2", NULL);
-  // syscall3(SYS_EXEC, "/mgba", mgba_argv);
-  // syscall3(SYS_EXEC, "/player", mgba_argv);
-  // syscall3(SYS_EXEC, "/cat", cat_argv);
-  // syscall3(SYS_EXEC, "/infones", nes_argv);
+  // syscall3(SYS_EXEC, "/mgba", mgba_argv,NULL);
+  // syscall3(SYS_EXEC, "/player", mgba_argv,NULL);
+  // syscall3(SYS_EXEC, "/cat", cat_argv,NULL);
+  // syscall3(SYS_EXEC, "/infones", nes_argv,NULL);
   // syscall3(SYS_EXEC,"/test-file",NULL,NULL);
 
 // test_cpu_speed();
