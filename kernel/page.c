@@ -5,7 +5,7 @@
  ********************************************************************/
 #include "page.h"
 
-#define DEBUG
+// #define DEBUG
 
 void page_fault_handle(interrupt_context_t *context) {
   u32 *fault_addr = cpu_get_fault();

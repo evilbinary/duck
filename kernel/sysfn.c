@@ -211,6 +211,10 @@ void sys_vfree(void* addr) {
 u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   thread_t* current = thread_current();
   current->name = filename;
+  char* name=kmalloc(kstrlen(filename),KERNEL_TYPE);
+  kstrcpy(name,filename);
+  current->name=name;
+
   int fd = sys_open(filename, 0);
   if (fd < 0) {
     log_error("sys exec file not found %s\n", filename);

@@ -41,24 +41,23 @@ void mem_info_command() { syscall0(SYS_MEMINFO); }
 int do_exec(char* cmd, int count) {
   char buf[64];
   cmd[count] = 0;
-  char* argv[10];
+  char* argv[20];
   int i = 0;
   const char* split = " ";
   char* ptr = kstrtok(cmd, split);
-  argv[i++] = ptr;
-  if (argv[1] == ' ' || argv[0] == NULL) {
-    return 0;
-  }
-  sprintf(buf, "/%s", argv[0]);
   while (ptr != NULL) {
     argv[i++] = ptr;
     ptr = kstrtok(NULL, split);
   }
+  if (argv[1] == ' ' || argv[0] == NULL) {
+    return 0;
+  }
+  sprintf(buf, "/%s", argv[0]);
   int pid = syscall0(SYS_FORK);
   if (pid == 0) {  //子进程
     int p = syscall0(SYS_GETPID);
     kprintf("child current p=%d pid=%d\n", p, pid);
-    syscall2(SYS_EXEC, buf, &argv[1]);
+    syscall3(SYS_EXEC, buf, argv,NULL);
     syscall1(SYS_EXIT, 0);
   } else {
     int p = syscall0(SYS_GETPID);
@@ -186,63 +185,63 @@ void pre_launch() {
 
 #ifdef X86
   // int fd = syscall2(SYS_OPEN, "/dev/stdin", 0);
-  // syscall2(SYS_EXEC,"/ls",NULL);
-  // syscall2(SYS_EXEC,"/gui",NULL);
-  // syscall2(SYS_EXEC,"/test-file",NULL);
-  // syscall2(SYS_EXEC,"/test-mem",NULL);
-  // syscall2(SYS_EXEC,"/test-uncompress",NULL);
-  // syscall2(SYS_EXEC,"/test-string",NULL);
-  // syscall2(SYS_EXEC,"/test-stdlib",NULL);
-  // syscall2(SYS_EXEC,"/test-stdio",NULL);
+  // syscall3(SYS_EXEC,"/ls",NULL,NULL);
+  // syscall3(SYS_EXEC,"/gui",NULL,NULL);
+  // syscall3(SYS_EXEC,"/test-file",NULL,NULL);
+  // syscall3(SYS_EXEC,"/test-mem",NULL,NULL);
+  // syscall3(SYS_EXEC,"/test-uncompress",NULL,NULL);
+  // syscall3(SYS_EXEC,"/test-string",NULL,NULL);
+  // syscall3(SYS_EXEC,"/test-stdlib",NULL,NULL);
+  // syscall3(SYS_EXEC,"/test-stdio",NULL,NULL);
 
-  // syscall2(SYS_EXEC, "/luat", NULL);
+  // syscall3(SYS_EXEC, "/luat", NULL);
 
-  // syscall2(SYS_EXEC, "/etk", NULL);
-  // syscall2(SYS_EXEC,"/test-rs",NULL);
-  // syscall2(SYS_EXEC, "/lua", lua_argv);
-  // syscall2(SYS_EXEC,"/launcher",NULL);
-  // syscall2(SYS_EXEC,"/track",NULL);
-  // syscall2(SYS_EXEC,"/test",NULL);
-  // syscall2(SYS_EXEC,"/microui",NULL);
-  // syscall2(SYS_EXEC,"/lvgl",NULL);
+  // syscall3(SYS_EXEC, "/etk", NULL);
+  // syscall3(SYS_EXEC,"/test-rs",NULL,NULL);
+  // syscall3(SYS_EXEC, "/lua", lua_argv);
+  // syscall3(SYS_EXEC,"/launcher",NULL,NULL);
+  // syscall3(SYS_EXEC,"/track",NULL,NULL);
+  // syscall3(SYS_EXEC,"/test",NULL,NULL);
+  // syscall3(SYS_EXEC,"/microui",NULL,NULL);
+  // syscall3(SYS_EXEC,"/lvgl",NULL,NULL);
   // kprintf("fd=>%d\n",fd);
 
-  // syscall2(SYS_EXEC, "/infones", nes_argv);
-  // syscall2(SYS_EXEC, "/mgba", mgba_argv);
-  // syscall2(SYS_EXEC, "/scheme", scm_argv);
-  // syscall2(SYS_EXEC, "/sdl2", NULL);
-  // syscall2(SYS_EXEC, "/showimage", showimg_argv);
-  // syscall2(SYS_EXEC, "/gnuboy", gnuboy_argv);
+  // syscall3(SYS_EXEC, "/infones", nes_argv);
+  // syscall3(SYS_EXEC, "/mgba", mgba_argv);
+  // syscall3(SYS_EXEC, "/scheme", scm_argv);
+  // syscall3(SYS_EXEC, "/sdl2", NULL);
+  // syscall3(SYS_EXEC, "/showimage", showimg_argv);
+  // syscall3(SYS_EXEC, "/gnuboy", gnuboy_argv);
 
   // for (;;)
   //   ;
 #elif defined(ARMV7)
   // test_lcd();
 #else defined(ARM)
-  // syscall2(SYS_EXEC,"/hello-rs",NULL);
-  // syscall2(SYS_EXEC,"/test-rs",NULL);
-  // syscall2(SYS_EXEC,"/ls",NULL);
-  // syscall2(SYS_EXEC, "/test", NULL);
-  // syscall2(SYS_EXEC,"/hello",NULL);
-  // syscall2(SYS_EXEC, "/lvgl", NULL);
-  // syscall2(SYS_EXEC, "/launcher", NULL);
+  // syscall3(SYS_EXEC,"/hello-rs",NULL,NULL);
+  // syscall3(SYS_EXEC,"/test-rs",NULL,NULL);
+  // syscall3(SYS_EXEC,"/ls",NULL,NULL);
+  // syscall3(SYS_EXEC, "/test", NULL);
+  // syscall3(SYS_EXEC,"/hello",NULL,NULL);
+  // syscall3(SYS_EXEC, "/lvgl", NULL);
+  // syscall3(SYS_EXEC, "/launcher", NULL);
 
-  // syscall2(SYS_EXEC,"/track",NULL);
-  // syscall2(SYS_EXEC,"/gui",NULL);
-  // syscall2(SYS_EXEC,"/etk",NULL);
-  //  syscall2(SYS_EXEC,"/test",NULL);
-  //  syscall2(SYS_EXEC,"/microui",NULL);
+  // syscall3(SYS_EXEC,"/track",NULL,NULL);
+  // syscall3(SYS_EXEC,"/gui",NULL,NULL);
+  // syscall3(SYS_EXEC,"/etk",NULL,NULL);
+  //  syscall3(SYS_EXEC,"/test",NULL,NULL);
+  //  syscall3(SYS_EXEC,"/microui",NULL,NULL);
 
-  // syscall2(SYS_EXEC, "/lua", lua_argv);
+  // syscall3(SYS_EXEC, "/lua", lua_argv);
 
-  // syscall2(SYS_EXEC,"/test-musl",NULL);
-  // syscall2(SYS_EXEC, "/scheme", scm_argv);
-  // syscall2(SYS_EXEC, "/sdl2", NULL);
-  // syscall2(SYS_EXEC, "/mgba", mgba_argv);
-  // syscall2(SYS_EXEC, "/player", mgba_argv);
-  // syscall2(SYS_EXEC, "/cat", cat_argv);
-  // syscall2(SYS_EXEC, "/infones", nes_argv);
-  // syscall2(SYS_EXEC,"/test-file",NULL);
+  // syscall3(SYS_EXEC,"/test-musl",NULL,NULL);
+  // syscall3(SYS_EXEC, "/scheme", scm_argv);
+  // syscall3(SYS_EXEC, "/sdl2", NULL);
+  // syscall3(SYS_EXEC, "/mgba", mgba_argv);
+  // syscall3(SYS_EXEC, "/player", mgba_argv);
+  // syscall3(SYS_EXEC, "/cat", cat_argv);
+  // syscall3(SYS_EXEC, "/infones", nes_argv);
+  // syscall3(SYS_EXEC,"/test-file",NULL,NULL);
 
 // test_cpu_speed();
 //  for(;;);
