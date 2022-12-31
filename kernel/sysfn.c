@@ -723,6 +723,97 @@ int sys_statx(int dirfd, const char* restrict pathname, int flags,
   return 0;
 }
 
+uint32_t secs_of_years(int years) {
+  uint32_t days = 0;
+  years += 2000;
+  while (years > 1969) {
+    days += 365;
+    if (years % 4 == 0) {
+      if (years % 100 == 0) {
+        if (years % 400 == 0) {
+          days++;
+        }
+      } else {
+        days++;
+      }
+    }
+    years--;
+  }
+  return days * 86400;
+}
+
+uint32_t secs_of_month(int months, int year) {
+  year += 2000;
+
+  uint32_t days = 0;
+  switch (months) {
+    case 11:
+      days += 30;
+    case 10:
+      days += 31;
+    case 9:
+      days += 30;
+    case 8:
+      days += 31;
+    case 7:
+      days += 31;
+    case 6:
+      days += 30;
+    case 5:
+      days += 31;
+    case 4:
+      days += 30;
+    case 3:
+      days += 31;
+    case 2:
+      days += 28;
+      if ((year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0))) {
+        days++;
+      }
+    case 1:
+      days += 31;
+    default:
+      break;
+  }
+  return days * 86400;
+}
+
+u32 sys_time(time_t* t) {
+  u32 time_fd = -1;
+  if (time_fd == -1) {
+    time_fd = sys_open("/dev/time", 0);
+  }
+  if (time_fd < 0) return 0;
+  rtc_time_t time;
+  time.day = 1;
+  time.hour = 0;
+  time.minute = 0;
+  time.month = 1;
+  time.second = 0;
+  time.year = 1900;
+  int ret = sys_read(time_fd, &time, sizeof(rtc_time_t));
+  if (ret < 0) {
+    return 0;
+  }
+  uint32_t seconds = secs_of_years(time.year - 1) +
+                     secs_of_month(time.month - 1, time.year) +
+                     (time.day - 1) * 86400 + time.hour * 3600 +
+                     time.minute * 60 + time.second + 0;
+  *t = seconds;
+  return ret;
+}
+
+int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
+  if (clockid == 1) {
+    time_t seconds;
+    int rc = sys_time(&seconds);
+    ts->tv_sec = seconds;
+    ts->tv_nsec = 0;
+    return 0;
+  }
+  return 0;
+}
+
 void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_READ] = &sys_read;
   syscall_table[SYS_WRITE] = &sys_write;
@@ -792,6 +883,7 @@ void sys_fn_init(void** syscall_table) {
 
   syscall_table[SYS_MREMAP] = &sys_mremap;
   syscall_table[SYS_STATX] = &sys_statx;
+  syscall_table[SYS_CLOCK_GETTIME64] = &sys_clock_gettime64;
 
   syscall_table[SYS_SYSINFO] = &sys_info;
   syscall_table[SYS_MEMINFO] = &sys_mem_info;

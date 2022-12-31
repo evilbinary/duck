@@ -58,21 +58,23 @@ enum {
   SYS_CLOCK_NANOSLEEP = 230,
   SYS_SET_THREAD_AREA = 243,
   SYS_STATX = 383,
-  SYS_PRINT = 400,
-  SYS_PRINT_AT = 401,
-  SYS_DEV_READ = 402,
-  SYS_DEV_WRITE = 403,
-  SYS_DEV_IOCTL = 404,
-  SYS_TEST = 405,
-  SYS_MAP = 406,
-  SYS_UMAP = 407,
-  SYS_VALLOC = 408,
-  SYS_VFREE = 409,
-  SYS_VHEAP = 410,
-  SYS_DUMPS = 411,
-  SYS_SELF = 412,
-  SYS_MEMINFO = 413,
-  SYS_THREAD_SELF = 414,
+  SYS_CLOCK_GETTIME64 = 403,
+
+  SYS_PRINT = 500,
+  SYS_PRINT_AT = 501,
+  SYS_DEV_READ = 502,
+  SYS_DEV_WRITE = 503,
+  SYS_DEV_IOCTL = 504,
+  SYS_TEST = 505,
+  SYS_MAP = 506,
+  SYS_UMAP = 507,
+  SYS_VALLOC = 508,
+  SYS_VFREE = 509,
+  SYS_VHEAP = 510,
+  SYS_DUMPS = 511,
+  SYS_SELF = 512,
+  SYS_MEMINFO = 513,
+  SYS_THREAD_SELF = 514,
 
 };
 
@@ -113,6 +115,7 @@ enum {
   SYS_MMAP2 = 192,
   SYS_MPROTECT = 125,
   SYS_NANOSLEEP = 162,
+  SYS_MREMAP = 163,
   SYS_RT_SIGACTION = 174,
   SYS_RT_SIGPROCMASK = 175,
   SYS_GETDENTS = 141,
@@ -121,21 +124,24 @@ enum {
   SYS_GETDENTS64 = 220,
   SYS_CLOCK_NANOSLEEP = 230,
   SYS_SET_THREAD_AREA = 243,
-  SYS_PRINT = 400,
-  SYS_PRINT_AT = 401,
-  SYS_DEV_READ = 402,
-  SYS_DEV_WRITE = 403,
-  SYS_DEV_IOCTL = 404,
-  SYS_TEST = 405,
-  SYS_MAP = 406,
-  SYS_UMAP = 407,
-  SYS_VALLOC = 408,
-  SYS_VFREE = 409,
-  SYS_VHEAP = 410,
-  SYS_DUMPS = 411,
-  SYS_SELF = 412,
-  SYS_MEMINFO = 413,
-  SYS_THREAD_SELF = 414,
+  SYS_STATX = 383,
+  SYS_CLOCK_GETTIME64 = 403,
+
+  SYS_PRINT = 500,
+  SYS_PRINT_AT = 501,
+  SYS_DEV_READ = 502,
+  SYS_DEV_WRITE = 503,
+  SYS_DEV_IOCTL = 504,
+  SYS_TEST = 505,
+  SYS_MAP = 506,
+  SYS_UMAP = 507,
+  SYS_VALLOC = 508,
+  SYS_VFREE = 509,
+  SYS_VHEAP = 510,
+  SYS_DUMPS = 511,
+  SYS_SELF = 512,
+  SYS_MEMINFO = 513,
+  SYS_THREAD_SELF = 514,
 };
 #endif
 
@@ -149,12 +155,24 @@ enum {
 #define MREMAP_FIXED 2
 #define MREMAP_DONTUNMAP 4
 
+#ifndef RTC_TIME
+#define RTC_TIME
+typedef struct rtc_time {
+  u8 second;
+  u8 minute;
+  u8 hour;
+  u8 day;
+  u8 month;
+  u8 year;
+} rtc_time_t;
+#endif
+
 typedef struct iovec {
   void* iov_base;
   size_t iov_len;
 } iovec_t;
 
-u32 sys_open(char* name, int attr,... );
+u32 sys_open(char* name, int attr, ...);
 // size_t sys_ioctl(u32 fd, u32 cmd, ...);
 size_t sys_ioctl(u32 fd, u32 cmd, void* args);
 int sys_close(u32 fd);
