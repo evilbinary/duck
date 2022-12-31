@@ -49,7 +49,7 @@ int do_exec(char* cmd, int count) {
     argv[i++] = ptr;
     ptr = kstrtok(NULL, split);
   }
-  if (argv[1] == ' ' || argv[0] == NULL) {
+  if (i<=0 ||argv[1] == ' ' || argv[0] == NULL) {
     return 0;
   }
   sprintf(buf, "/%s", argv[0]);
@@ -207,7 +207,7 @@ void pre_launch() {
   // kprintf("fd=>%d\n",fd);
 
   // syscall3(SYS_EXEC, "/infones", nes_argv,NULL);
-  syscall3(SYS_EXEC, "/mgba", mgba_argv,NULL);
+  // syscall3(SYS_EXEC, "/mgba", mgba_argv,NULL);
   // syscall3(SYS_EXEC, "/scheme", scm_argv,NULL);
   // syscall3(SYS_EXEC, "/sdl2", NULL,NULL);
   // syscall3(SYS_EXEC, "/showimage", showimg_argv,NULL);

@@ -55,7 +55,7 @@ size_t sys_ioctl(u32 fd, u32 cmd, void* args) {
   return ret;
 }
 
-u32 sys_open(char* name, int attr) {
+u32 sys_open(char* name, int attr, ...) {
   // mm_dump();
   // kprintf("open %s attr %x\n",name,attr&O_CREAT==O_CREAT);
   if (name == NULL) {
@@ -519,6 +519,12 @@ int sys_rt_sigprocmask(int h, void* set, void* old_set) {
   return 0;
 }
 
+int sys_rt_sigaction(int signum, const struct sigaction* restrict act,
+                     struct sigaction* restrict oldact) {
+  log_debug("sys sigaction not impl\n");
+  return 0;
+}
+
 unsigned int sys_alarm(unsigned int seconds) {
   log_debug("sys alarm not impl\n");
   return -1;
@@ -712,7 +718,6 @@ void* sys_mremap(void* old_address, size_t old_size, size_t new_size, int flags,
 
 int sys_statx(int dirfd, const char* restrict pathname, int flags,
               unsigned int mask, struct statx* restrict statxbuf) {
-  
   log_debug("sys statx not impl pathname %s\n", pathname);
 
   return 0;
@@ -755,6 +760,7 @@ void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_MMAP2] = &sys_mmap2;
   syscall_table[SYS_MPROTECT] = &sys_mprotect;
   syscall_table[SYS_RT_SIGPROCMASK] = &sys_rt_sigprocmask;
+  syscall_table[SYS_RT_SIGACTION] = &sys_rt_sigaction;
 
   syscall_table[SYS_ALARM] = &sys_alarm;
   syscall_table[SYS_UNLINK] = &sys_unlink;

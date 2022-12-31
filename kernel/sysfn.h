@@ -49,6 +49,7 @@ enum {
   SYS_MPROTECT = 125,
   SYS_NANOSLEEP = 162,
   SYS_MREMAP = 163,
+  SYS_RT_SIGACTION = 174,
   SYS_RT_SIGPROCMASK = 175,
   SYS_GETDENTS = 141,
   SYS_MUNMAP = 91,
@@ -112,6 +113,7 @@ enum {
   SYS_MMAP2 = 192,
   SYS_MPROTECT = 125,
   SYS_NANOSLEEP = 162,
+  SYS_RT_SIGACTION = 174,
   SYS_RT_SIGPROCMASK = 175,
   SYS_GETDENTS = 141,
   SYS_MUNMAP = 91,
@@ -152,7 +154,7 @@ typedef struct iovec {
   size_t iov_len;
 } iovec_t;
 
-u32 sys_open(char* name, int attr);
+u32 sys_open(char* name, int attr,... );
 // size_t sys_ioctl(u32 fd, u32 cmd, ...);
 size_t sys_ioctl(u32 fd, u32 cmd, void* args);
 int sys_close(u32 fd);
