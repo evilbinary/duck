@@ -699,6 +699,8 @@ int sys_thread_self() {
     current->info->self = current->info;
     current->info->tid = current->id;
     current->info->errno = 0;
+    current->info->locale=kmalloc(sizeof(locale_t),KERNEL_TYPE);
+    log_debug("locale at %x\n",current->info->locale);
   }
   return current->info;
 }
