@@ -11,9 +11,9 @@
 #include "thread.h"
 #include "vfs.h"
 
-#define LOAD_ELF_DEBUG
+// #define LOAD_ELF_DEBUG
 
-#define log_debug kprintf
+#define log_debug 
 #define log_error kprintf
 
 int load_elf(Elf32_Ehdr* elf_header, u32 fd) {

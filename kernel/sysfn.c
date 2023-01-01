@@ -13,6 +13,9 @@
 #include "thread.h"
 #include "vfs.h"
 
+
+#define log_debug 
+
 int sys_print(char* s) {
   thread_t* current = thread_current();
   // kprintf("sys print %d %s\n", current->id, s);
@@ -615,8 +618,8 @@ int sys_fchdir(int fd) {
 
 int sys_llseek(int fd, int offset_hi, int offset_lo, off_t* result,
                int whence) {
-  int i=sizeof(off_t);
-  int offset=sys_seek(fd, offset_hi << 32 | offset_lo, whence);
+  int i = sizeof(off_t);
+  int offset = sys_seek(fd, offset_hi << 32 | offset_lo, whence);
   *result = offset;
   return 0;
 }
@@ -699,8 +702,8 @@ int sys_thread_self() {
     current->info->self = current->info;
     current->info->tid = current->id;
     current->info->errno = 0;
-    current->info->locale=kmalloc(sizeof(locale_t),KERNEL_TYPE);
-    log_debug("locale at %x\n",current->info->locale);
+    current->info->locale = kmalloc(sizeof(locale_t), KERNEL_TYPE);
+    log_debug("locale at %x\n", current->info->locale);
   }
   return current->info;
 }
@@ -722,6 +725,10 @@ void* sys_mremap(void* old_address, size_t old_size, size_t new_size, int flags,
   }
 
   if ((flags & MREMAP_FIXED) == MREMAP_FIXED) {
+    return old_address;
+  }
+  
+  if (flags == 0) {
     return old_address;
   }
 

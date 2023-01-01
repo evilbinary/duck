@@ -4,13 +4,13 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 
-#include "kernel.h"
 #include "devfn.h"
 
+#include "kernel.h"
 
 size_t dev_ioctl(int fd, u32 cmd, ...) {
   u32 ret = 0;
-  device_t* dev = device_find(fd);
+  device_t *dev = device_find(fd);
   if (dev == NULL) {
     return ret;
   }
@@ -21,13 +21,13 @@ size_t dev_ioctl(int fd, u32 cmd, ...) {
   return ret;
 }
 
-size_t dev_read(int fd, void* buf, size_t nbytes) {
-  device_t* dev = device_find(fd);
+size_t dev_read(int fd, void *buf, size_t nbytes) {
+  device_t *dev = device_find(fd);
   return dev->read(dev, buf, nbytes);
 }
 
-size_t dev_write(int fd, void* buf, size_t nbytes) {
-  device_t* dev = device_find(fd);
+size_t dev_write(int fd, void *buf, size_t nbytes) {
+  device_t *dev = device_find(fd);
   return dev->write(dev, buf, nbytes);
 }
 
@@ -57,8 +57,8 @@ size_t device_ioctl(vnode_t *node, u32 cmd, va_list args) {
   if (dev == NULL) {
     return ret;
   }
-  if(dev->ioctl==NULL){
-    kprintf("device ioctl null\n");
+  if (dev->ioctl == NULL) {
+    //log_debug("device %s ioctl null\n", node->name);
     return ret;
   }
   // va_list args;
@@ -68,15 +68,14 @@ size_t device_ioctl(vnode_t *node, u32 cmd, va_list args) {
   return ret;
 }
 
-
 u32 device_open(vnode_t *node) {
   u32 ret = 0;
   device_t *dev = (device_t *)node->device;
   if (dev == NULL) {
     return ret;
   }
-  //todo 
-  //ret = dev->close(dev, buffer, nbytes);
+  // todo
+  // ret = dev->close(dev, buffer, nbytes);
   return ret;
 }
 
@@ -86,7 +85,7 @@ u32 device_close(vnode_t *node) {
   if (dev == NULL) {
     return ret;
   }
-  //todo 
-  //ret = dev->close(dev, buffer, nbytes);
+  // todo
+  // ret = dev->close(dev, buffer, nbytes);
   return ret;
 }
