@@ -1,4 +1,5 @@
 #include "acpi.h"
+#include "platform/platform.h"
 
 #include "../interrupt.h"
 #include "../io.h"
@@ -38,7 +39,7 @@ void lapic_do_timer() {
 void lapic_timer_init() {
   u32 value;
 
-  kprintf("init local timer of cpu %d\n", cpu_get_id());
+  //kprintf("init local timer of cpu %d\n", cpu_get_id());
 
   // Divide Configuration Register 011: Divide by 16,111 divede by 1
   mem_write32(APIC_BASE + LAPIC_TDCR, 0xb);
@@ -54,7 +55,7 @@ void lapic_timer_init() {
   u32 count = mem_read32(LAPIC_TCCR);
   u32 ticks = 0xFFFFFFFF - count;
 
-  kprintf("time ticks %d\n", ticks);
+  //kprintf("time ticks %d\n", ticks);
 
   ticks = 1000;
 

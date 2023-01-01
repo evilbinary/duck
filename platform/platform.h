@@ -28,7 +28,7 @@
 #endif
 #define ISR_MOUSE 0x2c
 
-// #define MP_ENABLE 1  //多cpu
+#define MP_ENABLE 1  //多cpu
 
 #define IDT_NUMBER 2048
 #define EXCEPTION_NUMBER 2048

@@ -142,7 +142,11 @@ void cpu_init(int cpu) {
 void cpu_halt() { asm("hlt\n"); }
 
 void cpu_wait() {
-  asm("hlt\n");
+  if(cpu_get_id()==0){
+    asm("hlt\n");
+  }else{
+    //cause ap cpu error so not use
+  }
 }
 
 int cpu_tas(volatile int* addr, int newval) {
