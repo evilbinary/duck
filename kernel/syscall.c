@@ -18,7 +18,7 @@ void* do_syscall(interrupt_context_t* ic) {
       // kprintf(" ret=%x\n",context_ret(ic));
       return context_ret(ic);
     } else {
-      kprintf("syscall %d not found\n", context_fn(ic));
+      log_debug("syscall %d not found\n", context_fn(ic));
     }
   }
   return NULL;
