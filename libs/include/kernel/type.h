@@ -89,7 +89,7 @@ typedef	int32_t		nlink_t;
 
 #ifndef _HAVE_OFF_T
 #define _HAVE_OFF_T
-typedef	long int		off_t;
+typedef	long long       off_t;
 #endif
 
 

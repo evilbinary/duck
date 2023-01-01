@@ -151,7 +151,7 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
   return ret;
 }
 
-size_t sys_seek(u32 fd, ulong offset, int whence) {
+size_t sys_seek(u32 fd, size_t offset, int whence) {
   fd_t* f = thread_find_fd_id(thread_current(), fd);
   if (f == NULL) {
     log_error("seek not found fd %d\n", fd);
@@ -449,9 +449,17 @@ int sys_writev(int fd, iovec_t* vector, int count) {
   int ret = 0;
   int n;
   int i;
+  if (count == 0) {
+    return 0;
+  }
   for (i = 0; i < count; i++, vector++) {
+    if (vector->iov_base == NULL || vector->iov_len <= 0) {
+      continue;
+    }
     n = sys_write(fd, vector->iov_base, vector->iov_len);
-    if (n < 0) return n;
+    if (n < 0) {
+      return n;
+    }
     ret += n;
     if (n != vector->iov_len) break;
   }
@@ -605,10 +613,12 @@ int sys_fchdir(int fd) {
   return ret;
 }
 
-int sys_llseek(int fd, off_t offset_hi, off_t offset_lo, off_t* result,
+int sys_llseek(int fd, int offset_hi, int offset_lo, off_t* result,
                int whence) {
-  *result = 0;
-  return sys_seek(fd, offset_hi << 32 | offset_lo, whence);
+  int i=sizeof(off_t);
+  int offset=sys_seek(fd, offset_hi << 32 | offset_lo, whence);
+  *result = offset;
+  return 0;
 }
 
 int sys_umask(int mask) {

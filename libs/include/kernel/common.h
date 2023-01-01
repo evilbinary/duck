@@ -10,12 +10,6 @@
 #include "io.h"
 
 
-#ifndef _HAVE_OFF_T
-#define _HAVE_OFF_T
-typedef	long int		off_t;
-#endif
-
-
 void* kmemcpy(void* /* restrict */ s1, const void* /* restrict */ s2, size_t n);
 void* kmemset(void* s, int c, size_t n);
 

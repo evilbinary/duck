@@ -193,7 +193,7 @@ void sys_vumap(void* ptr, size_t size);
 void* sys_alloc_alignment(size_t size, u32 alignment);
 
 void sys_free_alignment(void* ptr);
-size_t sys_seek(u32 fd, ulong offset, int whence);
+size_t sys_seek(u32 fd, size_t offset, int whence);
 
 void* sys_valloc(void* addr, size_t size);
 void sys_vfree(void* addr);
@@ -240,7 +240,7 @@ int sys_getcwd(char* buf, size_t size);
 int sys_fchdir(int fd);
 
 int sys_clone(void* stack, void* fn, void* arg);
-int sys_llseek(int fd, off_t offset_hi, off_t offset_lo, off_t* result,
+int sys_llseek(int fd, int offset_hi, int offset_lo, off_t* result,
                int whence);
 
 int sys_umask(int mask);
