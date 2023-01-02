@@ -13,9 +13,8 @@
 #include "sysfn.h"
 #include "config.h"
 
-#ifndef SYSCALL_NUMBER
-#define SYSCALL_NUMBER 512
-#endif
+
+typedef void* (*sys_fn_handler_t)(void** syscall_table);
 
 void* syscall0(u32 num);
 void* syscall1(u32 num,void* arg0);
@@ -24,6 +23,7 @@ void* syscall3(u32 num,void* arg0,void* arg1,void* arg2);
 
 
 void syscall_init();
+void sys_fn_init_regist(sys_fn_handler_t handler);
 
 
 #endif

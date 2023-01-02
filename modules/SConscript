@@ -178,6 +178,11 @@ include=[
         '../platform/'+env.get('PLATFORM') 
     ]
 
+
+if env.get('MODULES'):
+    for module in env.get('MODULES'):
+        modules+= Glob(module+'/*.c') 
+
 source=modules
 
 env.Library('modules',

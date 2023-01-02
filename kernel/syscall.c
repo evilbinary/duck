@@ -24,6 +24,10 @@ void* do_syscall(interrupt_context_t* ic) {
   return NULL;
 }
 
+void sys_fn_init_regist(sys_fn_handler_t handler) {
+  if (handler == NULL) return;
+  handler(syscall_table);
+}
 
 void syscall_init() {
   exception_regist(EX_SYS_CALL, do_syscall);

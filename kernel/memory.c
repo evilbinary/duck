@@ -29,8 +29,8 @@ memory_t* memory_info() {
   return &memory_summary;
 }
 
-void check_addr(void* addr){
-  if(addr==NULL){
+void check_addr(void* addr) {
+  if (addr == NULL) {
     log_error("malloc error add return null\n");
     cpu_halt();
   }
@@ -60,7 +60,7 @@ void* vm_alloc(size_t size) {
   size = ALIGN(size, MEMORY_ALIGMENT);
   thread_t* current = thread_current();
   if (current == NULL) {
-    //内核启动没有进程，使用内核物理内存
+    // 内核启动没有进程，使用内核物理内存
     addr = phy_alloc(size);
     check_addr(addr);
     return addr;
@@ -82,7 +82,7 @@ void* vm_alloc_alignment(size_t size, int alignment) {
   void* addr = NULL;
   thread_t* current = thread_current();
   if (current == NULL) {
-    //内核启动没有进程，使用内核物理内存
+    // 内核启动没有进程，使用内核物理内存
     addr = phy_alloc_aligment(size, alignment);
     check_addr(addr);
     return addr;
@@ -218,6 +218,12 @@ void kfree_alignment(void* ptr) {
   // memory_static(size, MEMORY_TYPE_FREE);
 }
 
+int kmem_size(void* ptr) {
+  if (ptr == NULL) return 0;
+  size_t size = mm_get_size(ptr);
+  return size;
+}
+
 #endif
 
 void memory_static(u32 size, int type) {
@@ -308,7 +314,8 @@ void* kvirtual_to_physic(void* addr, int size) {
   if (current != NULL) {
     phy = virtual_to_physic(current->context.upage, addr);
     if (phy == NULL) {
-      log_error("get page: %x addr %x phy null\n",current->context.upage, addr);
+      log_error("get page: %x addr %x phy null\n", current->context.upage,
+                addr);
       if (size > 0) {
         kmemset(addr, 0, size);
       }

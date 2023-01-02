@@ -81,6 +81,16 @@ void modules_init(void) {
   // module_regist(&fat32_module);
   // module_regist(&hello_module);
 
+#ifdef MUSL_MODULE
+  extern module_t musl_module;
+  module_regist(&musl_module);
+#endif
+
+#ifdef EWOK_MODULE
+  extern module_t ewok_module;
+  module_regist(&ewok_module);
+#endif
+
 #endif
 
 #elif defined(DUMMY)
