@@ -38,7 +38,7 @@ void *exception_process(interrupt_context_t *ic) {
 void exception_process_error(thread_t *current, interrupt_context_t *ic,void* entry) {
   thread_exit(current, -1);
   thread_dump(current);
-  kprintf("--exeption interrupt context--");
+  kprintf("--exeption interrupt context--\n");
   context_dump_interrupt(ic);
 
   //set exit handl
