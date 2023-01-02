@@ -36,6 +36,12 @@ void *exception_process(interrupt_context_t *ic) {
 }
 
 void exception_process_error(thread_t *current, interrupt_context_t *ic,void* entry) {
+  thread_exit(current, -1);
+  thread_dump(current);
+  kprintf("--exeption interrupt context--");
+  context_dump_interrupt(ic);
+
+  //set exit handl
   context_set_entry(ic,entry);
   thread_set_entry(current,entry);
 }
@@ -58,7 +64,7 @@ void exception_on_permission(interrupt_context_t *ic) {
   }
   exception_process_error(current, ic,(void*)&exception_error_exit);
   // context_dump_interrupt(ic);
-  // thread_dump();
+  // thread_dump(current);
   // cpu_halt();
 }
 
