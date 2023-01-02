@@ -318,10 +318,10 @@ void thread_map(thread_t* thread, u32 virt_addr, u32 phy_addr, u32 size) {
   for (int i = 0; i < pages; i++) {
     map_page_on(thread->context.upage, virt_addr + offset, phy_addr + offset,
                 PAGE_P | PAGE_USU | PAGE_RWW);
-    #ifdef DEBUG
+#ifdef DEBUG
     log_debug("thread %d map %d vaddr: %x - paddr: %x\n", thread->id, i,
               virt_addr + offset, phy_addr + offset);
-    #endif
+#endif
     offset += PAGE_SIZE;
   }
 }
@@ -384,12 +384,21 @@ void thread_wake(thread_t* thread) {
 
 void thread_set_entry(thread_t* thread, void* entry) {
   if (thread == NULL) return;
-  context_set_entry(&thread->context, entry);
+  interrupt_context_t* ic = thread->context.ksp;
+  if (ic == NULL) {
+    log_error("context is null cannot set ret\n");
+    return;
+  }
+  context_set_entry(ic, entry);
 }
 
 void thread_set_arg(thread_t* thread, void* arg) {
   if (thread == NULL) return;
   interrupt_context_t* ic = thread->context.ksp;
+  if (ic == NULL) {
+    log_error("context is null cannot set ret\n");
+    return;
+  }
   context_ret(ic) = arg;
 }
 

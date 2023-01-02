@@ -7,7 +7,17 @@
 
 // #define DEBUG
 
-void page_fault_handle(interrupt_context_t *context) {
+void page_error_exit() {
+  log_debug("page erro exit\n");
+  cpu_halt();
+}
+
+void page_process_erro(thread_t *current, interrupt_context_t *ic) {
+  context_set_entry(ic, (void *)&page_error_exit);
+  thread_set_entry(current, (void *)&page_error_exit);
+}
+
+void page_fault_handle(interrupt_context_t *ic) {
   u32 *fault_addr = cpu_get_fault();
   thread_t *current = thread_current();
   if (current != NULL) {
@@ -25,14 +35,14 @@ void page_fault_handle(interrupt_context_t *context) {
 #ifdef DEBUG
         log_debug("page lookup kernel found phy: %x\n", phy);
 #endif
-        //内核地址，进行映射,todo 进行检查
+        // 内核地址，进行映射,todo 进行检查
         map_page_on(current->context.upage, fault_addr, phy,
                     PAGE_P | PAGE_USU | PAGE_RWW);
       } else {
         if (current->fault_count < 1) {
           thread_exit(current, -1);
           log_error("%s memory fault at %x\n", current->name, fault_addr);
-          context_dump_fault(context, fault_addr);
+          context_dump_fault(ic, fault_addr);
           thread_dump(current);
           current->fault_count++;
           // cpu_halt();
@@ -41,6 +51,8 @@ void page_fault_handle(interrupt_context_t *context) {
                     fault_addr);
           current->fault_count++;
           thread_exit(current, -1);
+
+          page_process_erro(current, ic);
         } else {
           current->fault_count++;
         }
@@ -55,16 +67,14 @@ void page_fault_handle(interrupt_context_t *context) {
       // valloc(fault_addr, PAGE_SIZE);
       log_error("%s phy: %x remap memory fault at %x\n", current->name, phy,
                 fault_addr);
-      context_dump_fault(context, fault_addr);
+      context_dump_fault(ic, fault_addr);
       // mmu_dump_page(current->context.upage,current->context.upage,0);
       thread_exit(current, -1);
-      cpu_halt();
+      page_process_erro(current, ic);
     }
   } else {
     map_page(fault_addr, fault_addr, PAGE_P | PAGE_USU | PAGE_RWW);
   }
 }
 
-void page_init() {
-  exception_regist(EX_DATA_FAULT,page_fault_handle);
-}
+void page_init() { exception_regist(EX_DATA_FAULT, page_fault_handle); }

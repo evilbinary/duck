@@ -161,7 +161,7 @@ void timer_init(int hz);
 
 #define context_fn(context) context->eax
 #define context_ret(context) context->eax
-#define context_set_entry(context,entry) ((interrupt_context_t*)((context)->ksp))->eip=entry
+#define context_set_entry(context,entry) ((interrupt_context_t*)context)->eip=entry
 
 
 #define context_restore(duck_context) interrupt_exit_context(duck_context)

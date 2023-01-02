@@ -56,6 +56,13 @@ void exception_on_other(interrupt_context_t *ic){
   kprintf("exception other on cpu %d no %d code %x\n", cpu, ic->no,ic->code);
 }
 
+void exception_on_undef(interrupt_context_t *ic){
+  int cpu = cpu_get_id();
+  kprintf("exception undef on cpu %d no %d code %x\n", cpu, ic->no,ic->code);
+  cpu_halt();
+}
+
+
 void exception_init() {
   interrupt_regist_service(exception_process);
 
@@ -63,5 +70,6 @@ void exception_init() {
   exception_regist(EX_OTHER, exception_on_other);
   exception_regist(EX_PREF_ABORT, exception_on_other);
   exception_regist(EX_RESET, exception_on_other);
+  exception_regist(EX_UNDEF, exception_on_other);
 
 }

@@ -116,7 +116,7 @@ void unuse_handler() {
 
 INTERRUPT_SERVICE
 void irq_handler() {
-  interrupt_entering_code(EX_TIMER, 0 , 4);
+  interrupt_entering_code(EX_TIMER, 0, 4);
   interrupt_process(interrupt_default_handler);
   interrupt_exit_ret();
 }
@@ -146,7 +146,6 @@ void exception_info(interrupt_context_t* ic) {
           read_dfar());
   context_dump_interrupt(ic);
 }
-
 
 void interrupt_regist_all() {
   interrupt_regist(0, reset_handler);       // reset

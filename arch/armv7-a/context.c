@@ -197,6 +197,9 @@ void context_switch(interrupt_context_t* ic,context_t* current,context_t* next) 
 }
 
 void context_save(interrupt_context_t* ic, context_t* current) {
+  if( ic == NULL){
+    return;
+  }
   current->ksp = ic;
   current->usp = ic->sp;
 }

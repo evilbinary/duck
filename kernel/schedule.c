@@ -38,7 +38,22 @@ thread_t* schedule_get_next() {
   return next;
 }
 
-void schedule_next() {}
+void schedule(interrupt_context_t* ic) {
+  thread_t* current_thread = thread_current();
+  int cpu = cpu_get_id();
+  schedule_state(cpu);
+  thread_t* next_thread = schedule_get_next();
+  context_switch(ic, &current_thread->context, &next_thread->context);
+  thread_set_current(next_thread);
+  kmemmove(ic, next_thread->context.ksp,sizeof(interrupt_context_t));
+}
+
+void schedule_next() {
+  // while (current_thread == thread_current()) {
+  //   cpu_sti();
+  // }
+  // cpu_cli();
+}
 
 void schedule_sleep(u32 nsec) {
   thread_t* current = thread_current();
@@ -60,7 +75,6 @@ void schedule_state(int cpu) {
         v->sleep_counter = -1;
       }
     }
-
   }
 }
 
@@ -75,16 +89,16 @@ void* do_schedule(interrupt_context_t* ic) {
     return NULL;
   }
   timer_ticks[cpu]++;
-  context_switch(ic,&current_thread->context,&next_thread->context);
+  context_switch(ic, &current_thread->context, &next_thread->context);
   thread_set_current(next_thread);
   timer_end();
-  if(next_thread->id==2){
-    int i=0;
-    // log_debug("next tid %d pc %x pc %x\n",next_thread->id,next_thread->context.ksp->pc,ic->pc);
+  if (next_thread->id == 2) {
+    int i = 0;
+    // log_debug("next tid %d pc %x pc
+    // %x\n",next_thread->id,next_thread->context.ksp->pc,ic->pc);
   }
   return next_thread->context.ksp;
 }
-
 
 void schedule_init() {
   lock_init(&schedule_lock);
