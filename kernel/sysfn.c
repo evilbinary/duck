@@ -833,6 +833,12 @@ int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
   return 0;
 }
 
+int sys_set_tid_adress(void* ptr){
+  thread_t* current = thread_current();
+  log_debug("sys set tid adress not impl\n");
+  return current->id;
+} 
+
 void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_READ] = &sys_read;
   syscall_table[SYS_WRITE] = &sys_write;
@@ -907,4 +913,8 @@ void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_SYSINFO] = &sys_info;
   syscall_table[SYS_MEMINFO] = &sys_mem_info;
   syscall_table[SYS_THREAD_SELF] = &sys_thread_self;
+
+  syscall_table[SYS_SET_TID_ADDRESS] = &sys_set_tid_adress;
+
+  
 }

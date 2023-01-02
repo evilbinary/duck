@@ -7,8 +7,10 @@
 
 // #define DEBUG
 
+//in user mode
 void page_error_exit() {
-  log_debug("page erro exit\n");
+  syscall1(SYS_PRINT, "page erro exit\n");
+  syscall1(SYS_EXIT,666);
   cpu_halt();
 }
 
@@ -55,6 +57,7 @@ void page_fault_handle(interrupt_context_t *ic) {
           page_process_erro(current, ic);
         } else {
           current->fault_count++;
+          page_process_erro(current, ic);
         }
       }
       return;

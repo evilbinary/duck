@@ -56,12 +56,10 @@ int do_exec(char* cmd, int count) {
   int pid = syscall0(SYS_FORK);
   if (pid == 0) {  //子进程
     int p = syscall0(SYS_GETPID);
-    kprintf("child current p=%d pid=%d\n", p, pid);
     syscall3(SYS_EXEC, buf, argv,NULL);
     syscall1(SYS_EXIT, 0);
   } else {
     int p = syscall0(SYS_GETPID);
-    kprintf("parent current p=%d pid=%d\n", p, pid);
   }
   return pid;
 }

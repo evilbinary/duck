@@ -16,17 +16,17 @@ void exception_regist(u32 vec, interrupt_handler_t handler) {
 void *exception_process(interrupt_context_t *ic) {
   if (ic->no == EX_OTHER) {
     int cpu = cpu_get_id();
-    kprintf("exception cpu %d no %d\n", cpu, ic->no);
+    log_debug("exception cpu %d no %d\n", cpu, ic->no);
     thread_t *current = thread_current();
     if (current != NULL) {
-      kprintf("tid:%d %s cpu:%d\n", current->id, current->name,
-              current->cpu_id);
+      log_debug("tid:%d %s cpu:%d\n", current->id, current->name,
+                current->cpu_id);
     }
-  } else if (ic->no == EX_SYS_CALL ) {
+  } else if (ic->no == EX_SYS_CALL) {
     thread_t *current = thread_current();
     if (current != NULL) {
-      current->context.ic=ic;
-      kmemmove(current->context.ksp, ic,sizeof(interrupt_context_t));
+      current->context.ic = ic;
+      kmemmove(current->context.ksp, ic, sizeof(interrupt_context_t));
     }
   }
   if (exception_handlers[ic->no] != 0) {
@@ -40,28 +40,34 @@ void *exception_process(interrupt_context_t *ic) {
 
 void exception_on_permission(interrupt_context_t *ic) {
   int cpu = cpu_get_id();
-  kprintf("exception permission on cpu %d no %d code %x\n", cpu, ic->no, ic->code );
+  log_debug("exception permission on cpu %d no %d code %x\n", cpu, ic->no,
+            ic->code);
   thread_t *current = thread_current();
   if (current != NULL) {
-    kprintf("tid:%d %s cpu:%d\n", current->id, current->name, current->cpu_id);
+    log_debug("tid:%d %s cpu:%d\n", current->id, current->name,
+              current->cpu_id);
   }
   context_dump_interrupt(ic);
   thread_dump();
-
   cpu_halt();
 }
 
-void exception_on_other(interrupt_context_t *ic){
+void exception_on_other(interrupt_context_t *ic) {
   int cpu = cpu_get_id();
-  kprintf("exception other on cpu %d no %d code %x\n", cpu, ic->no,ic->code);
+  log_debug("exception other on cpu %d no %d code %x\n", cpu, ic->no, ic->code);
+  // context_dump_interrupt(ic);
+  // thread_dump();
+  // cpu_cli();
+  // cpu_halt();
 }
 
-void exception_on_undef(interrupt_context_t *ic){
+void exception_on_undef(interrupt_context_t *ic) {
   int cpu = cpu_get_id();
-  kprintf("exception undef on cpu %d no %d code %x\n", cpu, ic->no,ic->code);
+  log_debug("exception undef on cpu %d no %d code %x\n", cpu, ic->no, ic->code);
+  context_dump_interrupt(ic);
+  thread_dump();
   cpu_halt();
 }
-
 
 void exception_init() {
   interrupt_regist_service(exception_process);
@@ -70,6 +76,5 @@ void exception_init() {
   exception_regist(EX_OTHER, exception_on_other);
   exception_regist(EX_PREF_ABORT, exception_on_other);
   exception_regist(EX_RESET, exception_on_other);
-  exception_regist(EX_UNDEF, exception_on_other);
-
+  exception_regist(EX_UNDEF, exception_on_undef);
 }
