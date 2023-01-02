@@ -13,8 +13,7 @@
 #include "thread.h"
 #include "vfs.h"
 
-
-#define log_debug 
+#define log_debug
 
 int sys_print(char* s) {
   thread_t* current = thread_current();
@@ -727,7 +726,7 @@ void* sys_mremap(void* old_address, size_t old_size, size_t new_size, int flags,
   if ((flags & MREMAP_FIXED) == MREMAP_FIXED) {
     return old_address;
   }
-  
+
   if (flags == 0) {
     return old_address;
   }
@@ -833,11 +832,13 @@ int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
   return 0;
 }
 
-int sys_set_tid_adress(void* ptr){
+int sys_set_tid_adress(void* ptr) {
   thread_t* current = thread_current();
   log_debug("sys set tid adress not impl\n");
   return current->id;
-} 
+}
+
+void sys_exit_group(int status) { log_debug("sys exit group not impl\n"); }
 
 void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_READ] = &sys_read;
@@ -916,5 +917,5 @@ void sys_fn_init(void** syscall_table) {
 
   syscall_table[SYS_SET_TID_ADDRESS] = &sys_set_tid_adress;
 
-  
+  syscall_table[SYS_EXIT_GROUP] = &sys_exit_group;
 }
