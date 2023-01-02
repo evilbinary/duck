@@ -5,9 +5,6 @@
  ********************************************************************/
 #include "exceptions.h"
 
-#include "page.h"
-#include "thread.h"
-
 interrupt_handler_t *exception_handlers[EXCEPTION_NUMBER];
 void exception_regist(u32 vec, interrupt_handler_t handler) {
   exception_handlers[vec] = handler;
@@ -38,6 +35,18 @@ void *exception_process(interrupt_context_t *ic) {
   return NULL;
 }
 
+void exception_process_error(thread_t *current, interrupt_context_t *ic,void* entry) {
+  context_set_entry(ic,entry);
+  thread_set_entry(current,entry);
+}
+
+// in user mode
+void exception_error_exit() {
+  syscall1(SYS_PRINT, "exception erro exit ^_^!!\n");
+  syscall1(SYS_EXIT, 666);
+  cpu_halt();
+}
+
 void exception_on_permission(interrupt_context_t *ic) {
   int cpu = cpu_get_id();
   log_debug("exception permission on cpu %d no %d code %x\n", cpu, ic->no,
@@ -47,26 +56,24 @@ void exception_on_permission(interrupt_context_t *ic) {
     log_debug("tid:%d %s cpu:%d\n", current->id, current->name,
               current->cpu_id);
   }
-  context_dump_interrupt(ic);
-  thread_dump();
-  cpu_halt();
+  exception_process_error(current, ic,(void*)&exception_error_exit);
+  // context_dump_interrupt(ic);
+  // thread_dump();
+  // cpu_halt();
 }
 
 void exception_on_other(interrupt_context_t *ic) {
   int cpu = cpu_get_id();
+  thread_t *current = thread_current();
   log_debug("exception other on cpu %d no %d code %x\n", cpu, ic->no, ic->code);
-  // context_dump_interrupt(ic);
-  // thread_dump();
-  // cpu_cli();
-  // cpu_halt();
+  exception_process_error(current, ic,(void*)&exception_error_exit);
 }
 
 void exception_on_undef(interrupt_context_t *ic) {
   int cpu = cpu_get_id();
+  thread_t *current = thread_current();
   log_debug("exception undef on cpu %d no %d code %x\n", cpu, ic->no, ic->code);
-  context_dump_interrupt(ic);
-  thread_dump();
-  cpu_halt();
+  exception_process_error(current, ic,(void*)&exception_error_exit);
 }
 
 void exception_init() {

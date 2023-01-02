@@ -7,16 +7,11 @@
 
 // #define DEBUG
 
-//in user mode
+// in user mode
 void page_error_exit() {
   syscall1(SYS_PRINT, "page erro exit\n");
-  syscall1(SYS_EXIT,666);
+  syscall1(SYS_EXIT, 666);
   cpu_halt();
-}
-
-void page_process_erro(thread_t *current, interrupt_context_t *ic) {
-  context_set_entry(ic, (void *)&page_error_exit);
-  thread_set_entry(current, (void *)&page_error_exit);
 }
 
 void page_fault_handle(interrupt_context_t *ic) {
@@ -54,10 +49,10 @@ void page_fault_handle(interrupt_context_t *ic) {
           current->fault_count++;
           thread_exit(current, -1);
 
-          page_process_erro(current, ic);
+          exception_process_error(current, ic, (void *)&page_error_exit);
         } else {
           current->fault_count++;
-          page_process_erro(current, ic);
+          exception_process_error(current, ic, (void *)&page_error_exit);
         }
       }
       return;
@@ -73,7 +68,7 @@ void page_fault_handle(interrupt_context_t *ic) {
       context_dump_fault(ic, fault_addr);
       // mmu_dump_page(current->context.upage,current->context.upage,0);
       thread_exit(current, -1);
-      page_process_erro(current, ic);
+      exception_process_error(current, ic, (void *)&page_error_exit);
     }
   } else {
     map_page(fault_addr, fault_addr, PAGE_P | PAGE_USU | PAGE_RWW);
