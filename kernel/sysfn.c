@@ -13,7 +13,7 @@
 #include "thread.h"
 #include "vfs.h"
 
-#define log_debug
+// #define log_debug
 
 int sys_print(char* s) {
   thread_t* current = thread_current();

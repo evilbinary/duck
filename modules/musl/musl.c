@@ -19,13 +19,13 @@ int musl_init(void) {
   log_info("musl init\n");
 
   //make musl happy ^_^!!
-  u32 addr = __a_barrier_kuser & ~0xfff;
-  map_page(addr, addr, 0);
+  // u32 addr = __a_barrier_kuser & ~0xfff;
+  // map_page(addr, addr, 0);
 
-  *((int *)__a_ver) = 2;
-  *(int *)__a_barrier_kuser = 0;
-  *(int *)__a_cas_kuser = 0;
-  *(int *)__a_gettp_kuser = musl_gettp;
+  // *((int *)__a_ver) = 2;
+  // *(int *)__a_barrier_kuser = 0;
+  // *(int *)__a_cas_kuser = 0;
+  // *(int *)__a_gettp_kuser = musl_gettp;
 
   return 0;
 }
