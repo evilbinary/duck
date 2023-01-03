@@ -23,4 +23,5 @@ env.Library('kernel',
     'vsprintf.c',
     'common.c',
     'io.c',
+    'stack_guard.c',
     ],CPPPATH=include,CFLAGS='$CFLAGS')

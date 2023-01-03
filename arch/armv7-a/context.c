@@ -130,9 +130,9 @@ void context_dump_interrupt(interrupt_context_t* ic) {
   if (ic->r11 > 1000) {
     int buf[10];
     void* fp = ic->r11;
-    cpu_backtrace(fp, buf, 3);
+    cpu_backtrace(fp, buf, 8);
     kprintf("--backtrace--\n");
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 8; i++) {
       kprintf(" %8x\n", buf[i]);
     }
   }

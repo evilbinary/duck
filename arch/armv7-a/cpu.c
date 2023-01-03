@@ -304,18 +304,19 @@ int cpu_tas(volatile int* addr, int newval) {
   return result;
 }
 
-void cpu_backtrace(void* fp, void** buf, int size) {
-  int topfp = read_fp();
+void cpu_backtrace(void* tfp, void** buf, int size) {
+  int topfp = tfp;//read_fp();
   for (int i = 0; i < size; i++) {
     u32 fp = *(((u32*)topfp) - 3);
     u32 sp = *(((u32*)topfp) - 2);
     u32 lr = *(((u32*)topfp) - 1);
     u32 pc = *(((u32*)topfp) - 0);
     if (i == 0) {
-      kprintf("top frame %x\n", pc);
+      *buf++=pc;
     }  // top frame
     if (fp != 0) {
-      kprintf(" %x\n", lr);
+      *buf++=lr;
+      //kprintf(" %x\n", lr);
     }  // middle frame
     else {
       kprintf("bottom frame %x\n", pc);

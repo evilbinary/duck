@@ -35,15 +35,18 @@ void *exception_process(interrupt_context_t *ic) {
   return NULL;
 }
 
-void exception_process_error(thread_t *current, interrupt_context_t *ic,void* entry) {
+void exception_process_error(thread_t *current, interrupt_context_t *ic,
+                             void *entry) {
   thread_exit(current, -1);
-  thread_dump(current);
-  kprintf("--exeption interrupt context--\n");
-  context_dump_interrupt(ic);
 
-  //set exit handl
-  context_set_entry(ic,entry);
-  thread_set_entry(current,entry);
+  kprintf("--dump interrupt context--\n");
+  context_dump_interrupt(ic);
+  kprintf("--dump thread--\n");
+  thread_dump(current, DUMP_DEFAULT);
+
+  // set exit handl
+  context_set_entry(ic, entry);
+  thread_set_entry(current, entry);
 }
 
 // in user mode
@@ -62,7 +65,7 @@ void exception_on_permission(interrupt_context_t *ic) {
     log_debug("tid:%d %s cpu:%d\n", current->id, current->name,
               current->cpu_id);
   }
-  exception_process_error(current, ic,(void*)&exception_error_exit);
+  exception_process_error(current, ic, (void *)&exception_error_exit);
   // context_dump_interrupt(ic);
   // thread_dump(current);
   // cpu_halt();
@@ -72,14 +75,14 @@ void exception_on_other(interrupt_context_t *ic) {
   int cpu = cpu_get_id();
   thread_t *current = thread_current();
   log_debug("exception other on cpu %d no %d code %x\n", cpu, ic->no, ic->code);
-  exception_process_error(current, ic,(void*)&exception_error_exit);
+  exception_process_error(current, ic, (void *)&exception_error_exit);
 }
 
 void exception_on_undef(interrupt_context_t *ic) {
   int cpu = cpu_get_id();
   thread_t *current = thread_current();
   log_debug("exception undef on cpu %d no %d code %x\n", cpu, ic->no, ic->code);
-  exception_process_error(current, ic,(void*)&exception_error_exit);
+  exception_process_error(current, ic, (void *)&exception_error_exit);
 }
 
 void exception_init() {

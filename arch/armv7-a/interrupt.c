@@ -97,7 +97,7 @@ INTERRUPT_SERVICE
 void pref_abort_handler() {
   interrupt_entering_code(EX_PREF_ABORT, 0, 4);
   interrupt_process(interrupt_default_handler);
-  cpu_halt();
+  interrupt_exit();
 }
 
 INTERRUPT_SERVICE
@@ -111,7 +111,7 @@ INTERRUPT_SERVICE
 void unuse_handler() {
   interrupt_entering_code(EX_OTHER, 0, 4);
   interrupt_process(interrupt_default_handler);
-  cpu_halt();
+  interrupt_exit();
 }
 
 INTERRUPT_SERVICE

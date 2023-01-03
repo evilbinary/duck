@@ -27,7 +27,7 @@ void sys_test() {
   kprintf("sys test %d\n", current->id);
 
   kprintf("-------dump thread %d-------------\n", current->id);
-  thread_dump(current);
+  thread_dump(current,DUMP_DEFAULT|DUMP_CONTEXT);
 }
 
 void sys_dumps() {
@@ -277,9 +277,9 @@ int sys_clone(void* fn, void* stack, void* arg) {
   thread_t* copy_thread = thread_copy(current, THREAD_FORK);
 #ifdef LOG_DEBUG
   kprintf("-------dump current thread %d %s-------------\n", current->id);
-  thread_dump(current);
+  thread_dump(current,DUMP_DEFAULT|DUMP_CONTEXT);
   kprintf("-------dump clone thread %d-------------\n", copy_thread->id);
-  thread_dump(copy_thread);
+  thread_dump(copy_thread,DUMP_DEFAULT|DUMP_CONTEXT);
 #endif
 
   thread_set_ret(copy_thread, 0);
@@ -299,9 +299,9 @@ int sys_vfork() {
 
 #ifdef LOG_DEBUG
   log_debug("-------dump current thread %d %s-------------\n", current->id);
-  thread_dump(current);
+  thread_dump(current,DUMP_DEFAULT|DUMP_CONTEXT);
   log_debug("-------dump clone thread %d-------------\n", copy_thread->id);
-  thread_dump(copy_thread);
+  thread_dump(copy_thread,DUMP_DEFAULT|DUMP_CONTEXT);
 #endif
 
   thread_run(copy_thread);
@@ -321,9 +321,9 @@ int sys_fork() {
   thread_set_ret(copy_thread, 0);
 #ifdef LOG_DEBUG
   log_debug("-------dump current thread %d %s-------------\n", current->id);
-  thread_dump(current);
+  thread_dump(current,DUMP_DEFAULT|DUMP_CONTEXT);
   log_debug("-------dump clone thread %d-------------\n", copy_thread->id);
-  thread_dump(copy_thread);
+  thread_dump(copy_thread,DUMP_DEFAULT|DUMP_CONTEXT);
 #endif
   thread_run(copy_thread);
   thread_run(current);

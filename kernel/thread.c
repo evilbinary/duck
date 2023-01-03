@@ -642,7 +642,7 @@ void thread_dump_fd(thread_t* thread) {
   }
 }
 
-void thread_dump(thread_t* thread) {
+void thread_dump(thread_t* thread, u32 flags) {
   if (thread == NULL) return;
   kprintf("id       %d\n", thread->id);
   if (thread->name != NULL) {
@@ -658,15 +658,20 @@ void thread_dump(thread_t* thread) {
   kprintf("pid      %d\n", thread->pid);
   kprintf("fd_num   %d\n", thread->fd_number);
   kprintf("code     %d\n", thread->code);
-  kprintf("--context--\n");
-  context_dump(&thread->context);
-  kprintf("--kstack--\n");
-  // thread_dump_stack(thread->context.ksp_start, thread->context.ksp_size);
-  int dump_size = 0x100;
-  thread_dump_stack(thread->context.ksp_end - dump_size, dump_size);
-  kprintf("--ustack--\n");
-  // thread_dump_stack(thread->context.usp_start, thread->context.usp_size);
-  thread_dump_stack(thread->context.usp_end - dump_size, dump_size);
+
+  if (flags & DUMP_CONTEXT == DUMP_CONTEXT) {
+    kprintf("--context--\n");
+    context_dump(&thread->context);
+  }
+  if (flags & DUMP_STACK == DUMP_STACK) {
+    kprintf("--kstack--\n");
+    // thread_dump_stack(thread->context.ksp_start, thread->context.ksp_size);
+    int dump_size = 0x100;
+    thread_dump_stack(thread->context.ksp_end - dump_size, dump_size);
+    kprintf("--ustack--\n");
+    // thread_dump_stack(thread->context.usp_start, thread->context.usp_size);
+    thread_dump_stack(thread->context.usp_end - dump_size, dump_size);
+  }
   kprintf("\n");
 }
 
