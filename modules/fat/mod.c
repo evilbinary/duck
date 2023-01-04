@@ -338,10 +338,10 @@ u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
         dirent->type = DT_REG;
       }
       kstrcpy(dirent->name, dir_entry.long_name);
-      dirent->offset = sizeof(struct vdirent) + kstrlen(dirent->name);
+      dirent->offset = i;
       dirent->length = sizeof(struct vdirent);
-      nbytes += dirent->offset;
-      dirent++;
+      nbytes += dirent->length;
+      dirent++;  // maybe change to offset
       file_info->offset++;
       read_count++;
     } else {
