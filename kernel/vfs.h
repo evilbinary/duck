@@ -28,7 +28,7 @@ typedef struct vdirent {
   u64 offset;
   u16 length;
   u8 type;
-  char name[256];  // Filename.
+  char name[];  // Filename.
 } vdirent_t;
 
 typedef u32 (*vread_t)(struct vnode *, u32, u32, u8 *);

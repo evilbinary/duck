@@ -73,7 +73,7 @@ size_t fat_read_bytes(vnode_t *node, u32 offset, size_t nbytes, u8 *buf) {
   u32 ret = 0;
   u32 count = nbytes / BYTE_PER_SECTOR;
   u32 rest = nbytes % BYTE_PER_SECTOR;
-  char small_buf [BYTE_PER_SECTOR * 2];
+  char small_buf[BYTE_PER_SECTOR * 2];
   for (int i = 0; i < count; i++) {
     kmemset(small_buf, 0, BYTE_PER_SECTOR * 2);
     ret = fat_device_read(node, offset, BYTE_PER_SECTOR, small_buf);
@@ -83,7 +83,7 @@ size_t fat_read_bytes(vnode_t *node, u32 offset, size_t nbytes, u8 *buf) {
   }
   if (rest > 0) {
     kmemset(small_buf, 0, BYTE_PER_SECTOR * 2);
-    ret = fat_device_read(node, offset, BYTE_PER_SECTOR*2 , small_buf);
+    ret = fat_device_read(node, offset, BYTE_PER_SECTOR * 2, small_buf);
     kmemmove(buf, small_buf + offset % BYTE_PER_SECTOR, rest);
   }
   if (ret < 0) {
@@ -237,12 +237,10 @@ u32 fat_op_open(vnode_t *node, u32 mode) {
   }
   struct fat_fs_struct *fs = file_info->fs;
   file_info->offset = 0;
-  if (((mode & O_CREAT) == O_CREAT) &&
-      (file_info->fd == NULL )) {
+  if (((mode & O_CREAT) == O_CREAT) && (file_info->fd == NULL)) {
     log_debug("create new file %s\n", name);
     file_info_t *parent_file_info = node->parent->data;
-    file_info_t *new_file_info =
-        kmalloc(sizeof(struct file_info), KERNEL_TYPE);
+    file_info_t *new_file_info = kmalloc(sizeof(struct file_info), KERNEL_TYPE);
     struct fat_dir_struct *dd =
         kmalloc(sizeof(struct fat_dir_struct), KERNEL_TYPE);
     new_file_info->dd = dd;
@@ -263,15 +261,16 @@ u32 fat_op_open(vnode_t *node, u32 mode) {
     if (file_info->fd != NULL) {
       node->length = file_info->fd->dir_entry.file_size;
     } else {
-      //struct fat_dir_struct *dd =kmalloc(sizeof(struct fat_dir_struct), DEFAULT_TYPE);
-      // struct fat_file_struct *fd = fat_open_file(fs, &dd->dir_entry);
-      // if (!fd) {
-      //   log_error("create file bad fd %s\n", name);
-      //   return -1;
-      // }
-      // file_info->fd = fd;
-      // file_info->dd =dd;
-      // fat_op_find(node,name);
+      // struct fat_dir_struct *dd =kmalloc(sizeof(struct fat_dir_struct),
+      // DEFAULT_TYPE);
+      //  struct fat_file_struct *fd = fat_open_file(fs, &dd->dir_entry);
+      //  if (!fd) {
+      //    log_error("create file bad fd %s\n", name);
+      //    return -1;
+      //  }
+      //  file_info->fd = fd;
+      //  file_info->dd =dd;
+      //  fat_op_find(node,name);
     }
   }
   return 1;
@@ -325,27 +324,28 @@ u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
   struct fat_dir_entry_struct dir_entry;
   u32 i = 0;
   u32 nbytes = 0;
-  u32 total = 0;
+  u32 read_count = 0;
   while (fat_read_dir(file_info->dd, &dir_entry)) {
-    total++;
-  }
-  while (fat_read_dir(file_info->dd, &dir_entry)) {
-    if (file_info->offset >= total) {
-      return nbytes;
+    if (i < file_info->offset) {  // 定位到某个文件数量开始
+      i++;
+      continue;
     }
-    if (i < count) {
+    if (read_count < count) {
       if ((dir_entry.attributes & FAT_ATTRIB_DIR) == FAT_ATTRIB_DIR) {
         dirent->type = DT_DIR;
       } else if ((dir_entry.attributes & FAT_ATTRIB_ARCHIVE) ==
                  FAT_ATTRIB_ARCHIVE) {
         dirent->type = DT_REG;
       }
-      kstrncpy(dirent->name, dir_entry.long_name, 256);
-      dirent->offset = i;
+      kstrcpy(dirent->name, dir_entry.long_name);
+      dirent->offset = sizeof(struct vdirent) + kstrlen(dirent->name);
       dirent->length = sizeof(struct vdirent);
-      nbytes += dirent->length;
+      nbytes += dirent->offset;
       dirent++;
       file_info->offset++;
+      read_count++;
+    } else {
+      break;
     }
     i++;
   }

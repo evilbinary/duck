@@ -69,7 +69,7 @@ void* ya_sbrk(size_t size) {
         addr = current->addr;
         current->addr += size;
         current->size -= size;
-        if (current->size <= 0) {
+        if ((current->size - 4096) <= 0) {
           current->type = MEM_USED;
         }
         found = 1;
@@ -160,9 +160,11 @@ void* ya_alloc(size_t size) {
   mmt.alloc_size += size;
 
 #ifdef DEBUG
-  kprintf("alloc %x size=%d count=%d total=%dk  baddr=%x bsize=%d bcount=%d last map=%x\n",
-          addr, size, mmt.alloc_count, mmt.alloc_size / 1024, block,
-          block->size, block->count,mmt.last_map_addr);
+  kprintf(
+      "alloc %x size=%d count=%d total=%dk  baddr=%x bsize=%d bcount=%d last "
+      "map=%x\n",
+      addr, size, mmt.alloc_count, mmt.alloc_size / 1024, block, block->size,
+      block->count, mmt.last_map_addr);
   ya_verify();
   // kprintf("ya_alloc(%d);//no %d addr %x \n", size, block->no, addr);
 #endif

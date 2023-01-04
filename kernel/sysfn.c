@@ -430,7 +430,7 @@ int sys_brk(u32 end) {
   }
   vm->alloc_size += end - (u32)vm->alloc_addr;
   vm->alloc_addr = end;
-  log_debug("sys brk alloc addr:%x\n", vm->alloc_addr);
+  log_debug("sys brk return alloc addr:%x\n", vm->alloc_addr);
   return vm->alloc_addr;
 }
 
@@ -495,7 +495,7 @@ void* sys_mmap2(void* addr, int length, int prot, int flags, int fd,
       addr, length, fd, prot, pgoffset);
 
   if ((flags & MAP_FIXED) == MAP_FIXED) {
-    log_debug("map fix %x\n", addr);
+    log_debug("map fix return addr %x\n", addr);
     return addr;
   }
   // 匿名内存
@@ -503,7 +503,7 @@ void* sys_mmap2(void* addr, int length, int prot, int flags, int fd,
     addr = vm->alloc_addr;
     vm->alloc_addr += length;
     vm->alloc_size += length;
-    log_debug("map anon %x\n", addr);
+    log_debug("map anon return addr %x\n", addr);
     return addr;
   } else if ((flags & MAP_ANON) == 0) {
     // 有名
