@@ -38,7 +38,7 @@ void ps_command() { syscall0(SYS_DUMPS); }
 
 void mem_info_command() { syscall0(SYS_MEMINFO); }
 
-int do_exec(char* cmd, int count) {
+int do_exec(char* cmd, int count, char** env) {
   char buf[64];
   cmd[count] = 0;
   char* argv[20];
@@ -49,14 +49,14 @@ int do_exec(char* cmd, int count) {
     argv[i++] = ptr;
     ptr = kstrtok(NULL, split);
   }
-  if (i<=0 ||argv[1] == ' ' || argv[0] == NULL) {
+  if (i <= 0 || argv[1] == ' ' || argv[0] == NULL) {
     return 0;
   }
   sprintf(buf, "/%s", argv[0]);
   int pid = syscall0(SYS_FORK);
-  if (pid == 0) {  //子进程
+  if (pid == 0) {  // 子进程
     int p = syscall0(SYS_GETPID);
-    syscall3(SYS_EXEC, buf, argv,NULL);
+    syscall3(SYS_EXEC, buf, argv, env);
     syscall1(SYS_EXIT, 0);
   } else {
     int p = syscall0(SYS_GETPID);
@@ -84,7 +84,7 @@ void pwd_command() {
   print_string("\n");
 }
 
-void do_shell_cmd(char* cmd, int count) {
+void do_shell_cmd(char* cmd, int count, char** env) {
   if (count == 0) return;
   if (kstrncmp(cmd, "help", count) == 0) {
     print_help();
@@ -97,7 +97,7 @@ void do_shell_cmd(char* cmd, int count) {
   } else if (kstrncmp(cmd, "mem", 3) == 0) {
     mem_info_command();
   } else {
-    int ret = do_exec(cmd, count);
+    int ret = do_exec(cmd, count, env);
     if (ret < 0) {
       print_string(cmd);
       print_string(" command not support\n");
@@ -106,6 +106,7 @@ void do_shell_cmd(char* cmd, int count) {
 }
 
 void pre_launch();
+void build_env(char** env);
 
 extern int module_ready;
 
@@ -118,6 +119,7 @@ void do_shell_thread(void) {
   char buf[64];
   int count = 0;
   int ret = 0;
+  char env_buf[512];
 
   // wait module ready
   while (module_ready <= 0) {
@@ -143,6 +145,9 @@ void do_shell_thread(void) {
   }
 
   syscall1(SYS_CHDIR, "/");
+
+  char** env = env_buf;
+  build_env(env);
   pre_launch();
 
   for (;;) {
@@ -151,7 +156,7 @@ void do_shell_thread(void) {
     if (ret > 0) {
       if (ch == '\r' || ch == '\n') {
         print_string("\n");
-        do_shell_cmd(buf, count);
+        do_shell_cmd(buf, count, env);
         count = 0;
         print_promot();
       } else if (ch == 127) {
@@ -244,4 +249,35 @@ void pre_launch() {
 // test_cpu_speed();
 //  for(;;);
 #endif
+}
+
+void auxv_set(Elf32_auxv_t* auxv, int a_type, int a_val) {
+  auxv[a_type].a_type = a_type;
+  auxv[a_type].a_un.a_val = a_val;
+}
+
+void build_env(char** env) {
+  char** envp = env;
+  *envp++ = NULL;
+
+  Elf32_auxv_t* auxv = envp;
+
+  auxv_set(auxv, AT_NULL, 0);
+  auxv_set(auxv, AT_IGNORE, 0);
+  auxv_set(auxv, AT_EXECFD, 0);
+  auxv_set(auxv, AT_PHDR, 0);
+  auxv_set(auxv, AT_PHENT, 0);
+  auxv_set(auxv, AT_PHNUM, 0);
+  auxv_set(auxv, AT_PAGESZ, PAGE_SIZE);
+  auxv_set(auxv, AT_BASE, 0);
+  auxv_set(auxv, AT_FLAGS, 0);
+  auxv_set(auxv, AT_ENTRY, 0);
+  auxv_set(auxv, AT_NOTELF, 0);
+  auxv_set(auxv, AT_UID, 0);
+  auxv_set(auxv, AT_EUID, 0);
+  auxv_set(auxv, AT_GID, 0);
+  auxv_set(auxv, AT_EGID, 0);
+  auxv_set(auxv, AT_PLATFORM, 0);
+  auxv_set(auxv, AT_HWCAP, 0);
+  auxv_set(auxv, AT_CLKTCK, 0);
 }

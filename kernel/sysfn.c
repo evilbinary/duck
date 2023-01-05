@@ -27,7 +27,7 @@ void sys_test() {
   kprintf("sys test %d\n", current->id);
 
   kprintf("-------dump thread %d-------------\n", current->id);
-  thread_dump(current,DUMP_DEFAULT|DUMP_CONTEXT);
+  thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
 }
 
 void sys_dumps() {
@@ -277,9 +277,9 @@ int sys_clone(void* fn, void* stack, void* arg) {
   thread_t* copy_thread = thread_copy(current, THREAD_FORK);
 #ifdef LOG_DEBUG
   kprintf("-------dump current thread %d %s-------------\n", current->id);
-  thread_dump(current,DUMP_DEFAULT|DUMP_CONTEXT);
+  thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
   kprintf("-------dump clone thread %d-------------\n", copy_thread->id);
-  thread_dump(copy_thread,DUMP_DEFAULT|DUMP_CONTEXT);
+  thread_dump(copy_thread, DUMP_DEFAULT | DUMP_CONTEXT);
 #endif
 
   thread_set_ret(copy_thread, 0);
@@ -299,9 +299,9 @@ int sys_vfork() {
 
 #ifdef LOG_DEBUG
   log_debug("-------dump current thread %d %s-------------\n", current->id);
-  thread_dump(current,DUMP_DEFAULT|DUMP_CONTEXT);
+  thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
   log_debug("-------dump clone thread %d-------------\n", copy_thread->id);
-  thread_dump(copy_thread,DUMP_DEFAULT|DUMP_CONTEXT);
+  thread_dump(copy_thread, DUMP_DEFAULT | DUMP_CONTEXT);
 #endif
 
   thread_run(copy_thread);
@@ -321,9 +321,9 @@ int sys_fork() {
   thread_set_ret(copy_thread, 0);
 #ifdef LOG_DEBUG
   log_debug("-------dump current thread %d %s-------------\n", current->id);
-  thread_dump(current,DUMP_DEFAULT|DUMP_CONTEXT);
+  thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
   log_debug("-------dump clone thread %d-------------\n", copy_thread->id);
-  thread_dump(copy_thread,DUMP_DEFAULT|DUMP_CONTEXT);
+  thread_dump(copy_thread, DUMP_DEFAULT | DUMP_CONTEXT);
 #endif
   thread_run(copy_thread);
   thread_run(current);
@@ -487,12 +487,17 @@ void* sys_mmap2(void* addr, int length, int prot, int flags, int fd,
   vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
   if (vm == NULL) {
     log_error("sys mmap2 not found vm\n");
-    return 0;
+    return MAP_FAILED;
   }
   log_debug(
       "mmap2 system call : addr=%x length=%d fd = %d, prot = %x, pgoffset = %d "
       "\n",
       addr, length, fd, prot, pgoffset);
+
+  if (length <= 0) {
+    log_error("map failed length 0\n");
+    return MAP_FAILED;
+  }
 
   if ((flags & MAP_FIXED) == MAP_FIXED) {
     log_debug("map fix return addr %x\n", addr);
@@ -513,7 +518,7 @@ void* sys_mmap2(void* addr, int length, int prot, int flags, int fd,
       return MAP_FAILED;
     }
   }
-
+  log_error("map failed end\n");
   return MAP_FAILED;
 }
 
