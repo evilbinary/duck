@@ -214,7 +214,7 @@ void* sys_vheap() {
 
 void sys_vfree(void* addr) {
   // todo
-  vfree(addr);
+  vfree(addr,PAGE_SIZE);
 }
 
 u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
@@ -499,7 +499,7 @@ void* sys_mmap2(void* addr, int length, int prot, int flags, int fd,
     return MAP_FAILED;
   }
 
-  //内存大小 对齐 16
+  // 内存大小 对齐 16
   length = ALIGN(length, MEMORY_ALIGMENT);
 
   if ((flags & MAP_FIXED) == MAP_FIXED) {
@@ -579,7 +579,9 @@ int sys_munmap(void* addr, size_t size) {
   log_debug("sys munmap not impl addr: %x size: %d\n", addr, size);
   thread_t* current = thread_current();
   vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
-  
+
+  vfree(addr, size);
+
   return 1;
 }
 
@@ -730,14 +732,20 @@ void* sys_mremap(void* old_address, size_t old_size, size_t new_size, int flags,
   log_debug("sys mremap old addr %x old size %d new size %d\n", old_address,
             old_size, new_size);
 
-  vmemory_area_t *area = vmemory_area_find(current->vmm, old_address, 0);
-  if(area==NULL){
+  vmemory_area_t* area = vmemory_area_find(current->vmm, old_address, 0);
+  if (area == NULL) {
     log_error("not fount vm area\n");
     return MAP_FAILED;
   }
+  // 内存大小 对齐 16
+  new_size = ALIGN(new_size, MEMORY_ALIGMENT);
 
   if ((flags & MREMAP_MAYMOVE) == MREMAP_MAYMOVE) {
-    return old_address;
+    void* addr = vm->alloc_addr;
+    vm->alloc_addr += new_size;
+    vm->alloc_size += new_size;
+    log_debug("mremap return addr %x\n", addr);
+    return addr;
   }
 
   if ((flags & MREMAP_FIXED) == MREMAP_FIXED) {

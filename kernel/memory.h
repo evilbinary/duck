@@ -6,25 +6,25 @@
 #ifndef MEMORY_H
 #define MEMORY_H
 
-#include "kernel/config.h"
 #include "arch/arch.h"
+#include "kernel/config.h"
 
 #ifdef X86
-#define EXEC_ADDR  0x40000000 //1gb exec space to stack
+#define EXEC_ADDR 0x40000000  // 1gb exec space to stack
 #define STACK_ADDR 0x80000000
-#define HEAP_ADDR  0x82000000
+#define HEAP_ADDR 0x82000000
 #define KERNEL_OFFSET 0x10000000
 
 #elif defined(ARM)
 #define KERNEL_OFFSET 0x10000000
 
-#define EXEC_ADDR  0x71000000
+#define EXEC_ADDR 0x71000000
 #define STACK_ADDR 0x70000000
-#define HEAP_ADDR  0x70100000
+#define HEAP_ADDR 0x70100000
 #else
-#define EXEC_ADDR  0x71000000
+#define EXEC_ADDR 0x71000000
 #define STACK_ADDR 0x70000000
-#define HEAP_ADDR  0x70100000
+#define HEAP_ADDR 0x70100000
 #endif
 
 #define MEMORY_FREE 0
@@ -41,16 +41,14 @@
 #define KERNEL_POOL_NUM 20
 #define USER_POOL_NUM 20
 
-#define MEMORY_TYPE_USE 1   //使用
-#define MEMORY_TYPE_FREE 2  //释放
+#define MEMORY_TYPE_USE 1   // 使用
+#define MEMORY_TYPE_FREE 2  // 释放
 
 #define MEMORY_ALIGMENT 16
 
-
-#define DEFAULT_TYPE 1<<0
-#define KERNEL_TYPE 1<<1
-#define DEVICE_TYPE 1<<2
-
+#define DEFAULT_TYPE 1 << 0
+#define KERNEL_TYPE 1 << 1
+#define DEVICE_TYPE 1 << 2
 
 typedef struct memory {
   ulong total;
@@ -72,25 +70,27 @@ typedef struct vmemory_area {
 #define ALIGN(x, a) (x + (a - 1)) & ~(a - 1)
 
 #ifdef MALLOC_TRACE
-#define kmalloc(size,flag) kmalloc_trace(size,flag, __FILE__, __LINE__, __FUNCTION__)
-#define kmalloc_alignment(size, alignment,flag) \
-  kmalloc_alignment_trace(size, alignment,flag, __FILE__, __LINE__, __FUNCTION__)
+#define kmalloc(size, flag) \
+  kmalloc_trace(size, flag, __FILE__, __LINE__, __FUNCTION__)
+#define kmalloc_alignment(size, alignment, flag)                     \
+  kmalloc_alignment_trace(size, alignment, flag, __FILE__, __LINE__, \
+                          __FUNCTION__)
 #define kfree(ptr) kfree_trace(ptr, __FILE__, __LINE__, __FUNCTION__)
-#define kfree_alignment(ptr) kfree_alignment_trace(ptr, __FILE__, __LINE__, __FUNCTION__)
+#define kfree_alignment(ptr) \
+  kfree_alignment_trace(ptr, __FILE__, __LINE__, __FUNCTION__)
 
 #else
 void* kmalloc(size_t size, u32 flag);
-void* kmalloc_alignment(size_t size, int alignment,u32 flag);
+void* kmalloc_alignment(size_t size, int alignment, u32 flag);
 
 void kfree(void* ptr);
 void kfree_alignment(void* ptr);
 #endif
 
-
 void map_alignment(void* page, void* vaddr, void* buf, u32 size);
 
 void* valloc(void* addr, size_t size);
-void vfree(void* addr);
+void vfree(void* addr, size_t size);
 
 void kpool_init();
 void* kpool_poll();

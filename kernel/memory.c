@@ -257,21 +257,20 @@ void* valloc(void* addr, size_t size) {
   u32 page_alignt = PAGE_SIZE - 1;
   void* vaddr = (u32)addr & (~page_alignt);
   // void* vaddr = ALIGN((u32)addr, PAGE_SIZE);
+
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
-
-#ifdef USE_POOL
-  void* phy_addr = queue_pool_poll(user_pool);
-  if (phy_addr == NULL) {
-    phy_addr = kmalloc_alignment(size, PAGE_SIZE, KERNEL_TYPE);
-  } else {
-    log_info("use pool addr %x\n", phy_addr);
-  }
-#else
-  void* phy_addr = kmalloc_alignment(size, PAGE_SIZE, KERNEL_TYPE);
-#endif
-  void* paddr = phy_addr;
-
   for (int i = 0; i < pages; i++) {
+#ifdef USE_POOL
+    void* phy_addr = queue_pool_poll(user_pool);
+    if (phy_addr == NULL) {
+      phy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
+    } else {
+      log_info("use pool addr %x\n", phy_addr);
+    }
+#else
+    void* phy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
+#endif
+    void* paddr = phy_addr;
 #ifdef DEBUG
     log_debug("map page:%x vaddr:%x paddr:%x\n", current->context.upage, vaddr,
               paddr);
@@ -284,27 +283,35 @@ void* valloc(void* addr, size_t size) {
     }
     // kprintf("vmap vaddr:%x paddr:%x\n", vaddr, paddr);
     vaddr += PAGE_SIZE;
-    paddr += PAGE_SIZE;
   }
   return addr;
 }
 
 // free
-void vfree(void* addr) {
+void vfree(void* addr, size_t size) {
   if (addr == NULL) return;
   thread_t* current = thread_current();
-  void* phy = virtual_to_physic(current->context.upage, addr);
-  // kprintf("vfree vaddr:%x paddr:%x\n");
-  // unmap_page_on(current->context.upage, addr);
-  if (phy != NULL) {
+
+  u32 page_alignt = PAGE_SIZE - 1;
+  void* vaddr = (u32)addr & (~page_alignt);
+
+  u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
+  for (int i = 0; i < pages; i++) {
+    void* phy = virtual_to_physic(current->context.upage, vaddr);
+    log_debug("vfree vaddr:%x paddr:%x\n", vaddr, phy);
+    //todo 
+    // unmap_page_on(current->context.upage, vaddr);
+    if (phy != NULL) {
 #ifdef USE_POOL
-    int ret = queue_pool_put(user_pool, phy);
-    if (ret == 0) {
-      kfree(phy);
-    }
+      int ret = queue_pool_put(user_pool, phy);
+      if (ret == 0) {
+        kfree_alignment(phy);
+      }
 #else
-    kfree(phy);
+      kfree_alignment(phy);
 #endif
+    }
+    vaddr += PAGE_SIZE;
   }
 }
 
