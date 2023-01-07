@@ -298,9 +298,11 @@ void vfree(void* addr, size_t size) {
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
   for (int i = 0; i < pages; i++) {
     void* phy = virtual_to_physic(current->context.upage, vaddr);
+#ifdef DEBUG
     log_debug("vfree vaddr:%x paddr:%x\n", vaddr, phy);
-    //todo 
-    // unmap_page_on(current->context.upage, vaddr);
+#endif
+    // todo
+    //  unmap_page_on(current->context.upage, vaddr);
     if (phy != NULL) {
 #ifdef USE_POOL
       int ret = queue_pool_put(user_pool, phy);
