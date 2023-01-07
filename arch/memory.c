@@ -199,6 +199,10 @@ void ya_verify() {
     }
     void* addr = ya_block_addr(current);
     kassert(addr != NULL);
+    int* end = addr + current->size;
+    *end = MAGIC_END;  // check overflow
+    kassert((*end) == MAGIC_END);
+
     current = current->next;
     total++;
   }
@@ -231,14 +235,15 @@ void ya_free(void* ptr) {
   int* end = ptr + block->size;
   kassert((*end) == MAGIC_END);
 
-  // block->magic = MAGIC_FREE;
-  // block->free = BLOCK_FREE;
-  // block->count = 0;
-  // kmemset(ptr, 0, block->size);
-  // block->count = 0;
-  // block_t* next = block->next;
-  // ptr = NULL;
+  block->magic = MAGIC_FREE;
+  block->free = BLOCK_FREE;
+  block->count = 0;
+  kmemset(ptr, 0, block->size);
+  block->count = 0;
+  block_t* next = block->next;
+  ptr = NULL;
 
+  //todo merge
   // if (next != NULL) {
   //   if (next->free == BLOCK_FREE) {
   //     block->size += next->size + sizeof(block_t);
