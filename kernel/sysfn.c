@@ -499,6 +499,9 @@ void* sys_mmap2(void* addr, int length, int prot, int flags, int fd,
     return MAP_FAILED;
   }
 
+  //内存大小 对齐 16
+  length = ALIGN(length, MEMORY_ALIGMENT);
+
   if ((flags & MAP_FIXED) == MAP_FIXED) {
     log_debug("map fix return addr %x\n", addr);
     return addr;
@@ -726,6 +729,12 @@ void* sys_mremap(void* old_address, size_t old_size, size_t new_size, int flags,
 
   log_debug("sys mremap old addr %x old size %d new size %d\n", old_address,
             old_size, new_size);
+
+  vmemory_area_t *area = vmemory_area_find(current->vmm, old_address, 0);
+  if(area==NULL){
+    log_error("not fount vm area\n");
+    return MAP_FAILED;
+  }
 
   if ((flags & MREMAP_MAYMOVE) == MREMAP_MAYMOVE) {
     return old_address;
