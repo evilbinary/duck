@@ -103,6 +103,7 @@ void do_shell_cmd(char* cmd, int count, char** env) {
       print_string(" command not support\n");
     }
   }
+  kmemset(cmd, 0, count);
 }
 
 void pre_launch();

@@ -574,6 +574,9 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
 
 int sys_munmap(void* addr, size_t size) {
   log_debug("sys munmap not impl addr: %x size: %d\n", addr, size);
+  thread_t* current = thread_current();
+  vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
+  
   return 1;
 }
 

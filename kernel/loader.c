@@ -13,13 +13,13 @@
 
 // #define LOAD_ELF_DEBUG
 
-#define log_debug 
+#define log_debug
 #define log_error kprintf
 
 int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
-  #ifdef LOAD_ELF_DEBUG
-  log_debug("load elf %d\n",fd);
-  #endif
+#ifdef LOAD_ELF_DEBUG
+  log_debug("load elf %d\n", fd);
+#endif
   u32 offset = elf_header->e_phoff;
   if (elf_header->e_phnum > MAX_PHDR) {
     log_error("phnum %d > MAX_PHDR\n", elf_header->e_phnum);
@@ -124,44 +124,6 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
         break;
       default:
         break;
-    }
-  }
-  // data
-  offset = elf_header->e_shoff;
-  if (elf_header->e_shnum > MAX_SHDR) {
-    log_error("shnum %d > MAX_SHDR %d\n", elf_header->e_shnum, MAX_SHDR);
-    return -1;
-  }
-  Elf32_Shdr shdr[MAX_SHDR];
-  kmemset(shdr, 0, sizeof(Elf32_Shdr) * elf_header->e_shnum);
-  syscall3(SYS_SEEK, fd, offset, 0);
-  nbytes =
-      syscall3(SYS_READ, fd, shdr, sizeof(Elf32_Shdr) * elf_header->e_shnum);
-
-  for (int i = 0; i < elf_header->e_shnum; i++) {
-#ifdef LOAD_ELF_DEBUG
-    log_debug("sh addr %x\n", shdr[i].sh_addr);
-#endif
-    if (SHT_NOBITS == shdr[i].sh_type) {
-      char* vaddr = shdr[i].sh_addr;
-      char* start = shdr[i].sh_offset;
-#ifdef LOAD_ELF_DEBUG
-      log_debug("NOBITS start:%x vaddr:%x sh_size:%x \n\r", start, vaddr,
-                shdr[i].sh_size);
-#endif
-      kmemset(vaddr, 0, shdr[i].sh_size );
-    } else if ((shdr[i].sh_type & SHT_PROGBITS == SHT_PROGBITS) &&
-               (shdr[i].sh_flags &
-                SHF_ALLOC == SHF_ALLOC)) {  //&& (shdr[i].sh_flags &
-                                            // SHF_WRITE==SHF_WRITE)
-      char* start = shdr[i].sh_offset;
-      char* vaddr = shdr[i].sh_addr;
-#ifdef LOAD_ELF_DEBUG
-      log_debug("data start:%x vaddr:%x sh_size:%x \n\r", start, vaddr,
-                shdr[i].sh_size);
-#endif
-      syscall3(SYS_SEEK, fd, start, 0);
-      u32 ret = syscall3(SYS_READ, fd, vaddr, shdr[i].sh_size);
     }
   }
   return 0;
