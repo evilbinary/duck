@@ -3,7 +3,7 @@
 #include "kernel/common.h"
 
 static u32 count = 0;
-const size_t align_to = 8;
+const size_t align_to = 16;
 extern boot_info_t* boot_info;
 
 #define ALIGN(x, a) (x + (a - 1)) & ~(a - 1)
@@ -56,6 +56,7 @@ void ya_alloc_init() {
 
 #define MAGIC_FREE 999999999
 #define MAGIC_USED 888888888
+#define MAGIC_END 777777777
 #define BLOCK_FREE 123456789
 #define BLOCK_USED 987654321
 
@@ -87,21 +88,21 @@ void* ya_sbrk(size_t size) {
   if (mmt.last_map_addr > 0 &&
       ((u32)addr + PAGE_SIZE * (mmt.extend_phy_count + 10)) >
           mmt.last_map_addr) {
-    kprintf("extend kernel phy mem %x exten count:%d\n", addr,
-            mmt.extend_phy_count);
+    kprintf("extend kernel phy mem addr:%x last addr:%x extend count:%d\n",
+            addr, mmt.last_map_addr, mmt.extend_phy_count);
     // extend 400k*mmt.extend_phy_count phy mem
-    mmt.extend_phy_count++;
     for (int i = 0; i < 100 * mmt.extend_phy_count; i++) {
       map_page(mmt.last_map_addr, mmt.last_map_addr,
                PAGE_P | PAGE_USU | PAGE_RWW);
       mmt.last_map_addr += PAGE_SIZE;
     }
+    mmt.extend_phy_count++;
   }
   return addr;
 }
 
 block_t* ya_new_block(size_t size) {
-  block_t* block = ya_sbrk(size + sizeof(block_t));
+  block_t* block = ya_sbrk(size + sizeof(block_t) + +sizeof(int));
   block->free = BLOCK_USED;
   block->next = NULL;
   block->prev = NULL;
@@ -116,6 +117,11 @@ block_t* ya_new_block(size_t size) {
     block->prev = mmt.g_block_list_last;
     mmt.g_block_list_last = block;
   }
+
+  void* addr = ya_block_addr(block);
+  int* end = addr + block->size;
+  *end = MAGIC_END;  // check overflow
+
   return block;
 }
 
@@ -124,7 +130,7 @@ block_t* ya_find_free_block(size_t size) {
   block_t* find_block = NULL;
   while (block) {
     if (!(block->magic == MAGIC_USED || block->magic == MAGIC_FREE)) {
-      log_error("errro find free block %x,magic error is %x\n", block,
+      log_error("errro find free block addr %x,magic error is %d\n", block,
                 block->magic);
       cpu_halt();
       break;
@@ -156,6 +162,9 @@ void* ya_alloc(size_t size) {
   block->magic = MAGIC_USED;
   void* addr = ya_block_addr(block);
   kassert(addr != NULL);
+  int* end = addr + block->size;
+  kassert((*end) == MAGIC_END);
+
   block->no = mmt.alloc_count++;
   mmt.alloc_size += size;
 
@@ -218,37 +227,41 @@ void ya_free(void* ptr) {
   // kassert(block->count == 1);
   kassert(block->free == BLOCK_USED);
   kassert(block->magic == MAGIC_USED);
-  block->magic = MAGIC_FREE;
-  block->free = BLOCK_FREE;
-  block->count = 0;
-  kmemset(ptr, 0, block->size);
-  block->count = 0;
-  block_t* next = block->next;
-  ptr = NULL;
 
-  if (next != NULL) {
-    if (next->free == BLOCK_FREE) {
-      block->size += next->size + sizeof(block_t);
-      block->next = next->next;
-      int size = next->size;
-      if (next->next) {
-        next->next->prev = block;
-      }
-      // memset(next,0,size);
-    }
-  }
-  block_t* prev = block->prev;
-  if (prev != NULL) {
-    if (prev->free == BLOCK_FREE) {
-      prev->size += block->size;
-      prev->next = block->next;
-      if (block->next != NULL) {
-        block->next->prev = prev;
-      }
-      int size = block->size;
-      // memset(block,0,size);
-    }
-  }
+  int* end = ptr + block->size;
+  kassert((*end) == MAGIC_END);
+
+  // block->magic = MAGIC_FREE;
+  // block->free = BLOCK_FREE;
+  // block->count = 0;
+  // kmemset(ptr, 0, block->size);
+  // block->count = 0;
+  // block_t* next = block->next;
+  // ptr = NULL;
+
+  // if (next != NULL) {
+  //   if (next->free == BLOCK_FREE) {
+  //     block->size += next->size + sizeof(block_t);
+  //     block->next = next->next;
+  //     int size = next->size;
+  //     if (next->next) {
+  //       next->next->prev = block;
+  //     }
+  //     // memset(next,0,size);
+  //   }
+  // }
+  // block_t* prev = block->prev;
+  // if (prev != NULL) {
+  //   if (prev->free == BLOCK_FREE) {
+  //     prev->size += block->size;
+  //     prev->next = block->next;
+  //     if (block->next != NULL) {
+  //       block->next->prev = prev;
+  //     }
+  //     int size = block->size;
+  //     // memset(block,0,size);
+  //   }
+  // }
 }
 
 int is_line_intersect(int a1, int a2, int b1, int b2) {

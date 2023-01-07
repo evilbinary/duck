@@ -40,7 +40,7 @@ void page_fault_handle(interrupt_context_t *ic) {
           thread_exit(current, -1);
           log_error("%s memory fault at %x\n", current->name, fault_addr);
           context_dump_fault(ic, fault_addr);
-          thread_dump(current,DUMP_DEFAULT);
+          thread_dump(current, DUMP_DEFAULT);
           current->fault_count++;
           // cpu_halt();
         } else if (current->fault_count == 3) {
