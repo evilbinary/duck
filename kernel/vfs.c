@@ -49,9 +49,9 @@ u32 vwrite(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
   }
 }
 
-u32 vopen(vnode_t *node,u32 mode) {
+u32 vopen(vnode_t *node, u32 mode) {
   if (node->op->open != NULL) {
-    return node->op->open(node,mode);
+    return node->op->open(node, mode);
   } else {
     log_error("node %s open is null \n", node->name);
     return -1;
@@ -116,7 +116,7 @@ void vfs_exten_child(vnode_t *node) {
   if (node->child_number != 0) {
     size = node->child_number * 2;
   }
-  vnode_t **child = kmalloc(size * sizeof(vnode_t *),KERNEL_TYPE);
+  vnode_t **child = kmalloc(size * sizeof(vnode_t *), KERNEL_TYPE);
   vnode_t **temp = node->child;
   if (node->child != NULL) {
     kmemmove(child, node->child, node->child_number * sizeof(vnode_t *));
@@ -153,7 +153,7 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
     return root;
   }
   if (path_len >= MAX_PATH_BUFFER) {
-    s = kmalloc(path_len,KERNEL_TYPE);
+    s = kmalloc(path_len, KERNEL_TYPE);
     start = s;
   }
   kstrcpy(s, path);
@@ -162,21 +162,23 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
   vnode_t *parent = root;
   vnode_t *node = NULL;
   if (token == NULL) {
-    node = parent;
+    // node = parent;
   }
   while (token != NULL) {
     // if (kstrcmp(token, parent->name) == 0) {
     //   continue;
     // }
+    vnode_t *find_one = NULL;
     for (int i = 0; i < parent->child_number; i++) {
       vnode_t *n = parent->child[i];
       if (n == NULL) continue;
       if (kstrcmp(token, n->name) == 0) {
-        node = n;
         parent = n;
+        find_one = n;
         break;
       }
     }
+    node = find_one;
     token = kstrtok(NULL, split);
   }
   if (path_len >= MAX_PATH_BUFFER) {
@@ -205,7 +207,9 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
     // mount to vfs
     vfs_add_child(parent, node);
   }
-
+  if (node == NULL) {
+    log_error("cannot found file %s\n", path);
+  }
   return node;
 }
 
@@ -237,19 +241,19 @@ u32 vfs_read(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
   return vread(node, offset, size, buffer);
 }
 
-u32 vfs_open(vnode_t *node,u32 mode) {
+u32 vfs_open(vnode_t *node, u32 mode) {
   int ret = 0;
   if (node->super != NULL) {
-    node->super->op->open(node,mode);
-  }else if(node->op!=NULL){
-    node->op->open(node,mode);
+    node->super->op->open(node, mode);
+  } else if (node->op != NULL) {
+    node->op->open(node, mode);
   }
   return ret;
 }
 
 vnode_t *vfs_create_node(u8 *name, u32 flags) {
-  vnode_t *node = kmalloc(sizeof(vnode_t),KERNEL_TYPE);
-  node->name = kmalloc(kstrlen(name),KERNEL_TYPE);
+  vnode_t *node = kmalloc(sizeof(vnode_t), KERNEL_TYPE);
+  node->name = kmalloc(kstrlen(name), KERNEL_TYPE);
   kstrcpy(node->name, name);
   node->flags = flags;
   node->op = &default_operator;
@@ -291,11 +295,11 @@ vnode_t *vfs_open_attr(vnode_t *root, u8 *name, u32 attr) {
     file = vfs_create_node(last, V_FILE);
     file->device = node->device;
     file->data = node->data;
-    if(node->super!=NULL){
+    if (node->super != NULL) {
       if (node->super->op != NULL) {
         file->op = node->super->op;
       }
-    }else{
+    } else {
       file->op = node->parent->op;
     }
     file->super = node->super;
@@ -308,7 +312,7 @@ vnode_t *vfs_open_attr(vnode_t *root, u8 *name, u32 attr) {
     }
     file = node;
   }
-  u32 ret = vfs_open(file,attr);
+  u32 ret = vfs_open(file, attr);
   if (ret < 0) {
     log_error("open third %s failed \n", name);
     return NULL;
