@@ -76,7 +76,7 @@ size_t fat_read_bytes(vnode_t *node, u32 offset, size_t nbytes, u8 *buf) {
   char small_buf[BYTE_PER_SECTOR * 2];
   for (int i = 0; i < count; i++) {
     kmemset(small_buf, 0, BYTE_PER_SECTOR * 2);
-    ret = fat_device_read(node, offset, BYTE_PER_SECTOR, small_buf);
+    ret = fat_device_read(node, offset, BYTE_PER_SECTOR * 2, small_buf);
     kmemmove(buf, small_buf + offset % BYTE_PER_SECTOR, BYTE_PER_SECTOR);
     buf += BYTE_PER_SECTOR;
     offset += BYTE_PER_SECTOR;
