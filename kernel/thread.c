@@ -644,6 +644,11 @@ void thread_dump_fd(thread_t* thread) {
 
 void thread_dump(thread_t* thread, u32 flags) {
   if (thread == NULL) return;
+  if (thread->dump_count >= 3) {
+    log_error("thread dump count >= 3, will not dump again\n");
+    return;
+  }
+  thread->dump_count++;
   kprintf("id       %d\n", thread->id);
   if (thread->name != NULL) {
     kprintf("name   %s\n", thread->name);

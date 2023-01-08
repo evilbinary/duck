@@ -18,6 +18,7 @@ extern memory_manager_t mmt;
 static u32 kernel_page_dir[PAGE_DIR_NUMBER] __attribute__((aligned(0x4000)));
 
 void map_page_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
+  // kprintf("map page %x vaddr:%x paddr:%x\n",l1,virtualaddr,physaddr);
   u32 l1_index = virtualaddr >> 20;
   u32 l2_index = virtualaddr >> 12 & 0xFF;
   u32* l2 = ((u32)l1[l1_index]) & 0xFFFFFC00;
@@ -30,7 +31,7 @@ void map_page_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
 }
 
 void map_page(u32 virtualaddr, u32 physaddr, u32 flags) {
-  map_page_on(boot_info->pdt_base, virtualaddr, physaddr, flags);
+  map_page_on(kernel_page_dir, virtualaddr, physaddr, flags);
 }
 
 void mm_init_default() {
@@ -42,7 +43,7 @@ void mm_init_default() {
   map_mem_block(PAGE_SIZE * 10000,0);
 
   // map 0 - 0x80000
-  map_range(0, 0, PAGE_SIZE * 20, 0);
+  map_range(0, 0, PAGE_SIZE * 200, 0);
 
   //map kernel
   map_kernel(L2_TEXT_1 | L2_CB);

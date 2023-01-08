@@ -214,7 +214,7 @@ void* sys_vheap() {
 
 void sys_vfree(void* addr) {
   // todo
-  vfree(addr,PAGE_SIZE);
+  vfree(addr, PAGE_SIZE);
 }
 
 u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
@@ -393,47 +393,6 @@ int sys_readdir(int fd, int index, void* dirent) {
   return ret;
 }
 
-void* sys_sbrk(int increment) {
-  thread_t* current = thread_current();
-  vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
-  if (vm == NULL) {
-    log_error("sys sbrk not found vm\n");
-    return 0;
-  }
-  vm->alloc_addr += increment;
-  vm->alloc_size += increment;
-  log_debug("sys sbrk tid:%x addr:%x increment %d\n", current->id,
-            vm->alloc_addr, increment);
-  return vm->alloc_addr;
-}
-
-int sys_brk(u32 end) {
-  thread_t* current = thread_current();
-  log_debug("sys brk tid:%x addr:%x\n", current->id, end);
-
-  vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
-  if (vm == NULL) {
-    log_error("sys brk not found vm\n");
-    return -1;
-  }
-  if (end == 0) {
-    if (vm->alloc_addr == vm->vaddr) {
-      vm->alloc_addr = vm->vaddr + end;
-    }
-    end = vm->alloc_addr;
-    log_debug("sys brk return first addr:%x\n", end);
-    return end;
-  }
-  if (end < vm->alloc_addr) {
-    // todo free map age
-    log_debug("brk need to free\n");
-  }
-  vm->alloc_size += end - (u32)vm->alloc_addr;
-  vm->alloc_addr = end;
-  log_debug("sys brk return alloc addr:%x\n", vm->alloc_addr);
-  return vm->alloc_addr;
-}
-
 int sys_readv(int fd, iovec_t* vector, int count) {
   int ret = 0;
   int n;
@@ -480,8 +439,39 @@ int sys_chdir(const char* path) {
   return ret;
 }
 
-void* sys_mmap2(void* addr, int length, int prot, int flags, int fd,
-                int pgoffset) {
+int sys_brk(u32 end) {
+  thread_t* current = thread_current();
+  log_debug("sys brk tid:%x addr:%x\n", current->id, end);
+
+  vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
+  if (vm == NULL) {
+    log_error("sys brk not found vm\n");
+    return -1;
+  }
+  if (end == 0) {
+    if (vm->alloc_addr == 0) {
+      vm->alloc_addr = vm->vaddr + end;
+    }
+    end = vm->alloc_addr;
+    log_debug("sys brk return first addr:%x\n", end);
+    return end;
+  }
+  int size = end - (u32)vm->alloc_addr;
+  if (end < vm->alloc_addr) {
+    // todo free map age
+    log_debug("brk free %x %d\n", end, -size);
+    vfree(end, -size);
+  }
+  int addr = end;
+  vm->alloc_size += size;
+  vm->alloc_addr = end;
+
+  log_debug("sys brk return alloc addr:%x\n", addr);
+  return addr;
+}
+
+void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
+                size_t pgoffset) {
   int ret = 0;
   thread_t* current = thread_current();
   vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
@@ -490,29 +480,44 @@ void* sys_mmap2(void* addr, int length, int prot, int flags, int fd,
     return MAP_FAILED;
   }
   log_debug(
-      "mmap2 system call : addr=%x length=%d fd = %d, prot = %x, pgoffset = %d "
+      "sys mmap2 addr=%x length=%d prot = %x,flags = %x, fd = %d, "
+      "pgoffset = %d "
       "\n",
-      addr, length, fd, prot, pgoffset);
+      addr, length, prot, flags, fd, pgoffset);
 
   if (length <= 0) {
     log_error("map failed length 0\n");
     return MAP_FAILED;
   }
 
-  // 内存大小 对齐 16
-  length = ALIGN(length, MEMORY_ALIGMENT);
+  // 内存大小 对齐 16 page-aligned
+  length = ALIGN(length, PAGE_SIZE);
+
+  void* start_addr = addr;
 
   if ((flags & MAP_FIXED) == MAP_FIXED) {
-    log_debug("map fix return addr %x\n", addr);
-    return addr;
+    // 固定地址，说明地址存在，不需要处理
+    log_debug("map fix return addr %x\n", start_addr);
+    return start_addr;
   }
+
+  if (vm->child == NULL) {  // 未分配过
+    // 从父亲的中间位置开始拿
+    start_addr = vm->vaddr + vm->size / 2;
+    vm->child = vmemory_area_create(start_addr, length, MEMORY_MMAP);
+  } else {
+    // 找下一个内存地址
+    vmemory_area_t* last_area = vmemory_area_find_last(vm->child);
+    start_addr = last_area->vend;
+    vmemory_area_t* new_area =
+        vmemory_area_create(start_addr, length, MEMORY_MMAP);
+    last_area->next = new_area;
+  }
+
   // 匿名内存
   if ((flags & MAP_ANON) == MAP_ANON) {
-    addr = vm->alloc_addr;
-    vm->alloc_addr += length;
-    vm->alloc_size += length;
-    log_debug("map anon return addr %x\n", addr);
-    return addr;
+    log_debug("map anon return addr %x\n", start_addr);
+    return start_addr;
   } else if ((flags & MAP_ANON) == 0) {
     // 有名
     fd_t* f = thread_find_fd_id(current, fd);
@@ -523,6 +528,78 @@ void* sys_mmap2(void* addr, int length, int prot, int flags, int fd,
   }
   log_error("map failed end\n");
   return MAP_FAILED;
+}
+
+void* sys_mremap(void* old_address, size_t old_size, size_t new_size, int flags,
+                 ... /* void *new_address */) {
+  thread_t* current = thread_current();
+  vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
+  if (vm == NULL) {
+    log_error("sys mremap not found vm\n");
+    return MAP_FAILED;
+  }
+
+  log_debug("sys mremap old addr %x old size %d new size %d\n", old_address,
+            old_size, new_size);
+
+  // 内存大小 对齐 16
+  new_size = ALIGN(new_size, MEMORY_ALIGMENT);
+  int size = new_size - old_size;
+
+  vmemory_area_t* old_area =
+      vmemory_area_find(vm->child, old_address, old_size);
+  if (old_area == NULL) {
+    log_error("not fount vm area\n");
+    return MAP_FAILED;
+  }
+
+  if ((flags & MREMAP_MAYMOVE) == MREMAP_MAYMOVE) {
+    int addr = NULL;
+    if (old_area->next == NULL) {
+      old_area->size += size;
+      old_area->vend += size;
+      addr = old_area->alloc_addr;
+    } else {
+      vmemory_area_t* last_area = vmemory_area_find_last(vm->child);
+      u32 start_addr = last_area->vend;
+      vmemory_area_t* new_area =
+          vmemory_area_create(start_addr, new_size, MEMORY_MMAP);
+      last_area->next = new_area;
+      addr = new_area->alloc_addr;
+    }
+    log_debug("mremap maymove return addr %x\n", addr);
+    return addr;
+  }
+
+  if ((flags & MREMAP_FIXED) == MREMAP_FIXED) {
+    log_debug("mremap fixed return addr %x\n", old_address);
+    return old_address;
+  }
+
+  if (flags == 0) {
+    return old_address;
+  }
+
+  return MAP_FAILED;
+}
+
+int sys_munmap(void* addr, size_t size) {
+  log_debug("sys munmap addr: %x size: %d\n", addr, size);
+
+  thread_t* current = thread_current();
+  vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
+  if (vm == NULL) {
+    log_error("sys munmap not found vm\n");
+    return MAP_FAILED;
+  }
+  vmemory_area_t* area = vmemory_area_find(vm->child, addr, size);
+  if (area == NULL) {
+    log_warn("sys munmap not found area\n");
+    return 0;
+  }
+  vmemory_area_free(area);
+
+  return 0;
 }
 
 int sys_mprotect(const void* start, size_t len, int prot) {
@@ -573,14 +650,6 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
   }
   u32 ret = vreaddir(findfd->data, dir, count);
   return ret;
-}
-
-int sys_munmap(void* addr, size_t size) {
-  log_debug("sys munmap addr: %x size: %d\n", addr, size);
-  
-  vfree(addr, size);
-
-  return 0;
 }
 
 int sys_fcntl64(int fd, int cmd, void* arg) {
@@ -718,45 +787,6 @@ int sys_thread_self() {
   return current->info;
 }
 
-void* sys_mremap(void* old_address, size_t old_size, size_t new_size, int flags,
-                 ... /* void *new_address */) {
-  thread_t* current = thread_current();
-  vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
-  if (vm == NULL) {
-    log_error("sys mremap not found vm\n");
-    return MAP_FAILED;
-  }
-
-  log_debug("sys mremap old addr %x old size %d new size %d\n", old_address,
-            old_size, new_size);
-
-  vmemory_area_t* area = vmemory_area_find(current->vmm, old_address, 0);
-  if (area == NULL) {
-    log_error("not fount vm area\n");
-    return MAP_FAILED;
-  }
-  // 内存大小 对齐 16
-  new_size = ALIGN(new_size, MEMORY_ALIGMENT);
-
-  if ((flags & MREMAP_MAYMOVE) == MREMAP_MAYMOVE) {
-    void* addr = vm->alloc_addr;
-    vm->alloc_addr += new_size;
-    vm->alloc_size += new_size;
-    log_debug("mremap return addr %x\n", addr);
-    return addr;
-  }
-
-  if ((flags & MREMAP_FIXED) == MREMAP_FIXED) {
-    return old_address;
-  }
-
-  if (flags == 0) {
-    return old_address;
-  }
-
-  return MAP_FAILED;
-}
-
 int sys_statx(int dirfd, const char* restrict pathname, int flags,
               unsigned int mask, struct statx* restrict statxbuf) {
   log_debug("sys statx not impl pathname %s\n", pathname);
@@ -892,7 +922,6 @@ void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_DUP2] = &sys_dup2;
   syscall_table[SYS_READDIR] = &sys_readdir;
   syscall_table[SYS_BRK] = &sys_brk;
-  syscall_table[SYS_SBRK] = &sys_sbrk;
 
   syscall_table[SYS_READV] = &sys_readv;
   syscall_table[SYS_WRITEV] = &sys_writev;

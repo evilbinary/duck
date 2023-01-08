@@ -34,6 +34,7 @@
 #define MEMORY_EXEC 4
 #define MEMORY_DATA 5
 #define MEMORY_STACK 6
+#define MEMORY_MMAP 7
 
 #define MEMORY_HEAP_SIZE 1024 * 1024 * 200  // 200m
 #define MEMORY_EXEC_SIZE 1024 * 1024 * 100  // 100m
@@ -65,6 +66,7 @@ typedef struct vmemory_area {
   void* alloc_addr;
   u32 alloc_size;
   struct vmemory_area* next;
+  struct vmemory_area* child;
 } vmemory_area_t;
 
 #define ALIGN(x, a) (x + (a - 1)) & ~(a - 1)

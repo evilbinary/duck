@@ -154,6 +154,7 @@ typedef struct thread {
   u32 level;
   u32 cpu_id;
   u32 mem;
+  u32 dump_count;
   thread_info_t* info;
 } thread_t;
 

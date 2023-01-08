@@ -7,13 +7,9 @@
 
 void vmemory_area_free(vmemory_area_t* area) {
   if (area == NULL) return;
-  context_t* context = thread_current_context();
   u32 vaddr = area->vaddr;
-  for (int i = 0; i < area->size / PAGE_SIZE; i++) {
-    kfree_alignment(vaddr);
-    map_page_on(context->upage, vaddr, vaddr, 0);
-    vaddr += PAGE_SIZE;
-  }
+  // todo fix me
+  //  vfree(vaddr, area->size);
   area->flags = MEMORY_FREE;
 }
 
@@ -30,7 +26,7 @@ vmemory_area_t* vmemory_area_alloc(vmemory_area_t* areas, void* addr,
 }
 
 vmemory_area_t* vmemory_area_create(void* addr, u32 size, u8 flags) {
-  vmemory_area_t* area = kmalloc(sizeof(vmemory_area_t),KERNEL_TYPE);
+  vmemory_area_t* area = kmalloc(sizeof(vmemory_area_t), KERNEL_TYPE);
   area->size = size;
   area->next = NULL;
   area->vaddr = addr;
@@ -38,6 +34,7 @@ vmemory_area_t* vmemory_area_create(void* addr, u32 size, u8 flags) {
   area->alloc_addr = addr;
   area->alloc_size = 0;
   area->flags = flags;
+  area->child = NULL;
   return area;
 }
 
@@ -48,13 +45,20 @@ void vmemory_area_add(vmemory_area_t* areas, vmemory_area_t* area) {
   p->next = area;
 }
 
+vmemory_area_t* vmemory_area_find_last(vmemory_area_t* areas) {
+  vmemory_area_t* p = areas;
+  for (; p->next != NULL; p = p->next) {
+  }
+  return p;
+}
+
 vmemory_area_t* vmemory_area_find(vmemory_area_t* areas, void* addr,
                                   size_t size) {
   vmemory_area_t* p = areas;
   for (; p != NULL; p = p->next) {
     // kprintf("vmemory_area_find addr: %x p->vaddr:%x
     // p->size:%x\n",addr,p->vaddr,p->size);
-    if ((addr >= p->vaddr) && (addr <= (p->vaddr + p->size))) {
+    if ((addr >= p->vaddr) && ((addr + size) <= p->vend)) {
       return p;
     }
   }
