@@ -1192,9 +1192,9 @@ uint8_t fat_read_dir(struct fat_dir_struct* dd,
      * So we now reset the handle and signal the caller the
      * end of the listing.
      */
-    log_debug("cluster_offset>cluster_size %d %d\n",cluster_offset,cluster_size);
-    fat_reset_dir(dd);
-    return 0;
+    //log_debug("cluster_offset>cluster_size %d %d\n",cluster_offset,cluster_size);
+    //fat_reset_dir(dd);
+    //return 0;
   }
 
   /* reset callback arguments */
