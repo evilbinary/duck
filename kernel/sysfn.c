@@ -64,6 +64,15 @@ u32 sys_open(char* name, int attr, ...) {
     log_error("open name is null\n");
     return -1;
   }
+  if (attr > 020200000) {
+    log_error("open attr range error %x\n",attr);
+    return -1;
+  }
+  va_list ap;
+  va_start(ap, attr);
+  int mode = va_arg(ap, int);
+  va_end(ap);
+
   thread_t* current = thread_current();
   if (current == NULL) {
     log_error(" cannot find current thread\n");
@@ -891,7 +900,16 @@ int sys_set_tid_adress(void* ptr) {
   return current->id;
 }
 
-void sys_exit_group(int status) { log_debug("sys exit group not impl\n"); }
+void sys_exit_group(int status) {
+  sys_exit(status);
+  log_debug("sys exit group not impl\n");
+}
+
+ssize_t sys_readlink(const char* restrict pathname, char* restrict buf,
+                     size_t bufsiz) {
+  log_debug("sys exit group not impl %s\n", pathname);
+  return bufsiz;
+}
 
 void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_READ] = &sys_read;
@@ -970,4 +988,5 @@ void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_SET_TID_ADDRESS] = &sys_set_tid_adress;
 
   syscall_table[SYS_EXIT_GROUP] = &sys_exit_group;
+  syscall_table[SYS_READLINK] = &sys_readlink;
 }

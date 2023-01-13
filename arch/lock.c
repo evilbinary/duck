@@ -23,7 +23,7 @@ void lock_release(lock_t* lock) {
 }
 
 void acquire(u32* lock) {
-  while ((lock, 1) == 1)
+  while (cpu_tas(lock, 1) == 1)
     ;  // spin wait
 }
 void release(u32* lock) { *lock = 0; }
