@@ -185,7 +185,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
   } else if (flags & VM_SAME) {
     copy->vmm = thread->vmm;
   } else {
-    copy->vmm = vmemory_create_default(copy->context.usp_size, koffset);
+    copy->vmm = vmemory_create_default(MEMORY_STACK_SIZE, koffset);
   }
 
   // page 分配方式

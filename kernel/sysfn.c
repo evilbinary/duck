@@ -65,7 +65,7 @@ u32 sys_open(char* name, int attr, ...) {
     return -1;
   }
   if (attr > 020200000) {
-    log_error("open attr range error %x\n",attr);
+    log_error("open attr range error %x\n", attr);
     return -1;
   }
   va_list ap;
@@ -534,6 +534,13 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
       log_error("sys mmap not found fd %d tid %d\n", fd, current->id);
       return MAP_FAILED;
     }
+  }
+  if ((flags & MAP_SHARED) == MAP_SHARED) {
+    log_debug("map shared return addr %x\n", start_addr);
+    return start_addr;
+  } else if ((flags & MAP_PRIVATE) == MAP_PRIVATE) {
+    log_debug("map private return addr %x\n", start_addr);
+    return start_addr;
   }
   log_error("map failed end\n");
   return MAP_FAILED;

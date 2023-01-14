@@ -7,10 +7,12 @@
 
 void vmemory_area_free(vmemory_area_t* area) {
   if (area == NULL) return;
-  u32 vaddr = area->vaddr;
-  // todo fix me
-  //  vfree(vaddr, area->size);
-  area->flags = MEMORY_FREE;
+  for (; area != NULL; area = area->next) {
+    u32 vaddr = area->vaddr;
+    // todo fix me
+     //vfree(vaddr, area->size);
+    area->flags = MEMORY_FREE;
+  }
 }
 
 // alloc by page fault

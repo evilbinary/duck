@@ -31,18 +31,9 @@ static size_t read(device_t* dev, void* buf, size_t len) {
 
 INTERRUPT_SERVICE
 void mouse_handler() {
-  interrupt_entering(ISR_MOUSE);
+  interrupt_entering_code(ISR_MOUSE, 0, 0);
   interrupt_process(do_mouse);
   interrupt_exit();
-}
-
-void mouse_wait(u8 type) {
-  u32 time_out = 1000000;
-  for (; time_out > 0; time_out--) {
-    if ((io_read8(MOUSE_STATUS) & (1 + type)) == (1 - type)) {
-      break;
-    }
-  }
 }
 
 u8 mouse_read() {
@@ -57,8 +48,17 @@ void mouse_write(u8 data) {
   io_write8(MOUSE_DATA, data);
 }
 
+void mouse_wait(u8 type) {
+  u32 time_out = 1000000;
+  for (; time_out > 0; time_out--) {
+    if ((io_read8(MOUSE_STATUS) & (1 + type)) == (1 - type)) {
+      break;
+    }
+  }
+}
+
 int mouse_init(void) {
-  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
+  device_t* dev = kmalloc(sizeof(device_t), DEVICE_TYPE);
   dev->name = "mouse";
   dev->read = read;
   dev->id = DEVICE_MOUSE;
@@ -66,6 +66,20 @@ int mouse_init(void) {
   dev->data = &mouse_device;
 
   device_add(dev);
+
+  // mount mouse
+   // mouse
+  device_t* mouse_dev = device_find(DEVICE_MOUSE);
+  if (mouse_dev != NULL) {
+    vnode_t* mouse = vfs_create_node("mouse", V_FILE);
+    vfs_mount(NULL, "/dev", mouse);
+    mouse->device = mouse_dev;
+    mouse->op = &device_operator;
+  } else {
+    kprintf("dev mouse not found\n");
+  }
+
+  interrupt_regist(ISR_MOUSE, mouse_handler);
 
   mouse_device.events = cqueue_create(EVENT_NUMBER, CQUEUE_DROP);
 
@@ -78,9 +92,6 @@ int mouse_init(void) {
   // Enable second PS/2 port (only if 2 PS/2 ports supported)
   io_write8(MOUSE_COMMAND, 0xa8);
   mouse_wait(1);
-
-
-/* todo fix this 
 
   // Read "byte 0" from internal RAM
   io_write8(MOUSE_COMMAND, 0x20);
@@ -103,20 +114,7 @@ int mouse_init(void) {
   // Enable Data Reporting
   mouse_write(0xf4);
   mouse_read();
-  */
 
-  // mouse
-  device_t* mouse_dev = device_find(DEVICE_MOUSE);
-  if (mouse_dev != NULL) {
-    vnode_t* mouse = vfs_create_node("mouse", V_FILE);
-    vfs_mount(NULL, "/dev", mouse);
-    mouse->device = mouse_dev;
-    mouse->op = &device_operator;
-  } else {
-    kprintf("dev mouse not found\n");
-  }
-
-  interrupt_regist(ISR_MOUSE, mouse_handler);
   pic_enable(ISR_MOUSE);
 
   return 0;

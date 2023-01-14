@@ -36,6 +36,7 @@
 #define MEMORY_STACK 6
 #define MEMORY_MMAP 7
 
+#define MEMORY_STACK_SIZE 1024 * 1024   // 1m
 #define MEMORY_HEAP_SIZE 1024 * 1024 * 200  // 200m
 #define MEMORY_EXEC_SIZE 1024 * 1024 * 100  // 100m
 
