@@ -53,7 +53,6 @@ int keyboard_init(void) {
   vnode_t* stdin = vfs_find(NULL, "/dev/stdin");
   if (stdin != NULL) {
     stdin->device = device_find(DEVICE_KEYBOARD);
-    stdin->op = &device_operator;
   }
 
   interrupt_regist(ISR_KEYBOARD, keyboard_handler);
