@@ -49,6 +49,13 @@ int keyboard_init(void) {
   device_add(dev);
   scan_code_index = 0;
 
+  // stdin default device
+  vnode_t* stdin = vfs_find(NULL, "/dev/stdin");
+  if (stdin != NULL) {
+    stdin->device = device_find(DEVICE_KEYBOARD);
+    stdin->op = &device_operator;
+  }
+
   interrupt_regist(ISR_KEYBOARD, keyboard_handler);
   io_write8(PIC1_DATA, io_read8(PIC1_DATA) & 0xfd);
   pic_enable(ISR_KEYBOARD);
@@ -58,17 +65,17 @@ int keyboard_init(void) {
 void keyboard_exit(void) { kprintf("keyboard exit\n"); }
 
 void do_keyboard(interrupt_context_t* context) {
-  int com=0;
+  int com = 0;
   keyboard_wait();
   int scan_code = io_read8(KEYBOARD_DATA);
-  if(scan_code_index>MAX_CHARCODE_BUFFER){
-    scan_code_index=0;
+  if (scan_code_index > MAX_CHARCODE_BUFFER) {
+    scan_code_index = 0;
     log_warn("key buffer is full\n");
   }
-  scan_code_buffer[scan_code_index++]=scan_code;
+  scan_code_buffer[scan_code_index++] = scan_code;
   io_write8((com = io_read8(0x61)) | 0x80, 0x61);
   io_write8(com & 0x7f, 0x61);
-  io_write8(0x20,0x20);
+  io_write8(0x20, 0x20);
 
   pic_eof(ISR_KEYBOARD);
 }
