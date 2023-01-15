@@ -3,9 +3,9 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
+#include "dev/devfs.h"
 #include "dma/dma.h"
 #include "kernel/kernel.h"
-#include "dev/devfs.h"
 
 #define DSP_ADDR_PORT 0x224
 #define DSP_DATA_PORT 0x225
@@ -14,12 +14,16 @@
 #define DSP_WRITE 0x22C
 #define DSP_STATUS 0x22E
 #define DSP_INT_ACK 0x22F
+#define DSP_ACK_8 DSP_STATUS
+#define DSP_ACK_16 0x22F
 
 #define MIXER_IRQ 0x25
 #define MIXER_IRQ_DATA 0x2
 
 #define DSP_SET_TIME 0x40
 #define DSP_SET_RATE 0x41
+#define DSP_SET_INPUT_RATE 0x42
+
 #define DSP_ON 0xD1
 #define DSP_OFF 0xD3
 #define DSP_OFF_8 0xD0
@@ -48,12 +52,15 @@
 #define DMA_BASE_ADDR 0xC4
 #define DMA_COUNT 0xC6
 
-// #define SAMPLE_RATE 22050
-#define BUFFER_MS 40
+#define BUFFER_MS 1000
 #define BUFFER_SIZE ((size_t)(SAMPLE_RATE * (BUFFER_MS / 1000.0)))
 
-static i16 buffer[BUFFER_SIZE];
-static bool buffer_flip = false;
+#define PLAY_LEN 11024
+// #define BUFFER_SIZE 1024 * 4
+
+// u8 buffer[BUFFER_SIZE];
+u8* buffer;
+u32 buffer_index = 0;
 
 void delay(u32 d) {
   for (int i = 0; i < d; i++)
@@ -78,6 +85,12 @@ void set_sample_rate(u16 hz) {
   dsp_write((u8)(hz & 0xFF));
 }
 
+void set_sample_input_rate(u16 hz) {
+  dsp_write(DSP_SET_INPUT_RATE);
+  dsp_write((u8)((hz >> 8) & 0xFF));
+  dsp_write((u8)(hz & 0xFF));
+}
+
 void dsp_reset() {
   io_write8(DSP_RESET, 1);
   delay(10000);
@@ -94,6 +107,15 @@ void dsp_reset() {
   log_info("reset sb16 major %d minor %d\n", major, minor);
 }
 
+void* phy_addr(void* buf, int len) {
+  size_t phys = buf;
+  thread_t* current = thread_current();
+  if (current != NULL) {
+    phys = kvirtual_to_physic(buf, len);  // DMA phy
+  }
+  return phys;
+}
+
 void sb16_play(void* buf, size_t len) {
   if (1) {
     // 00001010
@@ -102,12 +124,9 @@ void sb16_play(void* buf, size_t len) {
     io_write8(0x0A, 1 | 4);  // Disable channel 1
     io_write8(0x0C, 1);      // Flip-flop (any value e.g. 1)
     io_write8(0x0B, 0x49);   // Transfert mode (0x48 for single mode/0x58 for
-                            // auto mode + channel number)
-    size_t phys = buf;
-    thread_t* current = thread_current();
-    if (current != NULL) {
-      phys = kvirtual_to_physic(buf, len);  // DMA phy
-    }
+                             // auto mode + channel number)
+    size_t phys = phy_addr(buf, len);  // DMA phy
+
     io_write8(0x83, (phys >> 16) & 0xFF);
     io_write8(0x02, (phys >> 8) & 0xFF);
     io_write8(0x02, phys & 0xFF);
@@ -116,12 +135,11 @@ void sb16_play(void* buf, size_t len) {
     io_write8(0x0A, 1);  // Ènable channel 1
   } else {
     // 11010100
-
     io_write8(0xD4, 1 | 4);  // Disable channel 5
     io_write8(0xD8, 1);      // Flip-flop (any value e.g. 1)
     io_write8(0xD6, 0x49);   // Transfert mode (0x48 for single mode/0x58 for
-                            // auto mode + channel number)
-    size_t phys = mmu_read(buf);  // DMA !
+                             // auto mode + channel number)
+    size_t phys = phy_addr(buf, len);  // DMA !
     io_write8(0x8B, (phys >> 16) & 0xFF);
     io_write8(0xC4, (phys >> 8) & 0xFF);
     io_write8(0xC4, phys & 0xFF);
@@ -131,12 +149,17 @@ void sb16_play(void* buf, size_t len) {
   }
 
   // Program sound blaster 16
-  io_write8(DSP_WRITE, 0x40);  // Set time constant
-  io_write8(DSP_WRITE, 165);   // Sample rate 10989 Hz
+  // io_write8(DSP_WRITE, DSP_SET_TIME);  // Set time constant
+  // io_write8(DSP_WRITE, 0xee);   // Sample rate 10989 Hz
+
+  // set rate
+  // set_sample_rate(SAMPLE_RATE/2);
+  set_sample_input_rate(SAMPLE_RATE / 2);
+
   // Transfer mode
-  io_write8(DSP_WRITE, DSP_PROG_8);
+  io_write8(DSP_WRITE, DSP_PROG_16);
   // Type of sound data
-  io_write8(DSP_WRITE, DSP_MONO | DSP_UNSIGNED);
+  io_write8(DSP_WRITE, DSP_STEREO | DSP_SIGNED);
   io_write8(DSP_WRITE, ((len - 1) >> 8) & 0xFF);
   io_write8(DSP_WRITE, (len - 1) & 0xFF);
 }
@@ -149,38 +172,31 @@ static size_t read(device_t* dev, void* buf, size_t len) {
 
 static size_t write(device_t* dev, void* buf, size_t len) {
   u32 ret = len;
+
   sb16_play(buf, len);
   return ret;
 }
 
 void do_sb16(interrupt_context_t* context) {
-  kprintf("sb16 handler\n");
+  log_debug("do sb16 irq\n");
 
-  buffer_flip = !buffer_flip;
-  // fill(
-  //     &buffer[buffer_flip ? 0 : (BUFFER_SIZE / 2)],
-  //     (BUFFER_SIZE / 2)
-  // );
-  u16 sample_count = (BUFFER_SIZE / 2) - 1;
-  dsp_write(DSP_PLAY | DSP_PROG_16 | DSP_AUTO_INIT);
-  dsp_write(DSP_SIGNED | DSP_MONO);
-  dsp_write((u8)((sample_count >> 0) & 0xFF));
-  dsp_write((u8)((sample_count >> 8) & 0xFF));
+  // io_read8(DSP_STATUS);
+  // io_read8(DSP_ACK_16);
+  // io_read8(DSP_INT_ACK);
 
-  io_read8(DSP_STATUS);
-  io_read8(DSP_INT_ACK);
+  pic_eof(MIXER_IRQ);
 }
 
 INTERRUPT_SERVICE
 void sb16_handler(interrupt_context_t* context) {
-  interrupt_entering(MIXER_IRQ);
+  interrupt_entering_code(MIXER_IRQ, 0, 0);
   interrupt_process(do_sb16);
   interrupt_exit();
 }
 
 int sb16_init(void) {
   log_info("sb16 init\n");
-  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
+  device_t* dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
   dev->name = "sb";
   dev->read = read;
   dev->write = write;
@@ -188,32 +204,30 @@ int sb16_init(void) {
   dev->type = DEVICE_TYPE_BLOCK;
   device_add(dev);
 
+  // dsp
+  vnode_t* dsp = vfs_create_node("dsp", V_FILE | V_BLOCKDEVICE);
+  dsp->device = device_find(DEVICE_SB);
+  dsp->op = &device_operator;
+  vfs_mount(NULL, "/dev", dsp);
+
   interrupt_regist(MIXER_IRQ, sb16_handler);
 
-  // // set irq
+  // set irq
   io_write8(DSP_ADDR_PORT, DSP_IRQ);
   io_write8(DSP_DATA_PORT, MIXER_IRQ_DATA);
 
   // reset
   dsp_reset();
-  set_sample_rate(SAMPLE_RATE);
 
-  u16 sample_count = (BUFFER_SIZE / 2) - 1;
-  dsp_write(DSP_PLAY | DSP_PROG_16 | DSP_AUTO_INIT);
-  dsp_write(DSP_SIGNED | DSP_MONO);
-  dsp_write((u8)((sample_count >> 0) & 0xFF));
-  dsp_write((u8)((sample_count >> 8) & 0xFF));
+  // buffer = kmalloc(BUFFER_SIZE, DEVICE_TYPE);
+
+  set_sample_rate(SAMPLE_RATE);
+  // sb16_play(buffer, BUFFER_SIZE);
 
   dsp_write(DSP_ON);
   dsp_write(DSP_ON_16);
 
-  // dsp
-  vnode_t* dsp = vfs_create_node("dsp", V_FILE | V_BLOCKDEVICE);
-  dsp->device = device_find(DEVICE_SB);
-  dsp->op = &device_operator;
-
-  vfs_mount(NULL, "/dev", dsp);
-
+  // pic_enable(MIXER_IRQ);
   return 0;
 }
 

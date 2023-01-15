@@ -214,7 +214,7 @@ int open_file_in_dir(struct fat_fs_struct *fs, struct fat_dir_struct *dd,
   }
   u32 ret = find_file_in_dir(fs, dd, name, &file_entry);
   if (!ret) {
-    log_error("find_file_in_dir failed %s\n", name);
+    log_error("find file %s in dir failed\n", name);
     return 0;
   }
   if (file_entry.attributes & FAT_ATTRIB_DIR) {
