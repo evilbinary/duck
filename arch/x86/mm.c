@@ -80,7 +80,7 @@ void mm_init_default() {
 
   unsigned int address = 0;
   // map mem block 100 page 20000k 2m
-  map_mem_block(PAGE_SIZE * 10000, PAGE_P | PAGE_USU | PAGE_RWW);
+  map_mem_block(PAGE_SIZE * 10000*2, PAGE_P | PAGE_USU | PAGE_RWW);
 
   // map 0 - 0x14000
   map_range(0, 0, PAGE_SIZE * 200, PAGE_P | PAGE_USU | PAGE_RWW);

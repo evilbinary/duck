@@ -504,8 +504,19 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
 
   void* start_addr = addr;
 
+  if (fd > 0) {
+    log_error("map file %d faild not support\n", fd);
+    return MAP_FAILED;
+  }
+
   if ((flags & MAP_FIXED) == MAP_FIXED) {
     // 固定地址，说明地址存在，不需要处理
+    vmemory_area_t* findvm = vmemory_area_find(current->vmm, addr, length);
+    if (findvm == NULL) {
+      log_error("map fix %x faild out of range\n", start_addr);
+      return MAP_FAILED;
+    }
+
     log_debug("map fix return addr %x\n", start_addr);
     return start_addr;
   }
@@ -669,7 +680,24 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
 }
 
 int sys_fcntl64(int fd, int cmd, void* arg) {
-  log_debug("sys fcntl64 not impl fd: %d cmd: %x\n", fd, cmd);
+  log_debug("sys fcntl64 fd: %d cmd: %x flag: %x\n", fd, cmd, arg);
+  thread_t* current = thread_current();
+  fd_t* findfd = thread_find_fd_id(current, fd);
+  if (fd == NULL) {
+    log_error("sys fcntl64 not found fd %d\n", fd);
+    return 0;
+  }
+  vnode_t* node = findfd->data;
+  if (cmd == F_SETFD) {
+    u32 ret = vioctl(node, cmd, arg);
+    return fd;
+  } else if (cmd == F_DUPFD) {
+    u32 ret = sys_dup(fd);
+
+    return ret;
+  } else {
+    log_error("not support cmd %d\n", cmd);
+  }
 
   return 1;
 }
@@ -918,6 +946,11 @@ ssize_t sys_readlink(const char* restrict pathname, char* restrict buf,
   return bufsiz;
 }
 
+int sys_madvice(void* addr, size_t length, int advice) {
+  log_debug("sys madvice not impl %x len:%x %x\n", addr, length, advice);
+  return 0;
+}
+
 void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_READ] = &sys_read;
   syscall_table[SYS_WRITE] = &sys_write;
@@ -996,4 +1029,6 @@ void sys_fn_init(void** syscall_table) {
 
   syscall_table[SYS_EXIT_GROUP] = &sys_exit_group;
   syscall_table[SYS_READLINK] = &sys_readlink;
+
+  syscall_table[SYS_MADVISE] = &sys_madvice;
 }

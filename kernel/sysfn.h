@@ -54,6 +54,7 @@ enum {
   SYS_RT_SIGPROCMASK = 175,
   SYS_GETCWD = 183,
   SYS_MMAP2 = 192,
+  SYS_MADVISE = 220,
   SYS_FCNT64 = 221,
   SYS_GETDENTS64 = 217,  // diff from x86
   SYS_CLOCK_NANOSLEEP = 230,
@@ -125,6 +126,7 @@ enum {
   SYS_MMAP2 = 192,
   SYS_GETDENT64 = 217,
   SYS_FCNT64 = 221,
+  SYS_MADVISE = 219,
   SYS_GETDENTS64 = 220,
   SYS_CLOCK_NANOSLEEP = 230,
   SYS_SET_THREAD_AREA = 243,
@@ -241,6 +243,17 @@ typedef struct iovec {
   void* iov_base;
   size_t iov_len;
 } iovec_t;
+
+
+#define	F_DUPFD					0
+#define	F_GETFD					1
+#define	F_SETFD					2
+#define	F_GETFL					3
+#define	F_SETFL					4
+#define	F_GETLK					5
+#define	F_SETLK					6
+#define	F_SETLKW				7
+
 
 u32 sys_open(char* name, int attr, ...);
 // size_t sys_ioctl(u32 fd, u32 cmd, ...);
