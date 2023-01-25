@@ -11,9 +11,9 @@
 #include "thread.h"
 #include "vfs.h"
 
-// #define LOAD_ELF_DEBUG
+// #define LOAD_ELF_DEBUG 1
 
-#define log_debug
+#define log_debug 
 #define log_error kprintf
 
 int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
@@ -35,8 +35,7 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
   u32 entry_txt = 0;
   for (int i = 0; i < elf_header->e_phnum; i++) {
 #ifdef LOAD_ELF_DEBUG
-    log_debug("ptype:%d\n\r", phdr[i].p_type);
-    log_debug("p addr %x\n", phdr[i].p_paddr);
+    log_debug("ptype:%d addr:%x\n", phdr[i].p_type, phdr[i].p_paddr);
 #endif
 
     switch (phdr[i].p_type) {
@@ -48,7 +47,7 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
       case PT_LOAD: {
         if ((phdr[i].p_flags & PF_X) == PF_X) {
 #ifdef LOAD_ELF_DEBUG
-          log_debug(" %s %x %x %x %s %x %x \r\n", "LOAD", phdr[i].p_offset,
+          log_debug(" %s %x %x %x %s %x %x \r\n", "LOAD X", phdr[i].p_offset,
                     phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
                     phdr[i].p_memsz);
 #endif
@@ -60,7 +59,7 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
           u32 ret = syscall3(SYS_READ, fd, vaddr, phdr[i].p_filesz);
         } else {
 #ifdef LOAD_ELF_DEBUG
-          log_debug(" %s %x %x %x %s %x %x \r\n", "NO LOAD", phdr[i].p_offset,
+          log_debug(" %s %x %x %x %s %x %x \r\n", "LOAD RW", phdr[i].p_offset,
                     phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
                     phdr[i].p_memsz);
 #endif

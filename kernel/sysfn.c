@@ -505,7 +505,12 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
   void* start_addr = addr;
 
   if (fd > 0) {
-    log_error("map file %d faild not support\n", fd);
+    fd_t* f = thread_find_fd_id(current, fd);
+    if (f == NULL) {
+      log_error("map file not found fd %d tid %d\n", fd, current->id);
+      return 0;
+    }
+    log_error("map file %s %d faild not support\n",f->name, fd);
     return MAP_FAILED;
   }
 
