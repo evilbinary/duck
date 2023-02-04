@@ -243,30 +243,30 @@ void ya_free(void* ptr) {
   block_t* next = block->next;
   ptr = NULL;
 
-  //todo merge
-  // if (next != NULL) {
-  //   if (next->free == BLOCK_FREE) {
-  //     block->size += next->size + sizeof(block_t);
-  //     block->next = next->next;
-  //     int size = next->size;
-  //     if (next->next) {
-  //       next->next->prev = block;
-  //     }
-  //     // memset(next,0,size);
-  //   }
-  // }
-  // block_t* prev = block->prev;
-  // if (prev != NULL) {
-  //   if (prev->free == BLOCK_FREE) {
-  //     prev->size += block->size;
-  //     prev->next = block->next;
-  //     if (block->next != NULL) {
-  //       block->next->prev = prev;
-  //     }
-  //     int size = block->size;
-  //     // memset(block,0,size);
-  //   }
-  // }
+  // todo merge
+  //  if (next != NULL) {
+  //    if (next->free == BLOCK_FREE) {
+  //      block->size += next->size + sizeof(block_t);
+  //      block->next = next->next;
+  //      int size = next->size;
+  //      if (next->next) {
+  //        next->next->prev = block;
+  //      }
+  //      // memset(next,0,size);
+  //    }
+  //  }
+  //  block_t* prev = block->prev;
+  //  if (prev != NULL) {
+  //    if (prev->free == BLOCK_FREE) {
+  //      prev->size += block->size;
+  //      prev->next = block->next;
+  //      if (block->next != NULL) {
+  //        block->next->prev = prev;
+  //      }
+  //      int size = block->size;
+  //      // memset(block,0,size);
+  //    }
+  //  }
 }
 
 int is_line_intersect(int a1, int a2, int b1, int b2) {
@@ -327,10 +327,7 @@ void mm_init() {
   mm_init_default();
 }
 
-void mm_enable(){
-  mm_page_enable();
-}
-
+void mm_enable() { mm_page_enable(); }
 
 size_t ya_real_size(void* ptr) {
   block_t* block = ya_block_ptr(ptr);
@@ -339,7 +336,11 @@ size_t ya_real_size(void* ptr) {
 
 size_t mm_get_size(void* addr) { return ya_real_size(addr); }
 
-void* mm_alloc(size_t size) { return mmt.alloc(size); }
+void* mm_alloc(size_t size) {
+  void* p = mmt.alloc(size);
+  kmemset(p, 0, size);
+  return p;
+}
 
 void mm_free(void* p) { return mmt.free(p); }
 
