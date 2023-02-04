@@ -327,8 +327,6 @@ void mm_init() {
   mm_init_default();
 }
 
-void mm_enable() { mm_page_enable(); }
-
 size_t ya_real_size(void* ptr) {
   block_t* block = ya_block_ptr(ptr);
   return block->size;
@@ -649,6 +647,8 @@ u32 mm_get_block_size(void* addr) {
   }
 }
 #endif
+
+void mm_enable() { mm_page_enable(); }
 
 void map_mem_block(u32 size, u32 flags) {
   mem_block_t* p = mmt.blocks;
