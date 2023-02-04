@@ -211,7 +211,7 @@ void ya_verify() {
           used / 1024, mmt);
   mem_block_t* block = mmt.blocks;
   while (block) {
-    kprintf("=>block:%x type:%d size:%d start: %x end:%x\n", block, block->type,
+    kprintf("block:%x type:%d size:%d start: %x end:%x\n", block, block->type,
             block->size, block->addr, block->addr + block->size);
     block = block->next;
   }
@@ -288,7 +288,7 @@ void mm_add_block(u32 addr, u32 len) {
     mmt.blocks_tail->next = block;
     mmt.blocks_tail = block;
   }
-  kprintf("=>block:%x type:%d size:%d start: %x end:%x\n", block, block->type,
+  kprintf("block:%x type:%d size:%d start: %x end:%x\n", block, block->type,
           block->size, block->addr, block->addr + block->size);
 }
 
@@ -326,6 +326,11 @@ void mm_init() {
   kprintf("mm init default\n");
   mm_init_default();
 }
+
+void mm_enable(){
+  mm_page_enable();
+}
+
 
 size_t ya_real_size(void* ptr) {
   block_t* block = ya_block_ptr(ptr);
@@ -433,7 +438,7 @@ void mm_add_block(u32 addr, u32 len) {
     mmt.blocks_tail->next = block;
     mmt.blocks_tail = block;
   }
-  kprintf("=>block:%x type:%d size:%d start: %x end:%x\n", block, block->type,
+  kprintf("block:%x type:%d size:%d start: %x end:%x\n", block, block->type,
           block->size, block->addr, block->addr + block->size);
 }
 

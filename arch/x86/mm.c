@@ -68,7 +68,6 @@ void unmap_page_on(page_dir_t* page, u32 virtualaddr) {
   }
 }
 
-
 void mm_init_default() {
   boot_info->pdt_base = (ulong)kernel_page_dir_ptr_tab;
   boot_info->page_type = 1;  // pae mode
@@ -80,12 +79,12 @@ void mm_init_default() {
 
   unsigned int address = 0;
   // map mem block 100 page 20000k 2m
-  map_mem_block(PAGE_SIZE * 10000*2, PAGE_P | PAGE_USU | PAGE_RWW);
+  map_mem_block(PAGE_SIZE * 10000 * 2, PAGE_P | PAGE_USU | PAGE_RWW);
 
   // map 0 - 0x14000
   map_range(0, 0, PAGE_SIZE * 200, PAGE_P | PAGE_USU | PAGE_RWW);
 
-  map_kernel( PAGE_P | PAGE_USU | PAGE_RWW);
+  map_kernel(PAGE_P | PAGE_USU | PAGE_RWW);
 
   map_page(boot_info->kernel_stack, boot_info->kernel_stack,
            PAGE_P | PAGE_USU | PAGE_RWW);
@@ -98,14 +97,15 @@ void mm_init_default() {
   map_range(boot_info->disply.video, boot_info->disply.video,
             boot_info->disply.height * boot_info->disply.width * 2,
             PAGE_P | PAGE_USU | PAGE_RWW);
+}
 
+void mm_page_enable() {
   if (boot_info->pdt_base != NULL) {
     ulong addr = (ulong)boot_info->pdt_base;
     cpu_enable_paging_pae(addr);
     kprintf("paging pae scucess\n");
   }
 }
-
 
 void* virtual_to_physic(u64* page_dir_ptr_tab, void* vaddr) {
   u32 pdpte_index = (u32)vaddr >> 30 & 0x03;
@@ -200,7 +200,7 @@ u32* page_alloc_clone(u32* old_page_dir, u32 level) {
   return NULL;
 }
 
-//回收
+// 回收
 void page_free(u32* old_page, u32 level) {
   if (old_page == NULL) return;
   if (level == USER_MODE) {

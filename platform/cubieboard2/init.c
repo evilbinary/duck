@@ -1,14 +1,14 @@
 #include "init.h"
-#include "gpio.h"
-#include "archcommon/gic2.h"
-#include "v3s-reg-ccu.h"
 
+#include "archcommon/gic2.h"
+#include "gpio.h"
+#include "v3s-reg-ccu.h"
+#include "arch/memory.h"
 
 #define TIMER_MASK 0x40000
 #define IRQ_UART0 32
 #define IRQ_TIMER0 50
 #define IRQ_ETHER 114
-
 
 static void io_write32(uint port, u32 data) { *(u32 *)port = data; }
 
@@ -60,7 +60,7 @@ void timer_init(int hz) {
 void gic_handler(void) {
 #define GIC_DIST_BASE ((struct gic_dist *)0x01c81000)
 #define GIC_CPU_BASE ((struct gic_cpu *)0x01c82000)
-  
+
   struct gic_dist *gp = GIC_DIST_BASE;
   struct gic_cpu *cp = GIC_CPU_BASE;
   int irq;
@@ -181,23 +181,35 @@ void platform_init() {
 }
 
 void platform_end() {
+  map_page(UART0_DR, UART0_DR, L2_NCB);
+  map_page(CORE0_TIMER_IRQCNTL, CORE0_TIMER_IRQCNTL, L2_NCB);
+  // memory
+  // u32 address = 0x40000000;
+  // kprintf("map memory %x ", address);
+  // for (int i = 0; i < 0x2000000 / 0x1000; i++) {
+  //   map_page(address, address, L2_TEXT_1 | L2_NCB);
+  //   address += 0x1000;
+  // }
+  // kprintf("- %x\n", address);
+
+  // ccu -pio timer
+  map_page(0x01C20000, 0x01C20000, L2_NCB);
+  // uart
+  map_page(0x01C28000, 0x01C28000, L2_NCB);
+  // timer
+  map_page(0x01C20C00, 0x01C20C00, L2_NCB);
+  // gic
+  map_page(0x01C81000, 0x01C81000, L2_NCB);
+  map_page(0x01C82000, 0x01C82000, L2_NCB);
+
   uart_send('E');
   uart_send('\n');
 }
 
+void ipi_enable(int cpu) {}
 
-void ipi_enable(int cpu) {
+void lcpu_send_start(u32 cpu, u32 entry) {}
 
-}
+void ipi_send(int cpu, int vec) {}
 
-void lcpu_send_start(u32 cpu, u32 entry) {
-
-}
-
-void ipi_send(int cpu, int vec) {
-
-}
-
-void ipi_clear(int cpu) {
-
-}
+void ipi_clear(int cpu) {}

@@ -275,8 +275,8 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       }
     }
   } else {
-    log_debug("kernel start before init\n");
     if (copy->level == KERNEL_MODE) {
+      log_debug("kernel start before init\n");
       void* ustack =
           kmalloc_alignment(copy->context.usp_size, PAGE_SIZE, DEFAULT_TYPE);
       copy->context.usp = STACK_ADDR + koffset + copy->context.usp_size;
@@ -290,7 +290,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       // copy->context.usp_end = copy->context.usp_start +
       // copy->context.usp_size;
     } else if (copy->level == USER_MODE) {
-      log_debug("alloc usp size %x\n", copy->context.usp_size);
+      log_debug("alloc usp size %d\n", copy->context.usp_size);
       void* ustack =
           kmalloc_alignment(copy->context.usp_size, PAGE_SIZE, DEFAULT_TYPE);
       void* phy = kvirtual_to_physic(ustack, 0);

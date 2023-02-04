@@ -5,7 +5,7 @@
  ********************************************************************/
 #include "page.h"
 
-// #define DEBUG
+#define DEBUG 1
 
 // in user mode
 void page_error_exit() {
@@ -40,7 +40,7 @@ void page_fault_handle(interrupt_context_t *ic) {
           thread_exit(current, -1);
           log_error("%s memory fault at %x\n", current->name, fault_addr);
           context_dump_fault(ic, fault_addr);
-          thread_dump(current, DUMP_DEFAULT |DUMP_CONTEXT);
+          thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
           current->fault_count++;
           // cpu_halt();
         } else if (current->fault_count == 3) {
@@ -57,8 +57,11 @@ void page_fault_handle(interrupt_context_t *ic) {
       }
       return;
     }
-    // kprintf("exception at %x\n",page_fault);
-    void *phy = virtual_to_physic(current->context.upage, fault_addr);
+    u32 *page = current->context.upage;
+    if (current->level == KERNEL_MODE) {
+      page = current->context.kpage;
+    }
+    void *phy = virtual_to_physic(page, fault_addr);
     if (phy == NULL) {
       valloc(fault_addr, PAGE_SIZE);
     } else {
