@@ -260,7 +260,6 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     // vmm分配方式
     copy->vmm = vmemory_create_default(koffset);
     copy->context.upage = page_alloc_clone(NULL, copy->level);
-
     if (copy->level == KERNEL_MODE) {
       log_debug("kernel start before init\n");
     } else if (copy->level == USER_MODE) {
@@ -280,8 +279,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       vm_stack->alloc_size += copy->context.usp_size;
 
       void* phy = kvirtual_to_physic(ustack, 0);
-      thread_map(copy, copy->context.usp - copy->context.usp_size, phy,
-                 copy->context.usp_size);
+      thread_map(copy, vm_stack->alloc_addr, phy, copy->context.usp_size);
     }
     if (copy->level == KERNEL_MODE) {
       log_debug("kernel thread init end\n");
@@ -329,6 +327,14 @@ int thread_check(thread_t* thread) {
   }
   if (thread->vmm == NULL) {
     log_error("create thread %d faild for vm is null\n", thread->id);
+    return -1;
+  }
+
+  // check stack map
+  vmemory_area_t* vm_stack = vmemory_area_find_flag(thread->vmm, MEMORY_STACK);
+  void* phy = virtual_to_physic(thread->context.upage, vm_stack->alloc_addr);
+  if (phy == NULL) {
+    log_error("thread map have error\n");
     return -1;
   }
 

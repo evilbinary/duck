@@ -23,7 +23,6 @@ void map_page_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
   u32* l2 = ((u32)l1[l1_index]) & 0xFFFFFC00;
   if (l2 == NULL) {
     l2 = mm_alloc_zero_align(256 * sizeof(u32), 0x1000);
-    kmemset(l2, 0, 256 * sizeof(u32));
     l1[l1_index] = (((u32)l2) & 0xFFFFFC00) | L1_DESC;
   }
   l2[l2_index] = ((physaddr >> 12) << 12) | L2_DESC | flags;
@@ -126,7 +125,19 @@ void page_clone(u32* old_page, u32* new_page) {
 
 u32* page_alloc_clone(u32* old_page_dir, u32 level) {
   if (level == KERNEL_MODE) {
+    // todo check
+#ifdef V3S
+    u32* page_dir_ptr_tab =
+        mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, PAGE_SIZE * 4);
+
+    if (old_page_dir == NULL) {
+      old_page_dir = kernel_page_dir;
+    }
+    page_clone(old_page_dir, page_dir_ptr_tab);
+    return page_dir_ptr_tab;
+#else
     return kernel_page_dir;
+#endif
   }
   if (level == USER_MODE) {
     u32* page_dir_ptr_tab =

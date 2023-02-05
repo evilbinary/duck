@@ -69,11 +69,10 @@ void page_fault_handle(interrupt_context_t *ic) {
       }
 
     } else {
-      // valloc(fault_addr, PAGE_SIZE);
       log_error("%s remap memory fault at %x phy: %x\n", current->name,
                 fault_addr, phy);
+      // mmu_dump_page(page, page, 0);
       context_dump_fault(ic, fault_addr);
-      // mmu_dump_page(current->context.upage,current->context.upage,0);
       thread_exit(current, -1);
       exception_process_error(current, ic, (void *)&page_error_exit);
     }

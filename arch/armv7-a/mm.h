@@ -43,11 +43,11 @@
   (L2_XN | L2_SMALL_PAGE | L2_NCNB | L2_AP_ACCESS | L2_AP_RW | L2_S | L2_G)
 
 #define PAGE_P   0
-#define PAGE_R  L2_AP_R
+#define PAGE_R  0
 #define PAGE_RWR   0 //读执行
 #define PAGE_RWW   0 //读/写/执行
-#define PAGE_USS   (L2_TEXT_0|L2_CB) //系统级
-#define PAGE_USU   0 //用户级
+#define PAGE_USS   (L2_TEXT_1|L2_CB) //系统级
+#define PAGE_USU   (L2_TEXT_1|L2_CB) //用户级
 #define PAGE_DEV   (L2_TEXT_0|L2_NCNB) //设备级
 
 typedef u32 page_dir_t;
