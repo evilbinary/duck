@@ -44,7 +44,7 @@ void mm_init_default() {
   map_range(0, 0, PAGE_SIZE * 200, 0);
 
   // map kernel
-  map_kernel(L2_TEXT_1 | L2_CB);
+  map_kernel(L2_TEXT_1 | L2_NCB);
 
   map_page(MMIO_BASE, MMIO_BASE, 0);
 
@@ -125,19 +125,8 @@ void page_clone(u32* old_page, u32* new_page) {
 
 u32* page_alloc_clone(u32* old_page_dir, u32 level) {
   if (level == KERNEL_MODE) {
-    // todo check
-#ifdef V3S
-    u32* page_dir_ptr_tab =
-        mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, PAGE_SIZE * 4);
-
-    if (old_page_dir == NULL) {
-      old_page_dir = kernel_page_dir;
-    }
-    page_clone(old_page_dir, page_dir_ptr_tab);
-    return page_dir_ptr_tab;
-#else
+    //must no cache
     return kernel_page_dir;
-#endif
   }
   if (level == USER_MODE) {
     u32* page_dir_ptr_tab =
