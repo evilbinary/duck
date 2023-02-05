@@ -214,7 +214,9 @@ void sys_vumap(void* ptr, size_t size) {
   vmemory_area_free(area);
 }
 
-void* sys_valloc(void* addr, size_t size) { return valloc(addr, size); }
+void* sys_valloc(void* addr, size_t size) {
+  return valloc(addr, size);
+}
 
 void* sys_vheap() {
   thread_t* current = thread_current();
@@ -510,7 +512,7 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
       log_error("map file not found fd %d tid %d\n", fd, current->id);
       return 0;
     }
-    log_error("map file %s %d faild not support\n",f->name, fd);
+    log_error("map file %s %d faild not support\n", f->name, fd);
     return MAP_FAILED;
   }
 

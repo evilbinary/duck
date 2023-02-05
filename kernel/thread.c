@@ -137,19 +137,24 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
 }
 
 void thread_vm_copy_data(thread_t* copy, thread_t* thread, u32 type) {
-  vmemory_area_t* vm = vmemory_area_find_flag(copy->vmm, type);
-  copy->context.usp = thread->context.usp;
+  vmemory_area_t* vm = vmemory_area_find_flag(thread->vmm, type);
+  copy->vmm->vaddr = thread->vmm->vaddr;
+  copy->vmm->vend = thread->vmm->vend;
+  copy->vmm->size = thread->vmm->size;
 
-  for (u32* addr = vm->vaddr; addr < (vm->vaddr + vm->alloc_size);
+  log_debug("vm copy type %d range %x - %x\n", type, vm->vaddr,
+            (vm->vaddr + vm->alloc_size));
+  for (u32* addr = vm->alloc_addr; addr < (vm->alloc_addr + vm->alloc_size);
        addr += PAGE_SIZE) {
-    void* phy = kvirtual_to_physic(addr, 0);
-    u32* copy_ustack = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
-    kmemmove(copy_ustack, phy, PAGE_SIZE);
+    void* phy = virtual_to_physic(thread->context.upage, addr);
+    u32* copy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
     if (phy != NULL) {
-      thread_map(copy, STACK_ADDR, phy, PAGE_SIZE);
+      kmemmove(copy_addr, phy, PAGE_SIZE);
     } else {
-      log_error("ustack phy is null\n");
+      log_warn("thread %d vm copy data, tid %d vaddr %x phy is null\n",
+               copy->id, thread->id, addr);
     }
+    thread_map(copy, addr, copy_addr, PAGE_SIZE);
   }
 }
 
@@ -196,10 +201,11 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       // 分配页
       copy->context.upage =
           page_alloc_clone(thread->context.upage, thread->level);
-      copy->context.usp = thread->context.usp;
 
       // 栈拷贝并映射
       thread_vm_copy_data(copy, thread, MEMORY_STACK);
+      copy->context.usp = thread->context.usp;
+
       // 堆拷贝并映射
       thread_vm_copy_data(copy, thread, MEMORY_HEAP);
 
@@ -216,12 +222,14 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
 
       // 栈拷贝并映射
       thread_vm_copy_data(copy, thread, MEMORY_STACK);
+      copy->context.usp = thread->context.usp;
+
       // 堆拷贝并映射
       thread_vm_copy_data(copy, thread, MEMORY_HEAP);
 
       copy->vmm->alloc_addr = thread->vmm->alloc_addr;
-      copy->vmm->alloc_size = thread->vmm->alloc_size;
-      log_warn("vm clone all todo\n");
+      copy->vmm->alloc_size = 0;
+
     } else if (flags & VM_SAME) {
       // todo
       copy->vmm = thread->vmm;
@@ -259,12 +267,16 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     void* ustack =
         kmalloc_alignment(copy->context.usp_size, PAGE_SIZE, DEFAULT_TYPE);
 
-    vmemory_area_t* vm = vmemory_area_find_flag(copy->vmm, MEMORY_STACK);
-    if (vm == NULL) {
+    vmemory_area_t* vm_stack = vmemory_area_find_flag(copy->vmm, MEMORY_STACK);
+    if (vm_stack == NULL) {
       log_error("thread vm init not found vm please check\n");
       copy->context.usp = STACK_ADDR + MEMORY_STACK_SIZE;
     } else {
-      copy->context.usp = vm->vend;
+      copy->context.usp = vm_stack->vend;
+      vm_stack->alloc_addr = vm_stack->vend;
+      vm_stack->alloc_addr -= copy->context.usp_size;
+      vm_stack->alloc_size += copy->context.usp_size;
+
       void* phy = kvirtual_to_physic(ustack, 0);
       thread_map(copy, copy->context.usp - copy->context.usp_size, phy,
                  copy->context.usp_size);
@@ -280,6 +292,8 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
   int ret = thread_check(copy);
   return ret;
 }
+
+#define DEBUG 1
 
 void thread_map(thread_t* thread, u32 virt_addr, u32 phy_addr, u32 size) {
   if (thread->context.upage == NULL) {

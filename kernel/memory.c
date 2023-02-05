@@ -251,7 +251,27 @@ void memory_static(u32 size, int type) {
 
 // #define DEBUG
 
-// alloc physic right now on virtual
+void* extend_stack(void* addr, size_t size) {
+  thread_t* current = thread_current();
+  u32 page_alignt = PAGE_SIZE - 1;
+  void* vaddr = (u32)addr & (~page_alignt);
+  void* aaddr = valloc(addr, size);
+
+  vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_STACK);
+
+  if (vm->alloc_addr < addr) {
+    u32 alignment = PAGE_SIZE;
+
+    int offset = alignment - 1 + sizeof(void*);
+    void* new_addr = (void**)(((size_t)(addr) + offset) & ~(alignment - 1));
+    int new_size = new_addr - addr + size;
+    vm->alloc_size += new_size;
+    vm->alloc_addr -= new_size;
+  }
+  return aaddr;
+}
+
+// alloc physic right now on virtual,use for heap
 void* valloc(void* addr, size_t size) {
   thread_t* current = thread_current();
   u32 page_alignt = PAGE_SIZE - 1;

@@ -62,7 +62,12 @@ void page_fault_handle(interrupt_context_t *ic) {
     u32 *page = current->context.upage;
     void *phy = virtual_to_physic(page, fault_addr);
     if (phy == NULL) {
-      valloc(fault_addr, PAGE_SIZE);
+      if (area->flags == MEMORY_STACK) {
+        extend_stack(fault_addr, PAGE_SIZE);
+      } else {
+        valloc(fault_addr, PAGE_SIZE);
+      }
+
     } else {
       // valloc(fault_addr, PAGE_SIZE);
       log_error("%s remap memory fault at %x phy: %x\n", current->name,
