@@ -639,7 +639,7 @@ void thread_dump_fd(thread_t* thread) {
 
 void thread_dump(thread_t* thread, u32 flags) {
   if (thread == NULL) return;
-  if (thread->dump_count >= 3) {
+  if (thread->dump_count >= THREAD_DUMP_STOP_COUNT) {
     log_error("thread dump count >= 3, will not dump again\n");
     return;
   }
