@@ -13,7 +13,7 @@ arch =env['ARCH']
 source=[
     'arch.c',
     'lock.c',
-    'memory.c',
+    'pmemory.c',
     'interrupt.c'
 ]
 

@@ -20,6 +20,8 @@ u32 recycle_head_thread_count = 0;
 u32 thread_ids = 0;
 lock_t thread_lock;
 
+#define DEBUG 1
+
 void thread_init() { lock_init(&thread_lock); }
 
 thread_t* thread_create_level(void* entry, void* data, u32 level) {
@@ -292,8 +294,6 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
   int ret = thread_check(copy);
   return ret;
 }
-
-#define DEBUG 1
 
 void thread_map(thread_t* thread, u32 virt_addr, u32 phy_addr, u32 size) {
   if (thread->context.upage == NULL) {

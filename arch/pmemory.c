@@ -1,4 +1,4 @@
-#include "memory.h"
+#include "pmemory.h"
 
 #include "kernel/common.h"
 

@@ -2,7 +2,7 @@
 
 #include "gpio.h"
 #include "v3s-reg-ccu.h"
-#include "arch/memory.h"
+#include "arch/pmemory.h"
 
 static void io_write32(uint port, u32 data) { *(u32 *)port = data; }
 

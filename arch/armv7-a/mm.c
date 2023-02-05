@@ -5,7 +5,7 @@
  ********************************************************************/
 #include "arch/cpu.h"
 #include "arch/display.h"
-#include "arch/memory.h"
+#include "arch/pmemory.h"
 #include "cpu.h"
 #include "gpio.h"
 
