@@ -46,10 +46,8 @@ typedef struct context_t {
   u32 tid;
 
   void* ksp_start;
-  void* usp_start;
   void* ksp_end;
-  void* usp_end;
-
+  
   u32 usp_size;
   u32 ksp_size;
 } context_t;

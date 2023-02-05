@@ -11,11 +11,11 @@ int context_init(context_t* context, u32* entry, u32 level, int cpu) {
   if (context == NULL) {
     return -1;
   }
-  if (context->ksp_start == NULL || context->usp_start == NULL) {
+  if (context->ksp_start == NULL) {
     log_error("ksp start or usp start is null\n");
     return -1;
   }
-  if (context->ksp_end == NULL || context->ksp_end == NULL) {
+  if (context->ksp_end == NULL) {
     log_error("ksp end or usp end is null\n");
     return -1;
   }
@@ -174,18 +174,18 @@ void context_dump_fault(interrupt_context_t* ic, u32 fault_addr) {
 }
 
 int context_clone(context_t* des, context_t* src) {
-  if (src->ksp_start == NULL || src->usp_start == NULL) {
-    log_error("ksp top or usp top is null\n");
+  if (src->ksp_start == NULL) {
+    log_error("ksp top is null\n");
     return -1;
   }
-  if (des->ksp_start == NULL || des->usp_start == NULL) {
-    log_error("ksp top or usp top is null\n");
+  if (des->ksp_start == NULL) {
+    log_error("ksp top is null\n");
     return -1;
   }
 
   context_t* pdes = virtual_to_physic(des->upage, des);
 
-  //这里重点关注 usp ksp upage 3个变量的复制
+  // 这里重点关注 usp ksp upage 3个变量的复制
   u32* ksp_end = (u32)des->ksp_end - sizeof(interrupt_context_t);
   u32* usp_end = des->usp_end;
 
@@ -208,8 +208,9 @@ int context_clone(context_t* des, context_t* src) {
   return 0;
 }
 
-void context_switch(interrupt_context_t* ic,context_t* current,context_t* next) {
-  context_save(ic,current);
+void context_switch(interrupt_context_t* ic, context_t* current,
+                    context_t* next) {
+  context_save(ic, current);
   if (next->upage != NULL) {
     tss_t* tss = next->tss;
     tss->esp0 = (u32)next->ksp + sizeof(interrupt_context_t);
@@ -221,7 +222,7 @@ void context_switch(interrupt_context_t* ic,context_t* current,context_t* next) 
 }
 
 void context_save(interrupt_context_t* ic, context_t* current) {
-  if( ic == NULL){
+  if (ic == NULL) {
     return;
   }
   current->ksp = ic;

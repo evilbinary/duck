@@ -7,8 +7,8 @@
 #define CONTEXT_H
 
 #include "arch/boot.h"
-#include "libs/include/types.h"
 #include "arch/interrupt.h"
+#include "libs/include/types.h"
 
 typedef struct interrupt_context {
   // ds
@@ -43,26 +43,22 @@ typedef struct context_t {
   u32 tid;
 
   void* ksp_start;
-  void* usp_start;
   void* ksp_end;
-  void* usp_end;
 
   u32 usp_size;
   u32 ksp_size;
 } context_t;
 
-
 void timer_init(int hz);
 
 #define INTERRUPT_SERVICE __attribute__((naked))
-
 
 #if defined(__WIN32__)
 
 #define interrupt_process(X) \
   asm volatile(              \
       "push %esp\n"          \
-      "call  _" #X            \
+      "call  _" #X           \
       " \n"                  \
       "add $4,%esp\n")
 #else
@@ -76,26 +72,22 @@ void timer_init(int hz);
 
 #endif
 
-
-
-
-
-#define interrupt_entering_code(VEC, CODE,TYPE) \
-  asm volatile(                            \
-      "cli\n"                              \
-      "push %0 \n"                         \
-      "push %1 \n"                         \
-      "pushal\n"                           \
-      "push %%ds\n"                        \
-      "push %%es\n"                        \
-      "push %%fs\n"                        \
-      "push %%gs\n"                        \
-      "mov %2,%%eax\n"                     \
-      "mov %%ax,%%ds\n"                    \
-      "mov %%ax,%%es\n"                    \
-      "mov %%ax,%%gs\n"                    \
-      "mov %%ax,%%fs\n"                    \
-      :                                    \
+#define interrupt_entering_code(VEC, CODE, TYPE) \
+  asm volatile(                                  \
+      "cli\n"                                    \
+      "push %0 \n"                               \
+      "push %1 \n"                               \
+      "pushal\n"                                 \
+      "push %%ds\n"                              \
+      "push %%es\n"                              \
+      "push %%fs\n"                              \
+      "push %%gs\n"                              \
+      "mov %2,%%eax\n"                           \
+      "mov %%ax,%%ds\n"                          \
+      "mov %%ax,%%es\n"                          \
+      "mov %%ax,%%gs\n"                          \
+      "mov %%ax,%%fs\n"                          \
+      :                                          \
       : "i"(CODE), "i"(VEC), "i"(GDT_ENTRY_32BIT_DS * GDT_SIZE))
 
 #define interrupt_entering(VEC) \
@@ -129,47 +121,45 @@ void timer_init(int hz);
       :)
 
 #define interrupt_exit_ret() \
-  asm volatile(                     \
-      "mov %%eax,%%esp\n"           \
-      "pop %%gs\n"                  \
-      "pop %%fs\n"                  \
-      "pop %%es\n"                  \
-      "pop %%ds\n"                  \
-      "popal\n"                     \
-      "add $8,%%esp\n"              \
-      "sti\n"                       \
-      "iret\n"                      \
-      :                             \
-      : )
+  asm volatile(              \
+      "mov %%eax,%%esp\n"    \
+      "pop %%gs\n"           \
+      "pop %%fs\n"           \
+      "pop %%es\n"           \
+      "pop %%ds\n"           \
+      "popal\n"              \
+      "add $8,%%esp\n"       \
+      "sti\n"                \
+      "iret\n"               \
+      :                      \
+      :)
 
 #define interrupt_exit_context(context) \
-  asm volatile(                     \
-      "mov %0,%%esp\n"              \
-      "pop %%gs\n"                  \
-      "pop %%fs\n"                  \
-      "pop %%es\n"                  \
-      "pop %%ds\n"                  \
-      "popal\n"                     \
-      "add $8,%%esp\n"              \
-      "sti\n"                       \
-      "iret\n"                      \
-      :                             \
+  asm volatile(                         \
+      "mov %0,%%esp\n"                  \
+      "pop %%gs\n"                      \
+      "pop %%fs\n"                      \
+      "pop %%es\n"                      \
+      "pop %%ds\n"                      \
+      "popal\n"                         \
+      "add $8,%%esp\n"                  \
+      "sti\n"                           \
+      "iret\n"                          \
+      :                                 \
       : "m"(context->ksp))
 
-
-#define context_switch_page(page_dir) asm volatile("mov %0, %%cr3" : : "r" (page_dir))
+#define context_switch_page(page_dir) \
+  asm volatile("mov %0, %%cr3" : : "r"(page_dir))
 
 #define context_fn(context) context->eax
 #define context_ret(context) context->eax
-#define context_set_entry(context,entry) ((interrupt_context_t*)context)->eip=entry
-
+#define context_set_entry(context, entry) \
+  ((interrupt_context_t*)context)->eip = entry
 
 #define context_restore(duck_context) interrupt_exit_context(duck_context)
 int context_clone(context_t* context, context_t* src);
 int context_init(context_t* context, u32* entry, u32 level, int cpu);
-                             
+
 void context_dump(context_t* c);
-
-
 
 #endif

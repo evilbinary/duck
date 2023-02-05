@@ -21,34 +21,21 @@
 #define THREAD_SLEEP 5
 #define THREAD_UNINTERRUPTIBLE 15
 
-#define PAGE_CLONE 1
-#define PAGE_ALLOC 1 << 2
-#define PAGE_SAME 1 << 3
-#define PAGE_COPY_ON_WRITE 1 << 4  // copy on write
-#define FS_CLONE 1 << 5
-#define VM_CLONE_ALL 1 << 7
-#define VM_CLONE 1 << 8
-#define VM_SAME 1 << 9
+#define FS_CLONE 1 << 1
+#define VM_CLONE_ALL 1 << 2
+#define VM_CLONE 1 << 3
+#define VM_ALLOC 1 << 4
+#define VM_SAME 1 << 5
+#define VM_COW 1 << 6  // copy on write
 
-#define STACK_CLONE 1 << 10
-#define STACK_ALLOC 1 << 11
-#define STACK_SAME 1 << 12
-
-#define HEAP_CLONE 1 << 13
-#define HEAP_ALLOC 1 << 14
-#define HEAP_SAME 1 << 15
-
-#define THREAD_DEFAULT (STACK_ALLOC | HEAP_ALLOC | PAGE_CLONE)
-
-#define THREAD_FORK \
-  (PAGE_CLONE | VM_CLONE_ALL | FS_CLONE | STACK_CLONE | HEAP_SAME)
-#define THREAD_CLONE (PAGE_CLONE | FS_CLONE)
-#define THREAD_VFORK (PAGE_CLONE | VM_CLONE_ALL)
+#define THREAD_NEW (VM_CLONE)
+#define THREAD_FORK (VM_CLONE_ALL | FS_CLONE)
+#define THREAD_CLONE (VM_CLONE_ALL | FS_CLONE)
+#define THREAD_VFORK (VM_CLONE_ALL)
 
 #define DUMP_DEFAULT 0
 #define DUMP_CONTEXT 1
 #define DUMP_STACK 2
-
 
 #define PTHREAD_LIBMUSL 1
 #define TLS_ABOVE_TP 1
@@ -97,29 +84,29 @@ typedef struct thread_info {
 
 #ifdef PTHREAD_LIBMUSL
   volatile int detach_state;
-	volatile int cancel;
-	volatile unsigned char canceldisable, cancelasync;
-	unsigned char tsd_used:1;
-	unsigned char dlerror_flag:1;
-	unsigned char *map_base;
-	size_t map_size;
-	void *stack;
-	size_t stack_size;
-	size_t guard_size;
-	void *result;
-	struct __ptcb *cancelbuf;
-	void **tsd;
-	struct {
-		volatile void *volatile head;
-		long off;
-		volatile void *volatile pending;
-	} robust_list;
-	int h_errno_val;
-	volatile int timer_id;
-	locale_t* locale;
-	volatile int killlock[1];
-	char *dlerror_buf;
-	void *stdio_locks;
+  volatile int cancel;
+  volatile unsigned char canceldisable, cancelasync;
+  unsigned char tsd_used : 1;
+  unsigned char dlerror_flag : 1;
+  unsigned char* map_base;
+  size_t map_size;
+  void* stack;
+  size_t stack_size;
+  size_t guard_size;
+  void* result;
+  struct __ptcb* cancelbuf;
+  void** tsd;
+  struct {
+    volatile void* volatile head;
+    long off;
+    volatile void* volatile pending;
+  } robust_list;
+  int h_errno_val;
+  volatile int timer_id;
+  locale_t* locale;
+  volatile int killlock[1];
+  char* dlerror_buf;
+  void* stdio_locks;
 
   // part3
 #ifdef TLS_ABOVE_TP

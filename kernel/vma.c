@@ -10,7 +10,7 @@ void vmemory_area_free(vmemory_area_t* area) {
   for (; area != NULL; area = area->next) {
     u32 vaddr = area->vaddr;
     // todo fix me
-     //vfree(vaddr, area->size);
+    // vfree(vaddr, area->size);
     area->flags = MEMORY_FREE;
   }
 }
@@ -103,14 +103,14 @@ vmemory_area_t* vmemory_clone(vmemory_area_t* areas, int flag) {
   return new_area;
 }
 
-vmemory_area_t* vmemory_create_default(u32 ustack_size, u32 koffset) {
+vmemory_area_t* vmemory_create_default(u32 koffset) {
   vmemory_area_t* vmm =
       vmemory_area_create(HEAP_ADDR + koffset, MEMORY_HEAP_SIZE, MEMORY_HEAP);
   vmemory_area_t* vmexec =
       vmemory_area_create(EXEC_ADDR + koffset, MEMORY_EXEC_SIZE, MEMORY_EXEC);
   vmemory_area_add(vmm, vmexec);
-  vmemory_area_t* stack =
-      vmemory_area_create(STACK_ADDR + koffset, ustack_size, MEMORY_STACK);
+  vmemory_area_t* stack = vmemory_area_create(STACK_ADDR + koffset,
+                                              MEMORY_STACK_SIZE, MEMORY_STACK);
   vmemory_area_add(vmm, stack);
   return vmm;
 }

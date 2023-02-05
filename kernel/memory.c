@@ -31,7 +31,7 @@ memory_t* memory_info() {
 
 void check_addr(void* addr) {
   if (addr == NULL) {
-    log_error("malloc error add return null\n");
+    log_error("malloc error addr return null\n");
     cpu_halt();
   }
 }
