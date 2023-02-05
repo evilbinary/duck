@@ -118,7 +118,10 @@ if arch_type =='arm':
         'mmc/sdhci.c',
         'hello/hello.c',
         'dev/devfs.c',
-        'pty/pty.c'
+        'pty/pty.c',
+
+        'test/test.c',
+        'test/test-fat.c',
     ]+other
 
 elif arch_type=='x86':

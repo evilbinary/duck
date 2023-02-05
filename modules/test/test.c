@@ -7,7 +7,9 @@
 
 int test_init(void) {
   log_info("test hello\n");
+#ifdef X86
   test_ahci();
+#endif
   test_fat();
 
   return 0;

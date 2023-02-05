@@ -125,7 +125,7 @@ INTERRUPT_SERVICE
 void fiq_handler() {
   interrupt_entering_code(EX_OTHER, 0, 4);
   interrupt_process(interrupt_default_handler);
-  cpu_halt();
+  interrupt_exit();
 }
 
 void exception_info(interrupt_context_t* ic) {

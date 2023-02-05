@@ -11,14 +11,14 @@ void test_fat_read() {
     log_error("test ahci port failed\n");
     return;
   }
-  ahci_device_t* ahci_dev = dev->data;
 
-  vnode_t* node = kmalloc(sizeof(vnode_t),DEFAULT_TYPE);
+  vnode_t* node = kmalloc(sizeof(vnode_t), DEFAULT_TYPE);
   node->device = dev;
 
   int offset = 0xFFFF000;
   int count = 2 * 512;
-  char buf[1024] = {0};
+  char buf[1024];
+  kmemset(buf, 0, 1024);
 
   int ret = fat_read_bytes(node, offset, count, buf);
   if (ret < 0) {
@@ -39,13 +39,13 @@ void test_fat_read_small() {
     log_error("test ahci port failed\n");
     return;
   }
-  ahci_device_t* ahci_dev = dev->data;
 
-  vnode_t* node = kmalloc(sizeof(vnode_t),DEFAULT_TYPE);
+  vnode_t* node = kmalloc(sizeof(vnode_t), DEFAULT_TYPE);
   node->device = dev;
 
   int offset = 0xFFFF000;
-  char buf[READ_BUFFER] = {0};
+  char buf[READ_BUFFER];
+  kmemset(buf, 0, READ_BUFFER);
 
   int ret = fat_read_bytes(node, offset, READ_BUFFER, buf);
   if (ret < 0) {
@@ -72,8 +72,8 @@ void test_fat_read_file() {
     return;
   }
   int offset = 0x2a0;
-  char* buffer = kmalloc(READ_BUFFER,DEFAULT_TYPE);
-  if(duck==NULL){
+  char* buffer = kmalloc(READ_BUFFER, DEFAULT_TYPE);
+  if (duck == NULL) {
     log_error("duck node is null\n");
     return;
   }

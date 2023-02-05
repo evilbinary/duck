@@ -23,6 +23,8 @@ extern module_t hello_module;
 extern module_t i2c_module;
 extern module_t gpio_module;
 extern module_t spi_module;
+extern module_t test_module;
+
 #endif
 
 #elif defined(X86)
@@ -80,6 +82,7 @@ void modules_init(void) {
   module_regist(&fat_module);
   // module_regist(&fat32_module);
   // module_regist(&hello_module);
+  module_regist(&test_module);
 
 #ifdef MUSL_MODULE
   extern module_t musl_module;
