@@ -121,7 +121,8 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   copy->vmm = thread->vmm;
   copy->data = thread->data;
   copy->pid = thread->id;
-  copy->name = thread->name;
+  copy->name = kmalloc(kstrlen(thread->name), KERNEL_TYPE);
+  kstrcpy(copy->name, thread->name);
   copy->counter = 0;
   copy->fault_count = 0;
   copy->sleep_counter = 0;
@@ -640,7 +641,8 @@ void thread_dump_fd(thread_t* thread) {
 void thread_dump(thread_t* thread, u32 flags) {
   if (thread == NULL) return;
   if (thread->dump_count >= THREAD_DUMP_STOP_COUNT) {
-    log_error("thread dump count >= %d, will not dump again\n",THREAD_DUMP_STOP_COUNT);
+    log_error("thread dump count >= %d, will not dump again\n",
+              THREAD_DUMP_STOP_COUNT);
     return;
   }
   thread->dump_count++;

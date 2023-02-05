@@ -47,13 +47,16 @@ void exception_process_error(thread_t *current, interrupt_context_t *ic,
   // set exit handl
   context_set_entry(ic, entry);
   thread_set_entry(current, entry);
+  kprintf("exception process error end\n");
 }
 
 // in user mode
 void exception_error_exit() {
   syscall1(SYS_PRINT, "exception erro exit ^_^!!\n");
   syscall1(SYS_EXIT, 666);
-  cpu_halt();
+  kprintf("exception exit loop\n");
+  for (;;) {
+  }
 }
 
 void exception_on_permission(interrupt_context_t *ic) {

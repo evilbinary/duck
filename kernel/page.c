@@ -9,7 +9,7 @@
 
 // in user mode
 void page_error_exit() {
-  syscall1(SYS_PRINT, "page erro exit\n");
+  syscall1(SYS_PRINT, "page erro exit ^_^!!\n");
   syscall1(SYS_EXIT, 666);
   for (;;) {
   }
