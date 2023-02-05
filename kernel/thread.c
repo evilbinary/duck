@@ -145,7 +145,6 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     log_error("create thread failt for thread is null\n");
     return -1;
   }
-
   u32 koffset = 0;
   if (copy->level == KERNEL_MODE) {
     koffset += KERNEL_OFFSET;
@@ -301,7 +300,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       copy->context.usp = STACK_ADDR + copy->context.usp_size;
       copy->context.upage = page_alloc_clone(NULL, copy->level);
       thread_map(copy, STACK_ADDR, phy, copy->context.usp_size);
-      log_debug("user thread init end\n");
+      log_debug("user thread %s %d init end\n", copy->name, copy->id);
     }
   }
 
@@ -317,8 +316,9 @@ void thread_map(thread_t* thread, u32 virt_addr, u32 phy_addr, u32 size) {
   }
   u32 offset = 0;
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
+  u32* page = thread->context.upage;
   for (int i = 0; i < pages; i++) {
-    map_page_on(thread->context.upage, virt_addr + offset, phy_addr + offset,
+    map_page_on(page, virt_addr + offset, phy_addr + offset,
                 PAGE_P | PAGE_USU | PAGE_RWW);
 #ifdef DEBUG
     log_debug("thread %d map %d vaddr: %x - paddr: %x\n", thread->id, i,

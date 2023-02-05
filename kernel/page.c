@@ -11,7 +11,9 @@
 void page_error_exit() {
   syscall1(SYS_PRINT, "page erro exit\n");
   syscall1(SYS_EXIT, 666);
-  cpu_halt();
+  for (;;) {
+  }
+  // never jmp here
 }
 
 void page_fault_handle(interrupt_context_t *ic) {
@@ -58,16 +60,13 @@ void page_fault_handle(interrupt_context_t *ic) {
       return;
     }
     u32 *page = current->context.upage;
-    if (current->level == KERNEL_MODE) {
-      page = current->context.kpage;
-    }
     void *phy = virtual_to_physic(page, fault_addr);
     if (phy == NULL) {
       valloc(fault_addr, PAGE_SIZE);
     } else {
       // valloc(fault_addr, PAGE_SIZE);
-      log_error("%s phy: %x remap memory fault at %x\n", current->name, phy,
-                fault_addr);
+      log_error("%s remap memory fault at %x phy: %x\n", current->name,
+                fault_addr, phy);
       context_dump_fault(ic, fault_addr);
       // mmu_dump_page(current->context.upage,current->context.upage,0);
       thread_exit(current, -1);
