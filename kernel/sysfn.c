@@ -229,6 +229,7 @@ void sys_vfree(void* addr) {
 }
 
 u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
+  log_debug("sys exec %s\n", filename);
   thread_t* current = thread_current();
   char* name = kmalloc(kstrlen(filename), KERNEL_TYPE);
   kstrcpy(name, filename);
@@ -318,8 +319,6 @@ int sys_vfork() {
   return current->id;
 }
 
-// #define LOG_DEBUG 1
-
 int sys_fork() {
   thread_t* current = thread_current();
   if (current == NULL) {
@@ -329,6 +328,7 @@ int sys_fork() {
   thread_stop(current);
   thread_t* copy_thread = thread_copy(current, THREAD_FORK);
   thread_set_ret(copy_thread, 0);
+  log_debug("fork copy finished\n");
 #ifdef LOG_DEBUG
   log_debug("-------dump current thread %d %s-------------\n", current->id);
   thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
@@ -337,6 +337,7 @@ int sys_fork() {
 #endif
   thread_run(copy_thread);
   thread_run(current);
+  log_debug("fork end\n");
   return current->id;
 }
 

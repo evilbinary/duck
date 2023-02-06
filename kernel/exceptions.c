@@ -42,7 +42,7 @@ void exception_process_error(thread_t *current, interrupt_context_t *ic,
   kprintf("--dump interrupt context--\n");
   context_dump_interrupt(ic);
   kprintf("--dump thread--\n");
-  thread_dump(current, DUMP_DEFAULT);
+  thread_dump(current, DUMP_DEFAULT|DUMP_CONTEXT|DUMP_STACK);
 
   // set exit handl
   context_set_entry(ic, entry);

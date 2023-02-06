@@ -114,6 +114,8 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   if (thread == NULL) {
     return NULL;
   }
+  log_debug("thread copy start\n");
+
   thread_t* copy = kmalloc(sizeof(thread_t), KERNEL_TYPE);
 
   kmemmove(copy, thread, sizeof(thread_t));
@@ -136,6 +138,8 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   thread_init_vm(copy, thread, flags);
 
   context_clone(&copy->context, &thread->context);
+
+  log_debug("thread copy end\n");
   return copy;
 }
 
@@ -256,6 +260,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       copy->vmm = vmemory_create_default(koffset);
       log_warn("vm default todo\n");
     }
+    log_debug("thread init vm end\n");
 
   } else {
     // vmm分配方式

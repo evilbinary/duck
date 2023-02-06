@@ -94,7 +94,7 @@ int context_init(context_t* context, u32* entry, u32 level, int cpu) {
 }
 
 void context_dump(context_t* c) {
-  kprintf("tip: %8x\n", c->tid);
+  kprintf("tid: %8x\n", c->tid);
   kprintf("eip: %8x\n", c->eip);
   kprintf("ksp: %8x\n", c->ksp);
   kprintf("usp: %8x\n", c->usp);
