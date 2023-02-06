@@ -328,6 +328,10 @@ int thread_check(thread_t* thread) {
     return -1;
   }
   if (thread->context.usp_size <= 0) {
+    log_error("create thread %d faild for ustack size is 0\n", thread->id);
+    return -1;
+  }
+  if (thread->context.usp <= 0) {
     log_error("create thread %d faild for ustack is 0\n", thread->id);
     return -1;
   }
@@ -338,6 +342,18 @@ int thread_check(thread_t* thread) {
 
   // check stack map
   vmemory_area_t* vm_stack = vmemory_area_find_flag(thread->vmm, MEMORY_STACK);
+  if (vm_stack == NULL) {
+    log_error("create thread %d faild for stack is null\n", thread->id);
+    return -1;
+  }
+
+  if (thread->context.usp < vm_stack->vaddr ||
+      thread->context.usp > vm_stack->vend) {
+    log_error("create thread %d faild for ustack %x range [%x - %x] error\n",
+              thread->id, thread->context.usp, vm_stack->vaddr, vm_stack->vend);
+    return -1;
+  }
+
   void* phy = virtual_to_physic(thread->context.upage, vm_stack->alloc_addr);
   if (phy == NULL) {
     log_error("thread map have error\n");
@@ -650,6 +666,7 @@ void thread_dump(thread_t* thread, u32 flags) {
               THREAD_DUMP_STOP_COUNT);
     return;
   }
+  vmemory_area_t* vm = vmemory_area_find_flag(thread->vmm, MEMORY_STACK);
   thread->dump_count++;
   kprintf("id       %d\n", thread->id);
   if (thread->name != NULL) {
@@ -660,6 +677,8 @@ void thread_dump(thread_t* thread, u32 flags) {
   kprintf("state    %d\n", thread->state);
   kprintf("ksp      %08x  [%8x - %8x]\n", thread->context.ksp,
           thread->context.ksp_start, thread->context.ksp_end);
+  kprintf("usp      %08x  [%8x - %8x]\n", thread->context.usp, vm->alloc_addr,
+          vm->alloc_addr + vm->alloc_size);
   kprintf("pid      %d\n", thread->pid);
   kprintf("fd_num   %d\n", thread->fd_number);
   kprintf("code     %d\n", thread->code);
@@ -674,7 +693,6 @@ void thread_dump(thread_t* thread, u32 flags) {
     int dump_size = 0x100;
     thread_dump_stack(thread->context.ksp_end - dump_size, dump_size);
     kprintf("--ustack--\n");
-    vmemory_area_t* vm = vmemory_area_find_flag(thread->vmm, MEMORY_STACK);
     thread_dump_stack(vm->vend - dump_size, dump_size);
   }
   kprintf("\n");
