@@ -4,7 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "../cpu.h"
-#include "../memory.h"
+#include "../pmemory.h"
 #include "cpu.h"
 
 extern boot_info_t* boot_info;

@@ -187,7 +187,6 @@ int context_clone(context_t* des, context_t* src) {
 
   // 这里重点关注 usp ksp upage 3个变量的复制
   u32* ksp_end = (u32)des->ksp_end - sizeof(interrupt_context_t);
-  u32* usp_end = des->usp_end;
 
   interrupt_context_t* ic = ksp_end;
   interrupt_context_t* is = src->ksp;
