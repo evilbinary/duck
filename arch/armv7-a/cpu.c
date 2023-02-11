@@ -390,7 +390,7 @@ void* syscall2(u32 num, void* arg0, void* arg1) {
       "mov r7,%1 \n\t"
       "mov r0,%2 \n\t"
       "mov r1,%3 \n\t"
-      "swi 0x0\n\t"
+      "svc 0x0\n\t"
       "mov %0,r0\n\t"
       : "=r"(ret)
       : "r"(num), "r"(arg0), "r"(arg1)

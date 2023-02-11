@@ -147,8 +147,8 @@ void platform_init() {
 }
 
 void platform_end() {
-  map_page(UART0_DR, UART0_DR, L2_NCB);
-  map_page(CORE0_TIMER_IRQCNTL, CORE0_TIMER_IRQCNTL, L2_NCB);
+  map_page(UART0_DR, UART0_DR, L2_NCNB);
+  map_page(CORE0_TIMER_IRQCNTL, CORE0_TIMER_IRQCNTL, L2_NCNB);
   // memory
   // u32 address = 0x40000000;
   // kprintf("map memory %x ", address);
@@ -159,14 +159,14 @@ void platform_end() {
   // kprintf("- %x\n", address);
 
   // ccu -pio timer
-  map_page(0x01C20000, 0x01C20000, L2_NCB);
+  map_page(0x01C20000, 0x01C20000, L2_NCNB);
   // uart
-  map_page(0x01C28000, 0x01C28000, L2_NCB);
+  map_page(0x01C28000, 0x01C28000, L2_NCNB);
   // timer
-  map_page(0x01C20C00, 0x01C20C00, L2_NCB);
+  map_page(0x01C20C00, 0x01C20C00, L2_NCNB);
   // gic
-  map_page(0x01C81000, 0x01C81000, L2_NCB);
-  map_page(0x01C82000, 0x01C82000, L2_NCB);
+  map_page(0x01C81000, 0x01C81000, L2_NCNB);
+  map_page(0x01C82000, 0x01C82000, L2_NCNB);
 }
 
 void ipi_enable(int cpu) {}

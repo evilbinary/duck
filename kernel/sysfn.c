@@ -325,6 +325,8 @@ int sys_fork() {
     log_error("current is null\n");
     return -1;
   }
+  log_debug("sys fork current kstak size %d\n",current->context.ksp_size);
+
   thread_stop(current);
   thread_t* copy_thread = thread_copy(current, THREAD_FORK);
   thread_set_ret(copy_thread, 0);

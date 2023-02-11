@@ -92,11 +92,10 @@ void* do_schedule(interrupt_context_t* ic) {
   context_switch(ic, &current_thread->context, &next_thread->context);
   thread_set_current(next_thread);
   timer_end();
-  if (next_thread->id == 2) {
-    int i = 0;
-    // log_debug("next tid %d pc %x pc
-    // %x\n",next_thread->id,next_thread->context.ksp->pc,ic->pc);
-  }
+  // if (next_thread->id == 2 && next_thread->state ==THREAD_RUNNING) {
+  //   int i = 0;
+  //   log_debug("next tid %d pc %x pc %x\n",next_thread->id,next_thread->context.ksp->pc,ic->pc);
+  // }
   return next_thread->context.ksp;
 }
 

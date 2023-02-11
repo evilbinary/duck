@@ -11,7 +11,7 @@
 #include "thread.h"
 #include "vfs.h"
 
-#define LOAD_ELF_DEBUG 1
+// #define LOAD_ELF_DEBUG 1
 
 #ifdef LOAD_ELF_DEBUG
 #define log_debug kprintf
@@ -22,7 +22,8 @@
 
 int load_elf(Elf32_Ehdr* elf_header, u32 fd) {
 #ifdef LOAD_ELF_DEBUG
-  log_debug("load elf %d\n", fd);
+  int p = syscall0(SYS_GETPID);
+  log_debug("load elf fd %d tid %d\n", fd,p);
 #endif
   u32 offset = elf_header->e_phoff;
   if (elf_header->e_phnum > MAX_PHDR) {
