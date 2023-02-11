@@ -14,7 +14,7 @@
 extern boot_info_t* boot_info;
 extern memory_manager_t mmt;
 
-static u32 kernel_page_dir[PAGE_DIR_NUMBER] __attribute__((aligned(0x4000)));
+u32 kernel_page_dir[PAGE_DIR_NUMBER] __attribute__((aligned(0x4000)));
 
 void map_page_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
   // kprintf("map page %x vaddr:%x paddr:%x\n",l1,virtualaddr,physaddr);
@@ -44,7 +44,7 @@ void mm_init_default() {
   map_range(0, 0, PAGE_SIZE * 20, 0);
 
   // map kernel
-  map_kernel(L2_TEXT_1 | L2_NCB);
+  map_kernel(L2_TEXT_1 | L2_CB, L2_NCNB);
 
   kprintf("map page end\n");
 }
@@ -123,7 +123,7 @@ void page_clone(u32* old_page, u32* new_page) {
 
 u32* page_alloc_clone(u32* old_page_dir, u32 level) {
   if (level == KERNEL_MODE) {
-    //must no cache
+    // must no cache
     return kernel_page_dir;
   }
   if (level == USER_MODE) {

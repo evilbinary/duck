@@ -670,14 +670,18 @@ void map_range(u32 vaddr, u32 paddr, u32 size, u32 flag) {
   }
 }
 
-void map_kernel(u32 flags) {
+void map_kernel(u32 flag_x, u32 flag_rw) {
   unsigned int address = 0;
   // map kernel
   kprintf("map kernel start\n");
   for (int i = 0; i < boot_info->segments_number; i++) {
     u32 size = boot_info->segments[i].size;
     address = boot_info->segments[i].start;
-    map_range(address, address, size, flags);
+    u32 flag = flag_x;
+    if (boot_info->segments[i].type == 2) {
+      flag = flag_rw;
+    }
+    map_range(address, address, size, flag);
 
     kprintf("map kernel %d range %x  - %x\n", i, boot_info->segments[i].start,
             address + size);

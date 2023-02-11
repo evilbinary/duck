@@ -84,7 +84,7 @@ void mm_init_default() {
   // map 0 - 0x14000
   map_range(0, 0, PAGE_SIZE * 200, PAGE_P | PAGE_USU | PAGE_RWW);
 
-  map_kernel(PAGE_P | PAGE_USU | PAGE_RWW);
+  map_kernel(PAGE_P | PAGE_USU | PAGE_RWW,PAGE_P | PAGE_USU | PAGE_RWW );
 
   map_page(boot_info->kernel_stack, boot_info->kernel_stack,
            PAGE_P | PAGE_USU | PAGE_RWW);
