@@ -181,7 +181,9 @@ void thread_vm_copy_data(thread_t* copy, thread_t* thread, u32 type) {
 }
 
 int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
-  log_debug("init vm kstack size %d\n", thread->context.ksp_size);
+  if (thread != NULL) {
+    log_debug("init vm kstack size %d\n", thread->context.ksp_size);
+  }
 
   if (copy == NULL) {
     log_error("create thread failt for thread is null\n");
@@ -208,7 +210,8 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     void* kstack = kmalloc(stack_size, KERNEL_TYPE);
     copy->context.ksp_start = kstack;
     copy->context.ksp_end = copy->context.ksp_start + stack_size;
-    copy->context.ksp = (u32)copy->context.ksp_end - sizeof(interrupt_context_t);
+    copy->context.ksp =
+        (u32)copy->context.ksp_end - sizeof(interrupt_context_t);
     if (thread != NULL) {
       kmemmove(kstack, thread->context.ksp_start, stack_size);
     }
@@ -239,7 +242,8 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       // todo
       copy->vmm = vmemory_clone(thread->vmm, 1);
       // 分配页
-      copy->context.upage = page_alloc_clone(thread->context.upage, thread->level);
+      copy->context.upage =
+          page_alloc_clone(thread->context.upage, thread->level);
 
       // 栈拷贝并映射
       thread_vm_copy_data(copy, thread, MEMORY_STACK);
