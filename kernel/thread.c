@@ -145,14 +145,29 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
 
 void thread_vm_copy_data(thread_t* copy, thread_t* thread, u32 type) {
   vmemory_area_t* vm = vmemory_area_find_flag(thread->vmm, type);
-  copy->vmm->vaddr = thread->vmm->vaddr;
-  copy->vmm->vend = thread->vmm->vend;
-  copy->vmm->size = thread->vmm->size;
+  vmemory_area_t* cvm = vmemory_area_find_flag(copy->vmm, type);
 
-  log_debug("vm copy type %d range %x - %x\n", type, vm->vaddr,
-            (vm->vaddr + vm->alloc_size));
-  for (u32* addr = vm->alloc_addr; addr < (vm->alloc_addr + vm->alloc_size);
-       addr += PAGE_SIZE) {
+  cvm->vaddr = vm->vaddr;
+  cvm->vend = vm->vend;
+  cvm->size = vm->size;
+
+  u32* addr = NULL;
+  u32* end_addr = NULL;
+  char* type_str = NULL;
+  if (type == MEMORY_STACK) {
+    addr = vm->alloc_addr;
+    end_addr = vm->vend;
+    type_str = "stack";
+  } else if (type == MEMORY_HEAP) {
+    addr = vm->vaddr;
+    end_addr = vm->alloc_addr;
+    type_str = "heap";
+  }
+
+  log_debug("vm copy %d to %d %s range: %x - %x size: %d\n", thread->id,
+            copy->id, type_str, addr, end_addr, vm->alloc_size);
+
+  for (; addr < end_addr; addr += PAGE_SIZE) {
     void* phy = virtual_to_physic(thread->context.upage, addr);
     u32* copy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
     if (phy != NULL) {
@@ -166,6 +181,8 @@ void thread_vm_copy_data(thread_t* copy, thread_t* thread, u32 type) {
 }
 
 int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
+  log_debug("init vm kstack size %d\n", thread->context.ksp_size);
+
   if (copy == NULL) {
     log_error("create thread failt for thread is null\n");
     return -1;
@@ -187,14 +204,13 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
   // 内核栈分配方式
   // kstack
   if (copy->context.ksp_start == NULL) {
-    void* kstack = kmalloc(copy->context.ksp_size, KERNEL_TYPE);
-    copy->context.ksp_start = kvirtual_to_physic(kstack, 0);
-    copy->context.ksp_end = copy->context.ksp_size + copy->context.ksp_start;
-    if (thread == NULL) {
-      copy->context.ksp = kstack;
-    } else {
-      kmemmove(copy->context.ksp_start, thread->context.ksp_start,
-               thread->context.ksp_size);
+    int stack_size = copy->context.ksp_size;
+    void* kstack = kmalloc(stack_size, KERNEL_TYPE);
+    copy->context.ksp_start = kstack;
+    copy->context.ksp_end = copy->context.ksp_start + stack_size;
+    copy->context.ksp = (u32)copy->context.ksp_end - sizeof(interrupt_context_t);
+    if (thread != NULL) {
+      kmemmove(kstack, thread->context.ksp_start, stack_size);
     }
   }
 
@@ -217,15 +233,13 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       thread_vm_copy_data(copy, thread, MEMORY_HEAP);
 
       // update heap addr
-      copy->vmm->alloc_addr = thread->vmm->alloc_addr;
       copy->vmm->alloc_size = 0;
 
     } else if (flags & VM_CLONE_ALL) {
       // todo
       copy->vmm = vmemory_clone(thread->vmm, 1);
       // 分配页
-      copy->context.upage =
-          page_alloc_clone(thread->context.upage, thread->level);
+      copy->context.upage = page_alloc_clone(thread->context.upage, thread->level);
 
       // 栈拷贝并映射
       thread_vm_copy_data(copy, thread, MEMORY_STACK);
@@ -233,8 +247,6 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
 
       // 堆拷贝并映射
       thread_vm_copy_data(copy, thread, MEMORY_HEAP);
-
-      copy->vmm->alloc_addr = thread->vmm->alloc_addr;
       copy->vmm->alloc_size = 0;
 
     } else if (flags & VM_SAME) {
@@ -272,7 +284,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       log_debug("user thread alloc usp size %d\n", copy->context.usp_size);
     }
     void* ustack =
-        kmalloc_alignment(copy->context.usp_size, PAGE_SIZE, DEFAULT_TYPE);
+        kmalloc_alignment(copy->context.usp_size, PAGE_SIZE, KERNEL_TYPE);
 
     vmemory_area_t* vm_stack = vmemory_area_find_flag(copy->vmm, MEMORY_STACK);
     if (vm_stack == NULL) {
@@ -280,12 +292,10 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       copy->context.usp = STACK_ADDR + MEMORY_STACK_SIZE;
     } else {
       copy->context.usp = vm_stack->vend;
-      vm_stack->alloc_addr = vm_stack->vend;
-      vm_stack->alloc_addr -= copy->context.usp_size;
+      vm_stack->alloc_addr = vm_stack->vend - copy->context.usp_size;
       vm_stack->alloc_size += copy->context.usp_size;
 
-      void* phy = kvirtual_to_physic(ustack, 0);
-      thread_map(copy, vm_stack->alloc_addr, phy, copy->context.usp_size);
+      thread_map(copy, vm_stack->alloc_addr, ustack, copy->context.usp_size);
     }
     if (copy->level == KERNEL_MODE) {
       log_debug("kernel thread init end\n");
@@ -323,6 +333,20 @@ int thread_check(thread_t* thread) {
     log_error("create thread %d faild for ksp start is null\n", thread->id);
     return -1;
   }
+  if (thread->context.ksp_end == NULL) {
+    log_error("create thread %d faild for ksp end is null\n", thread->id);
+    return -1;
+  }
+  if (thread->context.ksp_size <= 0) {
+    log_error("create thread %d faild for ksp size is 0\n", thread->id);
+    return -1;
+  }
+  if ((thread->context.ksp_end - thread->context.ksp_start) !=
+      thread->context.ksp_size) {
+    log_error("create thread %d faild for ksp size is not equal\n", thread->id);
+    return -1;
+  }
+
   if (thread->context.upage == NULL) {
     log_error("create thread %d faild for upage is null\n", thread->id);
     return -1;
@@ -722,7 +746,7 @@ void thread_dumps() {
   char* str = "unkown";
   kprintf(
       "id   pid  name           state     cpu  count  "
-      "  vm   pm   nstack  file  sleep\n");
+      "  vm   pm   nstack  file  sleep  level\n");
   for (int i = 0; i < MAX_CPU; i++) {
     for (thread_t* p = schedulable_head_thread[i]; p != NULL; p = p->next) {
       if (p->state <= THREAD_SLEEP) {
@@ -736,10 +760,10 @@ void thread_dumps() {
       } else {
         kprintf("   ");
       }
-      kprintf("%-8s %4d %6d %4dk %4dk %4dk %4d %6d\n", str, p->cpu_id,
+      kprintf("%-8s %4d %6d %4dk %4dk %4dk %4d %6d     %1d\n", str, p->cpu_id,
               p->counter, p->vmm != NULL ? p->vmm->alloc_size / 1024 : 0,
               p->mem / 1024, p->context.usp_size / 1024, p->fd_number,
-              p->sleep_counter);
+              p->sleep_counter, p->level);
     }
   }
 }

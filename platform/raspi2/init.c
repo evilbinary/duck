@@ -72,6 +72,7 @@ void timer_end() {
 void platform_init() { io_add_write_channel(uart_send); }
 
 void platform_end() {
+  map_page(MMIO_BASE, MMIO_BASE, 0);
   map_page(UART0_DR, UART0_DR, 0);
   map_page(CORE0_TIMER_IRQCNTL & ~0xfff, CORE0_TIMER_IRQCNTL & ~0xfff, 0);
 }

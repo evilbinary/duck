@@ -147,6 +147,7 @@ void platform_init() {
 }
 
 void platform_end() {
+  map_page(MMIO_BASE, MMIO_BASE, 0);
   map_page(UART0_DR, UART0_DR, L2_NCNB);
   map_page(CORE0_TIMER_IRQCNTL, CORE0_TIMER_IRQCNTL, L2_NCNB);
   // memory

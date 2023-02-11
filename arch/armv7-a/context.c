@@ -184,6 +184,8 @@ int context_clone(context_t* des, context_t* src) {
     // ic->psr = cpsr.val;
     // ic->pc-=4;
   }
+  // kmemmove(ksp,src->ksp,offset);
+
   des->ksp = ksp;
 #if DEBUG
   kprintf("------context clone dump des--------------\n");

@@ -47,7 +47,7 @@ typedef struct context_t {
 
   void* ksp_start;
   void* ksp_end;
-  
+
   u32 usp_size;
   u32 ksp_size;
 } context_t;
@@ -85,7 +85,7 @@ typedef struct context_t {
       "add sp,sp,#60\n"                      \
       "subs pc,lr,#0\n"                      \
       :                                      \
-      : "m"(((context_t*)duck_context)->ksp))
+      : "m"(duck_context->ksp))
 
 #define interrupt_exit_ret()       \
   asm volatile(                    \
@@ -116,9 +116,7 @@ typedef struct context_t {
 
 #define context_fn(context) context->r7
 #define context_ret(context) context->r0
-#define context_set_entry(context, entry) \
-  (((interrupt_context_t*)context)->pc = entry); \
-  (((interrupt_context_t*)context)->lr = entry)
+#define context_set_entry(context, entry) (((interrupt_context_t*)context)->pc = entry);
 
 #define context_restore(duck_context) interrupt_exit_context(duck_context);
 

@@ -54,12 +54,16 @@ int do_exec(char* cmd, int count, char** env) {
   }
   sprintf(buf, "/%s", argv[0]);
   int pid = syscall0(SYS_FORK);
+  char temp[64];
+  int p = syscall0(SYS_GETPID);
   if (pid == 0) {  // 子进程
-    int p = syscall0(SYS_GETPID);
+    sprintf(temp,"fork child pid=%d p=%d\n",pid,p);
+    print_string(temp);
     syscall3(SYS_EXEC, buf, argv, env);
     syscall1(SYS_EXIT, 0);
   } else {
-    int p = syscall0(SYS_GETPID);
+    sprintf(temp,"fork parent pid=%d p=%d\n",pid,p);
+    print_string(temp);
   }
   return pid;
 }

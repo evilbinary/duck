@@ -181,6 +181,7 @@ void platform_init() {
 }
 
 void platform_end() {
+  map_page(MMIO_BASE, MMIO_BASE, 0);
   uart_send('E');
   uart_send('\n');
 }

@@ -93,6 +93,7 @@
 // #define fn_free kfree
 
 #define LOG_COLOR 1
+#define THREAD_DUMP_STOP_COUNT 1
 
 #include "logger.h"
 

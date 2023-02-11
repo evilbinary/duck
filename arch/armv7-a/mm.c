@@ -41,12 +41,10 @@ void mm_init_default() {
   map_mem_block(PAGE_SIZE * 10000, 0);
 
   // map 0 - 0x80000
-  map_range(0, 0, PAGE_SIZE * 200, 0);
+  map_range(0, 0, PAGE_SIZE * 20, 0);
 
   // map kernel
   map_kernel(L2_TEXT_1 | L2_NCB);
-
-  map_page(MMIO_BASE, MMIO_BASE, 0);
 
   kprintf("map page end\n");
 }
