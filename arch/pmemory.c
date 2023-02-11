@@ -678,13 +678,14 @@ void map_kernel(u32 flag_x, u32 flag_rw) {
     u32 size = boot_info->segments[i].size;
     address = boot_info->segments[i].start;
     u32 flag = flag_x;
-    if (boot_info->segments[i].type == 2) {
+    u32 type = boot_info->segments[i].type;
+    if (type == 2) {
       flag = flag_rw;
     }
     map_range(address, address, size, flag);
 
-    kprintf("map kernel %d range %x  - %x\n", i, boot_info->segments[i].start,
-            address + size);
+    kprintf("map kernel %d range %x  - %x type %d\n", i, boot_info->segments[i].start,
+            address + size,type);
   }
   kprintf("map kernel end %d\n", boot_info->segments_number);
 }
