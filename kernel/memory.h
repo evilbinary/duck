@@ -60,11 +60,11 @@ typedef struct memory {
 } memory_t;
 
 typedef struct vmemory_area {
-  void* vaddr;
-  void* vend;
+  u32 vaddr;
+  u32 vend;
   u32 size;
   u8 flags;
-  void* alloc_addr;
+  u32 alloc_addr;
   u32 alloc_size;
   struct vmemory_area* next;
   struct vmemory_area* child;

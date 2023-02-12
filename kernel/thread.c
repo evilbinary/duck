@@ -151,8 +151,8 @@ void thread_vm_copy_data(thread_t* copy, thread_t* thread, u32 type) {
   cvm->vend = vm->vend;
   cvm->size = vm->size;
 
-  u32* addr = NULL;
-  u32* end_addr = NULL;
+  u32 addr = NULL;
+  u32 end_addr = NULL;
   char* type_str = NULL;
   if (type == MEMORY_STACK) {
     addr = vm->alloc_addr;

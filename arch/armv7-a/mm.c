@@ -44,7 +44,7 @@ void mm_init_default() {
   map_range(0, 0, PAGE_SIZE * 20, 0);
 
   // map kernel
-  map_kernel(L2_TEXT_1 | L2_CB, L2_NCNB);
+  map_kernel(L2_TEXT_1 | L2_NCB, L2_NCNB);
 
   kprintf("map page end\n");
 }
