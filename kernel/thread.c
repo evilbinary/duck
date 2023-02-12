@@ -107,6 +107,9 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   thread_init_vm(thread, current, flags);
 
   context_init(&thread->context, entry, thread->level, thread->cpu_id);
+
+  // check thread data
+  int ret = thread_check(copy);
   return thread;
 }
 
@@ -139,6 +142,8 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
 
   context_clone(&copy->context, &thread->context);
 
+  // check thread data
+  int ret = thread_check(copy);
   log_debug("thread copy end\n");
   return copy;
 }
@@ -307,9 +312,6 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       log_debug("user thread %d init end\n", copy->id);
     }
   }
-
-  // check thread data
-  int ret = thread_check(copy);
   return ret;
 }
 
@@ -355,12 +357,17 @@ int thread_check(thread_t* thread) {
     log_error("create thread %d faild for upage is null\n", thread->id);
     return -1;
   }
+
   if (thread->context.usp_size <= 0) {
     log_error("create thread %d faild for ustack size is 0\n", thread->id);
     return -1;
   }
   if (thread->context.usp <= 0) {
     log_error("create thread %d faild for ustack is 0\n", thread->id);
+    return -1;
+  }
+  if (thread->context.upage == NULL) {
+    log_error("create thread %d faild for kpage is null\n", thread->id);
     return -1;
   }
   if (thread->vmm == NULL) {
