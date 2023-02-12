@@ -109,7 +109,7 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   context_init(&thread->context, entry, thread->level, thread->cpu_id);
 
   // check thread data
-  int ret = thread_check(copy);
+  int ret = thread_check(thread);
   return thread;
 }
 
@@ -186,6 +186,7 @@ void thread_vm_copy_data(thread_t* copy, thread_t* thread, u32 type) {
 }
 
 int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
+  int ret=0;
   if (thread != NULL) {
     log_debug("init vm kstack size %d\n", thread->context.ksp_size);
   }
