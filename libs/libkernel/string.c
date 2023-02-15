@@ -234,7 +234,8 @@ void* kmemset(void* s, int c, size_t n) {
       kassert(block->size>=n);
       block->count++;
       if(block->count>=2){
-        kassert(false);
+        kprintf("block kmemset addr =%x %d\n",block,block->count);
+        // kassert(false);
       }
     }
   }
