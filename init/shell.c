@@ -38,6 +38,35 @@ void ps_command() { syscall0(SYS_DUMPS); }
 
 void mem_info_command() { syscall0(SYS_MEMINFO); }
 
+#define USE_FORK 1
+
+void hello_thread(void) {
+  char* cmd="/ls";
+  print_string("hello\n");
+  syscall3(SYS_EXEC, cmd, NULL, NULL);
+  syscall1(SYS_EXIT, 0);
+}
+
+int run_exec(char* cmd, char** argv,char** env){
+#ifdef USE_FORK
+  int pid = syscall0(SYS_FORK);
+  char temp[64];
+  int p = syscall0(SYS_GETPID);
+  if (pid == 0) {  // 子进程
+    sprintf(temp,"fork child pid=%d p=%d\n",pid,p);
+    print_string(temp);
+    syscall3(SYS_EXEC, cmd, argv, env);
+    syscall1(SYS_EXIT, 0);
+  } else {
+    sprintf(temp,"fork parent pid=%d p=%d\n",pid,p);
+    print_string(temp);
+  }
+#else
+  thread_t* t = thread_create_name(cmd, (u32*)&hello_thread, NULL);
+  thread_run(t);
+#endif
+}
+
 int do_exec(char* cmd, int count, char** env) {
   char buf[64];
   cmd[count] = 0;
@@ -53,18 +82,7 @@ int do_exec(char* cmd, int count, char** env) {
     return 0;
   }
   sprintf(buf, "/%s", argv[0]);
-  int pid = syscall0(SYS_FORK);
-  char temp[64];
-  int p = syscall0(SYS_GETPID);
-  if (pid == 0) {  // 子进程
-    sprintf(temp,"fork child pid=%d p=%d\n",pid,p);
-    print_string(temp);
-    syscall3(SYS_EXEC, buf, argv, env);
-    syscall1(SYS_EXIT, 0);
-  } else {
-    sprintf(temp,"fork parent pid=%d p=%d\n",pid,p);
-    print_string(temp);
-  }
+  int pid=run_exec(buf,argv,env);
   return pid;
 }
 

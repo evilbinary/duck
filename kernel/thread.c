@@ -186,7 +186,7 @@ void thread_vm_copy_data(thread_t* copy, thread_t* thread, u32 type) {
 }
 
 int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
-  int ret=0;
+  int ret = 0;
   if (thread != NULL) {
     log_debug("init vm kstack size %d\n", thread->context.ksp_size);
   }
@@ -198,6 +198,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
   u32 koffset = 0;
   if (copy->level == KERNEL_MODE) {
     koffset += KERNEL_OFFSET;
+    log_debug("init vm level %d\n", copy->level);
   }
 
   // 文件分配方式
@@ -213,11 +214,14 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
   // kstack
   if (copy->context.ksp_start == NULL) {
     int stack_size = copy->context.ksp_size;
+    if (thread != NULL) {
+      stack_size = thread->context.ksp_size;
+      log_debug("copy ksp size %d\n", thread->context.ksp_size);
+    }
     void* kstack = kmalloc(stack_size, KERNEL_TYPE);
     copy->context.ksp_start = kstack;
     copy->context.ksp_end = copy->context.ksp_start + stack_size;
-    copy->context.ksp =
-        (u32)copy->context.ksp_end - sizeof(interrupt_context_t);
+    copy->context.ksp = copy->context.ksp_end - sizeof(interrupt_context_t);
     if (thread != NULL) {
       kmemmove(kstack, thread->context.ksp_start, stack_size);
     }
@@ -232,7 +236,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       copy->vmm = vmemory_clone(thread->vmm, 0);
       // 分配页
       copy->context.upage =
-          page_alloc_clone(thread->context.upage, thread->level);
+          page_alloc_clone(NULL, thread->level);
 
       // 栈拷贝并映射
       thread_vm_copy_data(copy, thread, MEMORY_STACK);
@@ -328,8 +332,8 @@ void thread_map(thread_t* thread, u32 virt_addr, u32 phy_addr, u32 size) {
     map_page_on(page, virt_addr + offset, phy_addr + offset,
                 PAGE_P | PAGE_USU | PAGE_RWW);
 #ifdef DEBUG
-    log_debug("thread %d map %d vaddr: %x - paddr: %x\n", thread->id, i,
-              virt_addr + offset, phy_addr + offset);
+    log_debug("thread %d page:%x map %d vaddr: %x - paddr: %x\n", thread->id,
+              page, i, virt_addr + offset, phy_addr + offset);
 #endif
     offset += PAGE_SIZE;
   }
@@ -395,6 +399,7 @@ int thread_check(thread_t* thread) {
     log_error("thread map have error\n");
     return -1;
   }
+  vmemory_dump(thread->vmm);
 
   return 0;
 }
