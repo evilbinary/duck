@@ -26,6 +26,48 @@ u32* page_create(u32 level) {
   return page_dir_ptr_tab;
 }
 
+void page_copy(u32* old_page, u32* new_page) {
+  // kprintf("page_clone:%x %x\n",old_page,new_page);
+  if (old_page == NULL) {
+    kprintf("page clone error old page null\n");
+    return;
+  }
+  u32* l1 = old_page;
+  u32* new_l1 = new_page;
+  // kprintf("page clone %x to %x\n",old_page,new_page);
+  for (int l1_index = 0; l1_index < 4096; l1_index++) {
+    u32* l2 = ((u32)l1[l1_index]) & 0xFFFFFC00;
+    if (l2 != NULL) {
+      page_dir_t* new_l2 = mm_alloc_zero_align(256 * sizeof(u32), 0x1000);
+      new_l1[l1_index] = (((u32)new_l2) & 0xFFFFFC00) | L1_DESC;
+      // kprintf("%d %x\n", l1_index, (u32)l2>>10 );
+      for (int l2_index = 0; l2_index < 256; l2_index++) {
+        u32* addr = l2[l2_index] >> 12;
+        if (addr != NULL || l1_index == 0) {
+          new_l2[l2_index] = l2[l2_index];
+          // kprintf("  %d %x\n", l2_index, addr);
+        }
+      }
+    }
+  }
+}
+
+u32* page_clone(u32* old_page_dir, u32 level) {
+  if (level == KERNEL_MODE) {
+    // must no cache
+    return kernel_page_dir;
+  }
+  if (level == USER_MODE) {
+    u32* page_dir_ptr_tab =page_create(level);
+    if (old_page_dir == NULL) {
+      old_page_dir = kernel_page_dir;
+    }
+    page_copy(old_page_dir, page_dir_ptr_tab);
+    return page_dir_ptr_tab;
+  }
+  return page_create(level);
+}
+
 void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
   // kprintf("map page %x vaddr:%x paddr:%x\n",l1,virtualaddr,physaddr);
   u32 l1_index = virtualaddr >> 20;

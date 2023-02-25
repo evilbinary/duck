@@ -251,7 +251,8 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       // todo
       copy->vmm = vmemory_clone(thread->vmm, 1);
       // 分配页
-      copy->context.upage = page_create(thread->level);
+      copy->context.upage =
+          page_clone(thread->context.upage, thread->level);
 
       // 栈拷贝并映射
       thread_vm_copy_data(copy, thread, MEMORY_STACK);
@@ -267,7 +268,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       log_warn("vm same todo\n");
     } else if (flags & VM_ALLOC) {
       // todo
-      copy->context.upage = page_create(copy->level);
+      copy->context.upage = page_clone(NULL, copy->level);
       log_warn("vm alloc todo\n");
     } else if (flags & VM_COW) {
       // todo check
@@ -289,7 +290,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
   } else {
     // vmm分配方式
     copy->vmm = vmemory_create_default(koffset);
-    copy->context.upage = page_create(copy->level);
+    copy->context.upage = page_clone(NULL, copy->level);
     if (copy->level == KERNEL_MODE) {
       log_debug("kernel start before init\n");
     } else if (copy->level == USER_MODE) {
