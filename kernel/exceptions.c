@@ -78,6 +78,7 @@ void exception_on_other(interrupt_context_t *ic) {
   int cpu = cpu_get_id();
   thread_t *current = thread_current();
   log_debug("exception other on cpu %d no %d code %x\n", cpu, ic->no, ic->code);
+  exception_info(ic);
   exception_process_error(current, ic, (void *)&exception_error_exit);
 }
 
@@ -85,6 +86,7 @@ void exception_on_undef(interrupt_context_t *ic) {
   int cpu = cpu_get_id();
   thread_t *current = thread_current();
   log_debug("exception undef on cpu %d no %d code %x\n", cpu, ic->no, ic->code);
+  exception_info(ic);
   exception_process_error(current, ic, (void *)&exception_error_exit);
 }
 

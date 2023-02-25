@@ -134,13 +134,12 @@ void exception_info(interrupt_context_t* ic) {
                                         "IRQ",        "FIQ"};
   int cpu = cpu_get_id();
   if (ic->no < sizeof exception_msg) {
-    kprintf("exception cpu %d no %d: %s\n----------------------------\n", cpu,
-            ic->no, exception_msg[ic->no]);
+    kprintf("exception cpu %d no %d: %s\n", cpu, ic->no, exception_msg[ic->no]);
   } else {
-    kprintf("exception cpu %d no %d:\n----------------------------\n", cpu,
-            ic->no);
+    kprintf("exception cpu %d no %d:\n", cpu, ic->no);
   }
-  kprintf("current pc: %x\n", read_pc());
+  u32 instruction = *((u32*)ic->pc);
+  kprintf("pc: %x data: %x\n", ic->pc,instruction );
 
   kprintf("ifsr: %x dfsr: %x dfar: %x\n", read_ifsr(), read_dfsr(),
           read_dfar());

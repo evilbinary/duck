@@ -400,6 +400,8 @@ int thread_check(thread_t* thread) {
   }
   vmemory_dump(thread->vmm);
 
+  log_debug("tid %d kpage %x upage %x\n",thread->id,thread->context.kpage,thread->context.upage);
+
   return 0;
 }
 
