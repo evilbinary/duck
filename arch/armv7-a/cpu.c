@@ -330,7 +330,9 @@ int cpu_get_number() { return boot_info->tss_number; }
 
 u32 cpu_get_id() {
   int cpu = 0;
+#if MP_ENABLE
   __asm__ volatile("mrc p15, #0, %0, c0, c0, #5\n" : "=r"(cpu));
+#endif
   return cpu&0xf;
 }
 

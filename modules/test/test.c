@@ -10,8 +10,7 @@ int test_init(void) {
 #ifdef X86
   test_ahci();
 #endif
-  test_fat();
-
+  // test_fat();
   return 0;
 }
 

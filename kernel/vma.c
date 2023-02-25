@@ -114,3 +114,11 @@ vmemory_area_t* vmemory_create_default(u32 koffset) {
   vmemory_area_add(vmm, stack);
   return vmm;
 }
+
+void vmemory_dump(vmemory_area_t* areas) {
+  vmemory_area_t* p = areas;
+  for (; p != NULL; p = p->next) {
+    log_debug("vaddr:%x vend:%x size:%x alloc p:%x size:%x flag:%x\n", p->vaddr,
+              p->vend, p->size, p->alloc_addr, p->alloc_size,p->flags);
+  }
+}

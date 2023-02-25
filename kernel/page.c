@@ -29,6 +29,7 @@ void page_fault_handle(interrupt_context_t *ic) {
       void *phy = virtual_to_physic(current->context.kpage, fault_addr);
 #ifdef DEBUG
       log_debug("page area not found %x\n", fault_addr);
+      vmemory_dump(current->vmm);
 #endif
       if (phy != NULL) {
 #ifdef DEBUG

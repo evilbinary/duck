@@ -143,11 +143,15 @@ void run_elf_thread(void* a) {
     log_error("get current thread error\n");
     return;
   }
+    log_debug("run load elf1\n");
+
   exec_t* exec = current->exec;
   if (exec == NULL) {
     log_error("get current thread exec error\n");
     return;
   }
+      log_debug("run load elf2\n");
+
   u32 fd = syscall2(SYS_OPEN, exec->filename, 0);
 #ifdef LOAD_ELF_NAME_DEBUG
   log_debug("load elf %s fd:%d tid:%d\n", exec->filename, fd, current->id);
@@ -157,6 +161,8 @@ void run_elf_thread(void* a) {
     syscall1(SYS_EXIT, -1);
     return;
   }
+      log_debug("run load elf1\n");
+
   u32 nbytes = syscall3(SYS_READ, fd, &elf, sizeof(Elf32_Ehdr));
 
   Elf32_Ehdr* elf_header = (Elf32_Ehdr*)&elf;
