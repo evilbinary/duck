@@ -110,7 +110,7 @@ void* vm_alloc_alignment(size_t size, int alignment) {
 
 void vm_free(void* ptr) {
   thread_t* current = thread_current();
-  void* addr = kvirtual_to_physic(ptr, 0);
+  void* addr = kpage_v2p(ptr, 0);
   size_t size = mm_get_size(addr);
   mm_free(addr);
   memory_static(size, MEMORY_TYPE_FREE);
@@ -118,7 +118,7 @@ void vm_free(void* ptr) {
 
 void vm_free_alignment(void* ptr) {
   thread_t* current = thread_current();
-  void* addr = kvirtual_to_physic(ptr, 0);
+  void* addr = kpage_v2p(ptr, 0);
   size_t size = mm_get_size(addr);
   mm_free_align(addr);
   memory_static(size, MEMORY_TYPE_FREE);
@@ -139,7 +139,7 @@ void* kmalloc_trace(size_t size, u32 flag, void* name, void* no, void* fun) {
     addr = vm_alloc(size);
   }
   alloc_total += size;
-  void* paddr = kvirtual_to_physic(addr, 0);
+  void* paddr = kpage_v2p(addr, 0);
   log_debug(
       "kmalloc count:%04d total:%06dk size:%04d addr:%06x paddr:%06x %s:%d "
       "%s\n",
@@ -160,7 +160,7 @@ void* kmalloc_alignment_trace(size_t size, int alignment, u32 flag, void* name,
     addr = vm_alloc_alignment(size, alignment);
   }
   alloc_total += size;
-  void* paddr = kvirtual_to_physic(addr, 0);
+  void* paddr = kpage_v2p(addr, 0);
 
   log_debug(
       "kmalloca count:%04d total:%06dk size:%04d addr:%06x paddr:%06x %s:%d "
@@ -296,10 +296,10 @@ void* valloc(void* addr, size_t size) {
               paddr);
 #endif
     if (current != NULL) {
-      map_page_on(current->context.upage, vaddr, paddr,
+      page_map_on(current->context.upage, vaddr, paddr,
                   PAGE_P | PAGE_USU | PAGE_RWW);
     } else {
-      map_page(vaddr, paddr, PAGE_P | PAGE_USU | PAGE_RWW);
+      page_map(vaddr, paddr, PAGE_P | PAGE_USU | PAGE_RWW);
     }
     // kprintf("vmap vaddr:%x paddr:%x\n", vaddr, paddr);
     vaddr += PAGE_SIZE;
@@ -317,12 +317,12 @@ void vfree(void* addr, size_t size) {
 
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
   for (int i = 0; i < pages; i++) {
-    void* phy = virtual_to_physic(current->context.upage, vaddr);
+    void* phy = page_v2p(current->context.upage, vaddr);
 #ifdef DEBUG
     log_debug("vfree vaddr:%x paddr:%x\n", vaddr, phy);
 #endif
     // todo
-    //  unmap_page_on(current->context.upage, vaddr);
+    //  unpage_map_on(current->context.upage, vaddr);
     if (phy != NULL) {
 #ifdef USE_POOL
       int ret = queue_pool_put(user_pool, phy);
@@ -337,49 +337,23 @@ void vfree(void* addr, size_t size) {
   }
 }
 
-void* kvirtual_to_physic(void* addr, int size) {
+void* kpage_v2p(void* addr, int size) {
   thread_t* current = thread_current();
   void* phy = NULL;
   if (current != NULL) {
-    phy = virtual_to_physic(current->context.upage, addr);
+    phy = page_v2p(current->context.upage, addr);
     if (phy == NULL) {
       log_error("get page: %x addr %x phy null\n", current->context.upage,
                 addr);
       if (size > 0) {
         kmemset(addr, 0, size);
       }
-      phy = virtual_to_physic(current->context.upage, addr);
+      phy = page_v2p(current->context.upage, addr);
     }
   } else {
     phy = addr;
   }
   return phy;
-}
-
-void map_2gb(u64* page_dir_ptr_tab, u32 attr) {
-  u32 addr = 0;
-  for (int i = 0; i < 0x200000 / PAGE_SIZE; i++) {
-    map_page_on(page_dir_ptr_tab, addr, addr, attr);
-    addr += PAGE_SIZE;
-  }
-}
-
-void map_alignment(void* page, void* vaddr, void* buf, u32 size) {
-  u32 file_4k = PAGE_SIZE;
-  if (size > PAGE_SIZE) {
-    file_4k = size;
-  }
-  for (int i = 0; i < file_4k / PAGE_SIZE; i++) {
-    log_debug("map_alignment vaddr:%x paddr:%x\n", vaddr, buf);
-    map_page_on(page, (u32)vaddr, (u32)buf, PAGE_P | PAGE_USU | PAGE_RWW);
-    vaddr += PAGE_SIZE;
-    buf += PAGE_SIZE;
-  }
-}
-
-void page_clone_user(u64* page, u64* page_dir_ptr_tab) {
-  page_clone(page, page_dir_ptr_tab);
-  // unmap_mem_block(page_dir_ptr_tab, 0x200000);
 }
 
 void kpool_init() {

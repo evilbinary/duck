@@ -283,7 +283,7 @@ void ahci_dev_port_init(ahci_device_t* ahci_dev, int no) {
   int cmd_size=40 * 1024 + 8 * 1024 *port_size ;
 
   //void* base_cmd = kmalloc(cmd_size);
-  //base_cmd = kvirtual_to_physic(base_cmd,cmd_size);
+  //base_cmd = kpage_v2p(base_cmd,cmd_size);
   //use mm alloc
   void* base_cmd =kmalloc(cmd_size,DEVICE_TYPE);
 
@@ -339,7 +339,7 @@ void ahci_dev_prob(ahci_device_t* ahci_dev) {
   hba_memory_t* hab_memory = ahci_dev->abar;
   u32 addr = hab_memory;
   //映射到内核中，地址一一映射，当然你可以自己映射到固定位置，这里怎么简单怎么来（偷懒）^_^!!
-  map_page(addr, addr, PAGE_P | PAGE_USU | PAGE_RWW);
+  page_map(addr, addr, PAGE_P | PAGE_USU | PAGE_RWW);
   u32 pi = hab_memory->pi;//看看port有几个一个bit代表一个，32bit长，需要循环32次看看。
   for (int i = 0; i < 32; i++, pi >>= 1) {
     if (!(pi & 1)) {//当前位置没有被设置成1，说明没有设备，继续。

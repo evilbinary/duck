@@ -23,7 +23,7 @@ static void write_pixel(vga_device_t *vga, uint32_t x, uint32_t y,
 static void inline v3s_de_enable(v3s_lcd_t *lcd) {
   struct de_glb_t *glb = (struct de_glb_t *)(lcd->de + V3S_DE_MUX_GLB);
 
-  // map_page((u32)&glb->dbuff,(u32)&glb->dbuff,0);
+  // page_map((u32)&glb->dbuff,(u32)&glb->dbuff,0);
 
   io_write32((u32)&glb->dbuff, 1);
 }
@@ -31,7 +31,7 @@ static void inline v3s_de_enable(v3s_lcd_t *lcd) {
 static inline void v3s_de_set_address(v3s_lcd_t *lcd, void *vram) {
   struct de_ui_t *ui =
       (struct de_ui_t *)(lcd->de + V3S_DE_MUX_CHAN + 0x1000 * 2);
-  // map_page((u32)&ui->cfg[0].top_laddr,(u32)&ui->cfg[0].top_laddr,0);
+  // page_map((u32)&ui->cfg[0].top_laddr,(u32)&ui->cfg[0].top_laddr,0);
 
   io_write32((u32)&ui->cfg[0].top_laddr, (u32)vram);
 }
@@ -222,14 +222,14 @@ int v3s_lcd_init(vga_device_t *vga) {
   lcd->timing.clk_active = 1;
 
   // map tcon 4k
-  map_page(V3S_TCON_BASE, V3S_TCON_BASE, 0);
+  page_map(V3S_TCON_BASE, V3S_TCON_BASE, 0);
   // map ccu 1k
-  map_page(V3S_CCU_BASE, V3S_CCU_BASE, 0);
+  page_map(V3S_CCU_BASE, V3S_CCU_BASE, 0);
 
   // map de 2m
   u32 addr = V3S_DE_BASE;
   for (int i = 0; i < 1024 * 1024 * 2 / PAGE_SIZE; i++) {
-    map_page(addr, addr, 0);
+    page_map(addr, addr, 0);
     addr += 0x1000;
   }
 
@@ -238,7 +238,7 @@ int v3s_lcd_init(vga_device_t *vga) {
   addr = vga->frambuffer;
   u32 paddr = vga->pframbuffer;
   for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    map_page(addr, paddr, PAGE_DEV);
+    page_map(addr, paddr, PAGE_DEV);
     addr += 0x1000;
     paddr += 0x1000;
   }

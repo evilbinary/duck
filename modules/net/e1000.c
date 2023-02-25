@@ -59,7 +59,7 @@ int net_init_device(device_t* dev) {
 
   u32 addr = bar0;
   for (int i = 0; i < 4; i++) {
-    map_page(addr, addr, PAGE_P | PAGE_USU | PAGE_RWW);
+    page_map(addr, addr, PAGE_P | PAGE_USU | PAGE_RWW);
     addr += 0x1000;
   }
   e1000_t* e1000 = kmalloc(sizeof(e1000_t),DEFAULT_TYPE);

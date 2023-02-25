@@ -111,7 +111,7 @@ void* phy_addr(void* buf, int len) {
   size_t phys = buf;
   thread_t* current = thread_current();
   if (current != NULL) {
-    phys = kvirtual_to_physic(buf, len);  // DMA phy
+    phys = kpage_v2p(buf, len);  // DMA phy
   }
   return phys;
 }

@@ -89,7 +89,7 @@ int context_init(context_t* context, u32* entry, u32 level, int cpu) {
     context->upage = addr;
   }
 #ifdef PAGE_CLONE
-  context->upage = page_alloc_clone(addr);
+  context->upage = page_create(USER_MODE);
 #endif
 }
 

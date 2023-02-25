@@ -90,8 +90,6 @@ void kfree(void* ptr);
 void kfree_alignment(void* ptr);
 #endif
 
-void map_alignment(void* page, void* vaddr, void* buf, u32 size);
-
 void* valloc(void* addr, size_t size);
 void vfree(void* addr, size_t size);
 
@@ -102,8 +100,8 @@ int kpool_put(void* e);
 void use_kernel_page();
 void use_user_page();
 
-void* virtual_to_physic(u64* page_dir_ptr_tab, void* vaddr);
-void* kvirtual_to_physic(void* addr, int size);
+void* page_v2p(u64* page_dir_ptr_tab, void* vaddr);
+void* kpage_v2p(void* addr, int size);
 
 void memory_init();
 

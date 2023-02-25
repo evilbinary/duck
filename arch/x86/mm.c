@@ -12,7 +12,7 @@ extern memory_manager_t mmt;
 
 u64 kernel_page_dir_ptr_tab[4] __attribute__((aligned(0x20)));
 
-void map_page_on(page_dir_t* page, u32 virtualaddr, u32 physaddr, u32 flags) {
+void page_map_on(page_dir_t* page, u32 virtualaddr, u32 physaddr, u32 flags) {
   u32 l1_pdpte_index = (u32)virtualaddr >> 30 & 0x03;
   u32 l2_pde_index = (u32)virtualaddr >> 21 & 0x01FF;
   u32 l3_pte_index = (u32)virtualaddr >> 12 & 0x01FF;
@@ -37,11 +37,11 @@ void map_page_on(page_dir_t* page, u32 virtualaddr, u32 physaddr, u32 flags) {
   // kprintf("map page:%x on vaddr:%x paddr:%x\n",page,virtualaddr,physaddr);
 }
 
-void map_page(u32 virtualaddr, u32 physaddr, u32 flags) {
-  map_page_on(kernel_page_dir_ptr_tab, virtualaddr, physaddr, flags);
+void page_map(u32 virtualaddr, u32 physaddr, u32 flags) {
+  page_map_on(kernel_page_dir_ptr_tab, virtualaddr, physaddr, flags);
 }
 
-void unmap_page_on(page_dir_t* page, u32 virtualaddr) {
+void unpage_map_on(page_dir_t* page, u32 virtualaddr) {
   u32 pdpte_index = (u32)virtualaddr >> 30 & 0x03;
   u32 pde_index = (u32)virtualaddr >> 21 & 0x01FF;
   u32 pte_index = (u32)virtualaddr >> 12 & 0x01FF;
@@ -86,12 +86,12 @@ void mm_init_default() {
 
   map_kernel(PAGE_P | PAGE_USU | PAGE_RWW,PAGE_P | PAGE_USU | PAGE_RWW );
 
-  map_page(boot_info->kernel_stack, boot_info->kernel_stack,
+  page_map(boot_info->kernel_stack, boot_info->kernel_stack,
            PAGE_P | PAGE_USU | PAGE_RWW);
 
-  map_page(boot_info->pdt_base, boot_info->pdt_base,
+  page_map(boot_info->pdt_base, boot_info->pdt_base,
            PAGE_P | PAGE_USU | PAGE_RWW);
-  map_page(boot_info->gdt_base, boot_info->gdt_base,
+  page_map(boot_info->gdt_base, boot_info->gdt_base,
            PAGE_P | PAGE_USU | PAGE_RWW);
 
   map_range(boot_info->disply.video, boot_info->disply.video,
@@ -107,7 +107,7 @@ void mm_page_enable() {
   }
 }
 
-void* virtual_to_physic(u64* page_dir_ptr_tab, void* vaddr) {
+void* page_v2p(u64* page_dir_ptr_tab, void* vaddr) {
   u32 pdpte_index = (u32)vaddr >> 30 & 0x03;
   u32 pde_index = (u32)vaddr >> 21 & 0x01FF;
   u32 pte_index = (u32)vaddr >> 12 & 0x01FF;
@@ -123,81 +123,20 @@ void* virtual_to_physic(u64* page_dir_ptr_tab, void* vaddr) {
     return NULL;
   }
   void* phyaddr = page_tab_ptr[pte_index] & ~0xFFF;
-  // kprintf("virtual_to_physic %x\n",phyaddr);
+  // kprintf("page_v2p %x\n",phyaddr);
   if (phyaddr == NULL) {
     return NULL;
   }
   return phyaddr + offset;
 }
 
-void page_clone(u32* old_page, u32* new_page) {
-  u64* page = old_page;
-  if (old_page == NULL) {
-    kprintf("page clone old page is null\n");
-    return;
-  }
-  u64* page_dir_ptr_tab = new_page;
-  for (int pdpte_index = 0; pdpte_index < 4; pdpte_index++) {
-    u64* page_dir_ptr = page[pdpte_index] & ~0xFFF;
-    if (page_dir_ptr != NULL) {
-      // kprintf("pdpte_index---->%d\n", pdpte_index);
-      u64* new_page_dir_ptr = mm_alloc_zero_align(sizeof(u64) * 512, PAGE_SIZE);
-      page_dir_ptr_tab[pdpte_index] =
-          ((u64)new_page_dir_ptr) | PAGE_P | PAGE_USU | PAGE_RWW;
-      for (int pde_index = 0; pde_index < 512; pde_index++) {
-        u64* page_tab_ptr = (u64)page_dir_ptr[pde_index] & ~0xFFF;
-        if (page_tab_ptr != NULL) {
-          // kprintf("pdpte_index---->%d pde_index-> %d\n", pdpte_index,
-          //         pde_index);
-          u64* new_page_tab_ptr =
-              mm_alloc_zero_align(sizeof(u64) * 512, PAGE_SIZE);
-          new_page_dir_ptr[pde_index] =
-              ((u64)new_page_tab_ptr) | PAGE_P | PAGE_USU | PAGE_RWW;
-          for (int pte_index = 0; pte_index < 512; pte_index++) {
-            // kprintf("pdpte_index---->%d pde_index-> %d pte_index %d\n",
-            // pdpte_index, pde_index,pte_index);
 
-            u64* page_tab_item = page_tab_ptr[pte_index] & ~0xFFF;
-            if (page_tab_item != NULL) {
-              new_page_tab_ptr[pte_index] = page_tab_ptr[pte_index];
-              u32 virtualaddr = (pdpte_index & 0x03) << 30 |
-                                (pde_index & 0x01FF) << 21 |
-                                (pte_index & 0x01FF) << 12;
-              // kprintf("map vir:%x phy:%x \n",
-              // virtualaddr,new_page_tab_ptr[pte_index]& ~0xFFF);
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-u32* page_alloc_clone(u32* old_page_dir, u32 level) {
+u32* page_create(u32 level) {
   if (level == KERNEL_MODE) {
     return kernel_page_dir_ptr_tab;
   }
-  if (level == USER_MODE) {
-    u32* page_dir_ptr_tab = mm_alloc_zero_align(sizeof(u64) * 4, 0x1000);
-    for (int i = 0; i < 4; i++) {
-      page_dir_ptr_tab[i] = 0;
-    }
-    if (old_page_dir == NULL) {
-      old_page_dir = kernel_page_dir_ptr_tab;
-    }
-    page_clone(old_page_dir, page_dir_ptr_tab);
-    return page_dir_ptr_tab;
-  }
-  if (level == -1) {
-    u32* page_dir_ptr_tab = mm_alloc_zero_align(sizeof(u64) * 4, 0x1000);
-    page_clone(old_page_dir, page_dir_ptr_tab);
-    return page_dir_ptr_tab;
-  }
-  if (level == -2) {
-    u32* page_dir_ptr_tab = mm_alloc_zero_align(sizeof(u64) * 4, 0x1000);
-    return page_dir_ptr_tab;
-  }
-  return NULL;
+  u32* page_dir_ptr_tab = mm_alloc_zero_align(sizeof(u64) * 4, 0x1000);
+  return page_dir_ptr_tab;
 }
 
 // 回收

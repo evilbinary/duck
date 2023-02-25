@@ -102,7 +102,7 @@ int gpu_init_mode(vga_device_t* vga, int mode) {
   vga->write = NULL;
 
   log_debug("map box %x\n", BCM2835_MAILBOX_BASE & ~0xfff);
-  map_page(BCM2835_MAILBOX_BASE & ~0xfff, BCM2835_MAILBOX_BASE & ~0xfff,
+  page_map(BCM2835_MAILBOX_BASE & ~0xfff, BCM2835_MAILBOX_BASE & ~0xfff,
            L2_NCNB);
 
   bcm2836_init(vga);
@@ -117,7 +117,7 @@ int gpu_init_mode(vga_device_t* vga, int mode) {
   }
   log_debug("map fb start %x %x\n", addr, addr);
   for (int i = 0; i < vga->framebuffer_length * 8 / PAGE_SIZE; i++) {
-    map_page(addr, addr, 0);
+    page_map(addr, addr, 0);
     addr += 0x1000;
   }
   log_debug("map fb end %x %x\n", addr, addr);

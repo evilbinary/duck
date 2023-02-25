@@ -92,7 +92,7 @@ void* ya_sbrk(size_t size) {
             addr, mmt.last_map_addr, mmt.extend_phy_count);
     // extend 400k*mmt.extend_phy_count phy mem
     for (int i = 0; i < 100 * mmt.extend_phy_count; i++) {
-      map_page(mmt.last_map_addr, mmt.last_map_addr,
+      page_map(mmt.last_map_addr, mmt.last_map_addr,
                PAGE_P | PAGE_USU | PAGE_RWW);
       mmt.last_map_addr += PAGE_SIZE;
     }
@@ -664,7 +664,7 @@ void map_mem_block(u32 size, u32 flags) {
 void map_range(u32 vaddr, u32 paddr, u32 size, u32 flag) {
   int pages = size / PAGE_SIZE + (size % PAGE_SIZE > 0 ? 1 : 0);
   for (int j = 0; j < pages; j++) {
-    map_page(vaddr, paddr, flag);
+    page_map(vaddr, paddr, flag);
     vaddr += PAGE_SIZE;
     paddr += PAGE_SIZE;
   }

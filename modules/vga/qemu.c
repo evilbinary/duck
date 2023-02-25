@@ -115,7 +115,7 @@ int qemu_init_device(device_t* dev, u32 vendor_id, u32 device_id) {
   // qemu_read_reg(VBE_DISPI_INDEX_VIDEO_MEMORY_64K)
   //todo
   for (int i = 0; i < size * vga->framebuffer_count / PAGE_SIZE/8; i++) {
-    map_page(addr, addr, PAGE_P | PAGE_USU | PAGE_RWW);
+    page_map(addr, addr, PAGE_P | PAGE_USU | PAGE_RWW);
     addr += PAGE_SIZE;
   }
 
@@ -124,7 +124,7 @@ int qemu_init_device(device_t* dev, u32 vendor_id, u32 device_id) {
   //   u32 phy = kmalloc_alignment(size, PAGE_SIZE);
   //   addr = vga->frambuffer;
   //   for (int i = 0; i < size / PAGE_SIZE; i++) {
-  //     map_page(addr, phy, PAGE_P | PAGE_USU | PAGE_RWW);
+  //     page_map(addr, phy, PAGE_P | PAGE_USU | PAGE_RWW);
   //     kprintf("qemu map %x %x\n", addr, phy);
   //     addr += PAGE_SIZE;
   //     phy += PAGE_SIZE;

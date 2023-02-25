@@ -69,7 +69,7 @@ void vga_init_device(device_t* dev) {
   dev->data = vga;
   u32 addr = bar0;
   for (int i = 0; i < 128; i++) {
-    map_page(addr, addr, PAGE_P | PAGE_USU | PAGE_RWW);
+    page_map(addr, addr, PAGE_P | PAGE_USU | PAGE_RWW);
     addr += 0x1000;
   }
 

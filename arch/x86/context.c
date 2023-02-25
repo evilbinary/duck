@@ -183,7 +183,7 @@ int context_clone(context_t* des, context_t* src) {
     return -1;
   }
 
-  context_t* pdes = virtual_to_physic(des->upage, des);
+  context_t* pdes = page_v2p(des->upage, des);
 
   // 这里重点关注 usp ksp upage 3个变量的复制
   u32* ksp_end = (u32)des->ksp_end - sizeof(interrupt_context_t);

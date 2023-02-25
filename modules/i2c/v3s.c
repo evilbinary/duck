@@ -215,7 +215,7 @@ int i2c_init_device(device_t* dev) {
   i2c->write = v3s_i2c_read_write;
 
   // map io twi
-  map_page(0x01C2A000, 0x01C2A000, 0);
+  page_map(0x01C2A000, 0x01C2A000, 0);
 
   // De-assert twi
   u32 reg = io_read32(V3S_CCU_BASE + CCU_BUS_SOFT_RST4);

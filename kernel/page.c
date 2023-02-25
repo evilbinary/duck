@@ -26,7 +26,7 @@ void page_fault_handle(interrupt_context_t *ic) {
 #endif
     vmemory_area_t *area = vmemory_area_find(current->vmm, fault_addr, 0);
     if (area == NULL) {
-      void *phy = virtual_to_physic(current->context.kpage, fault_addr);
+      void *phy = page_v2p(current->context.kpage, fault_addr);
 #ifdef DEBUG
       log_debug("page area not found %x\n", fault_addr);
       vmemory_dump(current->vmm);
@@ -36,7 +36,7 @@ void page_fault_handle(interrupt_context_t *ic) {
         log_debug("page lookup kernel found phy: %x\n", phy);
 #endif
         // 内核地址，进行映射,todo 进行检查
-        map_page_on(current->context.upage, fault_addr, phy,
+        page_map_on(current->context.upage, fault_addr, phy,
                     PAGE_P | PAGE_USU | PAGE_RWW);
       } else {
         if (current->fault_count < 1) {
@@ -61,7 +61,7 @@ void page_fault_handle(interrupt_context_t *ic) {
       return;
     }
     u32 *page = current->context.upage;
-    void *phy = virtual_to_physic(page, fault_addr);
+    void *phy = page_v2p(page, fault_addr);
     if (phy == NULL) {
       if (area->flags == MEMORY_STACK) {
         extend_stack(fault_addr, PAGE_SIZE);
@@ -78,7 +78,7 @@ void page_fault_handle(interrupt_context_t *ic) {
       exception_process_error(current, ic, (void *)&page_error_exit);
     }
   } else {
-    map_page(fault_addr, fault_addr, PAGE_P | PAGE_USU | PAGE_RWW);
+    page_map(fault_addr, fault_addr, PAGE_P | PAGE_USU | PAGE_RWW);
   }
 }
 

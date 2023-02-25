@@ -173,7 +173,7 @@ void thread_vm_copy_data(thread_t* copy, thread_t* thread, u32 type) {
             copy->id, type_str, addr, end_addr, vm->alloc_size);
 
   for (; addr < end_addr; addr += PAGE_SIZE) {
-    void* phy = virtual_to_physic(thread->context.upage, addr);
+    void* phy = page_v2p(thread->context.upage, addr);
     u32* copy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
     if (phy != NULL) {
       kmemmove(copy_addr, phy, PAGE_SIZE);
@@ -235,8 +235,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
     if (flags & VM_CLONE) {
       copy->vmm = vmemory_clone(thread->vmm, 0);
       // 分配页
-      copy->context.upage =
-          page_alloc_clone(NULL, thread->level);
+      copy->context.upage =page_create(thread->level);
 
       // 栈拷贝并映射
       thread_vm_copy_data(copy, thread, MEMORY_STACK);
@@ -252,8 +251,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       // todo
       copy->vmm = vmemory_clone(thread->vmm, 1);
       // 分配页
-      copy->context.upage =
-          page_alloc_clone(thread->context.upage, thread->level);
+      copy->context.upage = page_create(thread->level);
 
       // 栈拷贝并映射
       thread_vm_copy_data(copy, thread, MEMORY_STACK);
@@ -269,15 +267,15 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
       log_warn("vm same todo\n");
     } else if (flags & VM_ALLOC) {
       // todo
-      copy->context.upage = page_alloc_clone(NULL, copy->level);
+      copy->context.upage = page_create(copy->level);
       log_warn("vm alloc todo\n");
     } else if (flags & VM_COW) {
       // todo check
       u32 pages = thread->vmm->alloc_size / PAGE_SIZE + 1;
       u32 address = thread->vmm->vaddr;
       for (int i = 0; i < pages; i++) {
-        void* phy = kvirtual_to_physic(address, 0);
-        map_page_on(copy->context.upage, address, phy,
+        void* phy = kpage_v2p(address, 0);
+        page_map_on(copy->context.upage, address, phy,
                     PAGE_P | PAGE_USU | PAGE_R);
         address += PAGE_SIZE;
       }
@@ -291,7 +289,7 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
   } else {
     // vmm分配方式
     copy->vmm = vmemory_create_default(koffset);
-    copy->context.upage = page_alloc_clone(NULL, copy->level);
+    copy->context.upage = page_create(copy->level);
     if (copy->level == KERNEL_MODE) {
       log_debug("kernel start before init\n");
     } else if (copy->level == USER_MODE) {
@@ -329,7 +327,7 @@ void thread_map(thread_t* thread, u32 virt_addr, u32 phy_addr, u32 size) {
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
   u32* page = thread->context.upage;
   for (int i = 0; i < pages; i++) {
-    map_page_on(page, virt_addr + offset, phy_addr + offset,
+    page_map_on(page, virt_addr + offset, phy_addr + offset,
                 PAGE_P | PAGE_USU | PAGE_RWW);
 #ifdef DEBUG
     log_debug("thread %d page:%x map %d vaddr: %x - paddr: %x\n", thread->id,
@@ -394,7 +392,7 @@ int thread_check(thread_t* thread) {
     return -1;
   }
 
-  void* phy = virtual_to_physic(thread->context.upage, vm_stack->alloc_addr);
+  void* phy = page_v2p(thread->context.upage, vm_stack->alloc_addr);
   if (phy == NULL) {
     log_error("thread map have error\n");
     return -1;
@@ -483,7 +481,7 @@ void thread_add(thread_t* thread) {
   // lock_acquire(&thread_lock);
 
   // 内核需要物理地址
-  thread = kvirtual_to_physic(thread, 0);
+  thread = kpage_v2p(thread, 0);
   int cpu_id = cpu_get_id();
   if (schedulable_head_thread[cpu_id] == NULL) {
     schedulable_head_thread[cpu_id] = thread;

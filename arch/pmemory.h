@@ -75,8 +75,7 @@ typedef struct memory_manager {
   u32 extend_phy_count;
 } memory_manager_t;
 
-u32* page_alloc_clone(u32* page_dir, u32 level);
-void page_clone(u32* old_page, u32* new_page);
+u32* page_create(u32 level);
 
 #ifdef MALLOC_TRACE
 #define kmalloc(size) kmalloc_trace(size, __FILE__, __LINE__, __FUNCTION__)

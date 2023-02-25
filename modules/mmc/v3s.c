@@ -954,7 +954,7 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   pdat->cdcfg = 0;
 
   // sd mmc0
-  map_page(0x01c0f000, 0x01c0f000, 0);
+  page_map(0x01c0f000, 0x01c0f000, 0);
 
   sdhci_v3s_probe(sdhci_dev);
   kprintf("sdh dev init end\n");

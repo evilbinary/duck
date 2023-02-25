@@ -14,6 +14,6 @@
 #define PAGE_USU   4 //用户级
 typedef u64* page_dir_t;
 
-void* virtual_to_physic(u64* page_dir_ptr_tab, void* vaddr);
+void* page_v2p(u64* page_dir_ptr_tab, void* vaddr);
 
 #endif

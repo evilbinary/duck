@@ -348,7 +348,7 @@ int spi_init_device(device_t* dev) {
   spi->cs = v3s_spi_cs;
 
   // map io spi0
-  map_page(SPI0_BASE, SPI0_BASE, 0);
+  page_map(SPI0_BASE, SPI0_BASE, 0);
 
   u32 reg = 0;
   // set ahb clock gating

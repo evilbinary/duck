@@ -15,12 +15,12 @@
 extern boot_info_t* boot_info;
 static u32 page_dir[PAGE_DIR_NUMBER] __attribute__((aligned(0x4000)));
 
-void map_page_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
+void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
   
 }
 
-void map_page(u32 virtualaddr, u32 physaddr, u32 flags) {
-  map_page_on(boot_info->pdt_base, virtualaddr, physaddr, flags);
+void page_map(u32 virtualaddr, u32 physaddr, u32 flags) {
+  page_map_on(boot_info->pdt_base, virtualaddr, physaddr, flags);
 }
 
 void mm_init_default() {
@@ -31,40 +31,40 @@ void mm_init_default() {
 //   u32 address = 0;
 //   kprintf("map %x - %x\n", address, 0x1000 * 1024 * 10);
 //   for (int j = 0; j < 1024 * 10; j++) {
-//     map_page(address, address, 0);
+//     page_map(address, address, 0);
 //     address += 0x1000;
 //   }
 //   address = boot_info->kernel_entry;
 //   kprintf("map kernel %x ", address);
 //   int i;
 //   for (i = 0; i < (((u32)boot_info->kernel_size) / 0x1000 + 6); i++) {
-//     map_page(address, address, L2_TEXT_1 | L2_CB);
+//     page_map(address, address, L2_TEXT_1 | L2_CB);
 //     address += 0x1000;
 //   }
 //   kprintf("- %x\n", address);
 
-//   map_page(MMIO_BASE, MMIO_BASE, 0);
-//   map_page(UART0_DR, UART0_DR, 0);
-//   map_page(CORE0_TIMER_IRQCNTL, CORE0_TIMER_IRQCNTL, 0);
+//   page_map(MMIO_BASE, MMIO_BASE, 0);
+//   page_map(UART0_DR, UART0_DR, 0);
+//   page_map(CORE0_TIMER_IRQCNTL, CORE0_TIMER_IRQCNTL, 0);
 // #ifdef V3S
 //   // memory
 //   address = 0x40000000;
 //   kprintf("map memory %x ", address);
 //   for (int i = 0; i < 0x2000000 / 0x1000; i++) {
-//     map_page(address, address, L2_TEXT_1 | L2_NCB);
+//     page_map(address, address, L2_TEXT_1 | L2_NCB);
 //     address += 0x1000;
 //   }
 //   kprintf("- %x\n", address);
 
 //   // ccu -pio timer
-//   map_page(0x01C20000, 0x01C20000, 0);
+//   page_map(0x01C20000, 0x01C20000, 0);
 //   // uart
-//   map_page(0x01C28000, 0x01C28000, 0);
+//   page_map(0x01C28000, 0x01C28000, 0);
 //   // timer
-//   map_page(0x01C20C00, 0x01C20C00, 0);
+//   page_map(0x01C20C00, 0x01C20C00, 0);
 //   // gic
-//   map_page(0x01C81000, 0x01C81000, 0);
-//   map_page(0x01C82000, 0x01C82000, 0);
+//   page_map(0x01C81000, 0x01C81000, 0);
+//   page_map(0x01C82000, 0x01C82000, 0);
 
 // #endif
 
@@ -85,7 +85,7 @@ void mm_init_default() {
 }
 
 
-void* virtual_to_physic(void* page, void* vaddr) {
+void* page_v2p(void* page, void* vaddr) {
   void* phyaddr = NULL;
  
   return phyaddr;
@@ -100,14 +100,17 @@ void page_clone(u32* old_page, u32* new_page) {
   
 }
 
-u32* page_alloc_clone(u32* kernel_page_dir) {
+u32* page_create(u32 level) {
+  if (level == KERNEL_MODE) {
+    // must no cache
+    return kernel_page_dir;
+  }
   u32* page_dir_ptr_tab =
-      mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, 0x4000);
-  page_clone(kernel_page_dir, page_dir_ptr_tab);
+      mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, PAGE_SIZE * 4);
   return page_dir_ptr_tab;
 }
 
-void unmap_page_on(page_dir_t* page, u32 virtualaddr) {
+void unpage_map_on(page_dir_t* page, u32 virtualaddr) {
   
 }
 

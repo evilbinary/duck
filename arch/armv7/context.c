@@ -70,7 +70,7 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
   context->kernel_page_dir = addr;
   context->page_dir = addr;
 #ifdef PAGE_CLONE
-  context->page_dir = page_alloc_clone(addr);
+  context->page_dir = page_create(addr);
 #endif
 }
 
@@ -150,7 +150,7 @@ void context_clone(context_t* des, context_t* src, u32* stack0, u32* stack3,
     des->esp=stack3;
   }
   des->page_dir =src->page_dir;
-  // des->page_dir = page_alloc_clone(src->page_dir);
+  // des->page_dir = page_create(src->page_dir);
   des->kernel_page_dir = src->kernel_page_dir;
 #if DEBUG
   kprintf("------context clone dump des--------------\n");

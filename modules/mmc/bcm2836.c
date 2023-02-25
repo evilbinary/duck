@@ -1774,8 +1774,8 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, int no, sector_t sector,
 }
 
 void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
-  map_page(BCM2835_EMMC, BCM2835_EMMC, 0);
-  map_page(BCM2835_ST_BASE, BCM2835_ST_BASE, 0);
+  page_map(BCM2835_EMMC, BCM2835_EMMC, 0);
+  page_map(BCM2835_ST_BASE, BCM2835_ST_BASE, 0);
   sdhci_dev_prob(sdhci_dev);
 
 #ifdef CACHE_ENABLED

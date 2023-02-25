@@ -20,7 +20,7 @@ int musl_init(void) {
 
   // make musl happy ^_^!!
   //  u32 addr = __a_barrier_kuser & ~0xfff;
-  //  map_page(addr, addr, 0);
+  //  page_map(addr, addr, 0);
 
   // *((int *)__a_ver) = 2;
   // *(int *)__a_barrier_kuser = 0;
