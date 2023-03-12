@@ -230,7 +230,7 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
   }
 }
 
-void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 usp, u32 usp_size,
+void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread,
                    u32 flags) {
   log_debug("vm clone init\n");
 
@@ -238,6 +238,11 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 usp, u32 usp_size
   vmcopy->kpage = page_kernel_dir();
   vmcopy->upage = page_clone(vmthread->upage, 0);
   // vm->upage = page_clone(vm->kpage, level);
+
+
+  // u32 usp = kmalloc_alignment(ustack_size, PAGE_SIZE, KERNEL_TYPE);
+  // ctx->usp = usp + ustack_size;
+  // ctx->usp_size = ustack_size;
 
   // 映射栈
   // vmemory_area_t* vm_stack =
@@ -252,7 +257,7 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 usp, u32 usp_size
 
   // 栈拷贝并映射
   vmemory_copy_data(vmcopy, vmthread, MEMORY_STACK);
-
+  
   // 堆拷贝并映射
   vmemory_copy_data(vmcopy, vmthread, MEMORY_HEAP);
 

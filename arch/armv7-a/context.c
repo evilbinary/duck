@@ -36,7 +36,6 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
 
   context->eip = entry;
   context->level = level;
-  context->ksp = ksp_top;
   u32 cs, ds;
   cpsr_t cpsr;
   cpsr.val = 0;
@@ -57,7 +56,8 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
     kprintf("not suppport level %d\n", level);
   }
 
-  interrupt_context_t* ic = ksp_top;
+  interrupt_context_t* ic = (u32)ksp_top - sizeof(interrupt_context_t);
+
   kmemset(ic, 0, sizeof(interrupt_context_t));
   ic->lr = entry;  // r14
   ic->pc = ic->lr;
@@ -112,15 +112,15 @@ void context_dump_interrupt(interrupt_context_t* ic) {
   kprintf("r10: %x\n", ic->r10);
   kprintf("r11(fp): %x\n", ic->r11);
   kprintf("r12(ip): %x\n", ic->r12);
-  // if (ic->r11 > 1000) {
-  //   int buf[10];
-  //   void* fp = ic->r11;
-  //   cpu_backtrace(fp, buf, 8);
-  //   kprintf("--backtrace--\n");
-  //   for (int i = 0; i < 8; i++) {
-  //     kprintf(" %8x\n", buf[i]);
-  //   }
-  // }
+  if (ic->r11 > 1000) {
+    int buf[10];
+    void* fp = ic->r11;
+    cpu_backtrace(fp, buf, 8);
+    kprintf("--backtrace--\n");
+    for (int i = 0; i < 8; i++) {
+      kprintf(" %8x\n", buf[i]);
+    }
+  }
 }
 
 void context_dump_fault(interrupt_context_t* context, u32 fault_addr) {
@@ -154,11 +154,10 @@ int context_clone(context_t* des, context_t* src) {
   des->usp = src->usp;
   des->eip = src->eip;
 
-  kprintf("------context clone dump des--------------\n");
-  context_dump(des);
-  kprintf("------context clone dump src--------------\n");
-  context_dump(src);
-
+  // kprintf("------context clone dump des--------------\n");
+  // context_dump(des);
+  // kprintf("------context clone dump src--------------\n");
+  // context_dump(src);
 }
 
 void context_switch(interrupt_context_t* ic, context_t* current,

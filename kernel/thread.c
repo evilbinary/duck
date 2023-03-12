@@ -91,10 +91,9 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   // context init
   context_t* ctx = kmalloc(sizeof(context_t), KERNEL_TYPE);
   thread->ctx = ctx;
-  ctx->tid= thread->id;
+  ctx->tid = thread->id;
 
   u32 ksp = kmalloc_alignment(kstack_size, PAGE_SIZE, KERNEL_TYPE);
-  // kmalloc(kstack_size, KERNEL_TYPE);
   u32 usp = kmalloc_alignment(ustack_size, PAGE_SIZE, KERNEL_TYPE);
   ctx->ksp_start = ksp;
   ctx->ksp_end = ksp + kstack_size;
@@ -102,7 +101,8 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   ctx->usp = usp + ustack_size;
   ctx->usp_size = ustack_size;
 
-  context_init(ctx, ksp, usp, entry, thread->level, thread->cpu_id);
+  context_init(ctx, ctx->ksp_end, ctx->usp, entry, thread->level,
+               thread->cpu_id);
 
   // vm init
   vmemory_t* vm = kmalloc(sizeof(vmemory_t), KERNEL_TYPE);
@@ -112,7 +112,8 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
 
 #ifdef VM_ENABLE
   vmemory_area_t* vm_stack = vmemory_area_find_flag(vm->vma, MEMORY_STACK);
-  context_init(ctx, ksp, vm_stack->vend, entry, thread->level, thread->cpu_id);
+  context_init(ctx, ctx->ksp_end, vm_stack->vend, entry, thread->level,
+               thread->cpu_id);
 #endif
 
   // vfs
@@ -150,17 +151,16 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   // context init
   context_t* ctx = kmalloc(sizeof(context_t), KERNEL_TYPE);
   copy->ctx = ctx;
-  ctx->tid= copy->id;
+  ctx->tid = copy->id;
 
   u32 kstack_size = thread->ctx->ksp_size;
   u32 ustack_size = thread->ctx->usp_size;
 
-  u32 ksp = kmalloc_alignment(kstack_size, PAGE_SIZE, KERNEL_TYPE);
-  u32 usp = kmalloc_alignment(ustack_size, PAGE_SIZE, KERNEL_TYPE);
+  u32 ksp = kmalloc(kstack_size, KERNEL_TYPE);
   ctx->ksp_start = ksp;
   ctx->ksp_end = ksp + kstack_size;
   ctx->ksp_size = kstack_size;
-  ctx->usp = usp + ustack_size;
+
   ctx->usp_size = ustack_size;
 
   context_clone(copy->ctx, thread->ctx);
@@ -169,7 +169,7 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   copy->vm = kmalloc(sizeof(vmemory_t), KERNEL_TYPE);
 
   // init vm include stack heap exec
-  vmemory_clone(copy->vm,thread->vm, usp, ustack_size, flags);
+  vmemory_clone(copy->vm, thread->vm, flags);
 
   // 文件分配方式
   if (flags & FS_CLONE) {
