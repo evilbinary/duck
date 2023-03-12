@@ -1,8 +1,8 @@
 #include "init.h"
 
+#include "arch/pmemory.h"
 #include "gpio.h"
 #include "v3s-reg-ccu.h"
-#include "arch/pmemory.h"
 
 static void io_write32(uint port, u32 data) { *(u32 *)port = data; }
 
@@ -146,7 +146,9 @@ void platform_init() {
   // sys_dram_init();
 }
 
-void platform_end() {
+void platform_end() {}
+
+void platform_map() {
   page_map(MMIO_BASE, MMIO_BASE, 0);
   page_map(UART0_DR, UART0_DR, L2_NCNB);
   page_map(CORE0_TIMER_IRQCNTL, CORE0_TIMER_IRQCNTL, L2_NCNB);

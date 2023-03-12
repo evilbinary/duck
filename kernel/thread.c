@@ -93,7 +93,9 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   thread->ctx = ctx;
 
   u32 ksp = kmalloc(kstack_size, KERNEL_TYPE);
-  u32 usp = kmalloc(ustack_size, KERNEL_TYPE);
+  u32 usp = kmalloc(kstack_size, KERNEL_TYPE);
+
+  // kmalloc_alignment(ustack_size, PAGE_SIZE, KERNEL_TYPE);
   ctx->ksp_start = ksp;
   ctx->ksp_end = ksp + kstack_size;
   ctx->ksp_size = kstack_size;

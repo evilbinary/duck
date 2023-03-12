@@ -72,10 +72,15 @@ void timer_end() {
 void platform_init() { io_add_write_channel(uart_send); }
 
 void platform_end() {
+  
+}
+
+void platform_map(){
   page_map(MMIO_BASE, MMIO_BASE, 0);
   page_map(UART0_DR, UART0_DR, 0);
   page_map(CORE0_TIMER_IRQCNTL & ~0xfff, CORE0_TIMER_IRQCNTL & ~0xfff, 0);
 }
+
 
 void ipi_enable(int cpu) {
   if (cpu < 0 || cpu > 4) return;

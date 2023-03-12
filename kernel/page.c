@@ -86,6 +86,10 @@ void page_fault_handle(interrupt_context_t *ic) {
 void *kernel_page_dir = NULL;
 
 void page_map(u32 virtualaddr, u32 physaddr, u32 flags) {
+  if (kernel_page_dir == NULL) {
+    log_error("kernel_page_dir is null\n");
+    return;
+  }
   page_map_on(kernel_page_dir, virtualaddr, physaddr, flags);
 }
 
@@ -96,14 +100,13 @@ void page_init() {
 
 #ifdef VM_ENABLE
   // create kernel page
-  kernel_page_dir = page_create(KERNEL_MODE);
-  //parse
+  kernel_page_dir = page_create(0);
+  // parse
   mm_parse_map(kernel_page_dir);
 
   // enable page
-  log_info("page enable\n");
+  log_info("page enable page: %x\n", kernel_page_dir);
   mm_enable(kernel_page_dir);
-
+  log_info("page enable end\n");
 #endif
-
 }

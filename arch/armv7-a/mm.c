@@ -97,7 +97,7 @@ void* page_v2p(void* page, void* vaddr) {
   return phyaddr + offset;
 }
 
-void mm_page_enable(void* page_dir) {
+void mm_page_enable(u32 page_dir) {
   // cpu_disable_page();
   // cpu_icache_disable();
   cp15_invalidate_icache();
