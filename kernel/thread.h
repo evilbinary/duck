@@ -130,8 +130,8 @@ typedef struct thread {
   struct thread* next;
   void* data;
   void* exec;
-  context_t context;
-  vmemory_area_t* vmm;
+  context_t* ctx;
+  vmemory_t* vm;
   u32 pid;
   u32** fds;
   u32 fd_size;

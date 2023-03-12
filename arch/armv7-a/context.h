@@ -40,8 +40,6 @@ typedef struct context_t {
   interrupt_context_t* ksp;
   u32 usp;
   u32 eip;
-  u32* upage;
-  u32* kpage;
   u32 level;
   u32 tid;
 
@@ -121,7 +119,8 @@ typedef struct context_t {
 #define context_restore(duck_context) interrupt_exit_context(duck_context);
 
 int context_clone(context_t* context, context_t* src);
-int context_init(context_t* context, u32* entry, u32 level, int cpu);
+int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
+                 u32 level, int cpu);
 void context_dump(context_t* c);
 
 #endif

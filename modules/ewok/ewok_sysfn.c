@@ -512,7 +512,7 @@ static inline void ewok_sys_root(void) {
 void ewok_svc_handler(int32_t arg0, int32_t arg1, int32_t arg2, int32_t arg4,
                       int32_t arg5, ...) {
   thread_t* current = thread_current();
-  interrupt_context_t* context = current->context.ic;
+  interrupt_context_t* context = current->ctx->ic;
   ewok_context_t* ctx = context;
 
   int code = context_fn(context);

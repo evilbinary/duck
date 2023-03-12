@@ -65,13 +65,13 @@ void* vm_alloc(size_t size) {
     check_addr(addr);
     return addr;
   }
-  addr = current->vmm->alloc_addr;
-  current->vmm->alloc_addr += size;
-  current->vmm->alloc_size += size;
+  addr = current->vm->vma->alloc_addr;
+  current->vm->vma->alloc_addr += size;
+  current->vm->vma->alloc_size += size;
 
   check_addr(addr);
 
-  // log_debug("vm alloc page:%x size:%d addr:%x\n", current->context.upage,
+  // log_debug("vm alloc page:%x size:%d addr:%x\n", current->vm->upage,
   //           size, addr);
   return addr;
 }
@@ -87,7 +87,7 @@ void* vm_alloc_alignment(size_t size, int alignment) {
     check_addr(addr);
     return addr;
   }
-  addr = current->vmm->alloc_addr;
+  addr = current->vm->vma->alloc_addr;
   // u32 page_alignt = alignment - 1;
   // void* new_addr = ((u32)addr+ alignment) & (~page_alignt) ;
   // void* new_addr = ALIGN( ((u32)addr +alignment), alignment);
@@ -98,10 +98,10 @@ void* vm_alloc_alignment(size_t size, int alignment) {
   void* new_addr = (void**)(((size_t)(addr) + offset) & ~(alignment - 1));
   int new_size = new_addr - addr + size;
 
-  current->vmm->alloc_size += new_size;
-  current->vmm->alloc_addr += new_size;
+  current->vm->vma->alloc_size += new_size;
+  current->vm->vma->alloc_addr += new_size;
 
-  // log_debug("vm alloc a page:%x size:%d addr:%x\n", current->context.upage,
+  // log_debug("vm alloc a page:%x size:%d addr:%x\n", current->vm->upage,
   //           new_size, new_addr);
   check_addr(new_addr);
 
@@ -257,7 +257,7 @@ void* extend_stack(void* addr, size_t size) {
   void* vaddr = (u32)addr & (~page_alignt);
   void* aaddr = valloc(addr, size);
 
-  vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_STACK);
+  vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_STACK);
 
   if (vm->alloc_addr < addr) {
     u32 alignment = PAGE_SIZE;
@@ -292,11 +292,11 @@ void* valloc(void* addr, size_t size) {
 #endif
     void* paddr = phy_addr;
 #ifdef DEBUG
-    log_debug("map page:%x vaddr:%x paddr:%x\n", current->context.upage, vaddr,
+    log_debug("map page:%x vaddr:%x paddr:%x\n", current->vm->upage, vaddr,
               paddr);
 #endif
     if (current != NULL) {
-      page_map_on(current->context.upage, vaddr, paddr,
+      page_map_on(current->vm->upage, vaddr, paddr,
                   PAGE_P | PAGE_USU | PAGE_RWW);
     } else {
       page_map(vaddr, paddr, PAGE_P | PAGE_USU | PAGE_RWW);
@@ -317,12 +317,12 @@ void vfree(void* addr, size_t size) {
 
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
   for (int i = 0; i < pages; i++) {
-    void* phy = page_v2p(current->context.upage, vaddr);
+    void* phy = page_v2p(current->vm->upage, vaddr);
 #ifdef DEBUG
     log_debug("vfree vaddr:%x paddr:%x\n", vaddr, phy);
 #endif
     // todo
-    //  unpage_map_on(current->context.upage, vaddr);
+    //  unpage_map_on(current->vm->upage, vaddr);
     if (phy != NULL) {
 #ifdef USE_POOL
       int ret = queue_pool_put(user_pool, phy);
@@ -341,14 +341,14 @@ void* kpage_v2p(void* addr, int size) {
   thread_t* current = thread_current();
   void* phy = NULL;
   if (current != NULL) {
-    phy = page_v2p(current->context.upage, addr);
+    phy = page_v2p(current->vm->upage, addr);
     if (phy == NULL) {
-      log_error("get page: %x addr %x phy null\n", current->context.upage,
+      log_error("get page: %x addr %x phy null\n", current->vm->upage,
                 addr);
       if (size > 0) {
         kmemset(addr, 0, size);
       }
-      phy = page_v2p(current->context.upage, addr);
+      phy = page_v2p(current->vm->upage, addr);
     }
   } else {
     phy = addr;

@@ -20,22 +20,19 @@ int context_get_mode(context_t* context) {
   return mode;
 }
 
-int context_init(context_t* context, u32* entry, u32 level, int cpu) {
+int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
+                 u32 level, int cpu) {
   if (context == NULL) {
     return -1;
   }
-  if (context->ksp_start == NULL) {
-    log_error("ksp start or usp start is null\n");
+  if (ksp_top == NULL) {
+    log_error("ksp is null\n");
     return -1;
   }
-  if (context->ksp_end == NULL) {
-    log_error("ksp end or usp end is null\n");
+  if (usp_top == NULL) {
+    log_error("usp end is null\n");
     return -1;
   }
-  // u32 ksp_top = (u32)context->ksp_end;
-  u32 ksp_top = ((u32)context->ksp_end) - sizeof(interrupt_context_t);
-
-  u32 usp_top = context->usp;
 
   context->eip = entry;
   context->level = level;
@@ -81,16 +78,6 @@ int context_init(context_t* context, u32* entry, u32 level, int cpu) {
   ic->sp = usp_top;      // r13
   context->usp = usp_top;
   context->ksp = ic;
-
-  ulong addr = (ulong)boot_info->pdt_base;
-  context->kpage = addr;
-  // must not overwrite upage
-  if (context->upage == NULL) {
-    context->upage = addr;
-  }
-#ifdef PAGE_CLONE
-  context->upage = page_create(USER_MODE);
-#endif
 }
 
 void context_dump(context_t* c) {
@@ -99,8 +86,6 @@ void context_dump(context_t* c) {
   kprintf("ksp: %8x\n", c->ksp);
   kprintf("usp: %8x\n", c->usp);
 
-  kprintf("upage: %x\n", c->upage);
-  kprintf("kernel upage: %x\n", c->kpage);
   kprintf("--interrupt context--\n");
   interrupt_context_t* ic = c->ksp;
   if (ic != NULL) {
@@ -170,10 +155,6 @@ int context_clone(context_t* des, context_t* src) {
   kprintf("------context clone dump src--------------\n");
   context_dump(src);
 #endif
-  // not cover upage
-  void* page = des->upage;
-  des->upage = page;
-
   if (ic != NULL) {
     // set usp alias ustack and ip cs ss and so on
     kmemmove(ic, is, sizeof(interrupt_context_t));
@@ -185,8 +166,6 @@ int context_clone(context_t* des, context_t* src) {
     // ic->pc-=4;
   }
   // kmemmove(ksp,src->ksp,offset);
-
-  des->ksp = ksp;
 #if DEBUG
   kprintf("------context clone dump des--------------\n");
   context_dump(des);
@@ -196,7 +175,6 @@ int context_clone(context_t* des, context_t* src) {
 void context_switch(interrupt_context_t* ic, context_t* current,
                     context_t* next) {
   context_save(ic, current);
-  context_switch_page(next->upage);
 }
 
 void context_save(interrupt_context_t* ic, context_t* current) {

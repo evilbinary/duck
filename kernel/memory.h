@@ -70,6 +70,14 @@ typedef struct vmemory_area {
   struct vmemory_area* child;
 } vmemory_area_t;
 
+
+typedef struct vmemory{
+  u32* upage;
+  u32* kpage;
+  vmemory_area_t* vma;
+}vmemory_t;
+
+
 #define ALIGN(x, a) (x + (a - 1)) & ~(a - 1)
 
 #ifdef MALLOC_TRACE

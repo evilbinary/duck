@@ -16,13 +16,19 @@ extern memory_manager_t mmt;
 
 u32 kernel_page_dir[PAGE_DIR_NUMBER] __attribute__((aligned(0x4000)));
 
+
 u32* page_create(u32 level) {
   if (level == KERNEL_MODE) {
     // must no cache
     return kernel_page_dir;
   }
-  u32* page_dir_ptr_tab =
-      mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, PAGE_SIZE * 4);
+  u32* page_dir_ptr_tab = mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, PAGE_SIZE * 4);
+
+  // map_mem_block(page_dir_ptr_tab,PAGE_SIZE * 10000, 0);
+  // // map 0 - 0x80000
+  // page_map_range(page_dir_ptr_tab,0, 0, PAGE_SIZE * 20, 0);
+  // page_map_kernel(page_dir_ptr_tab,0, 0);
+
   return page_dir_ptr_tab;
 }
 
@@ -123,15 +129,15 @@ void mm_init_default() {
   kmemset(kernel_page_dir, 0, sizeof(u32) * PAGE_DIR_NUMBER);
 
   // map mem block 100 page 4000k
-  map_mem_block(PAGE_SIZE * 10000, 0);
+  map_mem_block(kernel_page_dir,PAGE_SIZE * 10000, 0);
 
   // map 0 - 0x80000
-  map_range(0, 0, PAGE_SIZE * 20, 0);
+  page_map_range(kernel_page_dir,0, 0, PAGE_SIZE * 200, 0);
 
   // map kernel
   // map_kernel(L2_TEXT_1 | L2_NCB, L2_NCNB);
 
-  map_kernel(0, 0);
+  page_map_kernel(kernel_page_dir,0, 0);
 
   kprintf("map page end\n");
 }

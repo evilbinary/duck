@@ -202,14 +202,14 @@ void sys_exit(int status) {
 void* sys_vmap(void* addr, size_t size) {
   thread_t* current = thread_current();
   vmemory_area_t* area = vmemory_area_create(
-      current->vmm->vaddr + current->vmm->size, size, MEMORY_HEAP);
-  vmemory_area_add(current->vmm, area);
+      current->vm->vma->vaddr + current->vm->vma->size, size, MEMORY_HEAP);
+  vmemory_area_add(current->vm->vma, area);
   return area->vaddr;
 }
 
 void sys_vumap(void* ptr, size_t size) {
   thread_t* current = thread_current();
-  vmemory_area_t* area = vmemory_area_find(current->vmm, ptr, size);
+  vmemory_area_t* area = vmemory_area_find(current->vm->vma, ptr, size);
   if (area == NULL) return;
   vmemory_area_free(area);
 }
@@ -220,7 +220,7 @@ void* sys_valloc(void* addr, size_t size) {
 
 void* sys_vheap() {
   thread_t* current = thread_current();
-  return current->vmm->alloc_addr;
+  return current->vm->vma->alloc_addr;
 }
 
 void sys_vfree(void* addr) {
@@ -273,7 +273,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   // thread_set_arg(t, data);
   thread_run(current);
 
-  kmemmove(current->context.ic, current->context.ksp,
+  kmemmove(current->ctx->ic, current->ctx->ksp,
            sizeof(interrupt_context_t));
 
   return 0;
@@ -325,7 +325,7 @@ int sys_fork() {
     log_error("current is null\n");
     return -1;
   }
-  log_debug("sys fork current kstak size %d\n",current->context.ksp_size);
+  log_debug("sys fork current kstak size %d\n",current->ctx->ksp_size);
 
   thread_stop(current);
   thread_t* copy_thread = thread_copy(current, THREAD_FORK);
@@ -456,7 +456,7 @@ int sys_brk(u32 end) {
   thread_t* current = thread_current();
   log_debug("sys brk tid:%x addr:%x\n", current->id, end);
 
-  vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
+  vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
   if (vm == NULL) {
     log_error("sys brk not found vm\n");
     return -1;
@@ -487,7 +487,7 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
                 size_t pgoffset) {
   int ret = 0;
   thread_t* current = thread_current();
-  vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
+  vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
   if (vm == NULL) {
     log_error("sys mmap2 not found vm\n");
     return MAP_FAILED;
@@ -520,7 +520,7 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
 
   if ((flags & MAP_FIXED) == MAP_FIXED) {
     // 固定地址，说明地址存在，不需要处理
-    vmemory_area_t* findvm = vmemory_area_find(current->vmm, addr, length);
+    vmemory_area_t* findvm = vmemory_area_find(current->vm->vma, addr, length);
     if (findvm == NULL) {
       log_error("map fix %x faild out of range\n", start_addr);
       return MAP_FAILED;
@@ -569,7 +569,7 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
 void* sys_mremap(void* old_address, size_t old_size, size_t new_size, int flags,
                  ... /* void *new_address */) {
   thread_t* current = thread_current();
-  vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
+  vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
   if (vm == NULL) {
     log_error("sys mremap not found vm\n");
     return MAP_FAILED;
@@ -623,7 +623,7 @@ int sys_munmap(void* addr, size_t size) {
   log_debug("sys munmap addr: %x size: %d\n", addr, size);
 
   thread_t* current = thread_current();
-  vmemory_area_t* vm = vmemory_area_find_flag(current->vmm, MEMORY_HEAP);
+  vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
   if (vm == NULL) {
     log_error("sys munmap not found vm\n");
     return MAP_FAILED;

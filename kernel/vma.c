@@ -112,6 +112,24 @@ vmemory_area_t* vmemory_create_default(u32 koffset) {
   vmemory_area_t* stack = vmemory_area_create(STACK_ADDR + koffset,
                                               MEMORY_STACK_SIZE, MEMORY_STACK);
   vmemory_area_add(vmm, stack);
+
+  extern boot_info_t* boot_info;
+
+  // default kernel info
+  // for (int i = 0; i < boot_info->segments_number; i++) {
+  //   u32 size = boot_info->segments[i].size;
+  //   u32 address = boot_info->segments[i].start;
+  //   u32 type = boot_info->segments[i].type;
+
+  //   vmemory_area_t* vmmk = NULL;
+  //   if (type == 2) {
+  //     vmmk = vmemory_area_create(address, size, MEMORY_HEAP);
+  //   } else {
+  //     vmmk = vmemory_area_create(address, size, MEMORY_EXEC);
+  //   }
+  //   vmemory_area_add(vmm, vmmk);
+  // }
+
   return vmm;
 }
 
@@ -119,6 +137,54 @@ void vmemory_dump(vmemory_area_t* areas) {
   vmemory_area_t* p = areas;
   for (; p != NULL; p = p->next) {
     log_debug("vaddr:%x vend:%x size:%x alloc p:%x size:%x flag:%x\n", p->vaddr,
-              p->vend, p->size, p->alloc_addr, p->alloc_size,p->flags);
+              p->vend, p->size, p->alloc_addr, p->alloc_size, p->flags);
+  }
+}
+
+#define DEBUG
+
+void vmemory_map(u32* page_dir, u32 virt_addr, u32 phy_addr, u32 size) {
+  if (page_dir == NULL) {
+    log_error("vm map faild for page_dir is null\n");
+    return;
+  }
+  u32 offset = 0;
+  u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
+  for (int i = 0; i < pages; i++) {
+    page_map_on(page_dir, virt_addr + offset, phy_addr + offset,
+                PAGE_P | PAGE_USU | PAGE_RWW);
+#ifdef DEBUG
+    log_debug("page:%x map %d vaddr: %x - paddr: %x\n", page_dir, i,
+              virt_addr + offset, phy_addr + offset);
+#endif
+    offset += PAGE_SIZE;
+  }
+}
+
+void vmemory_init(vmemory_t* vm, u32 level, u32 usp, u32 usp_size, u32 flags) {
+  u32 koffset = 0;
+  if (level == KERNEL_MODE) {
+    koffset += KERNEL_OFFSET;
+  }
+
+  vm->vma = vmemory_create_default(koffset);
+  vm->upage = page_create(level);
+  vm->kpage = page_create(KERNEL_MODE);
+
+  log_debug("init vm level %d kpage: %x upage: %x\n", level, vm->kpage,
+            vm->upage);
+
+  // 映射栈
+  vmemory_area_t* vm_stack = vmemory_area_find_flag(vm->vma, MEMORY_STACK);
+  if (vm_stack != NULL) {
+    vm_stack->alloc_addr = vm_stack->vend - usp_size;
+    vm_stack->alloc_size += usp_size;
+    vmemory_map(vm->upage, vm_stack->alloc_addr, usp - usp_size, usp_size);
+  }
+
+  if (level == KERNEL_MODE) {
+    log_debug("kernel vm init end\n");
+  } else if (level == USER_MODE) {
+    log_debug("user vm init end\n");
   }
 }

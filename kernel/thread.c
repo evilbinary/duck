@@ -71,9 +71,6 @@ void thread_init_default(thread_t* thread, u32 level, u32* entry, void* data) {
   thread->state = THREAD_CREATE;
   thread->level = level;
   thread->cpu_id = cpu_get_id();
-  thread->context.tid = thread->id;
-  thread->context.eip = entry;
-  thread->context.level = level;
   thread->fd_size = 40;
   thread->fd_number = 0;
   thread->data = data;
@@ -90,23 +87,36 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   thread_init_default(thread, level, entry, data);
 
   thread->fds = kmalloc(sizeof(fd_t) * thread->fd_size, KERNEL_TYPE);
-  thread->context.usp_size = ustack_size;
-  thread->context.ksp_size = kstack_size;
-  // must set null before init
-  thread->context.ksp = NULL;
-  thread->context.usp = NULL;
-  thread->context.ksp_start = NULL;
-  thread->context.ksp_end = NULL;
+
+  // context init
+  context_t* ctx = kmalloc(sizeof(context_t), KERNEL_TYPE);
+  thread->ctx = ctx;
+
+  u32 ksp = kmalloc(kstack_size, KERNEL_TYPE);
+  u32 usp = kmalloc(ustack_size, KERNEL_TYPE);
+  ctx->ksp_start = ksp;
+  ctx->ksp_end = ksp + kstack_size;
+  ctx->ksp_size = kstack_size;
+  ctx->usp = usp + ustack_size;
+  ctx->usp_size = ustack_size;
+
+  context_init(ctx, ksp, usp, entry, thread->level, thread->cpu_id);
+
+  // vm init
+  vmemory_t* vm = kmalloc(sizeof(vmemory_t), KERNEL_TYPE);
+  thread->vm = vm;
+  // init vm include stack heap exec
+  vmemory_init(vm, level, usp, ustack_size, flags);
+
+#ifdef VM_ENABLE
+  vmemory_area_t* vm_stack = vmemory_area_find_flag(vm->vma, MEMORY_STACK);
+  context_init(ctx, ksp, vm_stack->vend, entry, thread->level, thread->cpu_id);
+#endif
+
   // vfs
   thread->vfs = kmalloc(sizeof(vfs_t), KERNEL_TYPE);
   // file description
   thread_fill_fd(thread);
-
-  // init vm include stack heap exec
-  thread_t* current = thread_current();
-  thread_init_vm(thread, current, flags);
-
-  context_init(&thread->context, entry, thread->level, thread->cpu_id);
 
   // check thread data
   int ret = thread_check(thread);
@@ -122,8 +132,11 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   thread_t* copy = kmalloc(sizeof(thread_t), KERNEL_TYPE);
 
   kmemmove(copy, thread, sizeof(thread_t));
-  thread_init_default(copy, thread->level, thread->context.eip, thread->data);
-  copy->vmm = thread->vmm;
+
+  log_debug("thread init default\n");
+
+  thread_init_default(copy, thread->level, thread->ctx->eip, thread->data);
+  copy->vm = thread->vm;
   copy->data = thread->data;
   copy->pid = thread->id;
   copy->name = kmalloc(kstrlen(thread->name), KERNEL_TYPE);
@@ -132,15 +145,28 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   copy->fault_count = 0;
   copy->sleep_counter = 0;
 
-  // must set
-  copy->context.ksp = NULL;
-  copy->context.usp = NULL;
-  copy->context.ksp_start = NULL;
-  copy->context.ksp_end = NULL;
+  // context init
+  context_t* ctx = kmalloc(sizeof(context_t), KERNEL_TYPE);
+  copy->ctx = ctx;
 
-  thread_init_vm(copy, thread, flags);
+  u32 kstack_size = thread->ctx->ksp_size;
+  u32 ustack_size = thread->ctx->usp_size;
 
-  context_clone(&copy->context, &thread->context);
+  u32 ksp = kmalloc(kstack_size, KERNEL_TYPE);
+  u32 usp = kmalloc(ustack_size, KERNEL_TYPE);
+  ctx->ksp_start = ksp;
+  ctx->ksp_end = ksp + kstack_size;
+  ctx->ksp_size = kstack_size;
+  ctx->usp = usp + ustack_size;
+  ctx->usp_size = ustack_size;
+
+  context_clone(copy->ctx, thread->ctx);
+
+  // vm init
+  copy->vm = kmalloc(sizeof(vmemory_t), KERNEL_TYPE);
+
+  // init vm include stack heap exec
+  vmemory_init(copy->vm, thread->level, usp, ustack_size, flags);
 
   // check thread data
   int ret = thread_check(copy);
@@ -148,259 +174,76 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   return copy;
 }
 
-void thread_vm_copy_data(thread_t* copy, thread_t* thread, u32 type) {
-  vmemory_area_t* vm = vmemory_area_find_flag(thread->vmm, type);
-  vmemory_area_t* cvm = vmemory_area_find_flag(copy->vmm, type);
-
-  cvm->vaddr = vm->vaddr;
-  cvm->vend = vm->vend;
-  cvm->size = vm->size;
-
-  u32 addr = NULL;
-  u32 end_addr = NULL;
-  char* type_str = NULL;
-  if (type == MEMORY_STACK) {
-    addr = vm->alloc_addr;
-    end_addr = vm->vend;
-    type_str = "stack";
-  } else if (type == MEMORY_HEAP) {
-    addr = vm->vaddr;
-    end_addr = vm->alloc_addr;
-    type_str = "heap";
-  }
-
-  log_debug("vm copy %d to %d %s range: %x - %x size: %d\n", thread->id,
-            copy->id, type_str, addr, end_addr, vm->alloc_size);
-
-  for (; addr < end_addr; addr += PAGE_SIZE) {
-    void* phy = page_v2p(thread->context.upage, addr);
-    u32* copy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
-    if (phy != NULL) {
-      kmemmove(copy_addr, phy, PAGE_SIZE);
-    } else {
-      log_warn("thread %d vm copy data, tid %d vaddr %x phy is null\n",
-               copy->id, thread->id, addr);
-    }
-    thread_map(copy, addr, copy_addr, PAGE_SIZE);
-  }
-}
-
-int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags) {
-  int ret = 0;
-  if (thread != NULL) {
-    log_debug("init vm kstack size %d\n", thread->context.ksp_size);
-  }
-
-  if (copy == NULL) {
-    log_error("create thread failt for thread is null\n");
-    return -1;
-  }
-  u32 koffset = 0;
-  if (copy->level == KERNEL_MODE) {
-    koffset += KERNEL_OFFSET;
-    log_debug("init vm level %d\n", copy->level);
-  }
-
-  // 文件分配方式
-  if (flags & FS_CLONE) {
-    // copy file
-    copy->fd_size = thread->fd_size;
-    copy->fd_number = thread->fd_number;
-    copy->fds = kmalloc(sizeof(fd_t) * thread->fd_size, KERNEL_TYPE);
-    kmemmove(copy->fds, thread->fds, sizeof(fd_t) * thread->fd_size);
-  }
-
-  // 内核栈分配方式
-  // kstack
-  if (copy->context.ksp_start == NULL) {
-    int stack_size = copy->context.ksp_size;
-    if (thread != NULL) {
-      stack_size = thread->context.ksp_size;
-      log_debug("copy ksp size %d\n", thread->context.ksp_size);
-    }
-    void* kstack = kmalloc(stack_size, KERNEL_TYPE);
-    copy->context.ksp_start = kstack;
-    copy->context.ksp_end = copy->context.ksp_start + stack_size;
-    copy->context.ksp = copy->context.ksp_end - sizeof(interrupt_context_t);
-    if (thread != NULL) {
-      kmemmove(kstack, thread->context.ksp_start, stack_size);
-    }
-  }
-
-  // vmm分配
-  if (thread != NULL) {
-    copy->context.kpage = thread->context.kpage;
-
-    // vmm分配方式
-    if (flags & VM_CLONE) {
-      copy->vmm = vmemory_clone(thread->vmm, 0);
-      // 分配页
-      copy->context.upage =page_create(thread->level);
-
-      // 栈拷贝并映射
-      thread_vm_copy_data(copy, thread, MEMORY_STACK);
-      copy->context.usp = thread->context.usp;
-
-      // 堆拷贝并映射
-      thread_vm_copy_data(copy, thread, MEMORY_HEAP);
-
-      // update heap addr
-      copy->vmm->alloc_size = 0;
-
-    } else if (flags & VM_CLONE_ALL) {
-      // todo
-      copy->vmm = vmemory_clone(thread->vmm, 1);
-      // 分配页
-      copy->context.upage =
-          page_clone(thread->context.upage, thread->level);
-
-      // 栈拷贝并映射
-      thread_vm_copy_data(copy, thread, MEMORY_STACK);
-      copy->context.usp = thread->context.usp;
-
-      // 堆拷贝并映射
-      thread_vm_copy_data(copy, thread, MEMORY_HEAP);
-      copy->vmm->alloc_size = 0;
-
-    } else if (flags & VM_SAME) {
-      // todo
-      copy->vmm = thread->vmm;
-      log_warn("vm same todo\n");
-    } else if (flags & VM_ALLOC) {
-      // todo
-      copy->context.upage = page_clone(NULL, copy->level);
-      log_warn("vm alloc todo\n");
-    } else if (flags & VM_COW) {
-      // todo check
-      u32 pages = thread->vmm->alloc_size / PAGE_SIZE + 1;
-      u32 address = thread->vmm->vaddr;
-      for (int i = 0; i < pages; i++) {
-        void* phy = kpage_v2p(address, 0);
-        page_map_on(copy->context.upage, address, phy,
-                    PAGE_P | PAGE_USU | PAGE_R);
-        address += PAGE_SIZE;
-      }
-      log_warn("vm cow todo\n");
-    } else {
-      copy->vmm = vmemory_create_default(koffset);
-      log_warn("vm default todo\n");
-    }
-    log_debug("thread init vm end\n");
-
-  } else {
-    // vmm分配方式
-    copy->vmm = vmemory_create_default(koffset);
-    copy->context.upage = page_clone(NULL, copy->level);
-    if (copy->level == KERNEL_MODE) {
-      log_debug("kernel start before init\n");
-    } else if (copy->level == USER_MODE) {
-      log_debug("user thread alloc usp size %d\n", copy->context.usp_size);
-    }
-    void* ustack =
-        kmalloc_alignment(copy->context.usp_size, PAGE_SIZE, KERNEL_TYPE);
-
-    vmemory_area_t* vm_stack = vmemory_area_find_flag(copy->vmm, MEMORY_STACK);
-    if (vm_stack == NULL) {
-      log_error("thread vm init not found vm please check\n");
-      copy->context.usp = STACK_ADDR + MEMORY_STACK_SIZE;
-    } else {
-      copy->context.usp = vm_stack->vend;
-      vm_stack->alloc_addr = vm_stack->vend - copy->context.usp_size;
-      vm_stack->alloc_size += copy->context.usp_size;
-
-      thread_map(copy, vm_stack->alloc_addr, ustack, copy->context.usp_size);
-    }
-    if (copy->level == KERNEL_MODE) {
-      log_debug("kernel thread init end\n");
-    } else if (copy->level == USER_MODE) {
-      log_debug("user thread %d init end\n", copy->id);
-    }
-  }
-  return ret;
-}
-
-void thread_map(thread_t* thread, u32 virt_addr, u32 phy_addr, u32 size) {
-  if (thread->context.upage == NULL) {
-    log_error("thread map faild for upage is null\n");
-    return;
-  }
-  u32 offset = 0;
-  u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
-  u32* page = thread->context.upage;
-  for (int i = 0; i < pages; i++) {
-    page_map_on(page, virt_addr + offset, phy_addr + offset,
-                PAGE_P | PAGE_USU | PAGE_RWW);
-#ifdef DEBUG
-    log_debug("thread %d page:%x map %d vaddr: %x - paddr: %x\n", thread->id,
-              page, i, virt_addr + offset, phy_addr + offset);
-#endif
-    offset += PAGE_SIZE;
-  }
-}
-
 int thread_check(thread_t* thread) {
-  if (thread->context.ksp_start == NULL) {
+  if (thread->ctx->ksp_start == NULL) {
     log_error("create thread %d faild for ksp start is null\n", thread->id);
     return -1;
   }
-  if (thread->context.ksp_end == NULL) {
+  if (thread->ctx->ksp_end == NULL) {
     log_error("create thread %d faild for ksp end is null\n", thread->id);
     return -1;
   }
-  if (thread->context.ksp_size <= 0) {
+  if (thread->ctx->ksp_size <= 0) {
     log_error("create thread %d faild for ksp size is 0\n", thread->id);
     return -1;
   }
-  if ((thread->context.ksp_end - thread->context.ksp_start) !=
-      thread->context.ksp_size) {
+  if ((thread->ctx->ksp_end - thread->ctx->ksp_start) !=
+      thread->ctx->ksp_size) {
     log_error("create thread %d faild for ksp size is not equal\n", thread->id);
     return -1;
   }
 
-  if (thread->context.upage == NULL) {
+  if (thread->vm->upage == NULL) {
     log_error("create thread %d faild for upage is null\n", thread->id);
     return -1;
   }
 
-  if (thread->context.usp_size <= 0) {
+  if (thread->ctx->usp_size <= 0) {
     log_error("create thread %d faild for ustack size is 0\n", thread->id);
     return -1;
   }
-  if (thread->context.usp <= 0) {
+  if (thread->ctx->usp <= 0) {
     log_error("create thread %d faild for ustack is 0\n", thread->id);
     return -1;
   }
-  if (thread->context.upage == NULL) {
+  if (thread->vm->kpage == NULL) {
     log_error("create thread %d faild for kpage is null\n", thread->id);
     return -1;
   }
-  if (thread->vmm == NULL) {
+  if (thread->vm->upage == NULL) {
+    log_error("create thread %d faild for upage is null\n", thread->id);
+    return -1;
+  }
+  if (thread->vm->vma == NULL) {
     log_error("create thread %d faild for vm is null\n", thread->id);
     return -1;
   }
 
   // check stack map
-  vmemory_area_t* vm_stack = vmemory_area_find_flag(thread->vmm, MEMORY_STACK);
+  vmemory_area_t* vm_stack =
+      vmemory_area_find_flag(thread->vm->vma, MEMORY_STACK);
   if (vm_stack == NULL) {
     log_error("create thread %d faild for stack is null\n", thread->id);
     return -1;
   }
 
-  if (thread->context.usp < vm_stack->vaddr ||
-      thread->context.usp > vm_stack->vend) {
+  if (thread->ctx->usp < vm_stack->vaddr || thread->ctx->usp > vm_stack->vend) {
     log_error("create thread %d faild for ustack %x range [%x - %x] error\n",
-              thread->id, thread->context.usp, vm_stack->vaddr, vm_stack->vend);
+              thread->id, thread->ctx->usp, vm_stack->vaddr, vm_stack->vend);
     return -1;
   }
 
-  void* phy = page_v2p(thread->context.upage, vm_stack->alloc_addr);
+  void* phy = page_v2p(thread->vm->upage, vm_stack->alloc_addr);
   if (phy == NULL) {
     log_error("thread map have error\n");
     return -1;
   }
-  vmemory_dump(thread->vmm);
+  vmemory_dump(thread->vm->vma);
 
-  log_debug("tid %d kpage %x upage %x\n",thread->id,thread->context.kpage,thread->context.upage);
+  log_debug("tid %d kpage %x upage %x\n", thread->id, thread->vm->kpage,
+            thread->vm->upage);
+  log_debug("tid %d ksp %x usp %x\n", thread->id, thread->ctx->ksp,
+            thread->ctx->usp);
 
   return 0;
 }
@@ -443,7 +286,7 @@ void thread_wake(thread_t* thread) {
 
 void thread_set_entry(thread_t* thread, void* entry) {
   if (thread == NULL) return;
-  interrupt_context_t* ic = thread->context.ksp;
+  interrupt_context_t* ic = thread->ctx->ksp;
   if (ic == NULL) {
     log_error("context is null cannot set ret\n");
     return;
@@ -453,7 +296,7 @@ void thread_set_entry(thread_t* thread, void* entry) {
 
 void thread_set_arg(thread_t* thread, void* arg) {
   if (thread == NULL) return;
-  interrupt_context_t* ic = thread->context.ksp;
+  interrupt_context_t* ic = thread->ctx->ksp;
   if (ic == NULL) {
     log_error("context is null cannot set ret\n");
     return;
@@ -463,7 +306,7 @@ void thread_set_arg(thread_t* thread, void* arg) {
 
 void thread_set_ret(thread_t* thread, u32 ret) {
   if (thread == NULL) return;
-  interrupt_context_t* ic = thread->context.ksp;
+  interrupt_context_t* ic = thread->ctx->ksp;
   if (ic == NULL) {
     log_error("context is null cannot set ret\n");
     return;
@@ -538,11 +381,11 @@ void thread_remove(thread_t* thread) {
 
 void thread_destroy(thread_t* thread) {
   if (thread == NULL) return;
-  if (thread->context.ksp != NULL) {
-    // kfree(thread->context.ksp);
+  if (thread->ctx->ksp != NULL) {
+    // kfree(thread->ctx->ksp);
   }
-  if (thread->context.usp != NULL) {
-    // kfree(thread->context.usp);
+  if (thread->ctx->usp != NULL) {
+    // kfree(thread->ctx->usp);
   }
   kfree(thread);
 }
@@ -559,7 +402,7 @@ void thread_recycle(thread_t* thread) {
   }
   recycle_head_thread_count++;
   // todo free page alloc
-  // page_free(thread->context.upage, thread->level);
+  // page_free(thread->vm->upage, thread->level);
 }
 
 void thread_stop(thread_t* thread) {
@@ -632,7 +475,7 @@ context_t* thread_current_context() {
   int cpu_id = cpu_get_id();
   thread_t* t = current_threads[cpu_id];
   // lock_release(&thread_lock);
-  return &t->context;
+  return t->ctx;
 }
 
 int thread_find_fd_name(thread_t* thread, u8* name) {
@@ -708,7 +551,7 @@ void thread_dump(thread_t* thread, u32 flags) {
               THREAD_DUMP_STOP_COUNT);
     return;
   }
-  vmemory_area_t* vm = vmemory_area_find_flag(thread->vmm, MEMORY_STACK);
+  vmemory_area_t* vm = vmemory_area_find_flag(thread->vm->vma, MEMORY_STACK);
   thread->dump_count++;
   kprintf("id       %d\n", thread->id);
   if (thread->name != NULL) {
@@ -717,9 +560,9 @@ void thread_dump(thread_t* thread, u32 flags) {
   kprintf("priority %d\n", thread->priority);
   kprintf("counter  %d\n", thread->counter);
   kprintf("state    %d\n", thread->state);
-  kprintf("ksp      %08x  [%8x - %8x]\n", thread->context.ksp,
-          thread->context.ksp_start, thread->context.ksp_end);
-  kprintf("usp      %08x  [%8x - %8x]\n", thread->context.usp, vm->alloc_addr,
+  kprintf("ksp      %08x  [%8x - %8x]\n", thread->ctx->ksp,
+          thread->ctx->ksp_start, thread->ctx->ksp_end);
+  kprintf("usp      %08x  [%8x - %8x]\n", thread->ctx->usp, vm->alloc_addr,
           vm->alloc_addr + vm->alloc_size);
   kprintf("pid      %d\n", thread->pid);
   kprintf("fd_num   %d\n", thread->fd_number);
@@ -727,13 +570,13 @@ void thread_dump(thread_t* thread, u32 flags) {
 
   if (flags & DUMP_CONTEXT == DUMP_CONTEXT) {
     kprintf("--context--\n");
-    context_dump(&thread->context);
+    context_dump(thread->ctx);
   }
   if (flags & DUMP_STACK == DUMP_STACK) {
     kprintf("--kstack--\n");
-    // thread_dump_stack(thread->context.ksp_start, thread->context.ksp_size);
+    // thread_dump_stack(thread->ctx->ksp_start, thread->ctx->ksp_size);
     int dump_size = 0x100;
-    thread_dump_stack(thread->context.ksp_end - dump_size, dump_size);
+    thread_dump_stack(thread->ctx->ksp_end - dump_size, dump_size);
     kprintf("--ustack--\n");
     thread_dump_stack(vm->vend - dump_size, dump_size);
   }
@@ -779,8 +622,9 @@ void thread_dumps() {
         kprintf("   ");
       }
       kprintf("%-8s %4d %6d %4dk %4dk %4dk %4d %6d     %1d\n", str, p->cpu_id,
-              p->counter, p->vmm != NULL ? p->vmm->alloc_size / 1024 : 0,
-              p->mem / 1024, p->context.usp_size / 1024, p->fd_number,
+              p->counter,
+              p->vm->vma != NULL ? p->vm->vma->alloc_size / 1024 : 0,
+              p->mem / 1024, p->ctx->usp_size / 1024, p->fd_number,
               p->sleep_counter, p->level);
     }
   }

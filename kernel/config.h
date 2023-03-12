@@ -94,6 +94,9 @@
 
 #define LOG_COLOR 1
 #define THREAD_DUMP_STOP_COUNT 1
+#define VM_ENABLE 1 //虚拟内存映射开启
+
+
 
 #include "logger.h"
 

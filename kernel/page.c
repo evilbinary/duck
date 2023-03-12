@@ -5,7 +5,7 @@
  ********************************************************************/
 #include "page.h"
 
-// #define DEBUG 1
+#define DEBUG 1
 
 // in user mode
 void page_error_exit() {
@@ -20,23 +20,24 @@ void page_fault_handle(interrupt_context_t *ic) {
   u32 *fault_addr = cpu_get_fault();
   thread_t *current = thread_current();
   if (current != NULL) {
-    int mode = context_get_mode(&current->context);
+    int mode = context_get_mode(current->ctx);
 #ifdef DEBUG
     log_debug("page fault at %x\n", fault_addr);
+    context_dump_fault(ic, fault_addr);
 #endif
-    vmemory_area_t *area = vmemory_area_find(current->vmm, fault_addr, 0);
+    vmemory_area_t *area = vmemory_area_find(current->vm->vma, fault_addr, 0);
     if (area == NULL) {
-      void *phy = page_v2p(current->context.kpage, fault_addr);
+      void *phy = page_v2p(current->vm->kpage, fault_addr);
 #ifdef DEBUG
       log_debug("page area not found %x\n", fault_addr);
-      vmemory_dump(current->vmm);
+      vmemory_dump(current->vm->vma);
 #endif
       if (phy != NULL) {
 #ifdef DEBUG
         log_debug("page lookup kernel found phy: %x\n", phy);
 #endif
         // 内核地址，进行映射,todo 进行检查
-        page_map_on(current->context.upage, fault_addr, phy,
+        page_map_on(current->vm->upage, fault_addr, phy,
                     PAGE_P | PAGE_USU | PAGE_RWW);
       } else {
         if (current->fault_count < 1) {
@@ -60,7 +61,7 @@ void page_fault_handle(interrupt_context_t *ic) {
       }
       return;
     }
-    u32 *page = current->context.upage;
+    u32 *page = current->vm->upage;
     void *phy = page_v2p(page, fault_addr);
     if (phy == NULL) {
       if (area->flags == MEMORY_STACK) {
