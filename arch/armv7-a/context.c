@@ -112,15 +112,15 @@ void context_dump_interrupt(interrupt_context_t* ic) {
   kprintf("r10: %x\n", ic->r10);
   kprintf("r11(fp): %x\n", ic->r11);
   kprintf("r12(ip): %x\n", ic->r12);
-  if (ic->r11 > 1000) {
-    int buf[10];
-    void* fp = ic->r11;
-    cpu_backtrace(fp, buf, 8);
-    kprintf("--backtrace--\n");
-    for (int i = 0; i < 8; i++) {
-      kprintf(" %8x\n", buf[i]);
-    }
-  }
+  // if (ic->r11 > 1000) {
+  //   int buf[10];
+  //   void* fp = ic->r11;
+  //   cpu_backtrace(fp, buf, 8);
+  //   kprintf("--backtrace--\n");
+  //   for (int i = 0; i < 8; i++) {
+  //     kprintf(" %8x\n", buf[i]);
+  //   }
+  // }
 }
 
 void context_dump_fault(interrupt_context_t* context, u32 fault_addr) {
@@ -133,8 +133,6 @@ void context_dump_fault(interrupt_context_t* context, u32 fault_addr) {
   kprintf("----------------------------\n\n");
 }
 
-// #define DEBUG 1
-
 int context_clone(context_t* des, context_t* src) {
   if (src->ksp_start == NULL) {
     log_error("ksp top is null\n");
@@ -145,31 +143,22 @@ int context_clone(context_t* des, context_t* src) {
     return -1;
   }
 
-  // 这里重点关注 usp ksp upage 3个变量的复制
-  u32 offset = src->ksp_end - (u32)src->ksp;
-  u32* ksp = des->ksp_end - offset;
+  // 这里重点关注 usp ksp
+  kmemmove(des->ksp_start, src->ksp_start, des->ksp_size);
 
-  interrupt_context_t* ic = ksp;
+  u32 offset = src->ksp_end - (u32)src->ksp;
+  interrupt_context_t* ic = des->ksp_end - offset;
   interrupt_context_t* is = src->ksp;
-#if DEBUG
-  kprintf("------context clone dump src--------------\n");
-  context_dump(src);
-#endif
-  if (ic != NULL) {
-    // set usp alias ustack and ip cs ss and so on
-    kmemmove(ic, is, sizeof(interrupt_context_t));
-    // cpsr_t cpsr;
-    // cpsr.val = ic->psr;
-    // cpsr.I = 0;
-    // cpsr.F = 0;
-    // ic->psr = cpsr.val;
-    // ic->pc-=4;
-  }
-  // kmemmove(ksp,src->ksp,offset);
-#if DEBUG
+
+  des->ksp = ic;
+  des->usp = src->usp;
+  des->eip = src->eip;
+
   kprintf("------context clone dump des--------------\n");
   context_dump(des);
-#endif
+  kprintf("------context clone dump src--------------\n");
+  context_dump(src);
+
 }
 
 void context_switch(interrupt_context_t* ic, context_t* current,

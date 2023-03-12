@@ -91,10 +91,10 @@ void* do_schedule(interrupt_context_t* ic) {
   }
   timer_ticks[cpu]++;
 
-  // if (next_thread->state ==THREAD_RUNNING) {
-  //   int i = 0;
-  //   log_debug("next tid %d pc %x pc %x\n",next_thread->id,next_thread->ctx->ksp->pc,ic->pc);
-  // }
+  if (next_thread->id==2&& next_thread->state ==THREAD_RUNNING) {
+    int i = 0;
+    log_debug("next tid %d pc %x pc %x\n",next_thread->id,next_thread->ctx->ksp->pc,ic->pc);
+  }
 
   context_switch(ic, current_thread->ctx, next_thread->ctx);
   context_switch_page(next_thread->vm->upage);

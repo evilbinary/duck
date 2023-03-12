@@ -79,7 +79,7 @@ vmemory_area_t* vmemory_area_find_flag(vmemory_area_t* areas, u32 flags) {
   return NULL;
 }
 
-vmemory_area_t* vmemory_clone(vmemory_area_t* areas, int flag) {
+vmemory_area_t* vmemory_area_clone(vmemory_area_t* areas, int flag) {
   if (areas == NULL) {
     return NULL;
   }
@@ -192,4 +192,72 @@ void vmemory_init(vmemory_t* vm, u32 level, u32 usp, u32 usp_size, u32 flags) {
   } else if (level == USER_MODE) {
     log_debug("user vm init end\n");
   }
+}
+
+void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
+  vmemory_area_t* vm = vmemory_area_find_flag(vm_src->vma, type);
+  vmemory_area_t* cvm = vmemory_area_find_flag(vm_copy->vma, type);
+
+  cvm->vaddr = vm->vaddr;
+  cvm->vend = vm->vend;
+  cvm->size = vm->size;
+
+  u32 addr = NULL;
+  u32 end_addr = NULL;
+  char* type_str = NULL;
+  if (type == MEMORY_STACK) {
+    addr = vm->alloc_addr;
+    end_addr = vm->vend;
+    type_str = "stack";
+  } else if (type == MEMORY_HEAP) {
+    addr = vm->vaddr;
+    end_addr = vm->alloc_addr;
+    type_str = "heap";
+  }
+
+  log_debug("vm copy %s range: %x - %x size: %d\n", type_str, addr, end_addr,
+            vm->alloc_size);
+
+  for (; addr < end_addr; addr += PAGE_SIZE) {
+    void* phy = page_v2p(vm_src->upage, addr);
+    u32* copy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
+    if (phy != NULL) {
+      kmemmove(copy_addr, phy, PAGE_SIZE);
+    } else {
+      log_warn("thread  vm copy data,vaddr %x phy is null\n", addr);
+    }
+    vmemory_map(vm_copy->upage, addr, copy_addr, PAGE_SIZE);
+  }
+}
+
+void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 usp, u32 usp_size,
+                   u32 flags) {
+  log_debug("vm clone init\n");
+
+  vmcopy->vma = vmemory_area_clone(vmthread->vma, 1);
+  vmcopy->kpage = page_kernel_dir();
+  vmcopy->upage = page_clone(vmthread->upage, 0);
+  // vm->upage = page_clone(vm->kpage, level);
+
+  // 映射栈
+  // vmemory_area_t* vm_stack =
+  //     vmemory_area_find_flag(vmtarget->vma, MEMORY_STACK);
+  // if (vm_stack != NULL) {
+  //   vm_stack->alloc_addr = vm_stack->vend - usp_size;
+  //   vm_stack->alloc_size += usp_size;
+  //   vmemory_map(vmtarget->upage, vm_stack->alloc_addr, usp - usp_size,
+  //               usp_size);
+  // }
+  // 拷贝
+
+  // 栈拷贝并映射
+  vmemory_copy_data(vmcopy, vmthread, MEMORY_STACK);
+
+  // 堆拷贝并映射
+  vmemory_copy_data(vmcopy, vmthread, MEMORY_HEAP);
+
+  // init 0
+  vmcopy->vma->alloc_size = 0;
+
+  log_debug("vm clone end\n");
 }

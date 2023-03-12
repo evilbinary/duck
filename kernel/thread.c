@@ -91,6 +91,7 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   // context init
   context_t* ctx = kmalloc(sizeof(context_t), KERNEL_TYPE);
   thread->ctx = ctx;
+  ctx->tid= thread->id;
 
   u32 ksp = kmalloc_alignment(kstack_size, PAGE_SIZE, KERNEL_TYPE);
   // kmalloc(kstack_size, KERNEL_TYPE);
@@ -149,12 +150,13 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   // context init
   context_t* ctx = kmalloc(sizeof(context_t), KERNEL_TYPE);
   copy->ctx = ctx;
+  ctx->tid= copy->id;
 
   u32 kstack_size = thread->ctx->ksp_size;
   u32 ustack_size = thread->ctx->usp_size;
 
-  u32 ksp = kmalloc(kstack_size, KERNEL_TYPE);
-  u32 usp = kmalloc(ustack_size, KERNEL_TYPE);
+  u32 ksp = kmalloc_alignment(kstack_size, PAGE_SIZE, KERNEL_TYPE);
+  u32 usp = kmalloc_alignment(ustack_size, PAGE_SIZE, KERNEL_TYPE);
   ctx->ksp_start = ksp;
   ctx->ksp_end = ksp + kstack_size;
   ctx->ksp_size = kstack_size;
@@ -167,7 +169,16 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   copy->vm = kmalloc(sizeof(vmemory_t), KERNEL_TYPE);
 
   // init vm include stack heap exec
-  vmemory_init(copy->vm, thread->level, usp, ustack_size, flags);
+  vmemory_clone(copy->vm,thread->vm, usp, ustack_size, flags);
+
+  // 文件分配方式
+  if (flags & FS_CLONE) {
+    // copy file
+    copy->fd_size = thread->fd_size;
+    copy->fd_number = thread->fd_number;
+    copy->fds = kmalloc(sizeof(fd_t) * thread->fd_size, KERNEL_TYPE);
+    kmemmove(copy->fds, thread->fds, sizeof(fd_t) * thread->fd_size);
+  }
 
   // check thread data
   int ret = thread_check(copy);
@@ -216,7 +227,7 @@ int thread_check(thread_t* thread) {
     return -1;
   }
   if (thread->vm->vma == NULL) {
-    log_error("create thread %d faild for vm is null\n", thread->id);
+    log_error("create thread %d faild for vma is null\n", thread->id);
     return -1;
   }
 
