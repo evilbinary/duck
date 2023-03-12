@@ -113,22 +113,22 @@ vmemory_area_t* vmemory_create_default(u32 koffset) {
                                               MEMORY_STACK_SIZE, MEMORY_STACK);
   vmemory_area_add(vmm, stack);
 
-  // extern boot_info_t* boot_info;
+  extern boot_info_t* boot_info;
 
   // default kernel info
-  // for (int i = 0; i < boot_info->segments_number; i++) {
-  //   u32 size = boot_info->segments[i].size;
-  //   u32 address = boot_info->segments[i].start;
-  //   u32 type = boot_info->segments[i].type;
+  for (int i = 0; i < boot_info->segments_number; i++) {
+    u32 size = boot_info->segments[i].size;
+    u32 address = boot_info->segments[i].start;
+    u32 type = boot_info->segments[i].type;
 
-  //   vmemory_area_t* vmmk = NULL;
-  //   if (type == 2) {
-  //     vmmk = vmemory_area_create(address, size, MEMORY_HEAP);
-  //   } else {
-  //     vmmk = vmemory_area_create(address, size, MEMORY_EXEC);
-  //   }
-  //   vmemory_area_add(vmm, vmmk);
-  // }
+    vmemory_area_t* vmmk = NULL;
+    if (type == 2) {
+      vmmk = vmemory_area_create(address, size, MEMORY_HEAP);
+    } else {
+      vmmk = vmemory_area_create(address, size, MEMORY_EXEC);
+    }
+    vmemory_area_add(vmm, vmmk);
+  }
 
   return vmm;
 }
@@ -168,8 +168,13 @@ void vmemory_init(vmemory_t* vm, u32 level, u32 usp, u32 usp_size, u32 flags) {
   }
 
   vm->vma = vmemory_create_default(koffset);
-  vm->upage = page_create(level);
   vm->kpage = page_kernel_dir();
+  if (level == KERNEL_MODE) {
+    vm->upage = vm->kpage;
+  } else {
+    vm->upage = page_clone(vm->kpage, level);
+    // vm->upage = page_create(0);
+  }
 
   log_debug("init vm level %d kpage: %x upage: %x\n", level, vm->kpage,
             vm->upage);

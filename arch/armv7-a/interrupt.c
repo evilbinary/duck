@@ -138,8 +138,8 @@ void exception_info(interrupt_context_t* ic) {
   } else {
     kprintf("exception cpu %d no %d:\n", cpu, ic->no);
   }
-  u32 instruction = *((u32*)ic->pc);
-  kprintf("pc: %x data: %x\n", ic->pc,instruction );
+  // u32 instruction = *((u32*)ic->pc);
+  // kprintf("pc: %x data: %x\n", ic->pc,instruction );
 
   kprintf("ifsr: %x dfsr: %x dfar: %x\n", read_ifsr(), read_dfsr(),
           read_dfar());

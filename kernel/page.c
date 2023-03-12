@@ -23,7 +23,7 @@ void page_fault_handle(interrupt_context_t *ic) {
     int mode = context_get_mode(current->ctx);
 #ifdef DEBUG
     log_debug("page fault at %x\n", fault_addr);
-    context_dump_fault(ic, fault_addr);
+    //context_dump_fault(ic, fault_addr);
 #endif
     vmemory_area_t *area = vmemory_area_find(current->vm->vma, fault_addr, 0);
     if (area == NULL) {
