@@ -113,7 +113,7 @@ vmemory_area_t* vmemory_create_default(u32 koffset) {
                                               MEMORY_STACK_SIZE, MEMORY_STACK);
   vmemory_area_add(vmm, stack);
 
-  extern boot_info_t* boot_info;
+  // extern boot_info_t* boot_info;
 
   // default kernel info
   // for (int i = 0; i < boot_info->segments_number; i++) {
@@ -169,7 +169,7 @@ void vmemory_init(vmemory_t* vm, u32 level, u32 usp, u32 usp_size, u32 flags) {
 
   vm->vma = vmemory_create_default(koffset);
   vm->upage = page_create(level);
-  vm->kpage = page_create(KERNEL_MODE);
+  vm->kpage = page_kernel_dir();
 
   log_debug("init vm level %d kpage: %x upage: %x\n", level, vm->kpage,
             vm->upage);

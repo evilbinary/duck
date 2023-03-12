@@ -327,7 +327,6 @@ void thread_add(thread_t* thread) {
   // lock_acquire(&thread_lock);
 
   // 内核需要物理地址
-  thread = kpage_v2p(thread, 0);
   int cpu_id = cpu_get_id();
   if (schedulable_head_thread[cpu_id] == NULL) {
     schedulable_head_thread[cpu_id] = thread;

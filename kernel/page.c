@@ -83,4 +83,27 @@ void page_fault_handle(interrupt_context_t *ic) {
   }
 }
 
-void page_init() { exception_regist(EX_DATA_FAULT, page_fault_handle); }
+void *kernel_page_dir = NULL;
+
+void page_map(u32 virtualaddr, u32 physaddr, u32 flags) {
+  page_map_on(kernel_page_dir, virtualaddr, physaddr, flags);
+}
+
+void *page_kernel_dir() { return kernel_page_dir; }
+
+void page_init() {
+  exception_regist(EX_DATA_FAULT, page_fault_handle);
+
+#ifdef VM_ENABLE
+  // create kernel page
+  kernel_page_dir = page_create(KERNEL_MODE);
+  //parse
+  mm_parse_map(kernel_page_dir);
+
+  // enable page
+  log_info("page enable\n");
+  mm_enable(kernel_page_dir);
+
+#endif
+
+}

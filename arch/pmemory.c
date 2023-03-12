@@ -323,8 +323,6 @@ void mm_init() {
   kprintf("alloc init\n");
   // mm init
   mmt.init();
-  kprintf("mm init default\n");
-  mm_init_default();
 }
 
 size_t ya_real_size(void* ptr) {
@@ -648,7 +646,7 @@ u32 mm_get_block_size(void* addr) {
 }
 #endif
 
-void mm_enable() { mm_page_enable(); }
+void mm_enable(void* page_dir) { mm_page_enable(page_dir); }
 
 void map_mem_block(u32* page, u32 size, u32 flags) {
   mem_block_t* p = mmt.blocks;
@@ -688,4 +686,17 @@ void page_map_kernel(u32* page, u32 flag_x, u32 flag_rw) {
             boot_info->segments[i].start, address + size, type);
   }
   kprintf("map kernel end %d\n", boot_info->segments_number);
+}
+
+void mm_parse_map(void* kernel_page_dir) {
+  // map mem block 100 page 4000k
+  map_mem_block(kernel_page_dir, PAGE_SIZE * 10000, 0);
+
+  // // map 0 - 0x80000
+  page_map_range(kernel_page_dir, 0, 0, PAGE_SIZE * 200, 0);
+
+  // map kernel
+  // map_kernel(L2_TEXT_1 | L2_NCB, L2_NCNB);
+
+  page_map_kernel(kernel_page_dir, 0, 0);
 }

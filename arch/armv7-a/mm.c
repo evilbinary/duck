@@ -14,21 +14,9 @@
 extern boot_info_t* boot_info;
 extern memory_manager_t mmt;
 
-u32 kernel_page_dir[PAGE_DIR_NUMBER] __attribute__((aligned(0x4000)));
-
-
 u32* page_create(u32 level) {
-  if (level == KERNEL_MODE) {
-    // must no cache
-    return kernel_page_dir;
-  }
-  u32* page_dir_ptr_tab = mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, PAGE_SIZE * 4);
-
-  // map_mem_block(page_dir_ptr_tab,PAGE_SIZE * 10000, 0);
-  // // map 0 - 0x80000
-  // page_map_range(page_dir_ptr_tab,0, 0, PAGE_SIZE * 20, 0);
-  // page_map_kernel(page_dir_ptr_tab,0, 0);
-
+  u32* page_dir_ptr_tab =
+      mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, PAGE_SIZE * 4);
   return page_dir_ptr_tab;
 }
 
@@ -59,19 +47,9 @@ void page_copy(u32* old_page, u32* new_page) {
 }
 
 u32* page_clone(u32* old_page_dir, u32 level) {
-  if (level == KERNEL_MODE) {
-    // must no cache
-    return kernel_page_dir;
-  }
-  if (level == USER_MODE) {
-    u32* page_dir_ptr_tab =page_create(level);
-    if (old_page_dir == NULL) {
-      old_page_dir = kernel_page_dir;
-    }
-    page_copy(old_page_dir, page_dir_ptr_tab);
-    return page_dir_ptr_tab;
-  }
-  return page_create(level);
+  u32* page_dir_ptr_tab = page_create(level);
+  page_copy(old_page_dir, page_dir_ptr_tab);
+  return page_dir_ptr_tab;
 }
 
 void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
@@ -86,10 +64,6 @@ void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
   l2[l2_index] = ((physaddr >> 12) << 12) | L2_DESC | flags;
 }
 
-void page_map(u32 virtualaddr, u32 physaddr, u32 flags) {
-  page_map_on(kernel_page_dir, virtualaddr, physaddr, flags);
-}
-
 void page_unmap_on(page_dir_t* page, u32 virtualaddr) {
   u32* l1 = page;
   u32 l1_index = virtualaddr >> 20;
@@ -102,7 +76,7 @@ void page_unmap_on(page_dir_t* page, u32 virtualaddr) {
 }
 
 void* page_v2p(void* page, void* vaddr) {
-  if( page==NULL){
+  if (page == NULL) {
     kprintf("page v2p page is null\n");
   }
   void* phyaddr = NULL;
@@ -123,26 +97,7 @@ void* page_v2p(void* page, void* vaddr) {
   return phyaddr + offset;
 }
 
-void mm_init_default() {
-  mm_test();
-  boot_info->pdt_base = kernel_page_dir;
-  kmemset(kernel_page_dir, 0, sizeof(u32) * PAGE_DIR_NUMBER);
-
-  // map mem block 100 page 4000k
-  map_mem_block(kernel_page_dir,PAGE_SIZE * 10000, 0);
-
-  // map 0 - 0x80000
-  page_map_range(kernel_page_dir,0, 0, PAGE_SIZE * 200, 0);
-
-  // map kernel
-  // map_kernel(L2_TEXT_1 | L2_NCB, L2_NCNB);
-
-  page_map_kernel(kernel_page_dir,0, 0);
-
-  kprintf("map page end\n");
-}
-
-void mm_page_enable() {
+void mm_page_enable(void* page_dir) {
   // cpu_disable_page();
   // cpu_icache_disable();
   cp15_invalidate_icache();
@@ -152,7 +107,7 @@ void mm_page_enable() {
   // cpu_set_domain(0xffffffff);
   // cpu_set_domain(0x55555555);
 
-  cpu_set_page(kernel_page_dir);
+  cpu_set_page(page_dir);
   // start_dump();
   kprintf("enable page\n");
   cpu_enable_page();
@@ -168,5 +123,3 @@ void mm_test() {
   // *p = 1 << 6;
   // kprintf("p=%x\n", *p);
 }
-
-
