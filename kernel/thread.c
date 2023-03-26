@@ -450,6 +450,7 @@ thread_t* thread_find_next(thread_t* thread) {
 void thread_run(thread_t* thread) {
   if (thread->state == THREAD_CREATE) {
     thread_add(thread);
+    thread->state = THREAD_RUNNING;
   }
   if (thread->state == THREAD_RUNABLE) {
     thread->state = THREAD_RUNNING;

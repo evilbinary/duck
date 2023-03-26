@@ -43,13 +43,13 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
     // kernel mode
     cpsr.I = 0;
     cpsr.F = 1;
-    cpsr.T = 0;  // arm
-    cpsr.M = 0x13; //svc mode
+    cpsr.T = 0;     // arm
+    cpsr.M = 0x13;  // svc mode
   } else if (level == 3) {
     cpsr.I = 0;
-    cpsr.F = 0;
-    cpsr.T = 0;  // arm
-    cpsr.M = 0x10; //usr mode
+    cpsr.F = 1;
+    cpsr.T = 0;     // arm
+    cpsr.M = 0x10;  // usr mode
   } else {
     kprintf("not suppport level %d\n", level);
   }
@@ -151,7 +151,13 @@ int context_clone(context_t* des, context_t* src) {
   des->ksp = ic;
   des->usp = src->usp;
   des->eip = src->eip;
-  des->ic = src->ic;
+  // des->ic = src->ic;
+
+  // cpsr_t cpsr;
+  // cpsr.val = ic->psr;
+  // cpsr.I = 0;
+  // cpsr.F = 1;
+  // ic->psr = cpsr.val;
 
   // kprintf("------context clone dump des--------------\n");
   // context_dump(des);
@@ -164,11 +170,10 @@ void context_switch(interrupt_context_t* ic, context_t* current,
   if (ic == NULL) {
     return;
   }
-  current->ic = ic;  
-  
+  current->ic = ic;
+
   current->ksp++;
   kmemcpy(current->ksp, ic, sizeof(interrupt_context_t));
   kmemcpy(ic, next->ksp, sizeof(interrupt_context_t));
   next->ksp--;
-
 }

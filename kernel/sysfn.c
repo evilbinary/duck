@@ -274,6 +274,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   thread_run(current);
 
   kmemmove(current->ctx->ic, current->ctx->ksp,sizeof(interrupt_context_t));
+  context_switch_page(current->vm->upage);
 
   return 0;
 }
@@ -326,7 +327,7 @@ int sys_fork() {
   }
   log_debug("sys fork current kstak size %d\n",current->ctx->ksp_size);
 
-  thread_stop(current);
+  // thread_stop(current);
   thread_t* copy_thread = thread_copy(current, THREAD_FORK);
   thread_set_ret(copy_thread, 0);
   log_debug("fork copy finished\n");
@@ -959,6 +960,12 @@ int sys_madvice(void* addr, size_t length, int advice) {
   return 0;
 }
 
+int sys_thread_create(char* name, void* entry, void* data){
+  thread_t* t = thread_create_name(name, entry, data);
+  thread_run(t);
+  return t;
+}
+
 void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_READ] = &sys_read;
   syscall_table[SYS_WRITE] = &sys_write;
@@ -1039,4 +1046,7 @@ void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_READLINK] = &sys_readlink;
 
   syscall_table[SYS_MADVISE] = &sys_madvice;
+
+  syscall_table[SYS_THREAD_CREATE] = &sys_thread_create;
+
 }

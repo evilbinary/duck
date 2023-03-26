@@ -13,7 +13,23 @@ u32 schedule_get_ticks() {
   return timer_ticks[cpu];
 }
 
-thread_t* schedule_get_next() {
+void schedule_state(int cpu) {
+  thread_t* v = thread_head();
+  for (; v != NULL; v = v->next) {
+    if (v->sleep_counter <= 0) {
+      thread_wake(v);
+    }
+    if (v->state == THREAD_SLEEP) {
+      u32 ticks = timer_ticks[cpu];
+      v->sleep_counter -= ticks - v->counter;
+      if (v->sleep_counter <= 0) {
+        v->sleep_counter = 0;
+      }
+    }
+  }
+}
+
+thread_t* schedule_next(int cpu) {
   thread_t* current = thread_current();
   thread_t* next = NULL;
   thread_t* v = thread_head();
@@ -22,7 +38,6 @@ thread_t* schedule_get_next() {
   //   current_thread->counter=0;
   // }
   for (; v != NULL; v = v->next) {
-    // kprintf("v %d %d\n",v->id,v->state);
     if (v == current) continue;
     if (v->state != THREAD_RUNNING) continue;
     if (next == NULL) {
@@ -42,18 +57,11 @@ void schedule(interrupt_context_t* ic) {
   thread_t* current_thread = thread_current();
   int cpu = cpu_get_id();
   schedule_state(cpu);
-  thread_t* next_thread = schedule_get_next();
+  thread_t* next_thread = schedule_next(cpu);
   context_switch(ic, current_thread->ctx, next_thread->ctx);
   context_switch_page(next_thread->vm->upage);
   thread_set_current(next_thread);
   kmemmove(ic, next_thread->ctx->ksp, sizeof(interrupt_context_t));
-}
-
-void schedule_next() {
-  // while (current_thread == thread_current()) {
-  //   cpu_sti();
-  // }
-  // cpu_cli();
 }
 
 void schedule_sleep(u32 nsec) {
@@ -63,45 +71,32 @@ void schedule_sleep(u32 nsec) {
   thread_sleep(current, tick);
 }
 
-void schedule_state(int cpu) {
-  thread_t* v = thread_head();
-  for (; v != NULL; v = v->next) {
-    if (v->sleep_counter < 0) {
-      thread_wake(v);
-    }
-    if (v->state == THREAD_SLEEP) {
-      u32 ticks = timer_ticks[cpu];
-      v->sleep_counter -= ticks - v->counter;
-      if (v->sleep_counter <= 0) {
-        v->sleep_counter = -1;
-      }
-    }
-  }
-}
-
 void* do_schedule(interrupt_context_t* ic) {
+  cpu_cli();
   int cpu = cpu_get_id();
   thread_t* next_thread = NULL;
   thread_t* current_thread = thread_current();
   schedule_state(cpu);
-  next_thread = schedule_get_next();
+  next_thread = schedule_next(cpu);
   if (next_thread == NULL) {
     kprintf("schedule error next\n");
     return NULL;
   }
   timer_ticks[cpu]++;
 
+  if (next_thread->id == 2) {
+    int i = 0;
+    log_debug("next tid %d ksp->pc %x ic->pc %x\n", next_thread->id,
+              next_thread->ctx->ksp->pc, ic->pc);
+  }
+  // return next_thread->ctx->ksp;
+  // log_info("irq\n");
+
+  context_switch_page(next_thread->vm->upage);
   context_switch(ic, current_thread->ctx, next_thread->ctx);
   thread_set_current(next_thread);
-  context_switch_page(next_thread->vm->upage);
-
-  // if (next_thread->id==1&& next_thread->state ==THREAD_RUNNING) {
-  //   int i = 0;
-  // log_debug("next tid %d ksp->pc %x ic->pc
-  // %x\n",next_thread->id,next_thread->ctx->ksp->pc,ic->pc);
-  // }
-  // return next_thread->ctx->ksp;
   timer_end();
+  cpu_sti();
   return ic;
 }
 

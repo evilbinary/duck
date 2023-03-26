@@ -237,8 +237,7 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread,
   vmcopy->vma = vmemory_area_clone(vmthread->vma, 1);
   vmcopy->kpage = page_kernel_dir();
   vmcopy->upage = page_clone(vmthread->upage, 0);
-  // vmcopy->upage = page_clone(vmcopy->kpage, 0);
-
+  // vmcopy->upage = page_clone(vmthread->kpage, 0);
 
   // u32 usp = kmalloc_alignment(ustack_size, PAGE_SIZE, KERNEL_TYPE);
   // ctx->usp = usp + ustack_size;

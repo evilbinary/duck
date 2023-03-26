@@ -49,21 +49,21 @@ void hello_thread(void) {
 
 int run_exec(char* cmd, char** argv,char** env){
 #ifdef USE_FORK
-  int pid = syscall0(SYS_FORK);
   char temp[64];
-  int p = syscall0(SYS_GETPID);
+  int pid = syscall0(SYS_FORK);
   if (pid == 0) {  // 子进程
+    int p = syscall0(SYS_GETPID);
     sprintf(temp,"fork child pid=%d p=%d\n",pid,p);
     print_string(temp);
     syscall3(SYS_EXEC, cmd, argv, env);
     syscall1(SYS_EXIT, 0);
   } else {
+    int p = syscall0(SYS_GETPID);
     sprintf(temp,"fork parent pid=%d p=%d\n",pid,p);
     print_string(temp);
   }
 #else
-  thread_t* t = thread_create_name(cmd, (u32*)&hello_thread, NULL);
-  thread_run(t);
+  thread_t* t = syscall3(SYS_THREAD_CREATE,cmd, (u32*)&hello_thread, NULL);
 #endif
 }
 
@@ -268,6 +268,7 @@ void pre_launch() {
   // syscall3(SYS_EXEC, "/cat", cat_argv,NULL);
   // syscall3(SYS_EXEC, "/infones", nes_argv,NULL);
   // syscall3(SYS_EXEC,"/test-file",NULL,NULL);
+  // syscall3(SYS_EXEC, "/gnuboy", gnuboy_argv,NULL);
 
 // test_cpu_speed();
 //  for(;;);

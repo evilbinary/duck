@@ -22,7 +22,7 @@ void *exception_process(interrupt_context_t *ic) {
   } else if (ic->no == EX_SYS_CALL) {
     thread_t *current = thread_current();
     if (current != NULL) {
-      current->ctx->ic = ic;
+      current->ctx->ic = ic; 
       kmemcpy(current->ctx->ksp, ic, sizeof(interrupt_context_t));
     }
   }
@@ -87,6 +87,7 @@ void exception_on_undef(interrupt_context_t *ic) {
   thread_t *current = thread_current();
   log_debug("exception undef on cpu %d no %d code %x\n", cpu, ic->no, ic->code);
   exception_info(ic);
+  thread_dump(current);
   exception_process_error(current, ic, (void *)&exception_error_exit);
 }
 
