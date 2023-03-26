@@ -75,6 +75,7 @@ typedef struct vmemory{
   u32* upage;
   u32* kpage;
   vmemory_area_t* vma;
+  u32 tid;
 }vmemory_t;
 
 

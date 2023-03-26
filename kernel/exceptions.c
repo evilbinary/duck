@@ -23,7 +23,7 @@ void *exception_process(interrupt_context_t *ic) {
     thread_t *current = thread_current();
     if (current != NULL) {
       current->ctx->ic = ic;
-      kmemmove(current->ctx->ksp, ic, sizeof(interrupt_context_t));
+      kmemcpy(current->ctx->ksp, ic, sizeof(interrupt_context_t));
     }
   }
   if (exception_handlers[ic->no] != 0) {

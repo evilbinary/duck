@@ -107,6 +107,7 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   // vm init
   vmemory_t* vm = kmalloc(sizeof(vmemory_t), KERNEL_TYPE);
   thread->vm = vm;
+  vm->tid=thread->id;
   // init vm include stack heap exec
   vmemory_init(vm, level, usp, ustack_size, flags);
 
@@ -139,7 +140,6 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   log_debug("thread init default\n");
 
   thread_init_default(copy, thread->level, thread->ctx->eip, thread->data);
-  copy->vm = thread->vm;
   copy->data = thread->data;
   copy->pid = thread->id;
   copy->name = kmalloc(kstrlen(thread->name), KERNEL_TYPE);
@@ -147,6 +147,7 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   copy->counter = 0;
   copy->fault_count = 0;
   copy->sleep_counter = 0;
+  copy->dump_count=0;
 
   // context init
   context_t* ctx = kmalloc(sizeof(context_t), KERNEL_TYPE);
@@ -167,6 +168,7 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
 
   // vm init
   copy->vm = kmalloc(sizeof(vmemory_t), KERNEL_TYPE);
+  copy->vm->tid=copy->id;
 
   // init vm include stack heap exec
   vmemory_clone(copy->vm, thread->vm, flags);
@@ -250,7 +252,8 @@ int thread_check(thread_t* thread) {
     log_error("thread map have error\n");
     return -1;
   }
-  vmemory_dump(thread->vm->vma);
+  vmemory_dump(thread->vm);
+  thread_dump(thread,0);
 
   log_debug("tid %d kpage %x upage %x\n", thread->id, thread->vm->kpage,
             thread->vm->upage);

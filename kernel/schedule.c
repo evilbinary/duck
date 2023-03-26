@@ -46,7 +46,7 @@ void schedule(interrupt_context_t* ic) {
   context_switch(ic, current_thread->ctx, next_thread->ctx);
   context_switch_page(next_thread->vm->upage);
   thread_set_current(next_thread);
-  kmemmove(ic, next_thread->ctx->ksp,sizeof(interrupt_context_t));
+  kmemmove(ic, next_thread->ctx->ksp, sizeof(interrupt_context_t));
 }
 
 void schedule_next() {
@@ -91,21 +91,22 @@ void* do_schedule(interrupt_context_t* ic) {
   }
   timer_ticks[cpu]++;
 
-  if (next_thread->id==2&& next_thread->state ==THREAD_RUNNING) {
-    int i = 0;
-    // log_debug("next tid %d pc %x pc %x\n",next_thread->id,next_thread->ctx->ksp->pc,ic->pc);
-  }
-
   context_switch(ic, current_thread->ctx, next_thread->ctx);
-  context_switch_page(next_thread->vm->upage);
   thread_set_current(next_thread);
-  timer_end();
+  context_switch_page(next_thread->vm->upage);
 
-  return next_thread->ctx->ksp;
+  // if (next_thread->id==1&& next_thread->state ==THREAD_RUNNING) {
+  //   int i = 0;
+  // log_debug("next tid %d ksp->pc %x ic->pc
+  // %x\n",next_thread->id,next_thread->ctx->ksp->pc,ic->pc);
+  // }
+  // return next_thread->ctx->ksp;
+  timer_end();
+  return ic;
 }
 
 void schedule_init() {
-  lock_init(&schedule_lock);
+  // lock_init(&schedule_lock);
   exception_regist(EX_TIMER, do_schedule);
   timer_init(SCHEDULE_FREQUENCY);
 }

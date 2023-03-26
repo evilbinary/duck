@@ -116,6 +116,7 @@ void unuse_handler() {
 
 INTERRUPT_SERVICE
 void irq_handler() {
+  // asm("msr   cpsr, #0xD2 \n");
   interrupt_entering_code(EX_TIMER, 0, 4);
   interrupt_process(interrupt_default_handler);
   interrupt_exit_ret();

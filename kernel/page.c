@@ -30,7 +30,7 @@ void page_fault_handle(interrupt_context_t *ic) {
       void *phy = page_v2p(current->vm->kpage, fault_addr);
 #ifdef DEBUG
       log_debug("page area not found %x\n", fault_addr);
-      vmemory_dump(current->vm->vma);
+      vmemory_dump(current->vm);
 #endif
       if (phy != NULL) {
 #ifdef DEBUG
