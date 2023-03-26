@@ -72,7 +72,6 @@ void schedule_sleep(u32 nsec) {
 }
 
 void* do_schedule(interrupt_context_t* ic) {
-  cpu_cli();
   int cpu = cpu_get_id();
   thread_t* next_thread = NULL;
   thread_t* current_thread = thread_current();
@@ -84,11 +83,11 @@ void* do_schedule(interrupt_context_t* ic) {
   }
   timer_ticks[cpu]++;
 
-  if (next_thread->id == 2) {
-    int i = 0;
-    log_debug("next tid %d ksp->pc %x ic->pc %x\n", next_thread->id,
-              next_thread->ctx->ksp->pc, ic->pc);
-  }
+  // if (next_thread->id == 2) {
+  //   int i = 0;
+  //   log_debug("next tid %d ksp->pc %x ic->pc %x\n", next_thread->id,
+  //             next_thread->ctx->ksp->pc, ic->pc);
+  // }
   // return next_thread->ctx->ksp;
   // log_info("irq\n");
 
@@ -96,7 +95,6 @@ void* do_schedule(interrupt_context_t* ic) {
   context_switch(ic, current_thread->ctx, next_thread->ctx);
   thread_set_current(next_thread);
   timer_end();
-  cpu_sti();
   return ic;
 }
 
