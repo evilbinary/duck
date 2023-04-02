@@ -93,7 +93,7 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   thread->ctx = ctx;
   ctx->tid = thread->id;
 
-  u32 ksp = kmalloc_alignment(kstack_size, PAGE_SIZE, KERNEL_TYPE);
+  u32 ksp = kmalloc(kstack_size, KERNEL_TYPE);
   u32 usp = kmalloc_alignment(ustack_size, PAGE_SIZE, KERNEL_TYPE);
   ctx->ksp_start = ksp;
   ctx->ksp_end = ksp + kstack_size;
@@ -134,7 +134,7 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   log_debug("thread copy start\n");
 
   thread_t* copy = kmalloc(sizeof(thread_t), KERNEL_TYPE);
-
+  kmemset(copy,0,sizeof(thread_t));
   kmemmove(copy, thread, sizeof(thread_t));
 
   log_debug("thread init default\n");
@@ -142,8 +142,9 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   thread_init_default(copy, thread->level, thread->ctx->eip, thread->data);
   copy->data = thread->data;
   copy->pid = thread->id;
-  copy->name = kmalloc(kstrlen(thread->name), KERNEL_TYPE);
-  kstrcpy(copy->name, thread->name);
+  // copy->name = kmalloc(kstrlen(thread->name), KERNEL_TYPE);
+  // kstrcpy(copy->name, thread->name);
+  copy->name = thread->name;
   copy->counter = 0;
   copy->fault_count = 0;
   copy->sleep_counter = 0;
@@ -151,6 +152,8 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
 
   // context init
   context_t* ctx = kmalloc(sizeof(context_t), KERNEL_TYPE);
+  kmemset(ctx,0,sizeof(context_t));
+
   copy->ctx = ctx;
   ctx->tid = copy->id;
 
@@ -161,7 +164,7 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   ctx->ksp_start = ksp;
   ctx->ksp_end = ksp + kstack_size;
   ctx->ksp_size = kstack_size;
-
+  ctx->usp = NULL;
   ctx->usp_size = ustack_size;
 
   context_clone(copy->ctx, thread->ctx);
@@ -575,6 +578,8 @@ void thread_dump(thread_t* thread, u32 flags) {
   kprintf("priority %d\n", thread->priority);
   kprintf("counter  %d\n", thread->counter);
   kprintf("state    %d\n", thread->state);
+  kprintf("kpage    %08x\n", thread->vm->kpage);
+  kprintf("upage    %08x\n", thread->vm->upage);
   kprintf("ksp      %08x  [%8x - %8x]\n", thread->ctx->ksp,
           thread->ctx->ksp_start, thread->ctx->ksp_end);
   kprintf("usp      %08x  [%8x - %8x]\n", thread->ctx->usp, vm->alloc_addr,

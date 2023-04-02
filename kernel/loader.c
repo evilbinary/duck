@@ -181,5 +181,7 @@ void run_elf_thread(void* a) {
 #endif
     exec_t exec_info = *exec;
     ret = entry(&exec_info);
+  }else{
+    log_error("entry not found\n");
   }
 }

@@ -87,7 +87,8 @@ void exception_on_undef(interrupt_context_t *ic) {
   thread_t *current = thread_current();
   log_debug("exception undef on cpu %d no %d code %x\n", cpu, ic->no, ic->code);
   exception_info(ic);
-  thread_dump(current);
+  kprintf("--dump thread--\n");
+  thread_dump(current, DUMP_DEFAULT|DUMP_CONTEXT);
   exception_process_error(current, ic, (void *)&exception_error_exit);
 }
 

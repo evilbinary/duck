@@ -22,9 +22,10 @@
 #define L2_NCB (1 << 2) // 0b01 Write-Back, Write-Allocate
 #define L2_CNB (0 << 2) // 0b10 Write-Through, no Write-Allocate
 
-
-#define L2_AP_ACCESS (3 << 4)
+#define L2_AP_ACCESS (3 << 4) //full access
 #define L2_AP_RW (0 << 9)  // read write any privilege level
+#define L2_AP_RWX (L2_AP_RW|L2_AP_ACCESS)
+
 #define L2_AP_R  0x2
 #define L2_TEXT (7 << 6)
 

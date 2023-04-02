@@ -16,7 +16,7 @@ u32 schedule_get_ticks() {
 void schedule_state(int cpu) {
   thread_t* v = thread_head();
   for (; v != NULL; v = v->next) {
-    if (v->sleep_counter <= 0) {
+    if (v->sleep_counter <= 0 && v->state != THREAD_STOPPED) {
       thread_wake(v);
     }
     if (v->state == THREAD_SLEEP) {
@@ -58,10 +58,10 @@ void schedule(interrupt_context_t* ic) {
   int cpu = cpu_get_id();
   schedule_state(cpu);
   thread_t* next_thread = schedule_next(cpu);
-  context_switch(ic, current_thread->ctx, next_thread->ctx);
   context_switch_page(next_thread->vm->upage);
+  context_switch(ic, current_thread->ctx, next_thread->ctx);
   thread_set_current(next_thread);
-  kmemmove(ic, next_thread->ctx->ksp, sizeof(interrupt_context_t));
+  kmemcpy(ic, next_thread->ctx->ksp, sizeof(interrupt_context_t));
 }
 
 void schedule_sleep(u32 nsec) {
@@ -85,15 +85,14 @@ void* do_schedule(interrupt_context_t* ic) {
 
   // if (next_thread->id == 2) {
   //   int i = 0;
-  //   log_debug("next tid %d ksp->pc %x ic->pc %x\n", next_thread->id,
-  //             next_thread->ctx->ksp->pc, ic->pc);
+  //   log_debug("next tid %d ksp->pc %x ic->pc %x inst:%x\n", next_thread->id,
+  //             next_thread->ctx->ksp->pc, ic->pc, *(u32*)ic->pc);
+  //   // log_debug("upage %x ic %x ksp %x\n",next_thread->vm->upage,
+  //   // ic,next_thread->ctx->ksp); mmu_dump();
   // }
-  // return next_thread->ctx->ksp;
-  // log_info("irq\n");
-
-  context_switch_page(next_thread->vm->upage);
   context_switch(ic, current_thread->ctx, next_thread->ctx);
   thread_set_current(next_thread);
+  context_switch_page(next_thread->vm->upage);
   timer_end();
   return ic;
 }

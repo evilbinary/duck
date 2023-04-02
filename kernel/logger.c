@@ -50,13 +50,13 @@ void log_default_color(int tag, const char* message, va_list args) {
   if (log_info_mod.fd < 0) {
     int size = vsprintf(logger_buf, message, args);
     if (size > LOG_MSG_BUF) {
-      kprintf("log overflow\n");
+      kprintf("log overflow %d\n",size);
     }
     size = kprintf("%s[%08d] %stid:%d %s%-5s %s%s%s", LOG_GRAY, ticks,
                    LOG_WHITE_BOLD, tid, tag_color, tag_msg, LOG_WHITE,
                    logger_buf, LOG_NONE);
     if (size > LOG_MSG_BUF) {
-      kprintf("log overflow\n");
+      kprintf("log overflow %d\n",size);
     }
   } else {
     kmemset(logger_buf, 0, LOG_MSG_BUF);
@@ -64,13 +64,13 @@ void log_default_color(int tag, const char* message, va_list args) {
         vsprintf(logger_buf, "%s[%08d] %stid:%d %s%-5s %s", LOG_GRAY, ticks,
                  LOG_WHITE_BOLD, tid, tag_color, tag_msg, LOG_NONE);
     if (size > LOG_MSG_BUF) {
-      kprintf("log overflow\n");
+      kprintf("log overflow %d\n",size);
     }
     sys_write(log_info_mod.fd, logger_buf, kstrlen(logger_buf));
     kmemset(logger_buf, 0, LOG_MSG_BUF);
     size = vsprintf(logger_buf, message, args);
     if (size > LOG_MSG_BUF) {
-      kprintf("log overflow\n");
+      kprintf("log overflow %d\n",size);
     }
     sys_write(log_info_mod.fd, logger_buf, kstrlen(logger_buf));
   }

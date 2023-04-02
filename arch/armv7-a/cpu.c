@@ -117,17 +117,26 @@ void tlbimva(unsigned long mva) {
   asm volatile("mcr p15, 0, %0, c8, c7, 1" : : "r"(mva) : "memory");
 }
 
+
 void cpu_set_page(u32 page_table) {
+  // cpu_invalid_tlb();
+  // cp15_invalidate_icache();
+
+  dccmvac(page_table);
   // set ttbcr0
   write_ttbr0(page_table);
-  isb();
+  // isb();
   write_ttbr1(page_table);
-  isb();
+  // isb();
   write_ttbcr(TTBCRN_16K);
-  isb();
+  // dccmvac(page_table);
+  cpu_invalid_tlb();
+  dmb();
   dsb();
+  isb();
   // set all permission
   // cpu_set_domain(~0);
+  // cpu_set_domain(0);
 }
 
 void cpu_disable_page() {
@@ -370,7 +379,7 @@ void* syscall0(u32 num) {
       "mov %0,r0\n\t"
       : "=r"(ret)
       : "r"(num)
-      : "r0", "r1", "r2", "r3", "r4", "r7");
+      : "r0", "r7");
   return ret;
 }
 
@@ -383,7 +392,7 @@ void* syscall1(u32 num, void* arg0) {
       "mov %0,r0\n\t"
       : "=r"(ret)
       : "r"(num), "r"(arg0)
-      : "r0", "r1", "r2", "r3", "r4", "r7");
+      : "r0", "r7");
   return ret;
 }
 void* syscall2(u32 num, void* arg0, void* arg1) {
@@ -396,7 +405,7 @@ void* syscall2(u32 num, void* arg0, void* arg1) {
       "mov %0,r0\n\t"
       : "=r"(ret)
       : "r"(num), "r"(arg0), "r"(arg1)
-      : "r0", "r1", "r2", "r3", "r4", "r7");
+      : "r0", "r1", "r7");
   return ret;
 }
 void* syscall3(u32 num, void* arg0, void* arg1, void* arg2) {
@@ -410,7 +419,7 @@ void* syscall3(u32 num, void* arg0, void* arg1, void* arg2) {
       "mov %0,r0\n\t"
       : "=r"(ret)
       : "r"(num), "r"(arg0), "r"(arg1), "r"(arg2)
-      : "r0", "r1", "r2", "r3", "r4", "r7");
+      : "r0", "r1", "r2","r7");
   return ret;
 }
 
@@ -426,7 +435,7 @@ void* syscall4(u32 num, void* arg0, void* arg1, void* arg2, void* arg3) {
       "mov %0,r0\n\t"
       : "=r"(ret)
       : "r"(num), "r"(arg0), "r"(arg1), "r"(arg2), "r"(arg3)
-      : "r0", "r1", "r2", "r3", "r4", "r7");
+      : "r0", "r1", "r2", "r3","r7");
   return ret;
 }
 

@@ -41,29 +41,32 @@ void mem_info_command() { syscall0(SYS_MEMINFO); }
 #define USE_FORK 1
 
 void hello_thread(void) {
-  char* cmd="/ls";
   print_string("hello\n");
-  syscall3(SYS_EXEC, cmd, NULL, NULL);
+  char env_buf[512];
+  char** env = env_buf;
+  build_env(env);
+  char* cmd = "/ls";
+  syscall3(SYS_EXEC, cmd, NULL, env);
   syscall1(SYS_EXIT, 0);
 }
 
-int run_exec(char* cmd, char** argv,char** env){
+int run_exec(char* cmd, char** argv, char** env) {
 #ifdef USE_FORK
   char temp[64];
   int pid = syscall0(SYS_FORK);
   if (pid == 0) {  // 子进程
     int p = syscall0(SYS_GETPID);
-    sprintf(temp,"fork child pid=%d p=%d\n",pid,p);
+    sprintf(temp, "fork child pid=%d p=%d\n", pid, p);
     print_string(temp);
     syscall3(SYS_EXEC, cmd, argv, env);
     syscall1(SYS_EXIT, 0);
   } else {
     int p = syscall0(SYS_GETPID);
-    sprintf(temp,"fork parent pid=%d p=%d\n",pid,p);
+    sprintf(temp, "fork parent pid=%d p=%d\n", pid, p);
     print_string(temp);
   }
 #else
-  thread_t* t = syscall3(SYS_THREAD_CREATE,cmd, (u32*)&hello_thread, NULL);
+  thread_t* t = syscall3(SYS_THREAD_CREATE, cmd, (u32*)&hello_thread, NULL);
 #endif
 }
 
@@ -82,7 +85,7 @@ int do_exec(char* cmd, int count, char** env) {
     return 0;
   }
   sprintf(buf, "/%s", argv[0]);
-  int pid=run_exec(buf,argv,env);
+  int pid = run_exec(buf, argv, env);
   return pid;
 }
 

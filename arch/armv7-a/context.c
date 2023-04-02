@@ -41,11 +41,17 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
   cpsr.val = 0;
   if (level == 0) {
     // kernel mode
+    cpsr.Z = 1;
+    cpsr.C = 1;
+    cpsr.A = 1;
     cpsr.I = 0;
     cpsr.F = 1;
     cpsr.T = 0;     // arm
     cpsr.M = 0x13;  // svc mode
   } else if (level == 3) {
+    cpsr.Z = 1;
+    cpsr.C = 1;
+    cpsr.A = 1;
     cpsr.I = 0;
     cpsr.F = 1;
     cpsr.T = 0;     // arm
@@ -54,7 +60,7 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
     kprintf("not suppport level %d\n", level);
   }
 
-  interrupt_context_t* ic = (u32)ksp_top - sizeof(interrupt_context_t);
+  interrupt_context_t* ic = (u32)ksp_top - sizeof(interrupt_context_t)*10 ;
 
   kmemset(ic, 0, sizeof(interrupt_context_t));
   ic->lr = entry;  // r14
@@ -113,11 +119,13 @@ void context_dump_interrupt(interrupt_context_t* ic) {
   if (ic->r11 > 1000) {
     int buf[10];
     void* fp = ic->r11;
+#ifdef BACKTRACE
     cpu_backtrace(fp, buf, 8);
     kprintf("--backtrace--\n");
     for (int i = 0; i < 8; i++) {
       kprintf(" %8x\n", buf[i]);
     }
+#endif
   }
 }
 
@@ -141,17 +149,27 @@ int context_clone(context_t* des, context_t* src) {
     return -1;
   }
 
+  // 复制普通字段
+  des->usp = src->usp;
+  des->eip = src->eip;
+  des->level = src->level;
+  des->usp_size = src->usp_size;
+  des->ic = src->ic;
+
   // 这里重点关注 usp ksp
-  kmemmove(des->ksp_start, src->ksp_start, des->ksp_size);
+  kmemmove(des->ksp_start, src->ksp_start, src->ksp_size);
 
   u32 offset = src->ksp_end - (u32)src->ksp;
   interrupt_context_t* ic = des->ksp_end - offset;
   interrupt_context_t* is = src->ksp;
 
   des->ksp = ic;
-  des->usp = src->usp;
-  des->eip = src->eip;
-  // des->ic = src->ic;
+
+  // ic->pc= &hello;
+  // ic->pc= 0x4201ae48; //0x4201ae48
+  // ic->pc = is->pc;
+
+  // ic->lr=ic->pc;
 
   // cpsr_t cpsr;
   // cpsr.val = ic->psr;
@@ -159,21 +177,19 @@ int context_clone(context_t* des, context_t* src) {
   // cpsr.F = 1;
   // ic->psr = cpsr.val;
 
-  // kprintf("------context clone dump des--------------\n");
-  // context_dump(des);
-  // kprintf("------context clone dump src--------------\n");
-  // context_dump(src);
+  kprintf("------context clone dump des--------------\n");
+  context_dump(des);
+  kprintf("------context clone dump src--------------\n");
+  context_dump(src);
 }
 
 void context_switch(interrupt_context_t* ic, context_t* current,
                     context_t* next) {
-  if (ic == NULL) {
+  if (ic == NULL || current == next) {
     return;
   }
   current->ic = ic;
 
-  current->ksp++;
-  kmemcpy(current->ksp, ic, sizeof(interrupt_context_t));
-  kmemcpy(ic, next->ksp, sizeof(interrupt_context_t));
-  next->ksp--;
+  kmemcpy(++current->ksp, ic, sizeof(interrupt_context_t));
+  kmemcpy(ic, next->ksp--, sizeof(interrupt_context_t));
 }

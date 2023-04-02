@@ -214,9 +214,7 @@ void sys_vumap(void* ptr, size_t size) {
   vmemory_area_free(area);
 }
 
-void* sys_valloc(void* addr, size_t size) {
-  return valloc(addr, size);
-}
+void* sys_valloc(void* addr, size_t size) { return valloc(addr, size); }
 
 void* sys_vheap() {
   thread_t* current = thread_current();
@@ -229,8 +227,14 @@ void sys_vfree(void* addr) {
 }
 
 u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
-  log_debug("sys exec %s\n", filename);
   thread_t* current = thread_current();
+  log_debug("sys exec %s tid name %s\n", filename, current->name);
+
+  if (filename == NULL) {
+    log_error("sys exec file is null\n");
+    return -1;
+  }
+
   char* name = kmalloc(kstrlen(filename), KERNEL_TYPE);
   kstrcpy(name, filename);
   current->name = name;
@@ -273,7 +277,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   // thread_set_arg(t, data);
   thread_run(current);
 
-  kmemmove(current->ctx->ic, current->ctx->ksp,sizeof(interrupt_context_t));
+  kmemmove(current->ctx->ic, current->ctx->ksp, sizeof(interrupt_context_t));
   context_switch_page(current->vm->upage);
 
   return 0;
@@ -325,7 +329,7 @@ int sys_fork() {
     log_error("current is null\n");
     return -1;
   }
-  log_debug("sys fork current kstak size %d\n",current->ctx->ksp_size);
+  log_debug("sys fork current kstak size %d\n", current->ctx->ksp_size);
 
   // thread_stop(current);
   thread_t* copy_thread = thread_copy(current, THREAD_FORK);
@@ -960,7 +964,7 @@ int sys_madvice(void* addr, size_t length, int advice) {
   return 0;
 }
 
-int sys_thread_create(char* name, void* entry, void* data){
+int sys_thread_create(char* name, void* entry, void* data) {
   thread_t* t = thread_create_name(name, entry, data);
   thread_run(t);
   return t;
@@ -1048,5 +1052,4 @@ void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_MADVISE] = &sys_madvice;
 
   syscall_table[SYS_THREAD_CREATE] = &sys_thread_create;
-
 }
