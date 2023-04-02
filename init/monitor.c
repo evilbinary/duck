@@ -21,7 +21,7 @@ void do_kernel_thread(void) {
     if (i % 4 == 0) {
       i = 0;
     }
-    // cpu_wait();
+    cpu_wait();
   }
 }
 
@@ -33,6 +33,6 @@ void do_monitor_thread(void) {
     if (i % 4 == 0) {
       i = 0;
     }
-    // cpu_wait();
+    cpu_wait();
   }
 }

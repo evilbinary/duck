@@ -47,7 +47,7 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
     cpsr.I = 0;
     cpsr.F = 1;
     cpsr.T = 0;     // arm
-    cpsr.M = 0x13;  // svc mode
+    cpsr.M = 0x1f;  // system mode not svc mode for cpu wait wfi instruct
   } else if (level == 3) {
     cpsr.Z = 1;
     cpsr.C = 1;
@@ -60,7 +60,7 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
     kprintf("not suppport level %d\n", level);
   }
 
-  interrupt_context_t* ic = (u32)ksp_top - sizeof(interrupt_context_t)*10 ;
+  interrupt_context_t* ic = (u32)ksp_top - sizeof(interrupt_context_t)*2 ;
 
   kmemset(ic, 0, sizeof(interrupt_context_t));
   ic->lr = entry;  // r14
