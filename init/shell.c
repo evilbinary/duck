@@ -38,6 +38,9 @@ void ps_command() { syscall0(SYS_DUMPS); }
 
 void mem_info_command() { syscall0(SYS_MEMINFO); }
 
+char cmd_buf[256];
+char exec_buf[128];
+
 #define USE_FORK 1
 
 void hello_thread(void) {
@@ -52,17 +55,22 @@ void hello_thread(void) {
 
 int run_exec(char* cmd, char** argv, char** env) {
 #ifdef USE_FORK
-  char temp[64];
+  char temp[128];
+
   int pid = syscall0(SYS_FORK);
+  int p = syscall0(SYS_GETPID);
   if (pid == 0) {  // 子进程
-    int p = syscall0(SYS_GETPID);
-    sprintf(temp, "fork child pid=%d p=%d\n", pid, p);
+    if (cmd == NULL) {
+      cmd = exec_buf;
+    }
+    sprintf(temp, "fork child pid=%d p=%d pcmd=%x exec_buf=%x\n", pid, p, cmd,
+            exec_buf);
     print_string(temp);
+
     syscall3(SYS_EXEC, cmd, argv, env);
     syscall1(SYS_EXIT, 0);
   } else {
-    int p = syscall0(SYS_GETPID);
-    sprintf(temp, "fork parent pid=%d p=%d\n", pid, p);
+    sprintf(temp, "fork parent pid=%d p=%d pcmd=%x\n", pid, p, cmd);
     print_string(temp);
   }
 #else
@@ -71,12 +79,13 @@ int run_exec(char* cmd, char** argv, char** env) {
 }
 
 int do_exec(char* cmd, int count, char** env) {
-  char buf[64];
+  char temp[64];
+
   cmd[count] = 0;
-  char* argv[20];
+  char* argv[128];
   int i = 0;
   const char* split = " ";
-  char* ptr = kstrtok(cmd, split);
+  char* ptr = kstrtok(cmd_buf, split);
   while (ptr != NULL) {
     argv[i++] = ptr;
     ptr = kstrtok(NULL, split);
@@ -84,8 +93,12 @@ int do_exec(char* cmd, int count, char** env) {
   if (i <= 0 || argv[1] == ' ' || argv[0] == NULL) {
     return 0;
   }
-  sprintf(buf, "/%s", argv[0]);
-  int pid = run_exec(buf, argv, env);
+  sprintf(exec_buf, "/%s", argv[0]);
+
+  sprintf(temp, " exec_buf=%x\n", exec_buf);
+  print_string(temp);
+
+  int pid = run_exec(exec_buf, argv, env);
   return pid;
 }
 
@@ -142,7 +155,6 @@ void sleep() {
 }
 
 void do_shell_thread(void) {
-  char buf[64];
   int count = 0;
   int ret = 0;
   char env_buf[512];
@@ -182,18 +194,18 @@ void do_shell_thread(void) {
     if (ret > 0) {
       if (ch == '\r' || ch == '\n') {
         print_string("\n");
-        do_shell_cmd(buf, count, env);
+        do_shell_cmd(cmd_buf, count, env);
         count = 0;
         print_promot();
       } else if (ch == 127) {
         if (count > 0) {
           print_string("\n");
-          buf[--count] = 0;
+          cmd_buf[--count] = 0;
           print_promot();
-          print_string(buf);
+          print_string(cmd_buf);
         }
       } else {
-        buf[count++] = ch;
+        cmd_buf[count++] = ch;
         syscall3(SYS_WRITE, 1, &ch, 1);
       }
     } else {
@@ -202,16 +214,16 @@ void do_shell_thread(void) {
   }
 }
 
-void pre_launch() {
-  // must init global for armv7-a
-  char* scm_argv[] = {"/scheme", "-b", "/scheme.boot", "--verbose", NULL};
-  char* lua_argv[] = {"/lua", "/hello.lua", NULL};
-  char* mgba_argv[] = {"mgba", "/mario.gba", NULL};
-  char* cat_argv[] = {"/cat", "hello.lua", NULL};
-  char* showimg_argv[] = {"/showimage", "/pngtest.png", NULL};
-  char* gnuboy_argv[] = {"/gnuboy", "./pokemon.gbc", NULL};
-  char* nes_argv[] = {"infones", "/mario.nes", NULL};
+// must init global for armv7-a
+char* scm_argv[] = {"/scheme", "-b", "/scheme.boot", "--verbose", NULL};
+char* lua_argv[] = {"/lua", "/hello.lua", NULL};
+char* mgba_argv[] = {"mgba", "/mario.gba", NULL};
+char* cat_argv[] = {"/cat", "hello.lua", NULL};
+char* showimg_argv[] = {"/showimage", "/pngtest.png", NULL};
+char* gnuboy_argv[] = {"/gnuboy", "./pokemon.gbc", NULL};
+char* nes_argv[] = {"infones", "/mario.nes", NULL};
 
+void pre_launch() {
 #ifdef X86
   // int fd = syscall2(SYS_OPEN, "/dev/stdin", 0);
   // syscall3(SYS_EXEC,"/ls",NULL,NULL);
