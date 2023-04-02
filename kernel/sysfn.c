@@ -228,10 +228,21 @@ void sys_vfree(void* addr) {
 
 u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   thread_t* current = thread_current();
-  log_debug("sys exec %s addr %x tid name %s\n", filename,filename, current->name);
-
+  log_debug("sys exec %s addr %x tid name %s\n", filename, filename,
+            current->name);
+  // filename = kpage_v2p(filename, 0);
   if (filename == NULL) {
     log_error("sys exec file is null\n");
+    return -1;
+  }
+
+  if (argv == NULL) {
+    log_error("sys exec argv is null %x\n", argv);
+    return -1;
+  }
+
+  if (envp == NULL) {
+    log_error("sys exec envp is null %x\n", argv);
     return -1;
   }
 
@@ -239,9 +250,9 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   kstrcpy(name, filename);
   current->name = name;
 
-  int fd = sys_open(filename, 0);
+  int fd = sys_open(name, 0);
   if (fd < 0) {
-    log_error("sys exec file not found %s\n", filename);
+    log_error("sys exec file not found %s\n", name);
     return -1;
   }
   fd_t* f = thread_find_fd_id(current, fd);
@@ -265,6 +276,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   // init data
   int argc = 0;
   while (argv != NULL && argv[argc] != NULL) {
+    log_debug("argv[%d]=%s\n", argc, argv[argc]);
     argc++;
   }
 
@@ -278,7 +290,6 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   thread_run(current);
 
   kmemmove(current->ctx->ic, current->ctx->ksp, sizeof(interrupt_context_t));
-  context_switch_page(current->vm->upage);
 
   return 0;
 }

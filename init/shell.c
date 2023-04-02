@@ -40,12 +40,13 @@ void mem_info_command() { syscall0(SYS_MEMINFO); }
 
 char cmd_buf[256];
 char exec_buf[128];
+char* argv_buf[128];
+char env_buf[512];
 
 #define USE_FORK 1
 
 void hello_thread(void) {
   print_string("hello\n");
-  char env_buf[512];
   char** env = env_buf;
   build_env(env);
   char* cmd = "/ls";
@@ -62,6 +63,12 @@ int run_exec(char* cmd, char** argv, char** env) {
   if (pid == 0) {  // 子进程
     if (cmd == NULL) {
       cmd = exec_buf;
+    }
+    if (argv == NULL) {
+      argv = argv_buf;
+    }
+    if (env == NULL) {
+      env = env_buf;
     }
     sprintf(temp, "fork child pid=%d p=%d pcmd=%x exec_buf=%x\n", pid, p, cmd,
             exec_buf);
@@ -94,8 +101,11 @@ int do_exec(char* cmd, int count, char** env) {
     return 0;
   }
   sprintf(exec_buf, "/%s", argv[0]);
+  for (int i = 0; i < 128; i++) {
+    argv_buf[i] = argv[i];
+  }
 
-  sprintf(temp, " exec_buf=%x\n", exec_buf);
+  sprintf(temp, " exec_buf=%x argv_buf=%x\n", exec_buf, argv_buf);
   print_string(temp);
 
   int pid = run_exec(exec_buf, argv, env);
@@ -157,7 +167,6 @@ void sleep() {
 void do_shell_thread(void) {
   int count = 0;
   int ret = 0;
-  char env_buf[512];
 
   // wait module ready
   while (module_ready <= 0) {
@@ -283,7 +292,7 @@ void pre_launch() {
   // syscall3(SYS_EXEC, "/cat", cat_argv,NULL);
   // syscall3(SYS_EXEC, "/infones", nes_argv,NULL);
   // syscall3(SYS_EXEC,"/test-file",NULL,NULL);
-  // syscall3(SYS_EXEC, "/gnuboy", gnuboy_argv,NULL);
+  // syscall3(SYS_EXEC, "/gnuboy", gnuboy_argv,env_buf);
 
 // test_cpu_speed();
 //  for(;;);
