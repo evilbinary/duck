@@ -165,22 +165,16 @@ int context_clone(context_t* des, context_t* src) {
 
   des->ksp = ic;
 
-  // ic->pc= &hello;
-  // ic->pc= 0x4201ae48; //0x4201ae48
-  // ic->pc = is->pc;
-
-  // ic->lr=ic->pc;
-
   // cpsr_t cpsr;
   // cpsr.val = ic->psr;
   // cpsr.I = 0;
   // cpsr.F = 1;
   // ic->psr = cpsr.val;
 
-  kprintf("------context clone dump des--------------\n");
-  context_dump(des);
-  kprintf("------context clone dump src--------------\n");
-  context_dump(src);
+  // kprintf("------context clone dump des--------------\n");
+  // context_dump(des);
+  // kprintf("------context clone dump src--------------\n");
+  // context_dump(src);
 }
 
 void context_switch(interrupt_context_t* ic, context_t* current,

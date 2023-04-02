@@ -228,7 +228,7 @@ void sys_vfree(void* addr) {
 
 u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   thread_t* current = thread_current();
-  log_debug("sys exec %s tid name %s\n", filename, current->name);
+  log_debug("sys exec %s addr %x tid name %s\n", filename,filename, current->name);
 
   if (filename == NULL) {
     log_error("sys exec file is null\n");

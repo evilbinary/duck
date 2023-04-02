@@ -691,7 +691,7 @@ void page_map_kernel(u32* page, u32 flag_x, u32 flag_rw) {
 void mm_parse_map(u32* kernel_page_dir) {
   kprintf("map mem block\n");
   // map mem block 100 page 4000k
-  map_mem_block(kernel_page_dir, PAGE_SIZE * 20000, 0);
+  map_mem_block(kernel_page_dir, PAGE_SIZE * 10000, 0);
 
   kprintf("map mem range\n");
   // map 0 - 0x80000
