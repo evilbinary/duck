@@ -152,6 +152,7 @@ void platform_map() {
   page_map(MMIO_BASE, MMIO_BASE, 0);
   page_map(UART0_DR, UART0_DR, L2_NCNB);
   page_map(CORE0_TIMER_IRQCNTL, CORE0_TIMER_IRQCNTL, L2_NCNB);
+  page_map(0x01c0f000, 0x01c0f000, 0);//fix v3s_transfer_command 2 failed 4294967295
   // memory
   // u32 address = 0x40000000;
   // kprintf("map memory %x ", address);

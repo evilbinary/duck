@@ -122,14 +122,13 @@ void cpu_set_page(u32 page_table) {
   // cpu_invalid_tlb();
   // cp15_invalidate_icache();
 
-  dccmvac(page_table);
+  // dccmvac(page_table);
   // set ttbcr0
   write_ttbr0(page_table);
   // isb();
   write_ttbr1(page_table);
   // isb();
   write_ttbcr(TTBCRN_16K);
-  // dccmvac(page_table);
   cpu_invalid_tlb();
   dmb();
   dsb();
