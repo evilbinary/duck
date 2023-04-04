@@ -57,7 +57,7 @@ void gpu_init_device(device_t* dev) {
   dev->data = vga;
   gpu_init_mode(vga, VGA_MODE_480x272x32);
   // gpu_init_mode(vga, VGA_MODE_1024x768x32);
-  kprintf("gpu_init_device end\n");
+  log_info("gpu_init_device end\n");
 }
 
 int gpu_init(void) {
@@ -89,6 +89,6 @@ int gpu_init(void) {
   return 0;
 }
 
-void gpu_exit(void) { kprintf("gpu exit\n"); }
+void gpu_exit(void) { log_info("gpu exit\n"); }
 
 module_t gpu_module = {.name = "vga", .init = gpu_init, .exit = gpu_exit};

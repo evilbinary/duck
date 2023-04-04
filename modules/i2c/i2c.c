@@ -38,7 +38,7 @@ size_t i2c_ioctl(device_t* dev, u32 cmd, void* args) {
 }
 
 int i2c_init(void) {
-  kprintf("i2c\n");
+  log_info("i2c init\n");
 
   device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "i2c";
@@ -54,6 +54,6 @@ int i2c_init(void) {
   return 0;
 }
 
-void i2c_exit(void) { kprintf("i2c exit\n"); }
+void i2c_exit(void) { log_info("i2c exit\n"); }
 
 module_t i2c_module = {.name = "i2c", .init = i2c_init, .exit = i2c_exit};

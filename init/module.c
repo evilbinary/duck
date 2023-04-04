@@ -55,7 +55,7 @@ void modules_init(void) {
   u32 i = 0;
   u32 count = 0;
 
-  kprintf("module regist\n");
+  log_info("module regist\n");
 
 #ifdef ARM
 

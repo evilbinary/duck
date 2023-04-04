@@ -28,7 +28,7 @@ size_t gpio_ioctl(device_t* dev, u32 cmd, void* args) {
 }
 
 int gpio_init(void) {
-  kprintf("gpio init\n");
+  log_info("gpio init\n");
   device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "gpio";
   dev->read = gpio_read;
@@ -42,6 +42,6 @@ int gpio_init(void) {
   return 0;
 }
 
-void gpio_exit(void) { kprintf("gpio exit\n"); }
+void gpio_exit(void) { log_info("gpio exit\n"); }
 
 module_t gpio_module = {.name = "gpio", .init = gpio_init, .exit = gpio_exit};
