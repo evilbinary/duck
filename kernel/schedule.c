@@ -69,6 +69,8 @@ void schedule_sleep(u32 nsec) {
   u32 tick = nsec / SCHEDULE_FREQUENCY / 1000;
   // kprintf("%d schedule_sleep nsec=%d tick=%d\n", current->id, nsec,tick);
   thread_sleep(current, tick);
+  // this will fail on qemu memory
+  // schedule(current->ctx->ic);
 }
 
 void* do_schedule(interrupt_context_t* ic) {
@@ -83,7 +85,7 @@ void* do_schedule(interrupt_context_t* ic) {
   }
   timer_ticks[cpu]++;
 
-  // if (next_thread->id == 2) {
+  // if (next_thread->id >= 2) {
   //   int i = 0;
   //   log_debug("next tid %d ksp->pc %x ic->pc %x inst:%x\n", next_thread->id,
   //             next_thread->ctx->ksp->pc, ic->pc, *(u32*)ic->pc);
