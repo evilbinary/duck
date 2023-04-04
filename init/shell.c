@@ -285,12 +285,12 @@ void pre_launch() {
   // syscall3(SYS_EXEC, "/lua", lua_argv,NULL);
 
   // syscall3(SYS_EXEC,"/test-musl",NULL,NULL);
-  // syscall3(SYS_EXEC, "/scheme", scm_argv,NULL);
+  // syscall3(SYS_EXEC, "/scheme", scm_argv,env_buf);
   // syscall3(SYS_EXEC, "/sdl2", NULL);
-  // syscall3(SYS_EXEC, "/mgba", mgba_argv,NULL);
-  // syscall3(SYS_EXEC, "/player", mgba_argv,NULL);
+  // syscall3(SYS_EXEC, "/mgba", mgba_argv,env_buf);
+  // syscall3(SYS_EXEC, "/player", mgba_argv,env_buf);
   // syscall3(SYS_EXEC, "/cat", cat_argv,NULL);
-  // syscall3(SYS_EXEC, "/infones", nes_argv,NULL);
+  // syscall3(SYS_EXEC, "/infones", nes_argv,env_buf);
   // syscall3(SYS_EXEC,"/test-file",NULL,NULL);
   // syscall3(SYS_EXEC, "/gnuboy", gnuboy_argv,env_buf);
 
