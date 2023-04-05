@@ -50,18 +50,28 @@ void hello_thread(void) {
   syscall1(SYS_EXIT, 0);
 }
 
+char cmd_p[64];
+char* argv_p[64];
+char env_p[512];
+
 int run_exec(char* cmd, char** argv, char** env) {
 #ifdef USE_FORK
-  char temp[64];
+  char temp[128];  // 0xffffffb8 addr fix me
   int pid = syscall0(SYS_FORK);
+  int p = syscall0(SYS_GETPID);
   if (pid == 0) {  // 子进程
-    int p = syscall0(SYS_GETPID);
-    sprintf(temp, "fork child pid=%d p=%d\n", pid, p);
+    // cmd_p 131130 cmd 700fff34
+    sprintf(temp, "fork child pid=%d p=%d cmd_p %x cmd %x\n", pid, p, cmd_p,cmd);
     print_string(temp);
-    syscall3(SYS_EXEC, cmd, argv, env);
+    // if (cmd == NULL) {
+    //   syscall3(SYS_EXEC, cmd_p, aa, env_p);
+    //   kmemset(cmd_p,0,64);
+    //   kmemset(argv_p,0,64);
+    // } else {
+      syscall3(SYS_EXEC, cmd, argv, env);
+    // }
     syscall1(SYS_EXIT, 0);
   } else {
-    int p = syscall0(SYS_GETPID);
     sprintf(temp, "fork parent pid=%d p=%d\n", pid, p);
     print_string(temp);
   }
@@ -73,11 +83,12 @@ int run_exec(char* cmd, char** argv, char** env) {
 int do_exec(char* cmd, int count, char** env) {
   char buf[64];
   cmd[count] = 0;
-  char* argv[20];
+  char* argv[64];
   int i = 0;
   const char* split = " ";
   char* ptr = kstrtok(cmd, split);
   while (ptr != NULL) {
+    argv_p[i] = ptr;
     argv[i++] = ptr;
     ptr = kstrtok(NULL, split);
   }
@@ -85,6 +96,7 @@ int do_exec(char* cmd, int count, char** env) {
     return 0;
   }
   sprintf(buf, "/%s", argv[0]);
+  sprintf(cmd_p, "/%s", argv[0]);
   int pid = run_exec(buf, argv, env);
   return pid;
 }
@@ -145,7 +157,6 @@ void do_shell_thread(void) {
   char buf[64];
   int count = 0;
   int ret = 0;
-  char env_buf[512];
 
   // wait module ready
   while (module_ready <= 0) {
@@ -172,7 +183,7 @@ void do_shell_thread(void) {
 
   syscall1(SYS_CHDIR, "/");
 
-  char** env = env_buf;
+  char** env = env_p;
   build_env(env);
   pre_launch();
 

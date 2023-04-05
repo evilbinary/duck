@@ -244,27 +244,12 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
   // vmcopy->upage = page_clone(vmcopy->kpage, 3);
   vmcopy->upage = page_clone(vmthread->upage, 3);
 
+#ifdef V3S
   // todo fix me this is for shell temp addr
+  u32 addr = 0xfffffff8;
   u32 fp = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
-  vmemory_map(vmcopy->upage, 0xfffffff8, fp, PAGE_SIZE);
-
-  // vmcopy->upage = page_clone(vmcopy->kpage, 0);
-  // vmcopy->upage = page_create(vmthread->kpage);
-
-  // u32 usp = kmalloc_alignment(ustack_size, PAGE_SIZE, KERNEL_TYPE);
-  // ctx->usp = usp + ustack_size;
-  // ctx->usp_size = ustack_size;
-
-  // 映射栈
-  // vmemory_area_t* vm_stack =
-  //     vmemory_area_find_flag(vmtarget->vma, MEMORY_STACK);
-  // if (vm_stack != NULL) {
-  //   vm_stack->alloc_addr = vm_stack->vend - usp_size;
-  //   vm_stack->alloc_size += usp_size;
-  //   vmemory_map(vmtarget->upage, vm_stack->alloc_addr, usp - usp_size,
-  //               usp_size);
-  // }
-  // 拷贝
+  vmemory_map(vmcopy->upage, addr, fp, PAGE_SIZE);
+#endif
 
   // 栈拷贝并映射
   vmemory_copy_data(vmcopy, vmthread, MEMORY_STACK);

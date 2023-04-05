@@ -109,7 +109,7 @@ u32 sys_open(char* name, int attr, ...) {
     return -1;
   }
   if (current->id > 0) {
-    log_debug("sys open new name: %s fd:%d fd->id:%d ptr:%x tid:%d\n", name, f,
+    log_debug("sys open new name: %s addr:%x fd:%d fd->id:%d ptr:%x tid:%d\n", name,name, f,
               fd->id, fd, current->id);
   }
   return f;
@@ -228,7 +228,7 @@ void sys_vfree(void* addr) {
 
 u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   thread_t* current = thread_current();
-  log_debug("sys exec %s addr %x tid name %s\n", filename, filename,
+  log_debug("sys exec file %s addr %x tid name %s\n", filename, filename,
             current->name);
   // filename = kpage_v2p(filename, 0);
   if (filename == NULL) {
@@ -250,7 +250,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   kstrcpy(name, filename);
   current->name = name;
 
-  int fd = sys_open(name, 0);
+  int fd = sys_open(filename, 0);
   if (fd < 0) {
     log_error("sys exec file not found %s\n", name);
     return -1;
@@ -276,7 +276,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   // init data
   int argc = 0;
   while (argv != NULL && argv[argc] != NULL) {
-    log_debug("argv[%d]=%s\n", argc, argv[argc]);
+    log_debug("argv[%d]=%s %x\n", argc, argv[argc],&argv[argc]);
     argc++;
   }
 
