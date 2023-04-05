@@ -56,3 +56,46 @@ void cpu_delay(int n) {
   for (int i = 0; i < 10000 * n; i++)
     ;
 }
+
+u32 cpu_get_fault(){
+  return 0;
+}
+
+void cpu_enable_page() {
+
+}
+
+void* syscall0(u32 num) {
+  int ret;
+
+  return ret;
+}
+
+void* syscall1(u32 num, void* arg0) {
+  int ret;
+
+  return ret;
+}
+void* syscall2(u32 num, void* arg0, void* arg1) {
+  int ret;
+
+  return ret;
+}
+void* syscall3(u32 num, void* arg0, void* arg1, void* arg2) {
+  u32 ret = 0;
+
+  return ret;
+}
+
+void* syscall4(u32 num, void* arg0, void* arg1, void* arg2, void* arg3) {
+  u32 ret = 0;
+
+  return ret;
+}
+
+void* syscall5(u32 num, void* arg0, void* arg1, void* arg2, void* arg3,
+               void* arg4) {
+  u32 ret = 0;
+
+  return ret;
+}

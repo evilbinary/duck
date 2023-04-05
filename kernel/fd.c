@@ -83,7 +83,7 @@ void fd_close(fd_t* fd) {
     vnode_t* file = fd->data;
     if (file == NULL) {
       log_error("sys close node is null ,name is  %s\n",file->name);
-      return -1;
+      return;
     }
     // reset offset
     // fd->offset = 0;

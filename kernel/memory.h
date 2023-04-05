@@ -122,5 +122,6 @@ vmemory_area_t* vmemory_area_find(vmemory_area_t* areas, void* addr,
                                   size_t size);
 void vmemory_area_add(vmemory_area_t* areas, vmemory_area_t* area);
 void vmemory_area_free(vmemory_area_t* area);
+void memory_static(u32 size, int type);
 
 #endif

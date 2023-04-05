@@ -38,6 +38,11 @@ void ps_command() { syscall0(SYS_DUMPS); }
 
 void mem_info_command() { syscall0(SYS_MEMINFO); }
 
+void pre_launch();
+void build_env(char** env);
+
+extern int module_ready;
+
 #define USE_FORK 1
 
 void hello_thread(void) {
@@ -143,10 +148,6 @@ void do_shell_cmd(char* cmd, int count, char** env) {
   kmemset(cmd, 0, count);
 }
 
-void pre_launch();
-void build_env(char** env);
-
-extern int module_ready;
 
 void sleep() {
   u32 tv[2] = {1, 0};

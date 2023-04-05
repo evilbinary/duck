@@ -10,5 +10,6 @@
 #include "thread.h"
 
 void page_fault_handle(interrupt_context_t *context);
+void page_map(u32 virtualaddr, u32 physaddr, u32 flags);
 
 #endif

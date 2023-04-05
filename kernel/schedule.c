@@ -58,7 +58,7 @@ void schedule(interrupt_context_t* ic) {
   int cpu = cpu_get_id();
   schedule_state(cpu);
   thread_t* next_thread = schedule_next(cpu);
-  context_switch_page(next_thread->vm->upage);
+  context_switch_page(next_thread->ctx,next_thread->vm->upage);
   context_switch(ic, current_thread->ctx, next_thread->ctx);
   thread_set_current(next_thread);
   kmemcpy(ic, next_thread->ctx->ksp, sizeof(interrupt_context_t));

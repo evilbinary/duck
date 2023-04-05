@@ -30,6 +30,8 @@
   #endif
 #elif defined(LX6)
   #include "lx6/cpu.h"
+#elif defined(GENERAL)
+#include "general/cpu.h"
 #else
     #error "no support"
 #endif

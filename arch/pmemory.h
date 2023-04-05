@@ -25,6 +25,8 @@
 #include "x86/mm.h"
 #elif defined(LX6)
 #include "lx6/mm.h"
+#elif defined(GENERAL)
+#include "general/mm.h"
 #else
 #error "no support"
 #endif
@@ -96,5 +98,7 @@ void* mm_alloc_zero_align(size_t size, u32 alignment);
 void mm_alloc_init();
 void mm_dump_phy();
 void mm_dump();
+
+void page_map_range(u32* page, u32 vaddr, u32 paddr, u32 size, u32 flag);
 
 #endif

@@ -28,6 +28,8 @@
   #endif
 #elif defined(LX6)
   #include "lx6/context.h"
+#elif defined(GENERAL)
+#include "general/context.h"
 #else
     #error "no support"
 #endif

@@ -38,3 +38,19 @@ void interrupt_regist(u32 vec, interrupt_handler_t handler) {
   interrutp_set(vec);
 }
 
+
+void exception_info(interrupt_context_t* ic) {
+
+
+}
+
+void interrupt_regist_all() {
+  // interrupt_regist(0, reset_handler);       // reset
+  // interrupt_regist(1, undefined_handler);   // undefined
+  // interrupt_regist(2, svc_handler);         // svc
+  // interrupt_regist(3, pref_abort_handler);  // pref abort
+  // interrupt_regist(4, data_abort_handler);  // data abort
+  // interrupt_regist(5, unuse_handler);       // not use
+  // interrupt_regist(6, irq_handler);         // irq
+  // interrupt_regist(7, fiq_handler);         // fiq
+}

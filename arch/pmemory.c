@@ -15,6 +15,9 @@ memory_manager_t mmt;
 
 #ifdef MM_YA_ALLOC
 
+
+void mm_add_block(u32 addr, u32 len);
+
 void ya_alloc_init() {
   memory_info_t* first_mem = (memory_info_t*)&boot_info->memory[0];
   u32 size = sizeof(mem_block_t) * boot_info->memory_number;
