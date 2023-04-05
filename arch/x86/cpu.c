@@ -208,6 +208,10 @@ void cpu_backtrace(stack_frame_t* fp, void** buf, int size) {
 }
 
 
+void cpu_set_page(u32 page_dir){
+  asm volatile("mov %0, %%cr3" : : "r"(page_dir));
+}
+
 
 void* syscall0(u32 num) {
   int ret;

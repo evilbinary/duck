@@ -123,3 +123,7 @@ void mm_test() {
   // *p = 1 << 6;
   // kprintf("p=%x\n", *p);
 }
+
+void mm_init_default(u32 kernel_page_dir){
+  
+}

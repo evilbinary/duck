@@ -7,16 +7,17 @@
 
 extern boot_info_t* boot_info;
 
-int context_init(context_t* context, u32* entry, u32 level, int cpu) {
+int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
+                 u32 level, int cpu) {
   if (context == NULL) {
     return -1;
   }
-  if (context->ksp_start == NULL) {
-    log_error("ksp start or usp start is null\n");
+  if (ksp_top == NULL) {
+    log_error("ksp is null\n");
     return -1;
   }
-  if (context->ksp_end == NULL) {
-    log_error("ksp end or usp end is null\n");
+  if (usp_top == NULL) {
+    log_error("usp end is null\n");
     return -1;
   }
 
@@ -35,9 +36,8 @@ int context_init(context_t* context, u32* entry, u32 level, int cpu) {
   } else {
     log_error("not suppport level %d\n", level);
   }
-  u32 ksp_top = ((u32)context->ksp_end) - sizeof(interrupt_context_t);
-  u32 usp_top = context->usp;
-  interrupt_context_t* ic = ksp_top;
+
+  interrupt_context_t* ic = (u32)ksp_top - sizeof(interrupt_context_t);
   ic->ss = ds;          // ss
   ic->esp = usp_top;    // usp
   ic->eflags = 0x0200;  // eflags
@@ -66,13 +66,6 @@ int context_init(context_t* context, u32* entry, u32 level, int cpu) {
   context->ss = ds;
   context->ds = ds;
 
-  ulong addr = (ulong)boot_info->pdt_base;
-  // must not overwrite page_dir
-  if (context->upage == NULL) {
-    context->upage = addr;
-  }
-  context->kpage = addr;
-
   if (tss->eip == 0 && tss->cr3 == 0) {
     tss->ss0 = context->ss0;
     tss->esp0 = ((u32)context->ksp) + sizeof(interrupt_context_t);
@@ -99,9 +92,6 @@ void context_dump(context_t* c) {
   kprintf("eip: %8x\n", c->eip);
   kprintf("ksp: %8x\n", c->ksp);
   kprintf("usp: %8x\n", c->usp);
-
-  kprintf("user page: %x\n", c->upage);
-  kprintf("kernel page: %x\n", c->kpage);
 
   if (c->ksp != 0) {
     context_dump_interrupt(c->ksp);
@@ -183,7 +173,7 @@ int context_clone(context_t* des, context_t* src) {
     return -1;
   }
 
-  context_t* pdes = page_v2p(des->upage, des);
+  // context_t* pdes = page_v2p(des->upage, des);
 
   // 这里重点关注 usp ksp upage 3个变量的复制
   u32* ksp_end = (u32)des->ksp_end - sizeof(interrupt_context_t);
@@ -191,33 +181,38 @@ int context_clone(context_t* des, context_t* src) {
   interrupt_context_t* ic = ksp_end;
   interrupt_context_t* is = src->ksp;
 
-  // not cover upage
-  void* page = des->upage;
-  des->upage = page;
-  pdes->upage = page;
-
   if (ic != NULL) {
     *ic = *is;  // set usp alias ustack and ip cs ss and so on
     ic->eflags = 0x0200;
   }
   // set ksp alias ustack
   des->ksp = (u32)ic;
-  pdes->ksp = des->ksp;
+  // pdes->ksp = des->ksp;
 
   return 0;
 }
 
-void context_switch(interrupt_context_t* ic, context_t* current,
+interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
                     context_t* next) {
-  context_save(ic, current);
-  if (next->upage != NULL) {
-    tss_t* tss = next->tss;
-    tss->esp0 = (u32)next->ksp + sizeof(interrupt_context_t);
-    tss->ss0 = next->ss0;
-    tss->esp = next->usp;
-    tss->cr3 = next->upage;
-    context_switch_page(next->upage);
+  if(ic==NULL){
+    return;
   }
+  // kmemcpy(current->ksp, ic, sizeof(interrupt_context_t));
+  // kmemcpy(ic, next->ksp, sizeof(interrupt_context_t));
+
+  context_save(ic, current);
+  tss_t* tss = next->tss;
+  tss->esp0 = (u32)next->ksp + sizeof(interrupt_context_t);
+  tss->ss0 = next->ss0;
+  tss->esp = next->usp;
+
+  return next->ksp;
+}
+
+void context_switch_page(context_t* context, u32 page_dir) {
+  tss_t* tss = context->tss;
+  tss->cr3 = page_dir;
+  cpu_set_page(page_dir);
 }
 
 void context_save(interrupt_context_t* ic, context_t* current) {

@@ -23,7 +23,7 @@
 #define SYSCALL_NUMBER 600
 
 #define KERNEL_THREAD_STACK_SIZE 1024*4  // 4k
-#define THREAD_STACK_SIZE 1024*8*5*4         // 4k
+#define THREAD_STACK_SIZE 1024*4        // 4k
 
 #define PAGE_SIZE 0x1000
 

@@ -36,7 +36,7 @@
 int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
                  u32 level, int cpu);
 int context_clone(context_t* des, context_t* src);
-void context_switch(interrupt_context_t* ic,context_t* current,context_t* next);
+interrupt_context_t* context_switch(interrupt_context_t* ic,context_t* current,context_t* next);
 
 
 #endif

@@ -691,17 +691,17 @@ void page_map_kernel(u32* page, u32 flag_x, u32 flag_rw) {
 void mm_parse_map(u32* kernel_page_dir) {
   kprintf("map mem block\n");
   // map mem block 100 page 4000k
-  map_mem_block(kernel_page_dir, PAGE_SIZE * 10000, 0);
+  map_mem_block(kernel_page_dir, PAGE_SIZE * 10000, PAGE_RW);
 
   kprintf("map mem range\n");
   // map 0 - 0x80000
-  page_map_range(kernel_page_dir, 0, 0, PAGE_SIZE * 200, 0);
+  page_map_range(kernel_page_dir, 0, 0, PAGE_SIZE * 200, PAGE_RW);
 
   kprintf("map mem kernel\n");
   // map kernel
-  page_map_kernel(kernel_page_dir,L2_TEXT_1 | L2_NCB, L2_NCB);
+  page_map_kernel(kernel_page_dir,PAGE_RWE , PAGE_RW);
   // page_map_kernel(kernel_page_dir, 0, 0);
-
+  
   //platform_end
   platform_map();
   

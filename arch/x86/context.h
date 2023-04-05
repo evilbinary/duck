@@ -36,8 +36,6 @@ typedef struct context_t {
   u32 usp, ss, ds;
   u32 eip;
   tss_t* tss;
-  u32* upage;
-  u32* kpage;
   u32 level;
   u32 cpu;
   u32 tid;
@@ -148,9 +146,6 @@ void timer_init(int hz);
       :                                 \
       : "m"(context->ksp))
 
-#define context_switch_page(page_dir) \
-  asm volatile("mov %0, %%cr3" : : "r"(page_dir))
-
 #define context_fn(context) context->eax
 #define context_ret(context) context->eax
 #define context_set_entry(context, entry) \
@@ -158,7 +153,8 @@ void timer_init(int hz);
 
 #define context_restore(duck_context) interrupt_exit_context(duck_context)
 int context_clone(context_t* context, context_t* src);
-int context_init(context_t* context, u32* entry, u32 level, int cpu);
+int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
+                 u32 level, int cpu);
 
 void context_dump(context_t* c);
 

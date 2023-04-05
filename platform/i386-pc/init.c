@@ -58,3 +58,7 @@ void platform_end(){
     acpi_init();
   #endif
  }
+
+ void platform_map(){
+  page_map(PORT_COM1, PORT_COM1, 0);
+}
