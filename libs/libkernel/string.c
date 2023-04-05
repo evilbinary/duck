@@ -6,6 +6,9 @@
 #include "string.h"
 #include "common.h"
 
+size_t kstrlen(const char* s);
+
+
 void* kmemcpy(void* /* restrict */ s1, const void* /* restrict */ s2,
               size_t n) {
   char* cdest;
@@ -126,6 +129,7 @@ void* kmemchr(const void* s, int c, size_t n) {
 
   return NULL;
 }
+
 
 char* kstrchr(const char* s, int c) {
   int i;

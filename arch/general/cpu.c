@@ -16,7 +16,9 @@ void cpu_init() {
   }
 }
 
-void cpu_halt() { asm("hlt\n"); }
+void cpu_halt() {
+  
+ }
 
 ulong cpu_get_cs(void) {
   ulong result;

@@ -31,7 +31,7 @@ void init_boot(boot_info_t *boot_info) {
   int count = 0;
 
   ptr->length = 0x1000000 * 4;  // 16M*4
-  void *mm = malloc(ptr->length);
+  void *mm = malloc( 0x1000000 * 4);
   printf("malloc %x\n", mm);
 
   *(int*)mm=0x1234;

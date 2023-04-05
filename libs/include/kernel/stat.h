@@ -37,7 +37,7 @@ struct stat {
 	time_t st_mtim;
 	time_t st_ctim;
 #endif
-	unsigned __unused[2];
+	unsigned __unused2[2];
 };
 
 

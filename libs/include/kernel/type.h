@@ -228,7 +228,8 @@ typedef	unsigned long		u_long;
 /* NOT PART OF THE STANDARD */
 #ifndef _HAVE_U_INT32_T
 #define _HAVE_U_INT32_T
-typedef	int		u_int32_t;
+typedef	int		int32_t;
+#define _U_INT32_T
 #endif
 
 /* NOT PART OF THE STANDARD */
