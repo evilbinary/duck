@@ -173,11 +173,26 @@ int context_clone(context_t* des, context_t* src) {
     return -1;
   }
 
-  // context_t* pdes = page_v2p(des->upage, des);
+  // 复制普通字段
+  des->ic = src->ic;
+  des->ss0 = src->ss0;
+  des->ds0 = src->ds0;
+  des->usp = src->usp;
+  des->ss = src->ss;
+  des->ds = src->ds;
+  des->eip = src->eip;
+  des->tss = src->tss;
+  des->level = src->level;
+  des->usp_size = src->usp_size;
 
   // 这里重点关注 usp ksp upage 3个变量的复制
-  u32* ksp_end = (u32)des->ksp_end - sizeof(interrupt_context_t);
+  kmemmove(des->ksp_start, src->ksp_start, src->ksp_size);
 
+  // u32 offset = src->ksp_end - (u32)src->ksp;
+  // interrupt_context_t* ic = des->ksp_end - offset;
+  // interrupt_context_t* is = src->ksp;
+
+  u32* ksp_end = (u32)des->ksp_end - sizeof(interrupt_context_t);
   interrupt_context_t* ic = ksp_end;
   interrupt_context_t* is = src->ksp;
 
@@ -186,25 +201,25 @@ int context_clone(context_t* des, context_t* src) {
     ic->eflags = 0x0200;
   }
   // set ksp alias ustack
-  des->ksp = (u32)ic;
-  // pdes->ksp = des->ksp;
+  des->ksp = ic;
 
   return 0;
 }
 
 interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
-                    context_t* next) {
-  if(ic==NULL){
+                                    context_t* next) {
+  if (ic == NULL) {
     return;
   }
-  // kmemcpy(current->ksp, ic, sizeof(interrupt_context_t));
-  // kmemcpy(ic, next->ksp, sizeof(interrupt_context_t));
-
   context_save(ic, current);
   tss_t* tss = next->tss;
-  tss->esp0 = (u32)next->ksp + sizeof(interrupt_context_t);
-  tss->ss0 = next->ss0;
-  tss->esp = next->usp;
+  if (tss == NULL) {
+    log_error("tss is null\n");
+  } else {
+    tss->esp0 = (u32)next->ksp + sizeof(interrupt_context_t);
+    tss->ss0 = next->ss0;
+    tss->esp = next->usp;
+  }
 
   return next->ksp;
 }
