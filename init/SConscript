@@ -12,7 +12,10 @@ Import('env')
 
 current=Dir('.').srcnode().path+'/../xlinker/'
 
-linkflags=' $LINKFLAGS -Xlinker '+current+env.get('LINKLD')
+linkflags=''
+
+if env.get('LINKLD'):
+    linkflags=linkflags+ ' $LINKFLAGS -Xlinker '+current+env.get('LINKLD')
 
 include= [
         '../',
@@ -71,7 +74,8 @@ env.Program('kernel.elf',kernel,
     LIBS=libs,
     LINKFLAGS = linkflags)
 
-env.Objcopy('kernel','kernel.elf',OBJCOPYFLAGS='-S')
-env.Objcopy('kernel.dbg','kernel.elf',OBJCOPYFLAGS='--only-keep-debug')
-# env.Objcopy('kernel.hex','kernel.elf',OBJCOPYFLAGS='-S -O ihex')
-env.Objcopy('kernel.bin','kernel.elf',OBJCOPYFLAGS='-S -O binary')
+if env.get('OBJCOPY'):
+    env.Objcopy('kernel','kernel.elf',OBJCOPYFLAGS='-S')
+    env.Objcopy('kernel.dbg','kernel.elf',OBJCOPYFLAGS='--only-keep-debug')
+    # env.Objcopy('kernel.hex','kernel.elf',OBJCOPYFLAGS='-S -O ihex')
+    env.Objcopy('kernel.bin','kernel.elf',OBJCOPYFLAGS='-S -O binary')

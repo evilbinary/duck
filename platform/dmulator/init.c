@@ -1,76 +1,57 @@
+#include "arch/arch.h"
 #include "arch/io.h"
 
-#define PORT_COM1 0x3f8
-#define PORT_COM2 0x2F8
-#define PORT_COM3 0x3E8
-#define PORT_COM4 0x2E8
+static int com_serial_init() { return 0; }
 
-int com_is_send() { 
-  // return io_read8(PORT_COM1 + 5) & 0x20; 
-}
+void com_write(char a) { putchar(a); }
 
-int com_is_receive() {
-  //  return io_read8(PORT_COM1 + 5) & 1; 
-  return 0;
-}
-
-static int com_serial_init() {
-  // io_write8(PORT_COM1 + 1, 0x00);  // Disable all interrupts
-  // io_write8(PORT_COM1 + 3, 0x80);  // Enable DLAB (set baud rate divisor)
-  // io_write8(PORT_COM1 + 0, 0x03);  // Set divisor to 3 (lo byte) 38400 baud
-  // io_write8(PORT_COM1 + 1, 0x00);  //                  (hi byte)
-  // io_write8(PORT_COM1 + 3, 0x03);  // 8 bits, no parity, one stop bit
-  // io_write8(PORT_COM1 + 2,
-  //           0xC7);  // Enable FIFO, clear them, with 14-byte threshold
-  // io_write8(PORT_COM1 + 4, 0x0B);  // IRQs enabled, RTS/DSR set
-  // io_write8(PORT_COM1 + 4, 0x1E);  // Set in loopback mode, test the serial chip
-  // io_write8(PORT_COM1 + 0, 0xAE);  // Test serial chip (send byte 0xAE and check
-  //                                  // if serial returns same byte)
-
-  // if (io_read8(PORT_COM1 + 0) != 0xAE) {
-  //   return 1;
-  // }
-
-  // io_write8(PORT_COM1 + 4, 0x0F);
-  return 0;
-}
-
-void com_write(char a) {
-  // int i = 0;
-  // while (com_is_send() == 0) {
-  //   i++;
-  // }
-  // if(i<=0){
-  //   io_write8(PORT_COM1, a);
-  // }
-}
-
-char com_read() {
-  // int i=0;
-  // while (com_is_receive() == 0){
-  //   i++;
-  // }
-  // return io_read8(PORT_COM1);
-  return 0;
-}
+char com_read() { return getchar(); }
 
 void platform_init() {
   com_serial_init();
   io_add_write_channel(com_write);
 }
 
-void platform_end(){
-    
+void platform_end() { printf("platform_end\n"); }
+
+void platform_map() {}
+
+void timer_init(int hz) {}
+
+void timer_end() {}
+
+void *core_run(void *arg) {
+  kstart(arg, 0, 0);
+  return 0;
 }
 
-void platform_map(){
-  
+void init_boot(boot_info_t *boot_info) {
+  memory_info_t *ptr = boot_info->memory;
+  boot_info->total_memory = 0;
+  int count = 0;
+
+  ptr->length = 0x1000000 * 4;  // 16M*4
+  void *mm = malloc(ptr->length);
+  printf("malloc %x\n", mm);
+
+  *(int*)mm=0x1234;
+
+  ptr->base = mm;
+  ptr->type = 1;
+  boot_info->total_memory += ptr->length;
+  ptr++;
+  count++;
+  boot_info->memory_number = count;
 }
 
-void timer_init(int hz){
+int main(int argc, char *argv[]) {
+  printf("hello dumulator\n");
 
-}
+  boot_info_t boot;
+  char *envp[26];
+  envp[0] = &boot;
+  init_boot(&boot);
 
-void timer_end(){
-
+  kstart(argc, argv, envp);
+  return 0;
 }
