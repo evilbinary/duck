@@ -5,6 +5,8 @@
  ********************************************************************/
 #include "cpu.h"
 
+#include <signal.h>
+
 #include "context.h"
 
 extern boot_info_t* boot_info;
@@ -67,10 +69,26 @@ u32 cpu_get_fault() { return 0; }
 
 void cpu_enable_page() {}
 
-#define printf 
+#define printf
+
+void check() {
+  context_t* current = thread_current_context();
+  pthread_t p = pthread_self();
+  while (true) {
+    if (p == *((pthread_t*)current->thread)) {
+      pthread_kill(current->thread, SIGCONT);
+      break;
+    } else {
+      pthread_kill(current->thread, SIGSTOP);
+    }
+    usleep(1000 * 10);
+    current = thread_current_context();
+  }
+}
 
 void* syscall0(u32 num) {
   int ret;
+  check();
 
   if (genral_syscall_table == NULL) {
     sys_fn_init_regist(general_sys_fn_init);
@@ -90,6 +108,8 @@ void* syscall0(u32 num) {
 void* syscall1(u32 num, void* arg0) {
   int ret;
 
+  check();
+
   if (genral_syscall_table == NULL) {
     sys_fn_init_regist(general_sys_fn_init);
   }
@@ -107,6 +127,8 @@ void* syscall1(u32 num, void* arg0) {
 void* syscall2(u32 num, void* arg0, void* arg1) {
   int ret;
 
+  check();
+
   if (genral_syscall_table == NULL) {
     sys_fn_init_regist(general_sys_fn_init);
   }
@@ -123,6 +145,9 @@ void* syscall2(u32 num, void* arg0, void* arg1) {
 }
 void* syscall3(u32 num, void* arg0, void* arg1, void* arg2) {
   u32 ret = 0;
+
+  check();
+
   if (genral_syscall_table == NULL) {
     sys_fn_init_regist(general_sys_fn_init);
   }
@@ -140,7 +165,8 @@ void* syscall3(u32 num, void* arg0, void* arg1, void* arg2) {
 
 void* syscall4(u32 num, void* arg0, void* arg1, void* arg2, void* arg3) {
   u32 ret = 0;
-  usleep(1000 * 10);
+  usleep(1000);
+  check();
 
   if (genral_syscall_table == NULL) {
     sys_fn_init_regist(general_sys_fn_init);
@@ -161,6 +187,8 @@ void* syscall4(u32 num, void* arg0, void* arg1, void* arg2, void* arg3) {
 void* syscall5(u32 num, void* arg0, void* arg1, void* arg2, void* arg3,
                void* arg4) {
   u32 ret = 0;
+
+  check();
 
   if (genral_syscall_table == NULL) {
     sys_fn_init_regist(general_sys_fn_init);

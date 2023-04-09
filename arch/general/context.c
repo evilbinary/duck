@@ -6,7 +6,7 @@
 #include "context.h"
 
 #include <pthread.h>
-
+#include <signal.h>
 #include "arch/cpu.h"
 #include "arch/interrupt.h"
 #include "cpu.h"

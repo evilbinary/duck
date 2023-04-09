@@ -1,4 +1,5 @@
 #include <pthread.h>
+#include <signal.h>
 
 #include "arch/arch.h"
 #include "arch/io.h"
@@ -19,21 +20,28 @@ void platform_end() { printf("platform_end\n"); }
 void platform_map() {}
 
 void *timer_fun(void *arg) {
-  printf("thread fun\n");
+  printf("timer fun\n");
 
   for (;;) {
+    usleep(1000 * 10);
+
     context_t *current = thread_current_context();
     if (current == NULL) {
       continue;
     }
 
-    usleep(1000 * 100);
-
+    // printf("e===> %d\n", current->tid);
+    pthread_kill(current->thread, SIGSTOP);
+    
     interrupt_context_t ic;
     ic.no = EX_TIMER;
     // interrupt_entering_code(EX_TIMER, 0, 0);
     interrupt_default_handler(&ic);
     // interrupt_exit_ret();
+    current = thread_current_context();
+    
+    pthread_kill(current->thread, SIGCONT);
+    // printf("e1===> %d\n", current->tid);
   }
   return NULL;
 }
@@ -71,6 +79,8 @@ void init_boot(boot_info_t *boot_info) {
   boot_info->memory_number = count;
 }
 
+void signal_handler(int sig) { printf("Received %d\n", sig); }
+
 int main(int argc, char *argv[]) {
   printf("hello dumulator\n");
 
@@ -78,6 +88,9 @@ int main(int argc, char *argv[]) {
   char *envp[26];
   envp[0] = &boot;
   init_boot(&boot);
+
+  signal(SIGUSR1, signal_handler);  // 注册 SIGUSR1 信号处理函数
+  signal(SIGUSR2, signal_handler);  // 注册 SIGUSR2 信号处理函数
 
   kstart(argc, argv, envp);
   return 0;
