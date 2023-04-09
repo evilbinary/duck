@@ -180,7 +180,7 @@ int context_clone(context_t* des, context_t* src) {
 interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
                     context_t* next) {
   if (ic == NULL || current == next) {
-    return;
+    return next->ic;
   }
   current->ic = ic;
 
