@@ -194,7 +194,11 @@ void* kmalloc(size_t size, u32 flag) {
   if (flag & KERNEL_TYPE || flag & DEVICE_TYPE) {
     addr = phy_alloc(size);
   } else {
+#ifdef VM_ENABLE
     addr = vm_alloc(size);
+#else
+    addr = phy_alloc(size);
+#endif
   }
   return addr;
 }
@@ -204,7 +208,11 @@ void* kmalloc_alignment(size_t size, int alignment, u32 flag) {
   if (flag & KERNEL_TYPE || flag & DEVICE_TYPE) {
     addr = phy_alloc_aligment(size, alignment);
   } else {
+#ifdef VM_ENABLE
     addr = vm_alloc_alignment(size, alignment);
+#else
+    addr = phy_alloc_aligment(size, alignment);
+#endif
   }
 
   return addr;
@@ -343,8 +351,7 @@ void* kpage_v2p(void* addr, int size) {
   if (current != NULL) {
     phy = page_v2p(current->vm->upage, addr);
     if (phy == NULL) {
-      log_error("get page: %x addr %x phy null\n", current->vm->upage,
-                addr);
+      log_error("get page: %x addr %x phy null\n", current->vm->upage, addr);
       if (size > 0) {
         kmemset(addr, 0, size);
       }

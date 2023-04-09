@@ -26,6 +26,7 @@
 #define THREAD_STACK_SIZE 1024*4        // 4k
 
 #define PAGE_SIZE 0x1000
+#define VM_ENABLE 1 //虚拟内存映射开启
 
 #elif defined(ARMV7)
 
@@ -48,6 +49,24 @@
 
 #define NO_THREAD_STACK0 1
 
+#elif defined(GENERAL)
+
+#define MAX_FD_NUMBER 64
+#define MAX_PHDR 12
+#define MAX_SHDR 25
+
+#define MAX_DEVICE 40
+
+#define EXEC_FILE_NAME_LEN 256
+
+#define MAX_MODULES 20
+
+#define SYSCALL_NUMBER 600
+
+#define KERNEL_THREAD_STACK_SIZE 1024 * 4
+#define THREAD_STACK_SIZE 1024*4  // 4k
+#define PAGE_SIZE 0x1000
+
 #else
 
 #define MAX_FD_NUMBER 64
@@ -65,6 +84,7 @@
 #define KERNEL_THREAD_STACK_SIZE 1024 * 4
 #define THREAD_STACK_SIZE 1024*4  // 4k
 #define PAGE_SIZE 0x1000
+#define VM_ENABLE 1 //虚拟内存映射开启
 
 #endif
 
@@ -94,7 +114,6 @@
 
 #define LOG_COLOR 1
 #define THREAD_DUMP_STOP_COUNT 1
-#define VM_ENABLE 1 //虚拟内存映射开启
 
 
 

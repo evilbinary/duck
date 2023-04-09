@@ -67,6 +67,8 @@ u32 cpu_get_fault() { return 0; }
 
 void cpu_enable_page() {}
 
+#define printf 
+
 void* syscall0(u32 num) {
   int ret;
 

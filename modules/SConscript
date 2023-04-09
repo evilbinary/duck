@@ -160,6 +160,20 @@ elif arch_type=='xtensa':
      modules=[
           'hello/hello.c',
         ]
+elif arch_type=='general':
+     modules=[
+        'dev/devfs.c',
+        'hello/hello.c',
+        'serial/general.c',
+        'mmc/sdhci.c',
+        'mmc/general.c',
+
+        'fat/fat.c',
+        'fat/byteordering.c',
+        'fat/partition.c',
+        'fat/mod.c',
+
+        ]
 else:
     modules=[
           'hello/hello.c',

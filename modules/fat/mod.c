@@ -11,6 +11,8 @@
 #include "ahci/ahci.h"
 #endif
 
+void fat_init_op(vnode_t *node);
+
 enum {
   DT_UNKNOWN = 0,
 #define DT_UNKNOWN DT_UNKNOWN
@@ -488,7 +490,7 @@ void fat_init(void) {
   struct fat_dir_struct *dd = fat_open_dir(fs, &directory);
   if (!dd) {
     log_error("bad dd\n");
-    return NULL;
+    return;
   }
 
   file_info_t *file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
