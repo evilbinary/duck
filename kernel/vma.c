@@ -222,6 +222,7 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
   log_debug("tid %d vm copy %s range: %x - %x size: %d\n", vm_copy->tid,
             type_str, addr, end_addr, vm->alloc_size);
 
+#ifdef VM_ENABLE
   for (; addr < end_addr; addr += PAGE_SIZE) {
     void* phy = page_v2p(vm_src->upage, addr);
     if (phy != NULL) {
@@ -234,6 +235,7 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
                addr);
     }
   }
+#endif
 }
 
 void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {

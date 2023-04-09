@@ -75,13 +75,13 @@ void check() {
   context_t* current = thread_current_context();
   pthread_t p = pthread_self();
   while (true) {
-    if (p == *((pthread_t*)current->thread)) {
+    if (current->thread != NULL && p == *((pthread_t*)current->thread)) {
       pthread_kill(current->thread, SIGCONT);
       break;
     } else {
       pthread_kill(current->thread, SIGSTOP);
     }
-    usleep(1000 * 10);
+    usleep(100);
     current = thread_current_context();
   }
 }

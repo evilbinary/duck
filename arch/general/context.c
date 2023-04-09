@@ -122,7 +122,26 @@ interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
 
 void context_dump(context_t* c) {}
 
-int context_clone(context_t* des, context_t* src) {}
+int context_clone(context_t* des, context_t* src) {
+    // 复制普通字段
+  des->ic = src->ic;
+  des->ss0 = src->ss0;
+  des->ds0 = src->ds0;
+  des->usp = src->usp;
+  des->ss = src->ss;
+  des->ds = src->ds;
+  des->eip = src->eip;
+  des->level = src->level;
+  des->usp_size = src->usp_size;
+
+  int pid=fork();
+  if(pid==0){
+
+    // waitpid(pid, NULL, 0);
+  }
+  log_debug("context clone %d\n",pid);
+  wait(NULL);
+}
 
 void context_dump_fault(interrupt_context_t* context, u32 fault_addr) {
   kprintf("----------------------------\n");
