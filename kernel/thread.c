@@ -101,19 +101,19 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   ctx->usp = usp + ustack_size;
   ctx->usp_size = ustack_size;
 
-  context_init(ctx, ctx->ksp_end, ctx->usp, entry, thread->level,
-               thread->cpu_id);
-
   // vm init
   vmemory_t* vm = kmalloc(sizeof(vmemory_t), KERNEL_TYPE);
   thread->vm = vm;
-  vm->tid=thread->id;
+  vm->tid = thread->id;
   // init vm include stack heap exec
   vmemory_init(vm, level, usp, ustack_size, flags);
 
 #ifdef VM_ENABLE
   vmemory_area_t* vm_stack = vmemory_area_find_flag(vm->vma, MEMORY_STACK);
   context_init(ctx, ctx->ksp_end, vm_stack->vend, entry, thread->level,
+               thread->cpu_id);
+#else
+  context_init(ctx, ctx->ksp_end, ctx->usp, entry, thread->level,
                thread->cpu_id);
 #endif
 
@@ -134,7 +134,7 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   log_debug("thread copy start\n");
 
   thread_t* copy = kmalloc(sizeof(thread_t), KERNEL_TYPE);
-  kmemset(copy,0,sizeof(thread_t));
+  kmemset(copy, 0, sizeof(thread_t));
   kmemmove(copy, thread, sizeof(thread_t));
 
   log_debug("thread init default\n");
@@ -148,11 +148,11 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   copy->counter = 0;
   copy->fault_count = 0;
   copy->sleep_counter = 0;
-  copy->dump_count=0;
+  copy->dump_count = 0;
 
   // context init
   context_t* ctx = kmalloc(sizeof(context_t), KERNEL_TYPE);
-  kmemset(ctx,0,sizeof(context_t));
+  kmemset(ctx, 0, sizeof(context_t));
 
   copy->ctx = ctx;
   ctx->tid = copy->id;
@@ -171,7 +171,7 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
 
   // vm init
   copy->vm = kmalloc(sizeof(vmemory_t), KERNEL_TYPE);
-  copy->vm->tid=copy->id;
+  copy->vm->tid = copy->id;
 
   // init vm include stack heap exec
   vmemory_clone(copy->vm, thread->vm, flags);
@@ -256,7 +256,7 @@ int thread_check(thread_t* thread) {
     return -1;
   }
   vmemory_dump(thread->vm);
-  thread_dump(thread,0);
+  thread_dump(thread, 0);
 
   log_debug("tid %d kpage %x upage %x\n", thread->id, thread->vm->kpage,
             thread->vm->upage);
@@ -493,6 +493,9 @@ context_t* thread_current_context() {
   int cpu_id = cpu_get_id();
   thread_t* t = current_threads[cpu_id];
   // lock_release(&thread_lock);
+  if (t == NULL) {
+    return NULL;
+  }
   return t->ctx;
 }
 

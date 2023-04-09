@@ -6,78 +6,127 @@
 #ifndef X86_DUCK_CONTEXT_H
 #define X86_DUCK_CONTEXT_H
 
+
 #include "arch/boot.h"
 #include "libs/include/types.h"
 #include "platform/platform.h"
 
 
+
+#define GDT_SIZE 8
+
+#define GDT_ENTRY_NULL 0
+#define GDT_ENTRY_32BIT_CS 1
+#define GDT_ENTRY_32BIT_DS 2
+#define GDT_ENTRY_32BIT_FS 3
+
+
+
 typedef struct interrupt_context {
-  // manual push
+  // ds
+  // u32 gs, fs, es, ds;
+
+  // all reg
+  u32 edi, esi, ebp, esp_null, ebx, edx, ecx, eax;  // pushal
+
   u32 no;
+  // interrup stack
   u32 code;
-
-  u32 psr;
-
-  u32 r0;
-  u32 r1;
-  u32 r2;
-  u32 r3;
-  u32 r4;
-  u32 r5;
-  u32 r6;
-  u32 r7;
-  u32 r8;
-  u32 r9;
-  u32 r10;
-  u32 r11;  // fp
-  u32 r12;  // ip
-  u32 lr0;
-
-  u32 sp;  // sp
-  u32 lr;  // r14
-
+  u32 eip;
 } __attribute__((packed)) interrupt_context_t;
+
 
 typedef struct context_t {
   interrupt_context_t* ic;
   interrupt_context_t* ksp;
-  u32 usp;
+  u32 ss0, ds0;
+  u32 usp, ss, ds;
   u32 eip;
   u32 level;
+  u32 cpu;
   u32 tid;
 
-  u32 ksp_start;
-  u32 ksp_end;
+  void* thread;
+  void* attr;
+  int flag;
+
+  void* ksp_start;
+  void* ksp_end;
 
   u32 usp_size;
   u32 ksp_size;
 } context_t;
 
+#if defined(__WIN32__)
 
-#define interrupt_process(X) 
+#define interrupt_process(X) \
+  asm volatile(              \
+      "push %esp\n"          \
+      "call  _" #X           \
+      " \n"                  \
+      "add $4,%esp\n")
+#else
 
-#define interrupt_entering_code(VEC, CODE) 
+#define interrupt_process(X) \
+  asm volatile(              \
+      "push %esp\n"          \
+      "call  _" #X            \
+      " \n"                  \
+      "add $4,%esp\n")
 
-#define interrupt_exit_context(duck_context) 
+#endif
 
-#define interrupt_entering(VEC) interrupt_entering_code(VEC, 0)
+#define interrupt_entering_code(VEC, CODE, TYPE) \
+  asm volatile(                                  \
+      "push %0 \n"                               \
+      "push %1 \n"                               \
+      "pushal\n"                                 \
+      "mov %2,%%eax\n"                           \
+      :                                          \
+      : "i"(CODE), "i"(VEC), "i"(GDT_ENTRY_32BIT_DS * GDT_SIZE))
 
-#define interrupt_exit()        
+#define interrupt_entering(VEC) \
+  asm volatile(                 \
+      "push %0 \n"              \
+      "pushal\n"                \
+      "mov %1,%%eax\n"          \
+      :                         \
+      : "i"(VEC), "i"(GDT_ENTRY_32BIT_DS * GDT_SIZE))
 
-#define interrupt_exit2()     
+#define interrupt_exit() \
+  asm volatile(          \
+      "popal\n"          \
+      "add $8,%%esp\n"   \
+      "ret\n"           \
+      :                  \
+      :)
 
-#define interrupt_exit_ret()
+#define interrupt_exit_ret() \
+  asm volatile(              \
+      "mov %%eax,%%esp\n"    \
+      "popal\n"              \
+      "add $8,%%esp\n"       \
+      "ret\n"               \
+      :                      \
+      :)
+
+#define interrupt_exit_context(context) \
+  asm volatile(                         \
+      "mov %0,%%esp\n"                  \
+      "popal\n"                         \
+      "add $8,%%esp\n"                  \
+      "ret\n"                          \
+      :                                 \
+      : "m"(context->ksp))
+
+#define context_fn(context) context->eax
+#define context_ret(context) context->eax
+#define context_set_entry(context, entry) \
+  ((interrupt_context_t*)context)->eip = entry
+
+// #define context_restore(duck_context) interrupt_exit_context(duck_context)
 
 #define context_switch_page(ctx,page_dir)  cpu_set_page(page_dir)
-
-#define context_fn(context) context->r7
-#define context_ret(context) context->r0
-#define context_set_entry(context,entry)
-
-
-#define context_restore(duck_context) \
-  interrupt_exit_context(duck_context);
-
 
 int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
                  u32 level, int cpu);

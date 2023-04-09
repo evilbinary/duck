@@ -1,3 +1,5 @@
+#include <pthread.h>
+
 #include "arch/arch.h"
 #include "arch/io.h"
 
@@ -16,7 +18,34 @@ void platform_end() { printf("platform_end\n"); }
 
 void platform_map() {}
 
-void timer_init(int hz) {}
+void *timer_fun(void *arg) {
+  printf("thread fun\n");
+
+  for (;;) {
+    context_t *current = thread_current_context();
+    if (current == NULL) {
+      continue;
+    }
+
+    usleep(1000 * 100);
+
+    interrupt_context_t ic;
+    ic.no = EX_TIMER;
+    // interrupt_entering_code(EX_TIMER, 0, 0);
+    interrupt_default_handler(&ic);
+    // interrupt_exit_ret();
+  }
+  return NULL;
+}
+
+void timer_init(int hz) {
+  pthread_t thread_id;
+  int result = pthread_create(&thread_id, NULL, timer_fun, NULL);
+  if (result != 0) {
+    printf("fail create timer error code: %d\n", result);
+  }
+  printf("timer init succes\n");
+}
 
 void timer_end() {}
 
@@ -31,10 +60,8 @@ void init_boot(boot_info_t *boot_info) {
   int count = 0;
 
   ptr->length = 0x1000000 * 4;  // 16M*4
-  void *mm = malloc( 0x1000000 * 4);
+  void *mm = malloc(0x1000000 * 4);
   printf("malloc %x\n", mm);
-
-  *(int*)mm=0x1234;
 
   ptr->base = mm;
   ptr->type = 1;
