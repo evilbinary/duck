@@ -109,8 +109,8 @@ u32 sys_open(char* name, int attr, ...) {
     return -1;
   }
   if (current->id > 0) {
-    log_debug("sys open new name: %s addr:%x fd:%d fd->id:%d ptr:%x tid:%d\n", name,name, f,
-              fd->id, fd, current->id);
+    log_debug("sys open new name: %s addr:%x fd:%d fd->id:%d ptr:%x fd->name:%s\n", name,name, f,
+              fd->id, fd, fd->name);
   }
   return f;
 }
