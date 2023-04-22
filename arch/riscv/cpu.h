@@ -38,15 +38,108 @@ typedef struct cpsr {
 typedef u32 (*sys_call_fn)(u32 arg1, u32 arg2, u32 arg3, u32 arg4, u32 arg5,
                            u32 arg6);
 
-#define sys_fn_call(duck_interrupt_context, fn)                               \
-  duck_interrupt_context->r0 = ((                                             \
-      sys_call_fn)fn)(duck_interrupt_context->r0, duck_interrupt_context->r1, \
-                      duck_interrupt_context->r2, duck_interrupt_context->r3, \
-                      duck_interrupt_context->r4, duck_interrupt_context->r5);
+#define sys_fn_call(duck_interrupt_context, fn)               \
+  duck_interrupt_context->a0 = ((sys_call_fn)fn)(             \
+      duck_interrupt_context->a0, duck_interrupt_context->a1, \
+      duck_interrupt_context->a2, duck_interrupt_context->a3, \
+      duck_interrupt_context->a4, duck_interrupt_context->a5);
 
-#define cpu_cli() 
-#define cpu_sti() 
+#define cpu_cli()
+#define cpu_sti()
 #define cpu_cpl() (cpu_get_cs() & 0x3)
 
+#define syscall0(syscall_num)    \
+  ({                             \
+    int ret;                     \
+    asm volatile(                \
+        "li a7, %1\n"            \
+        "ecall\n"                \
+        "mv %0, a0\n"            \
+        : "=r"(ret)              \
+        : "i"(syscall_num)       \
+        : "a0", "a7", "memory"); \
+    ret;                         \
+  })
+
+#define syscall1(syscall_num, arg1)   \
+  ({                                  \
+    int ret;                          \
+    asm volatile(                     \
+        "li a7, %1\n"                 \
+        "mv a0, %2\n"                 \
+        "ecall\n"                     \
+        "mv %0, a0\n"                 \
+        : "=r"(ret)                   \
+        : "i"(syscall_num), "r"(arg1) \
+        : "a0", "a7", "memory");      \
+    ret;                              \
+  })
+
+#define syscall2(syscall_num, arg1, arg2)        \
+  ({                                             \
+    int ret;                                     \
+    asm volatile(                                \
+        "li a7, %1\n"                            \
+        "mv a0, %2\n"                            \
+        "mv a1, %3\n"                            \
+        "ecall\n"                                \
+        "mv %0, a0\n"                            \
+        : "=r"(ret)                              \
+        : "i"(syscall_num), "r"(arg1), "r"(arg2) \
+        : "a0", "a1", "a7", "memory");           \
+    ret;                                         \
+  })
+
+#define syscall3(syscall_num, arg1, arg2, arg3)             \
+  ({                                                        \
+    int ret;                                                \
+    asm volatile(                                           \
+        "li a7, %1\n"                                       \
+        "mv a0, %2\n"                                       \
+        "mv a1, %3\n"                                       \
+        "mv a2, %4\n"                                       \
+        "ecall\n"                                           \
+        "mv %0, a0\n"                                       \
+        : "=r"(ret)                                         \
+        : "i"(syscall_num), "r"(arg1), "r"(arg2), "r"(arg3) \
+        : "a0", "a1", "a2", "a7", "memory");                \
+    ret;                                                    \
+  })
+
+#define syscall4(syscall_num, arg1, arg2, arg3, arg4)                  \
+  ({                                                                   \
+    int ret;                                                           \
+    asm volatile(                                                      \
+        "li a7, %1\n"                                                  \
+        "mv a0, %2\n"                                                  \
+        "mv a1, %3\n"                                                  \
+        "mv a2, %4\n"                                                  \
+        "mv a3, %5\n"                                                  \
+        "ecall\n"                                                      \
+        "mv %0, a0\n"                                                  \
+        : "=r"(ret)                                                    \
+        : "i"(syscall_num), "r"(arg1), "r"(arg2), "r"(arg3), "r"(arg4) \
+        : "a0", "a1", "a2", "a3", "a7", "memory");                     \
+    ret;                                                               \
+  })
+
+#define syscall5(syscall_num, arg1, arg2, arg3, arg4, arg5)             \
+  ({                                                                    \
+    int ret;                                                            \
+    asm volatile(                                                       \
+        "li a7, %1\n"                                                   \
+        "mv a0, %2\n"                                                   \
+        "mv a1, %3\n"                                                   \
+        "mv a2, %4\n"                                                   \
+        "mv a3, %5\n"                                                   \
+        "mv a4, %6\n"                                                   \
+        "ecall\n"                                                       \
+        "mv %0, a0\n"                                                   \
+        : "=r"(ret)                                                     \
+        : "i"(syscall_num), "r"(arg1), "r"(arg2), "r"(arg3), "r"(arg4), \
+          "r"(arg5)                                                     \
+        : "a0", "a1", "a2", "a3", "a4", "a7", "memory");                \
+    ret;                                                                \
+  })
 
 #endif

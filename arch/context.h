@@ -30,6 +30,8 @@
   #include "lx6/context.h"
 #elif defined(GENERAL)
 #include "general/context.h"
+#elif defined(RISCV)
+#include "riscv/context.h"
 #else
     #error "no support"
 #endif

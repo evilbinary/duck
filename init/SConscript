@@ -13,9 +13,10 @@ Import('env')
 current=Dir('.').srcnode().path+'/../xlinker/'
 
 linkflags=''
+cflags='$CFLAGS '
 
 if env.get('LINKLD'):
-    linkflags=linkflags+ ' $LINKFLAGS -Xlinker '+current+env.get('LINKLD')
+    linkflags=linkflags+ ' $LDFLAGS $LINKFLAGS -Xlinker '+current+env.get('LINKLD')
 
 include= [
         '../',
@@ -72,7 +73,9 @@ env.Program('kernel.elf',kernel,
     CPPPATH=include,
     LIBPATH=libpath,
     LIBS=libs,
-    LINKFLAGS = linkflags)
+    CFLAGS='$CFLAGS',
+    LINKFLAGS = linkflags,
+    )
 
 if env.get('OBJCOPY'):
     env.Objcopy('kernel','kernel.elf',OBJCOPYFLAGS='-S')

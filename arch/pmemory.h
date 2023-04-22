@@ -27,6 +27,8 @@
 #include "lx6/mm.h"
 #elif defined(GENERAL)
 #include "general/mm.h"
+#elif defined(RISCV)
+#include "riscv/mm.h"
 #else
 #error "no support"
 #endif
