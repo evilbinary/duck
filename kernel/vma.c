@@ -211,7 +211,7 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
   char* type_str = NULL;
   if (type == MEMORY_STACK) {
     addr = vm->alloc_addr;
-    end_addr = vm->vend;
+    end_addr = addr + vm->alloc_size;
     type_str = "stack";
   } else if (type == MEMORY_HEAP) {
     addr = vm->vaddr;

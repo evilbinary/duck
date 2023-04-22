@@ -181,8 +181,8 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
     // copy file
     copy->fd_size = thread->fd_size;
     copy->fd_number = thread->fd_number;
-    copy->fds = kmalloc(sizeof(fd_t) * thread->fd_size, KERNEL_TYPE);
-    kmemmove(copy->fds, thread->fds, sizeof(fd_t) * thread->fd_size);
+    copy->fds = kmalloc(sizeof(fd_t*) * thread->fd_size, KERNEL_TYPE);
+    kmemmove(copy->fds, thread->fds, sizeof(fd_t*) * thread->fd_size);
   }
 
   // check thread data
