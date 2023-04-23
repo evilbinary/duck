@@ -46,7 +46,7 @@ u32 cpu_get_fault() {
   u32 fault;
 
   // 从cpuid CSR中读取最后一位（bit 31），即mstatus寄存器中MIE的值。
-  asm volatile("csrr %0, mcause" : "=r"(fault));
+  // asm volatile("csrr %0, mcause" : "=r"(fault));
   // 返回值
   return fault;
 }

@@ -1,9 +1,10 @@
 ENTRY(kstart)
-K_VIR_ADDR = 0x42000000;
-K_PHY_ADDR = 0x42000000;
+K_VIR_ADDR = 0x82000000;
+K_PHY_ADDR = 0x82000000;
 PAGE_SIZE    = 0x100;
 SECTIONS
 {
+        . = K_VIR_ADDR;
         /* Code. */
         .text K_VIR_ADDR : AT(K_PHY_ADDR)
         {

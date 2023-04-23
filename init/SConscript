@@ -16,7 +16,7 @@ linkflags=''
 cflags='$CFLAGS '
 
 if env.get('LINKLD'):
-    linkflags=linkflags+ ' $LDFLAGS $LINKFLAGS -Xlinker '+current+env.get('LINKLD')
+    linkflags=linkflags+ ' $LDFLAGS $LINKFLAGS -T '+current+env.get('LINKLD') # -Xlinker
 
 include= [
         '../',

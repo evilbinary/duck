@@ -1,6 +1,6 @@
 #include "init.h"
-
 #include "arch/pmemory.h"
+#include "gpio.h"
 
 static void io_write32(uint port, u32 data) { *(u32 *)port = data; }
 
@@ -10,11 +10,18 @@ static u32 io_read32(uint port) {
   return data;
 }
 
+void io_write8(uint port, u8 data) { *(u8 *)port = data; }
+
+u8 io_read8(uint port) {
+  u8 data;
+  data = *(u8 *)port;
+  return data;
+}
+
 void uart_send_ch(unsigned int c) {
-  unsigned int addr = 0x01c28000;  // UART0
-  while ((io_read32(addr + 0x14) & (0x1 << 6)) == 0)
+  while ((io_read8(UART_BASE + REG_LSR) & (1 << 5)) == 0)
     ;
-  io_write32(addr + 0x00, c);
+  io_write32(UART_BASE + REG_THR, c);
 }
 
 void uart_send(unsigned int c) {
@@ -26,18 +33,16 @@ void uart_send(unsigned int c) {
 }
 
 unsigned int uart_receive() {
-  unsigned int c = 0;
-  unsigned int addr = 0x01c28000;  // UART0
-  while ((io_read32(addr + 0x14) & (0x1 << 0)) == 0) {
+  char c;
+  c = io_read8(UART_BASE + REG_LSR);
+
+  if (c & 1) {
+    return c;
   }
-  c = io_read32(addr + 0x00);
-  return c;
+  return -1;
 }
 
-void timer_init(int hz) {
-  kprintf("timer init %d\n", hz);
-
-}
+void timer_init(int hz) { kprintf("timer init %d\n", hz); }
 
 void timer_end() {}
 
