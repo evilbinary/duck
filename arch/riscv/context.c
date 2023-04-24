@@ -69,9 +69,6 @@ void context_dump_interrupt(interrupt_context_t* ic) {
   kprintf("t1:  %x\n", ic->t1);
   kprintf("t2:  %x\n", ic->t2);
 
-  kprintf("s0:  %x\n", ic->s0);
-  kprintf("s1:  %x\n", ic->s1);
-
   kprintf("a0:  %x\n", ic->a0);
   kprintf("a1:  %x\n", ic->a1);
   kprintf("a2:  %x\n", ic->a2);
@@ -81,6 +78,8 @@ void context_dump_interrupt(interrupt_context_t* ic) {
   kprintf("a6:  %x\n", ic->a6);
   kprintf("a7:  %x\n", ic->a7);
 
+  kprintf("s0:  %x\n", ic->s0);
+  kprintf("s1:  %x\n", ic->s1);
   kprintf("s2:  %x\n", ic->s2);
   kprintf("s3:  %x\n", ic->s3);
   kprintf("s4:  %x\n", ic->s4);
@@ -92,22 +91,22 @@ void context_dump_interrupt(interrupt_context_t* ic) {
   kprintf("s10:  %x\n", ic->s10);
   kprintf("s11:  %x\n", ic->s11);
 
-  //   if (ic->r11 > 1000) {
-  //     int buf[10];
-  //     void* fp = ic->r11;
-  // #ifdef BACKTRACE
-  //     cpu_backtrace(fp, buf, 8);
-  //     kprintf("--backtrace--\n");
-  //     for (int i = 0; i < 8; i++) {
-  //       kprintf(" %8x\n", buf[i]);
-  //     }
-  // #endif
-  //   }
+  if (ic->s0 > 1000) {
+    int buf[10];
+    void* fp = ic->s0;
+#ifdef BACKTRACE
+    cpu_backtrace(fp, buf, 8);
+    kprintf("--backtrace--\n");
+    for (int i = 0; i < 8; i++) {
+      kprintf(" %8x\n", buf[i]);
+    }
+#endif
+  }
 }
 
 void context_dump_fault(interrupt_context_t* context, u32 fault_addr) {}
 
-int context_clone(context_t* des, context_t* src)  {
+int context_clone(context_t* des, context_t* src) {
   if (src->ksp_start == NULL) {
     log_error("ksp top is null\n");
     return -1;
@@ -117,8 +116,7 @@ int context_clone(context_t* des, context_t* src)  {
     return -1;
   }
   kmemmove(des->ksp_start, src->ksp_start, src->ksp_size);
-  //todo
-
+  // todo
 }
 
 // #define DEBUG 1
