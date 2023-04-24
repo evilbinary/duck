@@ -101,6 +101,7 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   ctx->usp = usp + ustack_size;
   ctx->usp_size = ustack_size;
 
+#ifdef VM_ENABLE
   // vm init
   vmemory_t* vm = kmalloc(sizeof(vmemory_t), KERNEL_TYPE);
   thread->vm = vm;
@@ -108,7 +109,6 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   // init vm include stack heap exec
   vmemory_init(vm, level, usp, ustack_size, flags);
 
-#ifdef VM_ENABLE
   vmemory_area_t* vm_stack = vmemory_area_find_flag(vm->vma, MEMORY_STACK);
   context_init(ctx, ctx->ksp_end, vm_stack->vend, entry, thread->level,
                thread->cpu_id);
@@ -169,12 +169,14 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
 
   context_clone(copy->ctx, thread->ctx);
 
+#ifdef VM_ENABLE
   // vm init
   copy->vm = kmalloc(sizeof(vmemory_t), KERNEL_TYPE);
   copy->vm->tid = copy->id;
 
   // init vm include stack heap exec
   vmemory_clone(copy->vm, thread->vm, flags);
+#endif
 
   // 文件分配方式
   if (flags & FS_CLONE) {
@@ -210,11 +212,6 @@ int thread_check(thread_t* thread) {
     return -1;
   }
 
-  if (thread->vm->upage == NULL) {
-    log_error("create thread %d faild for upage is null\n", thread->id);
-    return -1;
-  }
-
   if (thread->ctx->usp_size <= 0) {
     log_error("create thread %d faild for ustack size is 0\n", thread->id);
     return -1;
@@ -223,6 +220,7 @@ int thread_check(thread_t* thread) {
     log_error("create thread %d faild for ustack is 0\n", thread->id);
     return -1;
   }
+#ifdef VM_ENABLE
   if (thread->vm->kpage == NULL) {
     log_error("create thread %d faild for kpage is null\n", thread->id);
     return -1;
@@ -231,6 +229,7 @@ int thread_check(thread_t* thread) {
     log_error("create thread %d faild for upage is null\n", thread->id);
     return -1;
   }
+
   if (thread->vm->vma == NULL) {
     log_error("create thread %d faild for vma is null\n", thread->id);
     return -1;
@@ -260,6 +259,7 @@ int thread_check(thread_t* thread) {
 
   log_debug("tid %d kpage %x upage %x\n", thread->id, thread->vm->kpage,
             thread->vm->upage);
+#endif
   log_debug("tid %d ksp %x usp %x\n", thread->id, thread->ctx->ksp,
             thread->ctx->usp);
 

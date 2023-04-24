@@ -8,15 +8,7 @@
 #include "arch/pmemory.h"
 #include "cpu.h"
 
-#define PAGE_DIR_NUMBER 4096 * 4
-
-void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {}
-
-void* page_v2p(void* page, void* vaddr) {
-  void* phyaddr = NULL;
-
-  return phyaddr;
-}
+#define PAGE_DIR_NUMBER 4096
 
 u32* page_create(u32 level) {
   u32* page_dir_ptr_tab =
@@ -24,9 +16,7 @@ u32* page_create(u32 level) {
   return page_dir_ptr_tab;
 }
 
-void page_copy(u32* old_page, u32* new_page) {
-
-}
+void page_copy(u32* old_page, u32* new_page) {}
 
 u32* page_clone(u32* old_page_dir, u32 level) {
   u32* page_dir_ptr_tab = page_create(level);
@@ -34,15 +24,26 @@ u32* page_clone(u32* old_page_dir, u32 level) {
   return page_dir_ptr_tab;
 }
 
-void unpage_map_on(page_dir_t* page, u32 virtualaddr) {}
+
+void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
+  //Sv39 方式
+  
+}
+
+void page_unmap_on(page_dir_t* page, u32 virtualaddr) {}
+
+void* page_v2p(void* page, void* vaddr) {
+  void* phyaddr = NULL;
+
+  return phyaddr;
+}
 
 void mm_init_default(u32 kernel_page_dir) {}
 
 void mm_page_enable(u32 page_dir) {
-  
   cpu_set_page(page_dir);
   // start_dump();
   kprintf("enable page\n");
-  // cpu_enable_page();
+  cpu_enable_page();
   kprintf("paging scucess\n");
 }

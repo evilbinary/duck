@@ -32,7 +32,20 @@ int cpu_tas(volatile int* addr, int newval) {
 
 void cpu_backtrace(void) {}
 
-void cpu_set_page(u32 page_table) {}
+void cpu_set_page(u32 page_table) {
+  // Set the value of satp register
+  asm volatile("csrw satp, %0" : : "r"(page_table));
+  // Flush the TLB (Translation Lookaside Buffer)
+  asm volatile("sfence.vma");
+}
+
+void cpu_enable_page() {
+  // 使用 MMU 映射虚拟页面到物理页面
+  asm volatile("sfence.vma");
+  // 启用 MMU
+  asm volatile("li t0, 0x80000000");
+  asm volatile("csrs mstatus, t0");
+}
 
 u32 cpu_get_id() {
   int cpu = 0;
@@ -44,9 +57,8 @@ u32 cpu_get_id() {
 
 u32 cpu_get_fault() {
   u32 fault;
-
   // 从cpuid CSR中读取最后一位（bit 31），即mstatus寄存器中MIE的值。
-  // asm volatile("csrr %0, mcause" : "=r"(fault));
+  asm volatile("csrr %0, mcause" : "=r"(fault));
   // 返回值
   return fault;
 }
