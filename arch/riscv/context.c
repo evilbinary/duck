@@ -39,6 +39,9 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
 
   kmemset(ic, 0, sizeof(interrupt_context_t));
   ic->ra = entry;
+  ic->sepc =entry;
+  ic->sstatus = 0x46020;
+
   ic->sp = usp_top;
   context->usp = usp_top;
   context->ksp = ic;
