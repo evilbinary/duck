@@ -29,19 +29,25 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
   context->eip = entry;
   context->level = level;
 
+  interrupt_context_t* ic = (u32)ksp_top - sizeof(interrupt_context_t) * 2;
+  kmemset(ic, 0, sizeof(interrupt_context_t));
+
   if (level == 0) {
+    ic->sstatus = 1 << 8;                // SPP
+    ic->sstatus = ic->sstatus | 1 << 1;  // SIE
+    ic->sstatus = ic->sstatus | 1 << 5;  // SPIE
+
   } else if (level == 3) {
+    ic->sstatus = 0 << 8;                // SPP
+    ic->sstatus = ic->sstatus | 1 << 1;  // SIE
+    ic->sstatus = ic->sstatus | 1 << 5;  // SPIE
+
   } else {
     kprintf("not suppport level %d\n", level);
   }
 
-  interrupt_context_t* ic = (u32)ksp_top - sizeof(interrupt_context_t) * 2;
-
-  kmemset(ic, 0, sizeof(interrupt_context_t));
   ic->ra = entry;
-  ic->sepc =entry;
-  ic->sstatus = 0x46020;
-
+  ic->sepc = entry;
   ic->sp = usp_top;
   context->usp = usp_top;
   context->ksp = ic;

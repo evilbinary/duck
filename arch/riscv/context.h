@@ -86,40 +86,40 @@ typedef struct context_t {
 #define interrupt_entering_code(VEC, CODE, TYPE) \
   asm volatile(                                  \
       "csrrw sp, sscratch, sp\n"                 \
-      "addi sp, sp, -31*8\n"                     \
-      "sd ra, 2*8(sp)\n"                         \
-      "sd sp, 3*8(sp)\n"                         \
-      "sd gp, 4*8(sp)\n"                         \
-      "sd tp, 5*8(sp)\n"                         \
-      "sd t0, 6*8(sp)\n"                         \
-      "sd t1, 7*8(sp)\n"                         \
-      "sd t2, 8*8(sp)\n"                         \
-      "sd a0, 8*8(sp)\n"                         \
-      "sd a1, 10*8(sp)\n"                        \
-      "sd a2, 11*8(sp)\n"                        \
-      "sd a3, 12*8(sp)\n"                        \
-      "sd a4, 13*8(sp)\n"                        \
-      "sd a5, 14*8(sp)\n"                        \
-      "sd a6, 15*8(sp)\n"                        \
-      "sd a7, 16*8(sp)\n"                        \
-      "sd s0, 17*8(sp)\n"                        \
-      "sd s1, 18*8(sp)\n"                        \
-      "sd s2, 19*8(sp)\n"                        \
-      "sd s3, 20*8(sp)\n"                        \
-      "sd s4, 21*8(sp)\n"                        \
-      "sd s5, 22*8(sp)\n"                        \
-      "sd s6, 23*8(sp)\n"                        \
-      "sd s7, 24*8(sp)\n"                        \
-      "sd s8, 25*8(sp)\n"                        \
-      "sd s9, 26*8(sp)\n"                        \
-      "sd s10, 27*8(sp)\n"                       \
-      "sd s11, 28*8(sp)\n"                       \
-      "sd sepc, 29*8(sp)\n"                      \
-      "sd sstatus, 30*8(sp)\n"                   \
+      "addi sp, sp, -31*4\n"                     \
+      "sd ra, 2*4(sp)\n"                         \
+      "sd sp, 3*4(sp)\n"                         \
+      "sd gp, 4*4(sp)\n"                         \
+      "sd tp, 5*4(sp)\n"                         \
+      "sd t0, 6*4(sp)\n"                         \
+      "sd t1, 7*4(sp)\n"                         \
+      "sd t2, 8*4(sp)\n"                         \
+      "sd a0, 8*4(sp)\n"                         \
+      "sd a1, 10*4(sp)\n"                        \
+      "sd a2, 11*4(sp)\n"                        \
+      "sd a3, 12*4(sp)\n"                        \
+      "sd a4, 13*4(sp)\n"                        \
+      "sd a5, 14*4(sp)\n"                        \
+      "sd a6, 15*4(sp)\n"                        \
+      "sd a7, 16*4(sp)\n"                        \
+      "sd s0, 17*4(sp)\n"                        \
+      "sd s1, 18*4(sp)\n"                        \
+      "sd s2, 19*4(sp)\n"                        \
+      "sd s3, 20*4(sp)\n"                        \
+      "sd s4, 21*4(sp)\n"                        \
+      "sd s5, 22*4(sp)\n"                        \
+      "sd s6, 23*4(sp)\n"                        \
+      "sd s7, 24*4(sp)\n"                        \
+      "sd s8, 25*4(sp)\n"                        \
+      "sd s9, 26*4(sp)\n"                        \
+      "sd s10, 27*4(sp)\n"                       \
+      "sd s11, 28*4(sp)\n"                       \
+      "sd sepc, 29*4(sp)\n"                      \
+      "sd sstatus, 30*4(sp)\n"                   \
       "mv a0, %0\n"                              \
-      "sd a0, 0*8(sp)\n"                         \
+      "sd a0, 0*4(sp)\n"                         \
       "mv a0, %1\n"                              \
-      "sd a0, 1*8(sp)\n"                         \
+      "sd a0, 1*4(sp)\n"                         \
       "mv a0, sp\n"                              \
       :                                          \
       : "i"(VEC), "i"(CODE))
@@ -127,41 +127,41 @@ typedef struct context_t {
 #define interrupt_exit_context(duck_context) \
   asm volatile(                              \
       "mv sp, %0\n"                          \
-      "lw t0, 29*8(sp)\n"                    \
+      "lw t0, 29*4(sp)\n"                    \
       "csrw sepc,t0\n"                       \
-      "lw t0, 30*8(sp)\n"                    \
+      "lw t0, 30*4(sp)\n"                    \
       "csrw sstatus,t0\n"                    \
-      "lw ra, 2*8(sp)\n"                     \
-      "lw t0, 3*8(sp)\n"                     \
+      "lw ra, 2*4(sp)\n"                     \
+      "lw t0, 3*4(sp)\n"                     \
       "csrw sscratch, t0\n"                  \
-      "lw gp, 4*8(sp)\n"                     \
-      "lw tp, 5*8(sp)\n"                     \
-      "lw t0, 6*8(sp)\n"                     \
-      "lw t1, 7*8(sp)\n"                     \
-      "lw t2, 8*8(sp)\n"                     \
-      "lw a0, 8*8(sp)\n"                     \
-      "lw a1, 10*8(sp)\n"                    \
-      "lw a2, 11*8(sp)\n"                    \
-      "lw a3, 12*8(sp)\n"                    \
-      "lw a4, 13*8(sp)\n"                    \
-      "lw a5, 14*8(sp)\n"                    \
-      "lw a6, 15*8(sp)\n"                    \
-      "lw a7, 16*8(sp)\n"                    \
-      "lw s0, 17*8(sp)\n"                    \
-      "lw s1, 18*8(sp)\n"                    \
-      "lw s2, 19*8(sp)\n"                    \
-      "lw s3, 20*8(sp)\n"                    \
-      "lw s4, 21*8(sp)\n"                    \
-      "lw s5, 22*8(sp)\n"                    \
-      "lw s6, 23*8(sp)\n"                    \
-      "lw s7, 24*8(sp)\n"                    \
-      "lw s8, 25*8(sp)\n"                    \
-      "lw s9, 26*8(sp)\n"                    \
-      "lw s10, 27*8(sp)\n"                   \
-      "lw s11, 28*8(sp)\n"                   \
-      "addi sp, sp, 31*8\n"                  \
+      "lw gp, 4*4(sp)\n"                     \
+      "lw tp, 5*4(sp)\n"                     \
+      "lw t0, 6*4(sp)\n"                     \
+      "lw t1, 7*4(sp)\n"                     \
+      "lw t2, 8*4(sp)\n"                     \
+      "lw a0, 8*4(sp)\n"                     \
+      "lw a1, 10*4(sp)\n"                    \
+      "lw a2, 11*4(sp)\n"                    \
+      "lw a3, 12*4(sp)\n"                    \
+      "lw a4, 13*4(sp)\n"                    \
+      "lw a5, 14*4(sp)\n"                    \
+      "lw a6, 15*4(sp)\n"                    \
+      "lw a7, 16*4(sp)\n"                    \
+      "lw s0, 17*4(sp)\n"                    \
+      "lw s1, 18*4(sp)\n"                    \
+      "lw s2, 19*4(sp)\n"                    \
+      "lw s3, 20*4(sp)\n"                    \
+      "lw s4, 21*4(sp)\n"                    \
+      "lw s5, 22*4(sp)\n"                    \
+      "lw s6, 23*4(sp)\n"                    \
+      "lw s7, 24*4(sp)\n"                    \
+      "lw s8, 25*4(sp)\n"                    \
+      "lw s9, 26*4(sp)\n"                    \
+      "lw s10, 27*4(sp)\n"                   \
+      "lw s11, 28*4(sp)\n"                   \
+      "addi sp, sp, 31*4\n"                  \
       "csrrw sp, sscratch, sp\n"             \
-      "mret\n"                               \
+      "sret\n"                               \
       :                                      \
       : "r"(duck_context->ksp)               \
       : "memory");
