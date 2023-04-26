@@ -29,12 +29,6 @@ u32* page_clone(u32* old_page_dir, u32 level) {
   return page_dir_ptr_tab;
 }
 
-static void set_pte(pte_t* ptep, unsigned long pa, int flags) {
-  pte_t pte = PTE_V | flags;
-  pte |= (pa >> PAGE_SHIFT) << PTE_PPN_SHIFT;
-  *ptep = pte;
-}
-
 void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
   // Sv32 方式 10+10+12
   u32 l1_index = (virtualaddr >> 22) & 0x3ff;
