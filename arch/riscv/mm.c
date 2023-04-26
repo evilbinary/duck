@@ -8,11 +8,16 @@
 #include "arch/pmemory.h"
 #include "cpu.h"
 
-#define PAGE_DIR_NUMBER 4096
+#define PAGE_SHIFT 12
+#define PTE_PPN_SHIFT 10
+#define PTE_PPN(pte) ((pte) >> PTE_PPN_SHIFT)
+
+typedef unsigned long pte_t;
+#define PAGE_DIR_NUMBER 512
 
 u32* page_create(u32 level) {
   u32* page_dir_ptr_tab =
-      mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, PAGE_SIZE * 4);
+      mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, PAGE_SIZE);
   return page_dir_ptr_tab;
 }
 
@@ -24,18 +29,51 @@ u32* page_clone(u32* old_page_dir, u32 level) {
   return page_dir_ptr_tab;
 }
 
+static void set_pte(pte_t* ptep, unsigned long pa, int flags) {
+  pte_t pte = PTE_V | flags;
+  pte |= (pa >> PAGE_SHIFT) << PTE_PPN_SHIFT;
+  *ptep = pte;
+}
 
 void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
-  //Sv39 方式
-  
+  // Sv32 方式 10+10+12
+  u32 l1_index = (virtualaddr >> 22) & 0x3ff;
+  u32 l2_index = (virtualaddr >> 12) & 0x3ff;
+  u32 l3_index = virtualaddr & 0x3ff;
+
+  u32* l2 = ((u32)l1[l1_index]) & ~0xfff;
+  if (l2 == NULL) {
+    l2 = mm_alloc_zero_align(PAGE_DIR_NUMBER * sizeof(u32), PAGE_SIZE);
+    l1[l1_index] = (((u32)l2)) | PTE_V |flags ;
+  }
+  l2[l2_index] = ((physaddr >> 12) << 12) | PTE_V | flags;
+
 }
 
 void page_unmap_on(page_dir_t* page, u32 virtualaddr) {}
 
-void* page_v2p(void* page, void* vaddr) {
-  void* phyaddr = NULL;
 
-  return phyaddr;
+void* page_v2p(void* page, void* vaddr) {
+  if (page == NULL) {
+    kprintf("page v2p page is null\n");
+  }
+  void* phyaddr = NULL;
+  u32* l1 = page;
+  u32 l1_index = (u32)vaddr >> 22;
+  u32 l2_index = (u32)vaddr >> 12 & 0xFF;
+  u32 offset = (u32)vaddr & 0x0FFF;
+
+  u32* l2 = ((u32)l1[l1_index]) & 0xFFFFFC00;
+  if (l2 == NULL) {
+    return NULL;
+  }
+  phyaddr = (l2[l2_index] >> 12) << 12;
+  if (phyaddr == NULL) {
+    return NULL;
+  }
+  // kprintf("page_v2p vaddr %x paddr %x\n",vaddr,phyaddr);
+  return phyaddr + offset;
+
 }
 
 void mm_init_default(u32 kernel_page_dir) {}
