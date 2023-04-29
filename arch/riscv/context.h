@@ -81,45 +81,65 @@ typedef struct context_t {
   u32 ksp_size;
 } context_t;
 
-#define interrupt_process(X)
+#define interrupt_process(X) \
+  asm volatile(              \
+      "addi sp, sp, -48 \n"  \
+      "sw ra, 0(sp) \n"      \
+      "sw s0, 8(sp) \n"      \
+      "sw s1, 16(sp) \n"     \
+      "sw s2, 24(sp) \n"     \
+      "sw s3, 32(sp) \n"     \
+      "sw s4, 40(sp) \n"     \
+      "call " #X             \
+      "\n"                   \
+      "lw ra, 0(sp) \n"      \
+      "lw s0, 8(sp) \n"      \
+      "lw s1, 16(sp) \n"     \
+      "lw s2, 24(sp) \n"     \
+      "lw s3, 32(sp) \n"     \
+      "lw s4, 40(sp) \n"     \
+      "addi sp, sp, 48 \n" :\
+:)
 
 #define interrupt_entering_code(VEC, CODE, TYPE) \
   asm volatile(                                  \
       "csrrw sp, sscratch, sp\n"                 \
       "addi sp, sp, -31*4\n"                     \
-      "sd ra, 2*4(sp)\n"                         \
-      "sd sp, 3*4(sp)\n"                         \
-      "sd gp, 4*4(sp)\n"                         \
-      "sd tp, 5*4(sp)\n"                         \
-      "sd t0, 6*4(sp)\n"                         \
-      "sd t1, 7*4(sp)\n"                         \
-      "sd t2, 8*4(sp)\n"                         \
-      "sd a0, 8*4(sp)\n"                         \
-      "sd a1, 10*4(sp)\n"                        \
-      "sd a2, 11*4(sp)\n"                        \
-      "sd a3, 12*4(sp)\n"                        \
-      "sd a4, 13*4(sp)\n"                        \
-      "sd a5, 14*4(sp)\n"                        \
-      "sd a6, 15*4(sp)\n"                        \
-      "sd a7, 16*4(sp)\n"                        \
-      "sd s0, 17*4(sp)\n"                        \
-      "sd s1, 18*4(sp)\n"                        \
-      "sd s2, 19*4(sp)\n"                        \
-      "sd s3, 20*4(sp)\n"                        \
-      "sd s4, 21*4(sp)\n"                        \
-      "sd s5, 22*4(sp)\n"                        \
-      "sd s6, 23*4(sp)\n"                        \
-      "sd s7, 24*4(sp)\n"                        \
-      "sd s8, 25*4(sp)\n"                        \
-      "sd s9, 26*4(sp)\n"                        \
-      "sd s10, 27*4(sp)\n"                       \
-      "sd s11, 28*4(sp)\n"                       \
-      "sd sepc, 29*4(sp)\n"                      \
-      "sd sstatus, 30*4(sp)\n"                   \
-      "mv a0, %0\n"                              \
-      "sd a0, 0*4(sp)\n"                         \
-      "mv a0, %1\n"                              \
-      "sd a0, 1*4(sp)\n"                         \
+      "sw ra, 2*4(sp)\n"                         \
+      "sw sp, 3*4(sp)\n"                         \
+      "sw gp, 4*4(sp)\n"                         \
+      "sw tp, 5*4(sp)\n"                         \
+      "sw t0, 6*4(sp)\n"                         \
+      "sw t1, 7*4(sp)\n"                         \
+      "sw t2, 8*4(sp)\n"                         \
+      "sw a0, 8*4(sp)\n"                         \
+      "sw a1, 10*4(sp)\n"                        \
+      "sw a2, 11*4(sp)\n"                        \
+      "sw a3, 12*4(sp)\n"                        \
+      "sw a4, 13*4(sp)\n"                        \
+      "sw a5, 14*4(sp)\n"                        \
+      "sw a6, 15*4(sp)\n"                        \
+      "sw a7, 16*4(sp)\n"                        \
+      "sw s0, 17*4(sp)\n"                        \
+      "sw s1, 18*4(sp)\n"                        \
+      "sw s2, 19*4(sp)\n"                        \
+      "sw s3, 20*4(sp)\n"                        \
+      "sw s4, 21*4(sp)\n"                        \
+      "sw s5, 22*4(sp)\n"                        \
+      "sw s6, 23*4(sp)\n"                        \
+      "sw s7, 24*4(sp)\n"                        \
+      "sw s8, 25*4(sp)\n"                        \
+      "sw s9, 26*4(sp)\n"                        \
+      "sw s10, 27*4(sp)\n"                       \
+      "sw s11, 28*4(sp)\n"                       \
+      "csrr a0, sepc \n"                         \
+      "sw a0, 29*4(sp)\n"                        \
+      "csrr a0, sstatus \n"                      \
+      "sw a0, 30*4(sp)\n"                        \
+      "li a0, %0\n"                              \
+      "sw a0, 0*4(sp)\n"                         \
+      "li a0, %1\n"                              \
+      "sw a0, 1*4(sp)\n"                         \
       "mv a0, sp\n"                              \
       :                                          \
       : "i"(VEC), "i"(CODE))
@@ -166,9 +186,88 @@ typedef struct context_t {
       : "r"(duck_context->ksp)               \
       : "memory");
 
-#define interrupt_exit_ret() asm volatile("\n" : :)
+#define interrupt_exit_ret()     \
+  asm volatile(                  \
+      "mv sp, a0\n"              \
+      "lw t0, 29*4(sp)\n"        \
+      "csrw sepc,t0\n"           \
+      "lw t0, 30*4(sp)\n"        \
+      "csrw sstatus,t0\n"        \
+      "lw ra, 2*4(sp)\n"         \
+      "lw t0, 3*4(sp)\n"         \
+      "csrw sscratch, t0\n"      \
+      "lw gp, 4*4(sp)\n"         \
+      "lw tp, 5*4(sp)\n"         \
+      "lw t0, 6*4(sp)\n"         \
+      "lw t1, 7*4(sp)\n"         \
+      "lw t2, 8*4(sp)\n"         \
+      "lw a0, 8*4(sp)\n"         \
+      "lw a1, 10*4(sp)\n"        \
+      "lw a2, 11*4(sp)\n"        \
+      "lw a3, 12*4(sp)\n"        \
+      "lw a4, 13*4(sp)\n"        \
+      "lw a5, 14*4(sp)\n"        \
+      "lw a6, 15*4(sp)\n"        \
+      "lw a7, 16*4(sp)\n"        \
+      "lw s0, 17*4(sp)\n"        \
+      "lw s1, 18*4(sp)\n"        \
+      "lw s2, 19*4(sp)\n"        \
+      "lw s3, 20*4(sp)\n"        \
+      "lw s4, 21*4(sp)\n"        \
+      "lw s5, 22*4(sp)\n"        \
+      "lw s6, 23*4(sp)\n"        \
+      "lw s7, 24*4(sp)\n"        \
+      "lw s8, 25*4(sp)\n"        \
+      "lw s9, 26*4(sp)\n"        \
+      "lw s10, 27*4(sp)\n"       \
+      "lw s11, 28*4(sp)\n"       \
+      "addi sp, sp, 31*4\n"      \
+      "csrrw sp, sscratch, sp\n" \
+      "sret\n"                   \
+      :                          \
+      :                          \
+      : "memory");
 
-#define interrupt_exit() asm volatile("" : :)
+#define interrupt_exit()         \
+  asm volatile(                  \
+      "lw t0, 29*4(sp)\n"        \
+      "csrw sepc,t0\n"           \
+      "lw t0, 30*4(sp)\n"        \
+      "csrw sstatus,t0\n"        \
+      "lw ra, 2*4(sp)\n"         \
+      "lw t0, 3*4(sp)\n"         \
+      "csrw sscratch, t0\n"      \
+      "lw gp, 4*4(sp)\n"         \
+      "lw tp, 5*4(sp)\n"         \
+      "lw t0, 6*4(sp)\n"         \
+      "lw t1, 7*4(sp)\n"         \
+      "lw t2, 8*4(sp)\n"         \
+      "lw a0, 8*4(sp)\n"         \
+      "lw a1, 10*4(sp)\n"        \
+      "lw a2, 11*4(sp)\n"        \
+      "lw a3, 12*4(sp)\n"        \
+      "lw a4, 13*4(sp)\n"        \
+      "lw a5, 14*4(sp)\n"        \
+      "lw a6, 15*4(sp)\n"        \
+      "lw a7, 16*4(sp)\n"        \
+      "lw s0, 17*4(sp)\n"        \
+      "lw s1, 18*4(sp)\n"        \
+      "lw s2, 19*4(sp)\n"        \
+      "lw s3, 20*4(sp)\n"        \
+      "lw s4, 21*4(sp)\n"        \
+      "lw s5, 22*4(sp)\n"        \
+      "lw s6, 23*4(sp)\n"        \
+      "lw s7, 24*4(sp)\n"        \
+      "lw s8, 25*4(sp)\n"        \
+      "lw s9, 26*4(sp)\n"        \
+      "lw s10, 27*4(sp)\n"       \
+      "lw s11, 28*4(sp)\n"       \
+      "addi sp, sp, 31*4\n"      \
+      "csrrw sp, sscratch, sp\n" \
+      "sret\n"                   \
+      :                          \
+      :                          \
+      : "memory");
 
 #define context_switch_page(ctx, page_dir) cpu_set_page(page_dir)
 

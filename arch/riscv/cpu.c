@@ -9,7 +9,11 @@
 
 extern boot_info_t* boot_info;
 
-void cpu_init() {}
+void cpu_init() {
+  cpu_write_medeleg(0xffff);
+  cpu_write_mideleg(0xffff);
+
+}
 
 void cpu_halt() {
   for (;;) {
@@ -62,3 +66,63 @@ u32 cpu_get_fault() {
   // 返回值
   return fault;
 }
+
+u32 cpu_read_mie() {
+  u32 x;
+  asm volatile("csrr %0, mie" : "=r"(x));
+  return x;
+}
+
+void cpu_write_mie(u32 x) { asm volatile("csrw mie, %0" : : "r"(x)); }
+
+u32 cpu_read_mstatus() {
+  u32 x;
+  asm volatile("csrr %0, mstatus" : "=r"(x));
+  return x;
+}
+
+void cpu_write_mstatus(u32 x) { asm volatile("csrw mstatus, %0" : : "r"(x)); }
+
+void cpu_write_mtvec(u32 x) { asm volatile("csrw mtvec, %0" : : "r"(x)); }
+
+u32 cpu_read_sie() {
+  u32 x;
+  asm volatile("csrr %0, sie" : "=r"(x));
+  return x;
+}
+
+void cpu_write_sie(u32 x) { asm volatile("csrw sie, %0" : : "r"(x)); }
+
+u32 cpu_read_sstatus() {
+  u32 x;
+  asm volatile("csrr %0, sstatus" : "=r"(x));
+  return x;
+}
+
+void cpu_write_sstatus(u32 x) { asm volatile("csrw sstatus, %0" : : "r"(x)); }
+
+void cpu_write_stvec(u32 x) { asm volatile("csrw stvec, %0" : : "r"(x)); }
+
+void cpu_write_stimecmp(u32 x) { asm volatile("csrw 0x14D, %0\n" : "=r"(x)); }
+
+u32 cpu_read_time() {
+  u32 value;
+  asm volatile("rdtime %0" : "=r"(value));
+  return value;
+}
+
+u32 cpu_read_medeleg() {
+  u32 x;
+  asm volatile("csrr %0, medeleg" : "=r"(x));
+  return x;
+}
+
+void cpu_write_medeleg(u32 x) { asm volatile("csrw medeleg, %0" : : "r"(x)); }
+
+u32 cpu_read_mideleg() {
+  u32 x;
+  asm volatile("csrr %0, mideleg" : "=r"(x));
+  return x;
+}
+
+void cpu_write_mideleg(u32 x) { asm volatile("csrw mideleg, %0" : : "r"(x)); }

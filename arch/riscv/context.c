@@ -37,6 +37,10 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
     ic->sstatus = ic->sstatus | 1 << 1;  // SIE
     ic->sstatus = ic->sstatus | 1 << 5;  // SPIE
 
+    ic->sstatus = ic->sstatus | 1 << 18;  // SUM
+    ic->sstatus = ic->sstatus | 1 << 19;  // MXR
+    
+
   } else if (level == 3) {
     ic->sstatus = 0 << 8;                // SPP
     ic->sstatus = ic->sstatus | 1 << 1;  // SIE

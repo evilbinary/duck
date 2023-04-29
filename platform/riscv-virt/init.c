@@ -1,4 +1,5 @@
 #include "init.h"
+
 #include "arch/pmemory.h"
 #include "gpio.h"
 
@@ -42,14 +43,35 @@ unsigned int uart_receive() {
   return -1;
 }
 
-void timer_init(int hz) { kprintf("timer init %d\n", hz); }
+int timer_val = 0;
 
-void timer_end() {}
+void timer_init(int hz) {
+  kprintf("timer init %d\n", hz);
+  int id = cpu_get_id();
 
-void platform_init() {
-  io_add_write_channel(uart_send);
-  // sys_dram_init();
+  timer_val = hz;
+
+  // *(u32 *)CLINT_MTIMECMP(id) = *(u32 *)CLINT_MTIME + timer_val;  //
+  // *(u32 *)CLINT_MSIP(id) = 1;
+  // cpu_write_mstatus(cpu_read_mstatus() | MSTATUS_MIE);
+  // cpu_write_mie(cpu_read_mie() | MIE_MTIE);
+
+  cpu_write_stimecmp(*(u32 *)CLINT_MTIME + timer_val);
+  cpu_write_sstatus(cpu_read_sstatus() | SSTATUS_SIE);
+  cpu_write_sie(cpu_read_sie() | SIE_STIE);
+
 }
+
+void timer_end() {
+  kprintf("timer end\n");
+
+  cpu_write_stimecmp(*(u32 *)CLINT_MTIME + timer_val);
+
+  // int id = cpu_get_id();
+  // *(u32 *)CLINT_MTIMECMP(id) = *(u32 *)CLINT_MTIME + timer_val;
+}
+
+void platform_init() { io_add_write_channel(uart_send); }
 
 void platform_end() {}
 
