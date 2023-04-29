@@ -85,19 +85,23 @@ void* do_schedule(interrupt_context_t* ic) {
   }
   timer_ticks[cpu]++;
 
-  // if (next_thread->id >= 2) {
+  if (next_thread->id >= 0) {
   //   int i = 0;
-  //   // log_debug("next tid %d ksp->pc %x ic->pc %x inst:%x\n", next_thread->id,
-  //   //           next_thread->ctx->ksp->pc, ic->pc, *(u32*)ic->pc);
+      // log_debug("next tid %d ksp %x ksp->pc %x ic->pc %x inst:%x\n", next_thread->id,next_thread->ctx->ksp,
+      //         next_thread->ctx->ksp->sepc, ic->sepc, *(u32*)ic->sepc);
+    // log_debug("next tid %d ksp->pc %x ic->pc %x inst:%x\n", next_thread->id,
+    //           next_thread->ctx->ksp->pc, ic->pc, *(u32*)ic->pc);
 
   //   log_debug("next tid %d ksp->pc %x ic->pc %x inst:%x\n", next_thread->id,
   //             next_thread->ctx->ksp->eip, ic->eip, *(u32*)ic->eip);
   //   log_debug("upage %x ic %x ksp %x\n",next_thread->vm->upage,ic,next_thread->ctx->ksp);
   //   //  mmu_dump();
-  // }
+  }
   interrupt_context_t* next_ic=context_switch(ic, current_thread->ctx, next_thread->ctx);
   thread_set_current(next_thread);
+#ifdef VM_ENABLE
   context_switch_page(next_thread->ctx,next_thread->vm->upage);
+#endif
   timer_end();
   return next_ic;
 }

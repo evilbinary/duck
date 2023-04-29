@@ -37,8 +37,12 @@ int cpu_tas(volatile int* addr, int newval) {
 void cpu_backtrace(void) {}
 
 void cpu_set_page(u32 page_table) {
+  
+  //Sv32 方式 10+10+12 PPN =22  mode 1
+  u32 page=page_table >> 12 |(1 << 30);
+
   // Set the value of satp register
-  asm volatile("csrw satp, %0" : : "r"(page_table));
+  asm volatile("csrw satp, %0" : : "r"(page));
   // Flush the TLB (Translation Lookaside Buffer)
   asm volatile("sfence.vma");
 }
@@ -105,12 +109,6 @@ void cpu_write_stvec(u32 x) { asm volatile("csrw stvec, %0" : : "r"(x)); }
 
 void cpu_write_stimecmp(u32 x) { asm volatile("csrw 0x14D, %0\n" : "=r"(x)); }
 
-u32 cpu_read_time() {
-  u32 value;
-  asm volatile("rdtime %0" : "=r"(value));
-  return value;
-}
-
 u32 cpu_read_medeleg() {
   u32 x;
   asm volatile("csrr %0, medeleg" : "=r"(x));
@@ -126,3 +124,10 @@ u32 cpu_read_mideleg() {
 }
 
 void cpu_write_mideleg(u32 x) { asm volatile("csrw mideleg, %0" : : "r"(x)); }
+
+
+u32 cpu_read_scause() {
+  u32 x;
+  asm volatile("csrr %0, scause" : "=r"(x));
+  return x;
+}

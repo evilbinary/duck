@@ -59,13 +59,16 @@ void timer_init(int hz) {
   cpu_write_stimecmp(*(u32 *)CLINT_MTIME + timer_val);
   cpu_write_sstatus(cpu_read_sstatus() | SSTATUS_SIE);
   cpu_write_sie(cpu_read_sie() | SIE_STIE);
-
 }
 
 void timer_end() {
-  kprintf("timer end\n");
+  // cpu_write_stimecmp(*(u32 *)CLINT_MTIME + timer_val);
 
-  cpu_write_stimecmp(*(u32 *)CLINT_MTIME + timer_val);
+  int id = cpu_get_id();
+  *(u32 *)CLINT_MTIMECMP(id) = *(u32 *)CLINT_MTIME + timer_val;
+
+  // cpu_write_stimecmp(*(u32 *)CLINT_MTIME + timer_val);
+  // log_debug("timer end\n");
 
   // int id = cpu_get_id();
   // *(u32 *)CLINT_MTIMECMP(id) = *(u32 *)CLINT_MTIME + timer_val;

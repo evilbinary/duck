@@ -136,6 +136,8 @@ typedef struct context_t {
       "sw a0, 29*4(sp)\n"                        \
       "csrr a0, sstatus \n"                      \
       "sw a0, 30*4(sp)\n"                        \
+      "csrr a0, sscratch\n"                      \
+      "sw a0, 3*4(sp)\n"                         \
       "li a0, %0\n"                              \
       "sw a0, 0*4(sp)\n"                         \
       "li a0, %1\n"                              \

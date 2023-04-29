@@ -138,6 +138,7 @@ interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
   if (ic == NULL) {
     return;
   }
+  current->ic =ic;
   current->ksp = ic;
   current->usp = ic->sp;
 
