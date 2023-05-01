@@ -13,4 +13,7 @@
 #define PAGE_USU   0 //用户级
 typedef u32 page_dir_t;
 
+#define PAGE_RWE   (0)
+#define PAGE_RW   (0)
+
 #endif

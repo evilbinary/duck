@@ -41,78 +41,94 @@ void interrutp_set(int i) {
 INTERRUPT_SERVICE
 void reset_handler() {
   interrupt_entering_code(0, 0);
-  interrupt_process(exception_info);
+  interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void l1_handler() {
   interrupt_entering_code(0, 0);
-  interrupt_process(exception_info);
+  interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void l2_handler() {
   interrupt_entering_code(0, 0);
-  interrupt_process(exception_info);
+  interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void l3_handler() {
   interrupt_entering_code(0, 0);
-  interrupt_process(exception_info);
+  interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void l4_handler() {
   interrupt_entering_code(0, 0);
-  interrupt_process(exception_info);
+  interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void l5_handler() {
   interrupt_entering_code(0, 0);
-  interrupt_process(exception_info);
+  interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void debug_excetpion_handler() {
   interrupt_entering_code(0, 0);
-  interrupt_process(exception_info);
+  interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void nmi_excetpion_handler() {
   interrupt_entering_code(0, 0);
-  interrupt_process(exception_info);
+  interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void kernel_excetpion_handler() {
   interrupt_entering_code(0, 0);
-  interrupt_process(exception_info);
+  interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void user_excetpion_handler() {
   interrupt_entering_code(0, 0);
-  interrupt_process(exception_info);
+  interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void double_excetpion_handler() {
   interrupt_entering_code(0, 0);
-  interrupt_process(exception_info);
+  interrupt_process(interrupt_default_handler);
   cpu_halt();
+}
+
+
+void exception_info(interrupt_context_t* ic) {
+  static const char* exception_msg[] = {
+      "NONE", "RESET", "NONE", "NONE", "NONE", "NONE", "NONE",       "NONE",
+      "NONE", "NONE",  "NONE", "SVC",  "NONE", "NONE", "SYS PENDSV", "SYS TICK",
+  };
+  int cpu = cpu_get_id();
+  if (ic->no < sizeof exception_msg) {
+    kprintf("exception cpu %d no %d: %s\n----------------------------\n", cpu,
+            ic->no, exception_msg[ic->no]);
+  } else {
+    kprintf("exception cpu %d no %d:\n----------------------------\n", cpu,
+            ic->no);
+  }
 }
 
 void interrupt_regist_all() {

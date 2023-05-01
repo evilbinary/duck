@@ -76,16 +76,16 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
 }
 
 #define DEBUG 0
-void context_switch(interrupt_context_t* context, context_t** current,
+interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
                     context_t* next_context) {
-  context_t* current_context = *current;
 #if DEBUG
   kprintf("-----switch dump current------\n");
-  context_dump(current_context);
+  context_dump(current);
 #endif
-  current_context->usp = (u32)context;
-  current_context->eip = context->pc;
-  *current = next_context;
+  current->usp = (u32)ic;
+  current->eip = ic->pc;
+  
+ 
 
 #if DEBUG
   kprintf("-----switch dump next------\n");
@@ -93,6 +93,8 @@ void context_switch(interrupt_context_t* context, context_t** current,
   kprintf("\n");
   kprintf("\n");
 #endif
+
+ return next_context->usp;
 }
 
 void context_dump(context_t* c) {

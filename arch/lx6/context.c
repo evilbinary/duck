@@ -3,21 +3,34 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
-#include "../cpu.h"
-
 #include "context.h"
 #include "cpu.h"
 
-void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
-                  u32 level) {
+
+int context_get_mode(context_t* context) {
+  int mode = 0;
+  return mode;
+}
+
+int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
+                 u32 level, int cpu) {
   if (context == NULL) {
-    return;
+    return -1;
   }
-  context->tss = NULL;
+  if (ksp_top == NULL) {
+    log_error("ksp is null\n");
+    return -1;
+  }
+  if (usp_top == NULL) {
+    log_error("usp end is null\n");
+    return -1;
+  }
+
   context->eip = entry;
   context->level = level;
-  context->esp0 = stack0;
-  u32 cs, ds;
+  context->ksp = ksp_top;
+  context->usp = usp_top;
+
   cpsr_t cpsr;
   cpsr.val = 0;
   if (level == 0) {
@@ -25,7 +38,7 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
     cpsr.UM = 0;
     cpsr.LINTLEVEL = 0;
     cpsr.EXCM = 0;
-    interrupt_context_t* c = stack0;
+    interrupt_context_t* c = ksp_top;
   } else if (level == 3) {
     cpsr.UM = 1;
     cpsr.LINTLEVEL = 3;
@@ -35,7 +48,7 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
     kprintf("not suppport level %d\n", level);
   }
 
-  interrupt_context_t* user = stack0;
+  interrupt_context_t* user = ksp_top;
   kmemset(user, 0, sizeof(interrupt_context_t));
   user->pc = entry;
   user->ps = cpsr.val;
@@ -57,52 +70,76 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
   user->a14 = 0x00140014;
   user->a15 = 0x00160015;
 
-  user->sp = stack3;
-  context->esp = stack3;
-  context->esp0 = stack0;
-
-  ulong addr = (ulong)boot_info->pdt_base;
-  context->kernel_page_dir = addr;
-  context->page_dir = addr;
+  user->sp = usp_top;
 }
+
+
+void context_dump_fault(interrupt_context_t* context, u32 fault_addr) {
+  kprintf("----------------------------\n");  
+  // kprintf("current pc: %x\n", read_pc());
+  context_dump_interrupt(context);
+  kprintf("fault: 0x%x \n", fault_addr);
+  kprintf("----------------------------\n\n");
+}
+
+void context_dump(context_t* c) {
+  kprintf("ip:  %x\n", c->eip);
+  kprintf("sp0: %x\n", c->ksp);
+  kprintf("sp:  %x\n", c->usp);
+
+  kprintf("--interrupt context--\n");
+  interrupt_context_t* context = c->ksp;
+  // context_dump_interrupt(context);
+}
+
+void context_dump_interrupt(interrupt_context_t* context) {
+  kprintf("lr:  %x cpsr:%x\n", context->pc, context->ps);
+  kprintf("sp:  %x\n", context);
+  kprintf("r0:  %x\n", context->a0);
+  // kprintf("r1:  %x\n", context->a1);
+  kprintf("r2:  %x\n", context->a2);
+  kprintf("r3:  %x\n", context->a3);
+  kprintf("r4:  %x\n", context->a4);
+  kprintf("r5:  %x\n", context->a5);
+  kprintf("r6:  %x\n", context->a6);
+  kprintf("r7:  %x\n", context->a7);
+  kprintf("r8:  %x\n", context->a8);
+  kprintf("r9:  %x\n", context->a9);
+  kprintf("r10: %x\n", context->a10);
+}
+
 
 #define DEBUG 0
-void context_switch(interrupt_context_t* context, context_t** current,
+interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
                     context_t* next_context) {
-  context_t* current_context = *current;
-  interrupt_context_t* c = current_context->esp0;
+  interrupt_context_t* c = current->ksp;
 #if DEBUG
   kprintf("\n=>lr:%x sp:%x lr:%x sp:%x fp:%x irq=> lr:%x sp:%x fp:%x\n",
-          current_context->eip, current_context->esp, c->lr, c->sp, c->r11,
-          context->lr, context->sp, context->r11);
+          current->eip, current->usp, c->lr, c->sp, c->r11,
+          ic->lr, ic->sp, ic->r11);
 #endif
-  current_context->esp0 = context;
-  current_context->esp = context->sp;
-  current_context->eip = context->pc;
-  *current = next_context;
-  context_switch_page(next_context->page_dir);
+  current->ksp = ic;
+  current->usp = ic->sp;
+  current->eip = ic->pc;
+
 #if DEBUG
-  c = next_context->esp0;
+  c = next_context->ksp;
   kprintf("  lr:%x sp:%x irq=> lr:%x sp:%x  fp:%x\n", next_context->eip,
-          next_context->esp, c->lr, c->sp, c->r11);
+          next_context->usp, c->lr, c->sp, c->r11);
 #endif
+
+  return next_context->ksp;
+
 }
 
-void context_clone(context_t* des, context_t* src, u32* stack0, u32* stack3,
-                   u32* old0, u32* old3) {
-  kmemmove(des, src, sizeof(context_t));
-  interrupt_context_t* d0 = stack0;
-  interrupt_context_t* s0 = src->esp0;
-
-  if (stack0 != NULL) {
-    kmemmove(d0, s0, sizeof(interrupt_context_t));
-    des->esp0 = (u32)d0;
+int context_clone(context_t* des, context_t* src) {
+  if (src->ksp_start == NULL) {
+    log_error("ksp top is null\n");
+    return -1;
   }
-  if (stack3 != NULL) {
-    cpsr_t cpsr;
-    cpsr.val = 0;
-    // cpsr.M = 0x10;
-    d0->ps = cpsr.val;
-    des->esp = d0->sp;
+  if (des->ksp_start == NULL) {
+    log_error("ksp top is null\n");
+    return -1;
   }
+  
 }

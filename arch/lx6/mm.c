@@ -3,10 +3,9 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
-#include "../mm.h"
-
-#include "../cpu.h"
-#include "../display.h"
+#include "arch/cpu.h"
+#include "arch/display.h"
+#include "arch/pmemory.h"
 #include "cpu.h"
 #include "gpio.h"
 
@@ -14,6 +13,12 @@
 
 extern boot_info_t* boot_info;
 static u32 page_dir[PAGE_DIR_NUMBER] __attribute__((aligned(0x4000)));
+
+u32* page_create(u32 level) {
+
+    return NULL;
+}
+
 
 void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
   // u32 l1_index = virtualaddr >> 20;
@@ -25,10 +30,6 @@ void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
   //   l1[l1_index] = (((u32)l2) & 0xFFFFFC00) | L1_DESC;
   // }
   // l2[l2_index] = ((physaddr >> 12) << 12 )|L2_DESC| flags;
-}
-
-void page_map(u32 virtualaddr, u32 physaddr, u32 flags) {
-  page_map_on(boot_info->pdt_base, virtualaddr, physaddr, flags);
 }
 
 void mm_init_default() {
@@ -78,6 +79,16 @@ void* page_v2p(void* page, void* vaddr) {
   return phyaddr;
 }
 
+void mm_page_enable(u32 page_dir) {
+
+  cpu_set_page(page_dir);
+  // start_dump();
+  kprintf("enable page\n");
+  cpu_enable_page();
+  kprintf("paging scucess\n");
+}
+
+
 void page_clone(u32* old_page, u32* new_page) {
   // kprintf("page_clone:%x %x\n",old_page,new_page);
   // if (old_page == NULL) {
@@ -104,10 +115,7 @@ void page_clone(u32* old_page, u32* new_page) {
   // }
 }
 
-void* page_create(u32 level) {
 
-    return NULL;
-}
 
 void unpage_map_on(page_dir_t* page, u32 virtualaddr) {
   u32* l1=page;

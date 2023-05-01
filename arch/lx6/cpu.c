@@ -54,6 +54,19 @@ void cpu_halt() {
   };
 }
 
+void cpu_wait(){
+  
+}
+
+int cpu_get_id(){
+  return 0;
+}
+
+u32 cpu_get_fault(){
+  return 0;
+}
+
+
 ulong cpu_get_cs(void) {
   ulong result;
 
@@ -94,20 +107,6 @@ void cpu_backtrace(void) {
     topfp = fp;
   }
 }
-
-void context_dump(context_t* c) {
-  kprintf("ip:  %x\n", c->eip);
-  kprintf("sp0: %x\n", c->esp0);
-  kprintf("sp:  %x\n", c->esp);
-
-  kprintf("page_dir: %x\n", c->page_dir);
-  kprintf("kernel page_dir: %x\n", c->kernel_page_dir);
-  kprintf("--interrupt context--\n");
-  interrupt_context_t* context = c->esp0;
-  // context_dump_interrupt(context);
-}
-
-
 
 void* syscall0(u32 num) {
   int ret;

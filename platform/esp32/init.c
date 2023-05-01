@@ -28,3 +28,7 @@ void platform_init(){
 
 void platform_end(){
  }
+
+void platform_map(){
+  
+}

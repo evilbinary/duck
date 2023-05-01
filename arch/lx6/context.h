@@ -10,17 +10,6 @@
 #include "libs/include/types.h"
 #include "platform/platform.h"
 
-typedef struct context_t {
-  u32 esp0, ss0, ds0;
-  u32 esp, ss, ds;
-  u32 eip;
-  tss_t* tss;
-  u32* page_dir;
-  u32* kernel_page_dir;
-  u32 level;
-} context_t;
-
-
 typedef struct interrupt_context {
   // manual push
   u32 no;    // 0
@@ -51,6 +40,22 @@ typedef struct interrupt_context {
   u32 excvaddr;  // 88
 
 } __attribute__((packed)) interrupt_context_t;
+
+typedef struct context_t {
+  interrupt_context_t* ic;
+  interrupt_context_t* ksp;
+  u32 usp;
+  u32 eip;
+  u32 level;
+  u32 tid;
+
+  u32 ksp_start;
+  u32 ksp_end;
+
+  u32 usp_size;
+  u32 ksp_size;
+} context_t;
+
 
 #define interrupt_process(X) kprintf("errro\n");
 
@@ -97,7 +102,7 @@ typedef struct interrupt_context {
       "l32i a15,sp,76 \n"                    \
       "addmi sp, sp, -88 \n"                 \
       :                                      \
-      : "m"(duck_context->esp0), "m"(duck_context->esp))
+      : "m"(duck_context->ksp), "m"(duck_context->usp))
 
 #define interrupt_entering(VEC) interrupt_entering_code(VEC, 0)
 
@@ -107,7 +112,7 @@ typedef struct interrupt_context {
 
 
 
-#define context_switch_page(page_dir) \
+#define context_switch_page(ctx,page_dir) \
   cpu_set_page(page_dir)  // asm volatile("mov %0, %%cr3" : : "r" (page_dir))
 
 #define context_fn(context) context->a7
