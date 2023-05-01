@@ -52,6 +52,7 @@ void ya_alloc_init() {
       mm_add_block(addr, len);
     }
   }
+  kassert(mmt.blocks!=NULL);
 }
 
 #define ya_block_ptr(ptr) ((block_t*)ptr - 1);
@@ -65,6 +66,7 @@ void ya_alloc_init() {
 
 void* ya_sbrk(size_t size) {
   mem_block_t* current = mmt.blocks;
+  kassert(current != NULL);
   void* addr = NULL;
   int found = 0;
   while (current) {
@@ -656,8 +658,7 @@ void map_mem_block(u32* page, u32 size, u32 flags) {
   for (; p != NULL; p = p->next) {
     u32 address = p->origin_addr;
     page_map_range(page, address, address, size, flags);
-    kprintf("map mem block addr range %x - %x\n", p->origin_addr,
-            p->origin_addr + size);
+    kprintf("map mem block addr range %x - %x\n", p->origin_addr,p->origin_addr + size);
     mmt.last_map_addr = address + size;
   }
 }
@@ -692,7 +693,7 @@ void page_map_kernel(u32* page, u32 flag_x, u32 flag_rw) {
 }
 
 void mm_parse_map(u32* kernel_page_dir) {
-  kprintf("map mem block\n");
+  kprintf("map mem block start\n");
   // map mem block 100 page 4000k
   map_mem_block(kernel_page_dir, PAGE_SIZE * 10000, PAGE_RW);
 
