@@ -28,9 +28,13 @@ static u8 io_read8(uint port) {
 }
 
 void uart_send_char(unsigned int c) {
+#ifdef SBI
+  sbi_console_putchar(c);
+#else
   while ((io_read8(UART_BASE + REG_LSR) & (1 << 5)) == 0)
     ;
   io_write32(UART_BASE + REG_THR, c);
+#endif
 }
 
 void uart_send(unsigned int c) {
@@ -42,13 +46,18 @@ void uart_send(unsigned int c) {
 }
 
 unsigned int uart_receive() {
-  char c;
+  char c = 0;
+#ifdef SBI
+  c = sbi_console_getchar();
+  if ((u8) c == 255 ) return 0;
+#else
   c = io_read8(UART_BASE + REG_LSR);
 
   if (c & 1) {
     return c;
   }
-  return -1;
+#endif
+  return c;
 }
 
 int timer_val = 0;

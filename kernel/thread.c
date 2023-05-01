@@ -646,7 +646,7 @@ void thread_dumps() {
       }
       kprintf("%-8s %4d %6d %4dk %4dk %4dk %4d %6d     %1d\n", str, p->cpu_id,
               p->counter,
-              p->vm->vma != NULL ? p->vm->vma->alloc_size / 1024 : 0,
+              p->vm!=NULL && p->vm->vma != NULL ? p->vm->vma->alloc_size / 1024 : 0,
               p->mem / 1024, p->ctx->usp_size / 1024, p->fd_number,
               p->sleep_counter, p->level);
     }
