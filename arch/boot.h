@@ -124,7 +124,7 @@ typedef struct boot_info {
   i32 version;
   u32* kernel_origin_base;
   u32* kernel_base;
-  u32* kernel_size;
+  u32 kernel_size;
   ksegment_t segments[KERNEL_SEGMENT];
   u32 segments_number;
 

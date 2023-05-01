@@ -111,6 +111,7 @@ void* vm_alloc_alignment(size_t size, int alignment) {
 void vm_free(void* ptr) {
   thread_t* current = thread_current();
   void* addr = kpage_v2p(ptr, 0);
+  kassert(addr!=NULL);
   size_t size = mm_get_size(addr);
   mm_free(addr);
   memory_static(size, MEMORY_TYPE_FREE);
