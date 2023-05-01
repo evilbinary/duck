@@ -9,7 +9,6 @@ int module_ready=0;
 
 void do_kernel_thread(void) {
   modules_init();
-  log_info("mp init\n");
   mp_init();
 
   module_ready=1;

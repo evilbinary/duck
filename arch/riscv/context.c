@@ -9,7 +9,6 @@
 
 int context_get_mode(context_t* context) {
   int mode = 0;
-
   return mode;
 }
 
@@ -33,18 +32,21 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
   kmemset(ic, 0, sizeof(interrupt_context_t));
 
   if (level == 0) {
-    ic->sstatus = 1 << 8;                // SPP
-    ic->sstatus = ic->sstatus | 0 << 1;  // SIE
-    ic->sstatus = ic->sstatus | 0 << 5;  // SPIE
+    ic->sstatus = 1 << 8;                // SPP supervisor mode 1
+    ic->sstatus = ic->sstatus | 0 << 1;  // SIE The SIE bit enables or disables
+                                         // all interrupts in supervisor mode.
+    ic->sstatus = ic->sstatus | 1 << 5;  // SPIE
 
     ic->sstatus = ic->sstatus | 1 << 18;  // SUM
     ic->sstatus = ic->sstatus | 1 << 19;  // MXR
 
   } else if (level == 3) {
-    ic->sstatus = 0 << 8;                // SPP
-    ic->sstatus = ic->sstatus | 0 << 1;  // SIE
-    ic->sstatus = ic->sstatus | 0 << 5;  // SPIE
+    ic->sstatus = 0 << 8;  // SPP user mode
+    ic->sstatus =
+        ic->sstatus | 0 << 1;  // SIE user-mode, the value in SIE is ignored,
+    ic->sstatus = ic->sstatus | 1 << 5;  // SPIE
 
+    ic->sstatus = ic->sstatus | 1 << 18;  // SUM
     ic->sstatus = ic->sstatus | 1 << 19;  // MXR
 
   } else {
@@ -140,8 +142,13 @@ interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
     return;
   }
   current->ic = ic;
-  current->ksp = ic;
+  // current->ksp = ic;
+  kmemmove(current->ksp,ic,sizeof(interrupt_context_t));
   current->usp = ic->sp;
+
+  log_debug("==>current tid %d level %d sstatus %x\n",current->tid,current->level,current->ksp->sstatus);
+  log_debug("==>next    tid %d level %d sstatus %x\n",next->tid,next->level,next->ksp->sstatus);
+
 
   return next->ksp;
 }

@@ -141,3 +141,11 @@ u32 cpu_read_mip() {
   asm volatile("csrr %0, mip" : "=r"(x));
   return x;
 }
+
+
+u32 cpu_get_mode() {
+  unsigned int mode;
+  asm volatile("csrr %0, mstatus" : "=r"(mode));
+  mode = (mode >> 8) & 0x3; //0: User mode 1: Supervisor mode 3: Machine mode
+  return mode;
+}

@@ -5,6 +5,7 @@ extern boot_info_t* boot_info;
 // muti process init
 void mp_init() {
 #ifdef MP_ENABLE
+  log_info("mp init\n");
   int cpu_nums = cpu_get_number();
   int current_cpu_id = cpu_get_id();
 

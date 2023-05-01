@@ -12,43 +12,43 @@
 
 typedef struct interrupt_context {
   // manual push
-  u32 no;
-  u32 code;
+  u32 no;   //0
+  u32 code; //1
 
   // General-purpose registers
-  u32 ra;  // Return address register
-  u32 sp;  // Stack pointer register
-  u32 gp;  // Global pointer register
-  u32 tp;  // Thread pointer register
+  u32 ra;  //2 Return address register
+  u32 sp;  //3 Stack pointer register
+  u32 gp;  //4 Global pointer register
+  u32 tp;  //5 Thread pointer register
 
-  u32 t0;  // Temporary register 0
-  u32 t1;  // Temporary register 1
-  u32 t2;  // Temporary register 2
+  u32 t0;  //6 Temporary register 0
+  u32 t1;  //7 Temporary register 1
+  u32 t2;  //8 Temporary register 2
 
-  u32 a0;  // Argument/return value register 0
-  u32 a1;  // Argument/return value register 1
-  u32 a2;  // Argument register 2
-  u32 a3;  // Argument register 3
-  u32 a4;  // Argument register 4
-  u32 a5;  // Argument register 5
-  u32 a6;  // Argument register 6
-  u32 a7;  // Argument register 7
+  u32 a0;  //9 Argument/return value register 0
+  u32 a1;  //10 Argument/return value register 1
+  u32 a2;  //11 Argument register 2
+  u32 a3;  //12 Argument register 3
+  u32 a4;  //13 Argument register 4
+  u32 a5;  //14 Argument register 5
+  u32 a6;  //15 Argument register 6
+  u32 a7;  //16 Argument register 7
 
-  u32 s0;   // Saved register 0 (also known as fp, frame pointer)
-  u32 s1;   // Saved register 1
-  u32 s2;   // Saved register 2
-  u32 s3;   // Saved register 3
-  u32 s4;   // Saved register 4
-  u32 s5;   // Saved register 5
-  u32 s6;   // Saved register 6
-  u32 s7;   // Saved register 7
-  u32 s8;   // Saved register 8
-  u32 s9;   // Saved register 9
-  u32 s10;  // Saved register 10
-  u32 s11;  // Saved register 11
+  u32 s0;   //17 Saved register 0 (also known as fp, frame pointer)
+  u32 s1;   //18 Saved register 1
+  u32 s2;   //19 Saved register 2
+  u32 s3;   //20 Saved register 3
+  u32 s4;   //21 Saved register 4
+  u32 s5;   //22 Saved register 5
+  u32 s6;   //23 Saved register 6
+  u32 s7;   //24 Saved register 7
+  u32 s8;   //25 Saved register 8
+  u32 s9;   //26 Saved register 9
+  u32 s10;  //27 Saved register 10
+  u32 s11;  //28 Saved register 11
 
-  u32 sepc;     // Supervisor exception program counter
-  u32 sstatus;  // Supervisor status register
+  u32 sepc;     //29 Supervisor exception program counter
+  u32 sstatus;  //30 Supervisor status register
 
   // Specialized registers
   // u32 mstatus;  // Machine status register
@@ -112,7 +112,7 @@ typedef struct context_t {
       "sw t0, 6*4(sp)\n"                         \
       "sw t1, 7*4(sp)\n"                         \
       "sw t2, 8*4(sp)\n"                         \
-      "sw a0, 8*4(sp)\n"                         \
+      "sw a0, 9*4(sp)\n"                         \
       "sw a1, 10*4(sp)\n"                        \
       "sw a2, 11*4(sp)\n"                        \
       "sw a3, 12*4(sp)\n"                        \
@@ -161,7 +161,7 @@ typedef struct context_t {
       "lw t0, 6*4(sp)\n"                     \
       "lw t1, 7*4(sp)\n"                     \
       "lw t2, 8*4(sp)\n"                     \
-      "lw a0, 8*4(sp)\n"                     \
+      "lw a0, 9*4(sp)\n"                     \
       "lw a1, 10*4(sp)\n"                    \
       "lw a2, 11*4(sp)\n"                    \
       "lw a3, 12*4(sp)\n"                    \
@@ -203,7 +203,7 @@ typedef struct context_t {
       "lw t0, 6*4(sp)\n"         \
       "lw t1, 7*4(sp)\n"         \
       "lw t2, 8*4(sp)\n"         \
-      "lw a0, 8*4(sp)\n"         \
+      "lw a0, 9*4(sp)\n"         \
       "lw a1, 10*4(sp)\n"        \
       "lw a2, 11*4(sp)\n"        \
       "lw a3, 12*4(sp)\n"        \
