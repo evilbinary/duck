@@ -359,7 +359,7 @@ void* kpage_v2p(void* addr, int size) {
     }
     phy = page_v2p(page, addr);
     if (phy == NULL) {
-      log_error("get page: %x addr %x phy null\n", page, addr);
+      log_error("get page: %x vaddr %x phy null\n", page, addr);
       if (size > 0) {
         kmemset(addr, 0, size);
       }
