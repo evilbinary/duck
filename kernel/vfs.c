@@ -246,7 +246,10 @@ u32 vfs_open(vnode_t *node, u32 mode) {
   if (node->super != NULL) {
     node->super->op->open(node, mode);
   } else if (node->op != NULL) {
-    node->op->open(node, mode);
+    //fix not vfs sda mount
+    if(node->op->open!= &vfs_open){
+      node->op->open(node, mode);
+    }
   }
   return ret;
 }
