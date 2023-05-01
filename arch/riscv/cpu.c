@@ -9,11 +9,7 @@
 
 extern boot_info_t* boot_info;
 
-void cpu_init() {
-  cpu_write_medeleg(0xffff);
-  cpu_write_mideleg(0xffff);
-
-}
+void cpu_init() {}
 
 void cpu_halt() {
   for (;;) {
@@ -37,9 +33,8 @@ int cpu_tas(volatile int* addr, int newval) {
 void cpu_backtrace(void) {}
 
 void cpu_set_page(u32 page_table) {
-  
-  //Sv32 方式 10+10+12 PPN =22  mode 1
-  u32 page=page_table >> 12 |(1 << 30);
+  // Sv32 方式 10+10+12 PPN =22  mode 1
+  u32 page = page_table >> 12 | (1 << 30);
 
   // Set the value of satp register
   asm volatile("csrw satp, %0" : : "r"(page));
@@ -52,7 +47,7 @@ void cpu_enable_page() {
   asm volatile("sfence.vma");
   // 启用 MMU
   asm volatile("li t0, 0x80000000");
-  asm volatile("csrs mstatus, t0");
+  asm volatile("csrs sstatus, t0");
 }
 
 u32 cpu_get_id() {
@@ -125,9 +120,24 @@ u32 cpu_read_mideleg() {
 
 void cpu_write_mideleg(u32 x) { asm volatile("csrw mideleg, %0" : : "r"(x)); }
 
-
 u32 cpu_read_scause() {
   u32 x;
   asm volatile("csrr %0, scause" : "=r"(x));
+  return x;
+}
+
+void cpu_write_sip(u32 x) { asm volatile("csrw sip, %0" : : "r"(x)); }
+
+u32 cpu_read_sip() {
+  u32 x;
+  asm volatile("csrr %0, sip" : "=r"(x));
+  return x;
+}
+
+void cpu_write_mip(u32 x) { asm volatile("csrw mip, %0" : : "r"(x)); }
+
+u32 cpu_read_mip() {
+  u32 x;
+  asm volatile("csrr %0, mip" : "=r"(x));
   return x;
 }

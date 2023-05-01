@@ -69,6 +69,12 @@ if env.get('MYLIB'):
     libs.append(env.get('MYLIB'))
     libpath.append(env.get('CC_LIB_PATH'))
 
+
+if env.get('SINGLE_KERNEL'):
+    arch=env.get('ARCHTYPE')
+    kernel.append('../../boot/'+arch+'/boot.o')
+    kernel.append('../../boot/'+arch+'/init.o')
+
 env.Program('kernel.elf',kernel,
     CPPPATH=include,
     LIBPATH=libpath,

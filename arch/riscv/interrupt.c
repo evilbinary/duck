@@ -13,6 +13,7 @@
 
 extern boot_info_t* boot_info;
 
+__attribute__((aligned(4096)))
 interrupt_handler_t* interrutp_handlers[IDT_NUMBER];
 
 void interrupt_init() {
@@ -20,6 +21,9 @@ void interrupt_init() {
   for (int i = 0; i < boot_info->idt_number; i++) {
     interrutp_set(i);
   }
+  // u32 val = interrutp_handlers;
+  // val = val  | 1;
+  // cpu_write_stvec(val);
 
   extern void interrupt_handler();
   cpu_write_stvec(&interrupt_handler);
@@ -30,8 +34,12 @@ void interrupt_regist(u32 vec, interrupt_handler_t handler) {
   interrutp_set(vec);
 }
 
-void interrutp_set(int i) { u32 base = (u32)interrutp_handlers[i]; }
+void interrutp_set(int i) {
+  u32 base = (u32)interrutp_handlers[i];
+  // interrutp_handlers[i] = (base >> 16) | (base & 0xFFFF) <<16 ;
+}
 
+FN_ALIGN
 INTERRUPT_SERVICE
 void reset_handler() {
   interrupt_entering_code(EX_RESET, 0, 0);
@@ -39,6 +47,7 @@ void reset_handler() {
   interrupt_exit_ret();
 }
 
+FN_ALIGN
 INTERRUPT_SERVICE
 void timer_handler() {
   interrupt_entering_code(EX_TIMER, 0, 0);
@@ -47,7 +56,7 @@ void timer_handler() {
 }
 
 void* interrupt_handler_process(interrupt_context_t* ic) {
-   static const char* intr_desc[16] = {
+  static const char* intr_desc[16] = {
       [0] "user software interrupt",
       [1] "supervisor software interrupt",
       [2] "<reserved for future standard use>",
@@ -98,27 +107,36 @@ void* interrupt_handler_process(interrupt_context_t* ic) {
         // interrupt_default_handler(ic);
         break;
       case 1:  // Supervisor software interrupt
-        ic->no = EX_SYS_CALL;
+        ic->no = EX_TIMER;
         interrupt_default_handler(ic);
+        interrupt_exit_ret();
         break;
       case 5:  // Supervisor timer interrupt
         ic->no = EX_TIMER;
         interrupt_default_handler(ic);
+        interrupt_exit_ret();
         break;
-
       case 9:  // Supervisor external interrupt
+        break;
+      default:
+        break;
+    }
+  } else {
+    log_debug("interrupt %d code %d sepc %x\n", interrupt, code, ic->sepc);
+    log_debug("noinc %s\n", nointr_desc[code]);
+    switch (code) {
+      case 8:  // Supervisor software interrupt
+        ic->no = EX_SYS_CALL;
+        ic->sepc += 4;
+        interrupt_default_handler(ic);
         break;
       case 15:  // data abort
         ic->no = EX_DATA_FAULT;
         interrupt_default_handler(ic);
         break;
       default:
-        interrupt_default_handler(ic);
         break;
     }
-  } else {
-    log_debug("interrupt %d code %d sepc %x\n", interrupt, code, ic->sepc);
-    log_debug("noinc %s\n", nointr_desc[code]);
   }
 }
 
@@ -127,12 +145,15 @@ INTERRUPT_SERVICE
 void interrupt_handler() {
   interrupt_entering_code(EX_RESET, 0, 0);
   interrupt_process(interrupt_handler_process);
-  interrupt_exit_ret();
+  interrupt_exit();
 }
 
 void exception_info(interrupt_context_t* ic) {}
 
 void interrupt_regist_all() {
+  for (int i = 0; i < IDT_NUMBER; i++) {
+    interrupt_regist(i, timer_handler);
+  }
   // interrupt_regist(0, reset_handler);  // reset
   // interrupt_regist(1, undefined_handler);   // undefined
   // interrupt_regist(2, svc_handler);         // svc

@@ -34,17 +34,18 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
 
   if (level == 0) {
     ic->sstatus = 1 << 8;                // SPP
-    ic->sstatus = ic->sstatus | 1 << 1;  // SIE
-    ic->sstatus = ic->sstatus | 1 << 5;  // SPIE
+    ic->sstatus = ic->sstatus | 0 << 1;  // SIE
+    ic->sstatus = ic->sstatus | 0 << 5;  // SPIE
 
     ic->sstatus = ic->sstatus | 1 << 18;  // SUM
     ic->sstatus = ic->sstatus | 1 << 19;  // MXR
-    
 
   } else if (level == 3) {
     ic->sstatus = 0 << 8;                // SPP
-    ic->sstatus = ic->sstatus | 1 << 1;  // SIE
-    ic->sstatus = ic->sstatus | 1 << 5;  // SPIE
+    ic->sstatus = ic->sstatus | 0 << 1;  // SIE
+    ic->sstatus = ic->sstatus | 0 << 5;  // SPIE
+
+    ic->sstatus = ic->sstatus | 1 << 19;  // MXR
 
   } else {
     kprintf("not suppport level %d\n", level);
@@ -138,7 +139,7 @@ interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
   if (ic == NULL) {
     return;
   }
-  current->ic =ic;
+  current->ic = ic;
   current->ksp = ic;
   current->usp = ic->sp;
 
