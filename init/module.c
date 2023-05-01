@@ -71,12 +71,14 @@ void modules_init(void) {
 #ifdef ARM
 
 #ifdef ARMV7
+  // require
+  module_regist(&devfs_module);
+
   module_regist(&gpio_module);
   module_regist(&serial_module);
-  // module_regist(&hello_module);
+  module_regist(&hello_module);
   module_regist(&spi_module);
   module_regist(&lcd_module);
-  module_regist(&devfs_module);
 
 #else
   // require
