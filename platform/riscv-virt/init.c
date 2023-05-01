@@ -143,7 +143,7 @@ void timer_end() {
 #endif
 
 #endif
-  log_debug("timer end\n");
+  // log_debug("timer end\n");
 }
 
 void platform_init() { io_add_write_channel(uart_send); }

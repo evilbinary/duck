@@ -146,9 +146,10 @@ interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
   kmemmove(current->ksp,ic,sizeof(interrupt_context_t));
   current->usp = ic->sp;
 
+#ifdef DEBUG
   log_debug("==>current tid %d level %d sstatus %x\n",current->tid,current->level,current->ksp->sstatus);
   log_debug("==>next    tid %d level %d sstatus %x\n",next->tid,next->level,next->ksp->sstatus);
-
+#endif
 
   return next->ksp;
 }

@@ -50,6 +50,7 @@ void page_unmap_on(page_dir_t* page, u32 virtualaddr) {}
 void* page_v2p(void* page, void* vaddr) {
   if (page == NULL) {
     kprintf("page v2p page is null\n");
+    return vaddr;
   }
   void* phyaddr = NULL;
   u32* l1 = page;

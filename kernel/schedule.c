@@ -91,9 +91,9 @@ void* do_schedule(interrupt_context_t* ic) {
 
   if (next_thread->id >= 0) {
     //   int i = 0;
-    log_debug("next tid %d ksp %x ksp->pc %x ic->pc %x inst:%x\n",
-              next_thread->id, next_thread->ctx->ksp,
-              next_thread->ctx->ksp->sepc, ic->sepc, *(u32*)ic->sepc);
+    // log_debug("next tid %d ksp %x ksp->pc %x ic->pc %x inst:%x\n",
+    //           next_thread->id, next_thread->ctx->ksp,
+    //           next_thread->ctx->ksp->sepc, ic->sepc, *(u32*)ic->sepc);
     // log_debug("next tid %d ksp->pc %x ic->pc %x inst:%x\n", next_thread->id,
     //           next_thread->ctx->ksp->pc, ic->pc, *(u32*)ic->pc);
 

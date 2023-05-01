@@ -347,20 +347,30 @@ void vfree(void* addr, size_t size) {
 
 void* kpage_v2p(void* addr, int size) {
   thread_t* current = thread_current();
+#ifdef VM_ENABLE
   void* phy = NULL;
   if (current != NULL) {
-    phy = page_v2p(current->vm->upage, addr);
+    u32 page = NULL;
+    if (current->vm == NULL) {
+      log_error("vm is null\n");
+    } else {
+      page = current->vm->upage;
+    }
+    phy = page_v2p(page, addr);
     if (phy == NULL) {
-      log_error("get page: %x addr %x phy null\n", current->vm->upage, addr);
+      log_error("get page: %x addr %x phy null\n", page, addr);
       if (size > 0) {
         kmemset(addr, 0, size);
       }
-      phy = page_v2p(current->vm->upage, addr);
+      phy = page_v2p(page, addr);
     }
   } else {
     phy = addr;
   }
   return phy;
+#else
+  return addr;
+#endif
 }
 
 void kpool_init() {

@@ -51,6 +51,11 @@ extern module_t hello_module;
 extern module_t serial_module;
 extern module_t sdhci_module;
 extern module_t fat_module;
+#elif defined(RISCV)
+extern module_t devfs_module;
+extern module_t hello_module;
+extern module_t serial_module;
+// extern module_t fat_module;
 
 #else
 extern module_t hello_module;
@@ -135,6 +140,12 @@ void modules_init(void) {
 
   module_regist(&hello_module);
 
+#elif defined(RISCV)
+  // require
+  module_regist(&devfs_module);
+
+  module_regist(&serial_module);
+  // module_regist(&fat_module);
 #else
   module_regist(&hello_module);
 #endif
