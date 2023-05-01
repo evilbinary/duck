@@ -4,6 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "context.h"
+
 #include "cpu.h"
 
 extern boot_info_t* boot_info;
@@ -11,7 +12,7 @@ extern boot_info_t* boot_info;
 int context_get_mode(context_t* context) {
   int mode = 0;
   if (context != NULL) {
-    interrupt_context_t* c = context->esp0;
+    interrupt_context_t* c = context->ksp;
     if ((c->psr & 0x1F) == 0x10) {
       return 3;  // user mode
     }
@@ -19,15 +20,22 @@ int context_get_mode(context_t* context) {
   return mode;
 }
 
-void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
-                  u32 level, int cpu) {
+int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
+                 u32 level, int cpu) {
   if (context == NULL) {
-    return;
+    return -1;
   }
-  context->tss = NULL;
+  if (ksp_top == NULL) {
+    log_error("ksp is null\n");
+    return -1;
+  }
+  if (usp_top == NULL) {
+    log_error("usp end is null\n");
+    return -1;
+  }
   context->eip = entry;
   context->level = level;
-  context->esp0 = stack0;
+  context->ksp = ksp_top;
   u32 cs, ds;
   cpsr_t cpsr;
   cpsr.val = 0x1000000;
@@ -35,7 +43,6 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
     // kernel mode
     // cpsr.Z = 0;
     // cpsr.C = 0;
-    interrupt_context_t* c = stack0;
   } else if (level == 3) {
     // cpsr.Z = 0;
     // cpsr.C = 0;
@@ -43,7 +50,7 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
     kprintf("not suppport level %d\n", level);
   }
 
-  interrupt_context_t* user = stack3;
+  interrupt_context_t* user = usp_top;
   kmemset(user, 0, sizeof(interrupt_context_t));
   user->lr = 0xFFFFFFFD;
   user->pc = entry;
@@ -62,16 +69,10 @@ void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
   user->r11 = 0x00110011;  // fp
   user->r12 = 0x00120012;  // ip
 
-  context->esp = stack3;
-  context->esp0 = stack0;
-  
+  context->usp = usp_top;
+  context->ksp = ksp_top;
 
-  ulong addr = (ulong)boot_info->pdt_base;
-  context->kernel_page_dir = addr;
-  context->page_dir = addr;
-#ifdef PAGE_CLONE
-  context->page_dir = page_create(addr);
-#endif
+  return 0;
 }
 
 #define DEBUG 0
@@ -82,11 +83,10 @@ void context_switch(interrupt_context_t* context, context_t** current,
   kprintf("-----switch dump current------\n");
   context_dump(current_context);
 #endif
-  current_context->esp = (u32)context;
+  current_context->usp = (u32)context;
   current_context->eip = context->pc;
   *current = next_context;
-  
-  context_switch_page(next_context->page_dir);
+
 #if DEBUG
   kprintf("-----switch dump next------\n");
   context_dump(next_context);
@@ -96,14 +96,13 @@ void context_switch(interrupt_context_t* context, context_t** current,
 }
 
 void context_dump(context_t* c) {
-  kprintf("ip:  %x\n", c->eip);
-  kprintf("sp0: %x\n", c->esp0);
-  kprintf("sp:  %x\n", c->esp);
+  kprintf("tid: %8x\n", c->tid);
+  kprintf("eip: %8x\n", c->eip);
+  kprintf("ksp: %8x\n", c->ksp);
+  kprintf("usp: %8x\n", c->usp);
 
-  kprintf("page_dir: %x\n", c->page_dir);
-  kprintf("kernel page_dir: %x\n", c->kernel_page_dir);
   kprintf("--interrupt context--\n");
-  interrupt_context_t* context = c->esp;
+  interrupt_context_t* context = c->usp;
   context_dump_interrupt(context);
 }
 
@@ -125,35 +124,53 @@ void context_dump_interrupt(interrupt_context_t* context) {
   kprintf("r12(ip): %x\n", context->r12);
 }
 
-void context_clone(context_t* des, context_t* src, u32* stack0, u32* stack3,
-                   u32* old0, u32* old3) {
-  interrupt_context_t* d0 = stack0;
-  interrupt_context_t* s0 = src->esp0;
+void context_dump_fault(interrupt_context_t* context, u32 fault_addr) {
+  kprintf("----------------------------\n");
+  kprintf("ifsr: %x dfsr: %x dfar: %x\n", read_ifsr(), read_dfsr(),
+          read_dfar());
+  kprintf("current pc: %x\n", read_pc());
+  context_dump_interrupt(context);
+  kprintf("fault: 0x%x \n", fault_addr);
+  kprintf("----------------------------\n\n");
+}
+
+int context_clone(context_t* des, context_t* src) {
+  if (src->ksp_start == NULL) {
+    log_error("ksp top is null\n");
+    return -1;
+  }
+  if (des->ksp_start == NULL) {
+    log_error("ksp top is null\n");
+    return -1;
+  }
+
+  des->eip = src->eip;
+  des->level = src->level;
+
+  // 这里重点关注 usp ksp
+  kmemmove(des->ksp_start, src->ksp_start, src->ksp_size);
+
+  u32 offset = src->ksp_end - (u32)src->ksp;
+  interrupt_context_t* ic = des->ksp_end - offset;
+  interrupt_context_t* is = src->ksp;
+
 #if DEBUG
   kprintf("------context clone dump src--------------\n");
   context_dump(src);
 #endif
-  des->eip = src->eip;
-  des->level= src->level;
-  if (stack0 != NULL) {
-    kmemmove(d0, s0, sizeof(interrupt_context_t));
-    des->esp0 = (u32)d0;
-  }
-  if (stack3 != NULL) {
-    cpsr_t cpsr;
-    cpsr.val = 0;
-    cpsr.Z = 0;
-    cpsr.C = 0;
-    cpsr.T =0;
 
-    d0->psr = cpsr.val;
-    des->esp=stack3;
-  }
-  des->page_dir =src->page_dir;
-  // des->page_dir = page_create(src->page_dir);
-  des->kernel_page_dir = src->kernel_page_dir;
+  des->ksp = ic;
+  cpsr_t cpsr;
+  cpsr.val = 0;
+  cpsr.Z = 0;
+  cpsr.C = 0;
+  cpsr.T = 0;
+  ic->psr = cpsr.val;
+  des->usp = src->usp;
 #if DEBUG
   kprintf("------context clone dump des--------------\n");
 #endif
   context_dump(des);
+
+  return 0;
 }

@@ -53,18 +53,6 @@ kernel=[
     'test.c'
     ]
 
-
-if env.get('ARCHTYPE')=='xtensa':
-    # libs.append('../app/libgui/libgui.a')
-    # libs.append('../libs/libc/libc.a')
-    pass
-elif env.get('ARCHTYPE')=='arm':
-    if env.get('ARCH')=='armv7':
-        kernel.append('../boot/arm/boot.o')
-        kernel.append('../boot/arm/init.o')
-        pass
-    else:
-        pass
 if env.get('MYLIB'):
     libs.append(env.get('MYLIB'))
     libpath.append(env.get('CC_LIB_PATH'))

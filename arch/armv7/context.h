@@ -10,18 +10,6 @@
 #include "libs/include/types.h"
 #include "platform/platform.h"
 
-
-typedef struct context_t {
-  u32 esp0, ss0, ds0;
-  u32 esp, ss, ds;
-  u32 eip;
-  tss_t* tss;
-  u32* page_dir;
-  u32* kernel_page_dir;
-  u32 level;
-} context_t;
-
-
 typedef struct interrupt_context {
   // manual push
   u32 no;
@@ -49,6 +37,21 @@ typedef struct interrupt_context {
 
 } __attribute__((packed)) interrupt_context_t;
 
+typedef struct context_t {
+  interrupt_context_t* ic;
+  interrupt_context_t* ksp;
+  u32 usp;
+  u32 eip;
+  u32 level;
+  u32 tid;
+
+  u32 ksp_start;
+  u32 ksp_end;
+
+  u32 usp_size;
+  u32 ksp_size;
+} context_t;
+
 #define interrupt_process(X) \
   asm volatile(              \
       "push {r0-r12} \n"     \
@@ -68,7 +71,7 @@ typedef struct interrupt_context {
       :                                    \
       : "i"(VEC), "i"(CODE))
 
-#define interrupt_exit_ret()   \
+#define interrupt_exit_ret()                   \
   asm volatile(                              \ 
       "mov r0,r0 \n"                           \
       "ldmfd r0!,{r1,r2}\n"                    \
@@ -78,7 +81,7 @@ typedef struct interrupt_context {
       "isb\n"                                  \
       "bx lr\n"                                \
                                              : \
-                                             : )
+                                             :)
 
 #define interrupt_exit_context(duck_context)   \
   asm volatile(                              \ 
@@ -90,7 +93,7 @@ typedef struct interrupt_context {
       "isb\n"                                  \
       "bx lr\n"                                \
                                              : \
-                                             : "m"(duck_context->esp))
+                                             : "m"(duck_context->usp))
 
 #define interrupt_entering(VEC) interrupt_entering_code(VEC, 0)
 
@@ -108,15 +111,14 @@ typedef struct interrupt_context {
 
 #define interrupt_exit2() interrupt_exit()
 
-
-#define context_switch_page(page_dir) \
+#define context_switch_page(ctx,page_dir) \
   cpu_set_page(page_dir)  // asm volatile("mov %0, %%cr3" : : "r" (page_dir))
 
 #define context_fn(context) context->r6
 #define context_ret(context) context->r0
 #define context_set_entry(context, entry) \
-  ((interrupt_context_t*)((context)->esp0))->lr = entry + 4;
-  
+  ((interrupt_context_t*)(context))->lr = entry + 4;
+
 #define context_restore(duck_context)          \
   asm volatile(                              \ 
       "ldr r0,%0 \n"                           \
@@ -131,15 +133,12 @@ typedef struct interrupt_context {
       "cpsie i\n"                              \
       "bx r3\n"                                \
                                              : \
-                                             : "m"(duck_context->esp))
+                                             : "m"(duck_context->usp))
 // interrupt_exit_context(duck_context)
 
-void context_clone(context_t* context, context_t* src, u32* stack0, u32* stack3,
-                   u32* old0, u32* old3);
-void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
-                  u32 level, int cpu);
+int context_clone(context_t* des, context_t* src);
+int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
+                 u32 level, int cpu);
 void context_dump(context_t* c);
-
-
 
 #endif

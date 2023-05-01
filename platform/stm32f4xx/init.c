@@ -174,3 +174,7 @@ void platform_init() {
 }
 
 void platform_end() { MX_DMA_Init(); }
+
+void platform_map(){
+
+}

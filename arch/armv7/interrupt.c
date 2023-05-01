@@ -40,42 +40,43 @@ void interrutp_set(int i) {
 INTERRUPT_SERVICE
 void reset_handler() {
   interrupt_entering_code(0, 0);
-  interrupt_process(exception_handler);
+  interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void svc_handler() {
   interrupt_entering_code(2, 0);
-  interrupt_process(exception_handler);
+  interrupt_process(interrupt_default_handler);
   interrupt_exit();
 }
 
 INTERRUPT_SERVICE
 void sys_tick_handler() {
   interrupt_entering_code(2, 0);
-  interrupt_process(exception_handler);
+  interrupt_process(interrupt_default_handler);
   interrupt_exit_ret();
 }
 
 INTERRUPT_SERVICE
 void sys_pendsv_handler() {
   interrupt_entering_code(2, 0);
-  interrupt_process(exception_handler);
+  interrupt_process(interrupt_default_handler);
   interrupt_exit();
 }
 
-void exception_info() {
+void exception_info(interrupt_context_t* ic) {
   static const char* exception_msg[] = {
       "NONE", "RESET", "NONE", "NONE", "NONE", "NONE", "NONE",       "NONE",
       "NONE", "NONE",  "NONE", "SVC",  "NONE", "NONE", "SYS PENDSV", "SYS TICK",
   };
-  if (context->no < sizeof exception_msg) {
+  int cpu = cpu_get_id();
+  if (ic->no < sizeof exception_msg) {
     kprintf("exception cpu %d no %d: %s\n----------------------------\n", cpu,
-            context->no, exception_msg[context->no]);
+            ic->no, exception_msg[ic->no]);
   } else {
     kprintf("exception cpu %d no %d:\n----------------------------\n", cpu,
-            context->no);
+            ic->no);
   }
 }
 
