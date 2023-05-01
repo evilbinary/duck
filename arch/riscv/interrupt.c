@@ -27,15 +27,14 @@ void interrupt_init() {
   }
 
 #ifdef VECT_MODE
-  //vec mode must j entry
+  // vec mode must j entry
   u32 val = interrutp_handlers;
-  val = val  | 1;
+  val = val | 1;
   cpu_write_stvec(val);
 #else
   extern void interrupt_handler();
   cpu_write_stvec(&interrupt_handler);
 #endif
-
 }
 
 void interrupt_regist(u32 vec, interrupt_handler_t handler) {
@@ -46,8 +45,8 @@ void interrupt_regist(u32 vec, interrupt_handler_t handler) {
 void interrutp_set(int i) {
   u32 base = (u32)interrutp_handlers[i];
 #ifdef VECT_MODE
-  // j entry 
-  idt[i]= base;
+  // j entry
+  idt[i] = base;
 #endif
 }
 
@@ -134,15 +133,15 @@ void* interrupt_handler_process(interrupt_context_t* ic) {
         break;
     }
   } else {
-    log_debug("interrupt %d code %d sepc %x\n", interrupt, code, ic->sepc);
-    log_debug("noinc %s\n", nointr_desc[code]);
     switch (code) {
       case 2:
       case 5:
       case 7:
+        log_debug("interrupt %d code %d sepc %x\n", interrupt, code, ic->sepc);
+        log_debug("noinc %s\n", nointr_desc[code]);
         context_dump_interrupt(ic);
         cpu_halt();
-      break;
+        break;
       case 8:  // Supervisor software interrupt
         ic->no = EX_SYS_CALL;
         ic->sepc += 4;

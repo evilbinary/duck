@@ -133,7 +133,7 @@ typedef struct thread {
   context_t* ctx;
   vmemory_t* vm;
   u32 pid;
-  u32** fds;
+  fd_t** fds;
   u32 fd_size;
   u32 fd_number;
   u32 lock;

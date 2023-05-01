@@ -13,6 +13,7 @@ void cpu_init() {}
 
 void cpu_halt() {
   for (;;) {
+    cpu_wait();
   };
 }
 

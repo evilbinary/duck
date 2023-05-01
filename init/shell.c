@@ -173,8 +173,8 @@ void do_shell_thread(void) {
   print_promot();
 
   int series = syscall2(SYS_OPEN, "/dev/series", 0);
-  if (series < 0) {
-    kprintf("error open series\n");
+  if (series <= 0) {
+    print_string("error open series\n");
   }
 
   if (syscall2(SYS_DUP2, series, 1) < 0) {

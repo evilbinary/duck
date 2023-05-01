@@ -244,7 +244,7 @@ typedef struct context_t {
       "lw t0, 6*4(sp)\n"         \
       "lw t1, 7*4(sp)\n"         \
       "lw t2, 8*4(sp)\n"         \
-      "lw a0, 8*4(sp)\n"         \
+      "lw a0, 9*4(sp)\n"         \
       "lw a1, 10*4(sp)\n"        \
       "lw a2, 11*4(sp)\n"        \
       "lw a3, 12*4(sp)\n"        \
