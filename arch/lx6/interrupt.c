@@ -99,7 +99,7 @@ INTERRUPT_SERVICE
 void kernel_excetpion_handler() {
   interrupt_entering_code(0, 0);
   interrupt_process(interrupt_default_handler);
-  cpu_halt();
+  interrupt_exit();
 }
 
 INTERRUPT_SERVICE

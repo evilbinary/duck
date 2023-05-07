@@ -33,13 +33,15 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
   cpsr.val = 0;
   if (level == 0) {
     // kernel mode
-    cpsr.UM = 0;
-    cpsr.LINTLEVEL = 0;
-    cpsr.EXCM = 0;
+    cpsr.UM = 0; //kernel vector mode
+    cpsr.LINTLEVEL = 0; // interrupts disabled
+    cpsr.EXCM = 1; //  exception mode
+    cpsr.WOE =1;
+
   } else if (level == 3) {
-    cpsr.UM = 1;
-    cpsr.LINTLEVEL = 3;
-    cpsr.EXCM = 0;
+    cpsr.UM = 1; // usermode user vector mode
+    cpsr.LINTLEVEL = 0;
+    cpsr.EXCM = 1; //  exception mode
 
   } else {
     kprintf("not suppport level %d\n", level);
