@@ -8,16 +8,17 @@
 
 #include "context.h"
 #include "cpu.h"
-#define IRAM_ATTR _SECTION_ATTR_IMPL(".iram1", __COUNTER__)
+
+#define IRAM_ATTR(SECTION) __attribute__((section(SECTION )))
 
 extern boot_info_t* boot_info;
 
 interrupt_handler_t* interrutp_handlers[IDT_NUMBER];
-u64 idt[IDT_NUMBER]  __attribute__((aligned(1024)));
+extern u64 _idt[IDT_NUMBER]  __attribute__((aligned(16)));
 
 void interrupt_init() {
-  kprintf("interrupt init %x\n",idt);
-  u64* pidt=0x40000000;
+  u64* pidt=_idt;
+  kprintf("interrupt init %x\n",pidt);
   boot_info->idt_base = pidt;
   boot_info->idt_number = IDT_NUMBER;
   for (int i = 0; i < boot_info->idt_number; i++) {
@@ -34,7 +35,7 @@ void interrupt_regist(u32 vec, interrupt_handler_t handler) {
 void interrutp_set(int i) {
   u32 base = (u32)interrutp_handlers[i];
   u64* idt_base=boot_info->idt_base;
-  idt_base[i] = base;
+  // idt_base[i] = base;
 }
 
 
@@ -114,7 +115,6 @@ void double_excetpion_handler() {
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
-
 
 void exception_info(interrupt_context_t* ic) {
   static const char* exception_msg[] = {

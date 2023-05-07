@@ -12,18 +12,66 @@ ENTRY(_kstart)
 
 SECTIONS {
   .text : ALIGN(4) {
-    *(.literal)
+    *(.text.boot)
+    *(.literal*)
     *(.text .text.*)
   } > irom
 
-  .bss : ALIGN(4) {
-     _bss_start = ABSOLUTE(.);
-    *(.bss)
-	_bss_end = ABSOLUTE(.);
-  } > dram
+  .text.vectors : ALIGN(4) {
+    . = ALIGN(64);
+    _idt = .;
+    KEEP(*(.WindowOverflow4.text));
+    . = ALIGN(64);
+    KEEP(*(.WindowUnderflow4.text));
+    . = ALIGN(64);
+    KEEP(*(.WindowOverflow8.text));
+    . = ALIGN(64);
+    KEEP(*(.WindowUnderflow8.text));
+    . = ALIGN(64);
+    KEEP(*(.WindowOverflow12.text));
+    . = ALIGN(64);
+    KEEP(*(.WindowUnderflow12.text));
+    . = ALIGN(64);
+    KEEP(*(.Level2InterruptVector.text));
+    . = ALIGN(64);
+    KEEP(*(.Level3InterruptVector.text));
+    . = ALIGN(64);
+    KEEP(*(.Level4InterruptVector.text));
+    . = ALIGN(64);
+    KEEP(*(.Level5InterruptVector.text));
+    . = ALIGN(64);
+    KEEP(*(.DebugExceptionVector.text));
+    . = ALIGN(64);
+    KEEP(*(.NMIExceptionVector.text));
+    . = ALIGN(64);
+    KEEP(*(.KernelExceptionVector.text));
+    . = ALIGN(64);
+    KEEP(*(.UserExceptionVector.text));
+    . = ALIGN(128);
+    KEEP(*(.DoubleExceptionVector.text));
+    . = ALIGN(64);
+    . = ALIGN(0x400);
+    KEEP(*(.vector))
+    KEEP(*(.vector*))
+  } > iram
 
+  .bss : ALIGN(4) {
+     _bss_start = .;
+    *(.bss)
+    *(.bss*)
+    *(COMMON)
+	_bss_end = .;
+
+  } > dram
+  
   .data : ALIGN(4) {
+    _data_start = .;
     *(.data)
+    *(.data*)
+    *(.init_array*)
+    *(.fini_array*)
+    *(.preinit_array*)
+  	_data_end = .;
   } > dram
 
 

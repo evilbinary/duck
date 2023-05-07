@@ -22,11 +22,11 @@ void timer_end() {
 }
 
 void platform_init(){
-    // kprintf("platform_init\n");
-    io_add_write_channel(uart_send);
+  io_add_write_channel(&uart_send);
 }
 
 void platform_end(){
+  kprintf("platform_end %x\n",&uart_send);
  }
 
 void platform_map(){

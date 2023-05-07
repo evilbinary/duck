@@ -28,7 +28,8 @@ u32 cpu_get_sp() {
 
 void cpu_set_vector(u32 addr) {
   kprintf("set vector a %x\n", addr);
-  asm volatile("wsr.VECBASE %0" ::"r"(addr));
+	asm volatile ("wsr.vecbase %0" :: "r" (addr));
+  asm volatile("rsync\n");
 }
 
 void cpu_set_page(u32 page_table) {}

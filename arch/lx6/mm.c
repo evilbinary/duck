@@ -9,16 +9,9 @@
 #include "cpu.h"
 #include "gpio.h"
 
-#define PAGE_DIR_NUMBER 4096*4
-
 extern boot_info_t* boot_info;
-static u32 page_dir[PAGE_DIR_NUMBER] __attribute__((aligned(0x4000)));
 
-u32* page_create(u32 level) {
-
-    return NULL;
-}
-
+u32* page_create(u32 level) { return NULL; }
 
 void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
   // u32 l1_index = virtualaddr >> 20;
@@ -30,39 +23,6 @@ void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
   //   l1[l1_index] = (((u32)l2) & 0xFFFFFC00) | L1_DESC;
   // }
   // l2[l2_index] = ((physaddr >> 12) << 12 )|L2_DESC| flags;
-}
-
-void mm_init_default() {
-  boot_info->pdt_base = page_dir;
-  kmemset(page_dir, 0, 4096 * 4);
-
-  u32 address = 0;
-  kprintf("map %x - %x\n", address, 0x1000 * 1024*10);
-  for (int j = 0; j < 1024*10; j++) {
-    // page_map(address, address, L2_TEXT|L2_NCNB);
-    address += 0x1000;
-  }
-  address = boot_info->kernel_entry;
-  kprintf("map kernel %x ", address);
-  int i;
-  for (i = 0; i < (((u32)boot_info->kernel_size) / 0x1000 + 6); i++) {
-    // page_map(address, address,  L2_TEXT_1|L2_CB);
-    address += 0x1000;
-  }
-  kprintf("- %x\n", address);
-
-  kprintf("map page end\n");
-
-  // cpu_disable_page();
-  // cpu_icache_disable();
-  
-  cpu_set_page(page_dir);
-
-  // start_dump();
-  kprintf("enable page\n");
-
-  cpu_enable_page();
-  kprintf("paging pae scucess\n");
 }
 
 void* page_v2p(void* page, void* vaddr) {
@@ -80,14 +40,12 @@ void* page_v2p(void* page, void* vaddr) {
 }
 
 void mm_page_enable(u32 page_dir) {
-
   cpu_set_page(page_dir);
   // start_dump();
   kprintf("enable page\n");
   cpu_enable_page();
   kprintf("paging scucess\n");
 }
-
 
 void page_clone(u32* old_page, u32* new_page) {
   // kprintf("page_clone:%x %x\n",old_page,new_page);
@@ -115,10 +73,8 @@ void page_clone(u32* old_page, u32* new_page) {
   // }
 }
 
-
-
 void unpage_map_on(page_dir_t* page, u32 virtualaddr) {
-  u32* l1=page;
+  u32* l1 = page;
   u32 l1_index = virtualaddr >> 20;
   u32 l2_index = virtualaddr >> 12 & 0xFF;
   u32* l2 = ((u32)l1[l1_index]) & 0xFFFFFC00;
@@ -127,3 +83,5 @@ void unpage_map_on(page_dir_t* page, u32 virtualaddr) {
     l2[l2_index] = 0;
   }
 }
+
+void mm_init_default() { kprintf("mm_init_default\n"); }

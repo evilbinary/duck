@@ -28,8 +28,6 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
 
   context->eip = entry;
   context->level = level;
-  context->ksp = ksp_top;
-  context->usp = usp_top;
 
   cpsr_t cpsr;
   cpsr.val = 0;
@@ -38,7 +36,6 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
     cpsr.UM = 0;
     cpsr.LINTLEVEL = 0;
     cpsr.EXCM = 0;
-    interrupt_context_t* c = ksp_top;
   } else if (level == 3) {
     cpsr.UM = 1;
     cpsr.LINTLEVEL = 3;
@@ -48,29 +45,29 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
     kprintf("not suppport level %d\n", level);
   }
 
-  interrupt_context_t* user = ksp_top;
-  kmemset(user, 0, sizeof(interrupt_context_t));
-  user->pc = entry;
-  user->ps = cpsr.val;
+  interrupt_context_t* ic = (u32)ksp_top - sizeof(interrupt_context_t)*2 ;
+  kmemset(ic, 0, sizeof(interrupt_context_t));
+  ic->pc = entry;
+  ic->ps = cpsr.val;
 
-  user->a0 = 0x00000000;
-  // user->a1 = 0x00010001;
-  user->a2 = 0x00020002;
-  user->a3 = 0x00030003;
-  user->a4 = 0x00040004;
-  user->a5 = 0x00050006;
-  user->a6 = 0x00060006;
-  user->a7 = 0x00070007;
-  user->a8 = 0x00080008;
-  user->a9 = 0x00090009;
-  user->a10 = 0x00100010;
-  user->a11 = 0x00110011;
-  user->a12 = 0x00120012;
-  user->a13 = 0x00130013;
-  user->a14 = 0x00140014;
-  user->a15 = 0x00160015;
+  ic->a2 = 0x00020002;
+  ic->a3 = 0x00030003;
+  ic->a4 = 0x00040004;
+  ic->a5 = 0x00050006;
+  ic->a6 = 0x00060006;
+  ic->a7 = 0x00070007;
+  ic->a8 = 0x00080008;
+  ic->a9 = 0x00090009;
+  ic->a10 = 0x00100010;
+  ic->a11 = 0x00110011;
+  ic->a12 = 0x00120012;
+  ic->a13 = 0x00130013;
+  ic->a14 = 0x00140014;
+  ic->a15 = 0x00160015;
 
-  user->sp = usp_top;
+  ic->sp = usp_top;
+  context->usp =usp_top;
+  context->ksp = ic;
 }
 
 
@@ -95,7 +92,7 @@ void context_dump(context_t* c) {
 void context_dump_interrupt(interrupt_context_t* context) {
   kprintf("lr:  %x cpsr:%x\n", context->pc, context->ps);
   kprintf("sp:  %x\n", context);
-  kprintf("r0:  %x\n", context->a0);
+  kprintf("pc:  %x\n", context->pc);
   // kprintf("r1:  %x\n", context->a1);
   kprintf("r2:  %x\n", context->a2);
   kprintf("r3:  %x\n", context->a3);
