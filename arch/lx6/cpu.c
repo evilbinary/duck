@@ -52,11 +52,12 @@ void cpu_init() {}
 
 void cpu_halt() {
   for (;;) {
-  };
+    cpu_wait();
+  }
 }
 
 void cpu_wait(){
-  
+  __asm__ volatile("waiti 0" : : : "memory");
 }
 
 int cpu_get_id(){
