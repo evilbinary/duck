@@ -213,7 +213,7 @@ void mm_init_default(u32 kernel_page_dir) {
   page_map(boot_info->gdt_base, boot_info->gdt_base,
            PAGE_P | PAGE_USU | PAGE_RWW);
 
-  page_map_range(boot_info->disply.video, boot_info->disply.video,
+  page_map_range(kernel_page_dir,boot_info->disply.video, boot_info->disply.video,
             boot_info->disply.height * boot_info->disply.width * 2,
             PAGE_P | PAGE_USU | PAGE_RWW);
 }
