@@ -42,7 +42,7 @@ unsigned int uart_receive() {
   return c;
 }
 
-int timer_count;
+extern int timer_count;
 
 void timer_init(int hz) {
   kprintf("timer init %d\n", hz);
@@ -204,6 +204,10 @@ void platform_end() {
 
   uart_send('E');
   uart_send('\n');
+}
+
+void platform_map(){
+
 }
 
 void ipi_enable(int cpu) {}

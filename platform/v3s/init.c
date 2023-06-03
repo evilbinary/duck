@@ -12,7 +12,7 @@ static u32 io_read32(uint port) {
   return data;
 }
 
-void uart_send_ch(unsigned int c) {
+void uart_send_char(unsigned int c) {
   unsigned int addr = 0x01c28000;  // UART0
   while ((io_read32(addr + 0x14) & (0x1 << 6)) == 0)
     ;
@@ -21,10 +21,10 @@ void uart_send_ch(unsigned int c) {
 
 void uart_send(unsigned int c) {
   if (c == '\n') {
-    uart_send_ch(c);
+    uart_send_char(c);
     c = '\r';
   }
-  uart_send_ch(c);
+  uart_send_char(c);
 }
 
 unsigned int uart_receive() {

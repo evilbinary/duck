@@ -8,27 +8,27 @@ SECTIONS
         .text K_VIR_ADDR : AT(K_PHY_ADDR)
         {
 		. = ALIGN(PAGE_SIZE);
-                *(.text)
+                *(.text*)
         }
 
         /* Read-only data. */
         .rodata BLOCK(4K) : ALIGN(4K)
         {
-                *(.rodata)
+                *(.rodata*)
         }
 
         /* Read-write data (initialized) */
         .data BLOCK(4K) : ALIGN(4K)
         {
-                *(COMMON)
-                *(.data)
+                *(.data*)
         }
 
         /* Read-write data (uninitialized) and stack */
         __bss_start = .;
         .bss BLOCK(4K) : ALIGN(4K)
         {
-                *(.bss)
+                *(COMMON)
+                *(.bss*)
         }
         __bss_end = .;
        _end = .;

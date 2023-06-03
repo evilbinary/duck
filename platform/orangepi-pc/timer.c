@@ -2,20 +2,21 @@
  *
  * Tom Trebisky  12-30-2016
  */
+#include "init.h"
 
 int timer_count;
 
 struct v3s_timer {
-  volatile unsigned int irq_ena;    /* 00 */
-  volatile unsigned int irq_status; /* 04 */
-  int __pad1[2];
-  volatile unsigned int t0_ctrl; /* 10 */
-  volatile unsigned int t0_ival; /* 14 */
-  volatile unsigned int t0_cval; /* 18 */
-  int __pad2;
-  volatile unsigned int t1_ctrl; /* 20 */
-  volatile unsigned int t1_ival; /* 24 */
-  volatile unsigned int t1_cval; /* 28 */
+  volatile unsigned int irq_ena; /* 00 */    /* IRQ Enable Register */
+  volatile unsigned int irq_status; /* 04 */ /* IRQ Status Register */
+  int __pad1[2];                             /* Reserved */
+  volatile unsigned int t0_ctrl; /* 10 */    /* Timer 0 Control Register */
+  volatile unsigned int t0_ival; /* 14 */ /* Timer 0 Interval Value Register */
+  volatile unsigned int t0_cval; /* 18 */ /* Timer 0 Current Value Register */
+  int __pad2;                             /* Reserved */
+  volatile unsigned int t1_ctrl; /* 20 */ /* Timer 1 Control Register */
+  volatile unsigned int t1_ival; /* 24 */ /* Timer 1 Interval Value Register */
+  volatile unsigned int t1_cval; /* 28 */ /* Timer 1 Current Value Register */
 };
 
 #define TIMER_BASE ((struct v3s_timer *)0x01c20c00)
@@ -130,26 +131,28 @@ void ms_delay(int ms) {
   }
 }
 
-void timer_init2(int hz) {
+void timer0_init(int hz) {
   struct v3s_timer *hp = TIMER_BASE;
   // hp->t0_ival = 0x000010;
   // hp->t0_ival = 0x800000000;
   hp->t0_ival = CLOCK_24M / hz;
-
+  hp->t0_cval = 0 ;
   hp->t0_ctrl = 0; /* stop the timer */
   hp->irq_ena = IE_T0;
 
   hp->t0_ctrl = CTL_SRC_24M;
   hp->t0_ctrl |= CTL_RELOAD;
-  while (hp->t0_ctrl & CTL_RELOAD)
-    ;
+  // hp->t0_ctrl |= 1;
+  // hp->t0_ctrl |= 0x80;
+
+  // while (hp->t0_ctrl & CTL_RELOAD)
+  //   ;
 
   hp->t0_ctrl |= CTL_ENABLE;
-  
-  kprintf ("  Timer I val: %x\n", hp->t0_ival );
-  kprintf ("  Timer C val: %x\n", hp->t0_cval );
-  kprintf ("  Timer C val: %x\n", hp->t0_cval );
-  
+
+  kprintf("  Timer I val: %x\n", hp->t0_ival);
+  kprintf("  Timer C val: %x\n", hp->t0_cval);
+  kprintf("  Timer C val: %x\n", hp->t0_cval);
 }
 
 /* One shot, delay in milliseconds */
