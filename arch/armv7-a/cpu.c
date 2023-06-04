@@ -131,8 +131,8 @@ void cpu_set_page(u32 page_table) {
   write_ttbcr(TTBCRN_16K);
   cpu_invalid_tlb();
   dmb();
-  dsb();
   isb();
+  dsb();
   // set all permission
   // cpu_set_domain(~0);
   // cpu_set_domain(0);

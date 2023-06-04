@@ -109,8 +109,9 @@ u32 sys_open(char* name, int attr, ...) {
     return -1;
   }
   if (current->id > 0) {
-    log_debug("sys open new name: %s addr:%x fd:%d fd->id:%d ptr:%x fd->name:%s\n", name,name, f,
-              fd->id, fd, fd->name);
+    log_debug(
+        "sys open new name: %s addr:%x fd:%d fd->id:%d ptr:%x fd->name:%s\n",
+        name, name, f, fd->id, fd, fd->name);
   }
   return f;
 }
@@ -276,7 +277,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   // init data
   int argc = 0;
   while (argv != NULL && argv[argc] != NULL) {
-    log_debug("argv[%d]=%s %x\n", argc, argv[argc],&argv[argc]);
+    log_debug("argv[%d]=%s %x\n", argc, argv[argc], &argv[argc]);
     argc++;
   }
 
@@ -981,6 +982,15 @@ int sys_thread_create(char* name, void* entry, void* data) {
   return t;
 }
 
+int sys_thread_dump() {
+  thread_t* current = thread_current();
+  log_debug("========sys dump start========\n");
+  thread_dump(current, DUMP_DEFAULT| DUMP_CONTEXT | DUMP_STACK);
+  log_debug("========sys dump end========\n");
+
+  return current->id;
+}
+
 void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_READ] = &sys_read;
   syscall_table[SYS_WRITE] = &sys_write;
@@ -1063,4 +1073,5 @@ void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_MADVISE] = &sys_madvice;
 
   syscall_table[SYS_THREAD_CREATE] = &sys_thread_create;
+  syscall_table[SYS_THREAD_DUMP] = &sys_thread_dump;
 }

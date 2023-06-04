@@ -170,7 +170,14 @@ void vmemory_init(vmemory_t* vm, u32 level, u32 usp, u32 usp_size, u32 flags) {
   if (level == KERNEL_MODE) {
     koffset += KERNEL_OFFSET;
   }
-
+  if (vm == NULL) {
+    log_error("vm is null\n");
+    return;
+  }
+  if (usp <= 0 || usp_size <= 0) {
+    log_error("vm usp is error\n");
+    return;
+  }
   vm->vma = vmemory_create_default(koffset);
   vm->kpage = page_kernel_dir();
   if (level == KERNEL_MODE) {
@@ -227,7 +234,7 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
     void* phy = page_v2p(vm_src->upage, addr);
     if (phy != NULL) {
       u32* copy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
-      kmemmove(copy_addr, phy, PAGE_SIZE);
+      kmemmove(copy_addr, addr, PAGE_SIZE);//fix v3s crash copy use current page addr
       log_debug("-copy vaddr %x addr %x to %x\n", addr, phy, copy_addr);
       vmemory_map(vm_copy->upage, addr, copy_addr, PAGE_SIZE);
     } else {
@@ -245,7 +252,6 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
   vmcopy->kpage = page_kernel_dir();
   // vmcopy->upage = page_clone(vmcopy->kpage, 3);
   vmcopy->upage = page_clone(vmthread->upage, 3);
-
 
   // 栈拷贝并映射
   vmemory_copy_data(vmcopy, vmthread, MEMORY_STACK);

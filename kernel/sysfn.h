@@ -79,6 +79,7 @@ enum {
   SYS_MEMINFO = 513,
   SYS_THREAD_SELF = 514,
   SYS_THREAD_CREATE = 515,
+  SYS_THREAD_DUMP = 516,
 };
 
 #elif defined(X86)
@@ -220,6 +221,7 @@ enum {
   SYS_MEMINFO = 513,
   SYS_THREAD_SELF = 514,
   SYS_THREAD_CREATE = 515,
+  SYS_THREAD_DUMP = 516,
 
 };
 #endif
