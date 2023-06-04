@@ -156,7 +156,7 @@ void vmemory_map(u32* page_dir, u32 virt_addr, u32 phy_addr, u32 size) {
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
   for (int i = 0; i < pages; i++) {
     page_map_on(page_dir, virt_addr + offset, phy_addr + offset,
-                PAGE_P | PAGE_USU | PAGE_RWW);
+                PAGE_P  | PAGE_RW);
 #ifdef DEBUG
     log_debug("-page:%x map %d vaddr: %x - paddr: %x\n", page_dir, i,
               virt_addr + offset, phy_addr + offset);
@@ -234,7 +234,7 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
     void* phy = page_v2p(vm_src->upage, addr);
     if (phy != NULL) {
       u32* copy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
-      kmemmove(copy_addr, addr, PAGE_SIZE);//fix v3s crash copy use current page addr
+      kmemmove(copy_addr, phy, PAGE_SIZE);//fix v3s crash copy use current page addr
       log_debug("-copy vaddr %x addr %x to %x\n", addr, phy, copy_addr);
       vmemory_map(vm_copy->upage, addr, copy_addr, PAGE_SIZE);
     } else {
