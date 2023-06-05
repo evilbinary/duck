@@ -38,7 +38,7 @@ void page_fault_handle(interrupt_context_t *ic) {
 #endif
         // 内核地址，进行映射,todo 进行检查
         page_map_on(current->vm->upage, fault_addr, phy,
-                    PAGE_P | PAGE_USU | PAGE_RWW);
+                    PAGE_P | PAGE_USR | PAGE_RWX);
       } else {
         if (current->fault_count < 1) {
           thread_exit(current, -1);
@@ -79,7 +79,7 @@ void page_fault_handle(interrupt_context_t *ic) {
       exception_process_error(current, ic, (void *)&page_error_exit);
     }
   } else {
-    page_map(fault_addr, fault_addr, PAGE_P | PAGE_USU | PAGE_RWW);
+    page_map(fault_addr, fault_addr, PAGE_P | PAGE_USR | PAGE_RWX);
   }
 }
 

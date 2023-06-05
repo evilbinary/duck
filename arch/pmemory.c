@@ -98,7 +98,7 @@ void* ya_sbrk(size_t size) {
     // extend 400k*mmt.extend_phy_count phy mem
     for (int i = 0; i < 100 * mmt.extend_phy_count; i++) {
       page_map(mmt.last_map_addr, mmt.last_map_addr,
-               PAGE_P | PAGE_USU | PAGE_RWW);
+               PAGE_P | PAGE_USR | PAGE_RWX);
       mmt.last_map_addr += PAGE_SIZE;
     }
     mmt.extend_phy_count++;
@@ -703,7 +703,7 @@ void mm_parse_map(u32* kernel_page_dir) {
 
   kprintf("map mem kernel\n");
   // map kernel
-  page_map_kernel(kernel_page_dir,PAGE_RWE , PAGE_RW);
+  page_map_kernel(kernel_page_dir,PAGE_RWX , PAGE_RW);
   // page_map_kernel(kernel_page_dir, 0, 0);
   
   //platform_end

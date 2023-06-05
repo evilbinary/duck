@@ -18,13 +18,12 @@
 #define PAGE_P PTE_V
 #define PAGE_R PTE_R
 #define PAGE_X PTE_X
-#define PAGE_RWR (PTE_R | PTE_X)          // 读执行
-#define PAGE_RWW (PTE_R | PTE_W | PTE_X)  // 读/写/执行
-#define PAGE_USS (PTE_R | PTE_W | PTE_X)  // 系统级
-#define PAGE_USU (PTE_R | PTE_W | PTE_X |PTE_U )  // 用户级
-#define PAGE_DEV (PTE_R | PTE_W | PTE_X)  // 设备级
-#define PAGE_RWE (PTE_W | PTE_X | PTE_R)
+#define PAGE_RX (PTE_R | PTE_X)          // 读执行
 #define PAGE_RW  PTE_W
+#define PAGE_RWX (PTE_R | PTE_W | PTE_X)  // 读/写/执行
+#define PAGE_SYS (PTE_R | PTE_W | PTE_X)  // 系统级
+#define PAGE_USR (PTE_R | PTE_W | PTE_X |PTE_U )  // 用户级
+#define PAGE_DEV (PTE_R | PTE_W | PTE_X)  // 设备级
 
 typedef u32 page_dir_t;
 

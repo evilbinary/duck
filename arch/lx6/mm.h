@@ -7,13 +7,13 @@
 #define XTENSA_MM_H
 
 #define PAGE_P   0
-#define PAGE_RWR   0 //读执行
-#define PAGE_RWW   0 //读/写/执行
-#define PAGE_USS   0 //系统级
-#define PAGE_USU   0 //用户级
+#define PAGE_RX   0 //读执行
+#define PAGE_RW   0 //读/写
+#define PAGE_RWX   0 //读/写/执行
+#define PAGE_SYS   0 //系统级
+#define PAGE_USR   0 //用户级
 typedef u32 page_dir_t;
 
-#define PAGE_RWE   (0)
-#define PAGE_RW   (0)
+
 
 #endif

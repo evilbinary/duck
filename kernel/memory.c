@@ -306,9 +306,9 @@ void* valloc(void* addr, size_t size) {
 #endif
     if (current != NULL) {
       page_map_on(current->vm->upage, vaddr, paddr,
-                  PAGE_P | PAGE_USU | PAGE_RWW);
+                  PAGE_P | PAGE_USR | PAGE_RWX);
     } else {
-      page_map(vaddr, paddr, PAGE_P | PAGE_USU | PAGE_RWW);
+      page_map(vaddr, paddr, PAGE_P | PAGE_USR | PAGE_RWX);
     }
     // kprintf("vmap vaddr:%x paddr:%x\n", vaddr, paddr);
     vaddr += PAGE_SIZE;

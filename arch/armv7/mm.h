@@ -40,15 +40,15 @@
 #define L2_DESC \
   (L2_XN | L2_SMALL_PAGE | L2_NCNB | L2_AP_ACCESS | L2_AP_RW | L2_S | L2_G)
 
-#define PAGE_P   0
-#define PAGE_RWR   0 //读执行
-#define PAGE_RWW   0 //读/写/执行
-#define PAGE_USS   (L2_TEXT_1|L2_CB) //系统级
-#define PAGE_USU   (L2_TEXT_1|L2_CB) //用户级
+#define PAGE_P   0         
+#define PAGE_RX   L2_NCB   //读执行
+#define PAGE_RW   (L2_NCB) //读写
+
+#define PAGE_RWX   (L2_TEXT_1 | L2_NCB) //读/写/执行
+#define PAGE_SYS   (L2_TEXT_1|L2_CB) //系统级
+#define PAGE_USR   (L2_TEXT_1|L2_CB) //用户级
 #define PAGE_DEV   (L2_TEXT_0|L2_NCNB) //设备级
 
-#define PAGE_RWE   (L2_TEXT_1 | L2_NCB)
-#define PAGE_RW   (L2_NCB)
 
 typedef u32 page_dir_t;
 

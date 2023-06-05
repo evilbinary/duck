@@ -77,7 +77,7 @@ void page_copy(u32* old_page, u32* new_page) {
       // kprintf("pdpte_index---->%d\n", pdpte_index);
       u64* new_page_dir_ptr = mm_alloc_zero_align(sizeof(u64) * 512, PAGE_SIZE);
       page_dir_ptr_tab[pdpte_index] =
-          ((u64)new_page_dir_ptr) | PAGE_P | PAGE_USU | PAGE_RWW;
+          ((u64)new_page_dir_ptr) | PAGE_P | PAGE_USR | PAGE_RWX;
       for (int pde_index = 0; pde_index < 512; pde_index++) {
         u64* page_tab_ptr = (u64)page_dir_ptr[pde_index] & ~0xFFF;
         if (page_tab_ptr != NULL) {
@@ -86,7 +86,7 @@ void page_copy(u32* old_page, u32* new_page) {
           u64* new_page_tab_ptr =
               mm_alloc_zero_align(sizeof(u64) * 512, PAGE_SIZE);
           new_page_dir_ptr[pde_index] =
-              ((u64)new_page_tab_ptr) | PAGE_P | PAGE_USU | PAGE_RWW;
+              ((u64)new_page_tab_ptr) | PAGE_P | PAGE_USR | PAGE_RWX;
           for (int pte_index = 0; pte_index < 512; pte_index++) {
             // kprintf("pdpte_index---->%d pde_index-> %d pte_index %d\n",
             // pdpte_index, pde_index,pte_index);
@@ -198,24 +198,24 @@ void mm_init_default(u32 kernel_page_dir) {
 
   // unsigned int address = 0;
   // // map mem block 100 page 20000k 2m
-  // map_mem_block(PAGE_SIZE * 10000 * 2, PAGE_P | PAGE_USU | PAGE_RWW);
+  // map_mem_block(PAGE_SIZE * 10000 * 2, PAGE_P | PAGE_USR | PAGE_RWX);
 
   // // map 0 - 0x14000
-  // page_map_range(0, 0, PAGE_SIZE * 200, PAGE_P | PAGE_USU | PAGE_RWW);
+  // page_map_range(0, 0, PAGE_SIZE * 200, PAGE_P | PAGE_USR | PAGE_RWX);
 
-  // map_kernel(PAGE_P | PAGE_USU | PAGE_RWW,PAGE_P | PAGE_USU | PAGE_RWW );
+  // map_kernel(PAGE_P | PAGE_USR | PAGE_RWX,PAGE_P | PAGE_USR | PAGE_RWX );
 
   page_map(boot_info->kernel_stack, boot_info->kernel_stack,
-           PAGE_P | PAGE_USU | PAGE_RWW);
+           PAGE_P | PAGE_USR | PAGE_RWX);
 
   page_map(boot_info->pdt_base, boot_info->pdt_base,
-           PAGE_P | PAGE_USU | PAGE_RWW);
+           PAGE_P | PAGE_USR | PAGE_RWX);
   page_map(boot_info->gdt_base, boot_info->gdt_base,
-           PAGE_P | PAGE_USU | PAGE_RWW);
+           PAGE_P | PAGE_USR | PAGE_RWX);
 
   page_map_range(kernel_page_dir,boot_info->disply.video, boot_info->disply.video,
             boot_info->disply.height * boot_info->disply.width * 2,
-            PAGE_P | PAGE_USU | PAGE_RWW);
+            PAGE_P | PAGE_USR | PAGE_RWX);
 }
 
 void mm_page_enable(u32 page_dir) {

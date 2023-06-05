@@ -184,7 +184,7 @@ void lapic_eoi(void) { mem_write32(APIC_BASE + LAPIC_EOI, 0); }
 void acpi_init() {
   // todo acpi 解析
   u32 address = APIC_BASE;
-  page_map(address, address, PAGE_P | PAGE_USU | PAGE_RWW);
+  page_map(address, address, PAGE_P | PAGE_USR | PAGE_RWX);
   for (int i = 0; i < MAX_CPU; i++) {
     lapic_cpus_id[i] = i;
   }
