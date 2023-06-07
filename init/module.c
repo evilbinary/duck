@@ -1,8 +1,9 @@
 
 #include "kernel/kernel.h"
 
-#ifdef ARM
+extern module_t log_module;
 
+#ifdef ARM
 #ifdef ARMV7
 extern module_t hello_module;
 extern module_t lcd_module;
@@ -151,6 +152,9 @@ void modules_init(void) {
 #else
   module_regist(&hello_module);
 #endif
+
+  module_regist(&log_module);
+
 
   module_run_all();
 }

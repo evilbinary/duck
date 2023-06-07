@@ -59,12 +59,32 @@ char cmd_p[64];
 char* argv_p[64];
 char env_p[512];
 
+
+void reopen(char* name){
+ int series = syscall2(SYS_OPEN, name, 0);
+  if (series <= 0) {
+    print_string("error open series\n");
+  }
+
+  if (syscall2(SYS_DUP2, series, 1) < 0) {
+    print_string("err in dup2\n");
+  }
+  if (syscall2(SYS_DUP2, series, 0) < 0) {
+    print_string("err in dup2\n");
+  }
+  if (syscall2(SYS_DUP2, series, 2) < 0) {
+    print_string("err in dup2\n");
+  }
+}
+
 int run_exec(char* cmd, char** argv, char** env) {
 #ifdef USE_FORK
   char temp[128];  // 0xffffffb8 addr fix me
   int pid = syscall0(SYS_FORK);
   int p = syscall0(SYS_GETPID);
   if (pid == 0) {  // 子进程
+
+    reopen( "/dev/log");
 
     print_string("cmd===>");
     print_string(cmd);
@@ -282,13 +302,14 @@ void pre_launch() {
 
   // syscall3(SYS_EXEC,"/test-musl",NULL,NULL);
   // syscall3(SYS_EXEC, "/scheme", scm_argv,NULL);
-  // syscall3(SYS_EXEC, "/sdl2", NULL);
+  // syscall3(SYS_EXEC, "/sdl2", NULL,NULL);
   // syscall3(SYS_EXEC, "/mgba", mgba_argv,NULL);
   // syscall3(SYS_EXEC, "/player", mgba_argv,NULL);
   // syscall3(SYS_EXEC, "/cat", cat_argv,NULL);
   // syscall3(SYS_EXEC, "/infones", nes_argv,NULL);
   // syscall3(SYS_EXEC,"/test-file",NULL,NULL);
   // syscall3(SYS_EXEC, "/gnuboy", gnuboy_argv,NULL);
+  // syscall3(SYS_EXEC, "/showimage", showimg_argv,NULL);
 
 // test_cpu_speed();
 //  for(;;);

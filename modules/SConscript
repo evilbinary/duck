@@ -194,6 +194,10 @@ else:
           'hello/hello.c',
     ]
 
+modules+=[
+    'log/log.c',
+]
+
 libs=[
     '../kernel/libyiyiya.a',
     '../arch/libarch.a',
