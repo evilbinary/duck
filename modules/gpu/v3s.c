@@ -238,7 +238,7 @@ int v3s_lcd_init(vga_device_t *vga) {
   addr = vga->frambuffer;
   u32 paddr = vga->pframbuffer;
   for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    page_map(addr, paddr, PAGE_DEV);
+    page_map(addr, paddr, PAGE_DEV|L2_NCB);
     addr += 0x1000;
     paddr += 0x1000;
   }
@@ -304,8 +304,8 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
 
   vga->framebuffer_index = 0;
   vga->framebuffer_count = 1;
-  vga->frambuffer = 0x73e00000;
-  vga->pframbuffer = vga->frambuffer;
+  vga->pframbuffer = 0x73e00000;
+  vga->frambuffer = 0xfb000000;
 
   v3s_lcd_init(vga);
 

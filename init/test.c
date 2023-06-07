@@ -69,11 +69,11 @@ void test_lcd() {
 }
 
 void test_cpu_speed() {
-  int* p = 0x70100000;
   for (;;) {
+    int* p = 0xfb000000;
     for (int i = 0; i < 480; i++) {
       for (int j = 0; j < 272; j++) {
-        // *p++=0xffffff;
+        *p++=0xff0000;
       }
     }
     kprintf("flush=>\n");
