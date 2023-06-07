@@ -27,7 +27,8 @@ int musl_init(void) {
   // *(int *)__a_cas_kuser = 0;
   // *(int *)__a_gettp_kuser = musl_gettp;
 
-#ifdef ARMV7A
+#ifdef ARMV7_A
+  log_info("enable float\n");
   //enable float
   asm("mrc p15, 0, r0, c1, c0, 2\n"
       "orr r0,r0,#0x300000\n"
