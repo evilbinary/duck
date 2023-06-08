@@ -19,8 +19,6 @@ size_t log_write(device_t* dev, const void* buf, size_t len) {
 
 
 static int log_init(void) {
-  kprintf("log init\n");
-
   device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "log";
   dev->read = log_read;
