@@ -116,7 +116,7 @@ u32 v3s_i2c_read_data(i2c_t* i2c, i2c_msg_t* msg) {
 
   u32 ret = v3s_i2c_send_data((u8)(addr << 1 | 1));
   if (ret != I2C_STAT_TX_AR_ACK) {
-    kprintf("send data error %x\n", ret);
+    log_error("send data error %x\n", ret);
     return -1;
   }
   v3s_i2c_base->cntr |= A_ACK;
@@ -127,7 +127,7 @@ u32 v3s_i2c_read_data(i2c_t* i2c, i2c_msg_t* msg) {
       kdbg;
       ret = v3s_i2c_wait(INT_FLAG);
       if (ret != I2C_STAT_RXD_NAK) {
-        kprintf("rxd ack nak error %x\n", ret);
+        log_error("rxd ack nak error %x\n", ret);
         return -1;
       }
       break;
@@ -136,7 +136,7 @@ u32 v3s_i2c_read_data(i2c_t* i2c, i2c_msg_t* msg) {
       kdbg;
       ret = v3s_i2c_wait(INT_FLAG);
       if (ret != I2C_STAT_RXD_ACK) {
-        kprintf("rxd ack error %x\n", ret);
+        log_error("rxd ack error %x\n", ret);
         return -1;
       }
     }
@@ -153,13 +153,13 @@ u32 v3s_i2c_write_data(i2c_t* i2c, i2c_msg_t* msg) {
   u8* buf = msg->buf;
   ret = v3s_i2c_send_data((u8)(msg->addr << 1));
   if (ret != I2C_STAT_TX_AW_ACK) {
-    kprintf(" send data error %x\n", ret);
+    log_error(" send data error %x\n", ret);
     return -1;
   }
   for (; len > 0; len--) {
     ret = v3s_i2c_send_data(*buf++);
     if (ret != I2C_STAT_TXD_ACK) {
-      kprintf(" send data error %x\n", ret);
+      log_error(" send data error %x\n", ret);
       return -1;
     }
   }
@@ -174,7 +174,7 @@ u32 v3s_i2c_read_write(i2c_t* i2c, u32* data, u32 count) {
   if (i2c->inited == 0) {
     u32 ret = v3s_i2c_start();
     if (ret != I2C_STAT_TX_START) {
-      kprintf("start error\n");
+      log_error("start error\n");
       return -1;
     }
     i2c->inited = 1;
@@ -183,7 +183,7 @@ u32 v3s_i2c_read_write(i2c_t* i2c, u32* data, u32 count) {
   for (i = 0; i < count; i++, pmsg++) {
     if (i != 0) {
       if (v3s_i2c_start() != I2C_STAT_TX_RSTART) {
-        kprintf("start2 error\n");
+        log_error("start2 error\n");
         break;
       }
     }
@@ -195,7 +195,7 @@ u32 v3s_i2c_read_write(i2c_t* i2c, u32* data, u32 count) {
       ret = v3s_i2c_write_data(i2c, pmsg);
     }
     if (ret < 0) {
-      kprintf("read write error %x\n", ret);
+      log_error("read write error %x\n", ret);
       break;
     }
   }

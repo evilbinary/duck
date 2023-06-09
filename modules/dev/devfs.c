@@ -58,6 +58,12 @@ int devfs_init(void) {
   }
   stderr->device = stdout->device;
   
+  //null
+  vnode_t *null = vfs_create_node("null", V_FILE | V_BLOCKDEVICE);
+  null->device = device_find(DEVICE_NULL);
+  null->op = &device_operator;
+  vfs_mount(NULL, "/dev", null);
+
   fd_std_init();
 
   return 0;
