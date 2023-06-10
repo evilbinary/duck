@@ -1,6 +1,12 @@
 
 #include "v3s.h"
 
+#define SECTOR_SIZE 512
+#define CACHE_ENABLED 1
+
+#define CACHE_ENTRIES (1 << 4)          ///< 16 entries
+#define CACHE_MASK (CACHE_ENTRIES - 1)  ///< mask 0x0F
+
 #define UNSTUFF_BITS(resp, start, size)                     \
   ({                                                        \
     const int __size = size;                                \
@@ -628,8 +634,8 @@ int sdhci_v3s_probe(sdhci_device_t *hci) {
   int status;
 
   sdhci_v3s_reset(hci);
-  sdhci_v3s_setclock(hci, 40000 * 1000);
-  sdhci_v3s_setwidth(hci, MMC_BUS_WIDTH_1);
+  sdhci_v3s_setclock(hci, 40000 * 10000);
+  sdhci_v3s_setwidth(hci, MMC_BUS_WIDTH_8);
   // sdhci_v3s_setclock(hci, pdat->clock);
   // sdhci_v3s_setwidth(hci, pdat->width);
 
