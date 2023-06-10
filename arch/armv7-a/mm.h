@@ -45,9 +45,11 @@
 
 #define PAGE_P   0
 #define PAGE_R  0
-#define PAGE_RX   (L2_TEXT_1 | L2_NCB) //读执行
-#define PAGE_RW   (L2_NCB)
-#define PAGE_RWX  (L2_TEXT_1 | L2_NCB) //读/写/执行
+#define PAGE_RX   (L2_TEXT_1 | L2_CB) //读执行
+#define PAGE_RW   (L2_CB)
+#define PAGE_RWX  (L2_TEXT_1 | L2_CB) //读/写/执行
+#define PAGE_RW_NC   (L2_NCB)
+
 
 #define PAGE_SYS   (L2_TEXT_1|L2_CB) //系统级
 #define PAGE_USR   (L2_TEXT_1|L2_CB) //用户级

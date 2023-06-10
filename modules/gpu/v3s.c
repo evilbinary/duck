@@ -238,7 +238,7 @@ int v3s_lcd_init(vga_device_t *vga) {
   addr = vga->frambuffer;
   u32 paddr = vga->pframbuffer;
   for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    page_map(addr, paddr, PAGE_DEV|L2_NCB);
+    page_map(addr, paddr, PAGE_DEV);
     addr += 0x1000;
     paddr += 0x1000;
   }

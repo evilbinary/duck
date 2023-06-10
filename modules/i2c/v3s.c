@@ -174,7 +174,7 @@ u32 v3s_i2c_read_write(i2c_t* i2c, u32* data, u32 count) {
   if (i2c->inited == 0) {
     u32 ret = v3s_i2c_start();
     if (ret != I2C_STAT_TX_START) {
-      log_error("start error\n");
+      //log_error("start error\n");
       return -1;
     }
     i2c->inited = 1;

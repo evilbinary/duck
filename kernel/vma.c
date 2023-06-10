@@ -234,7 +234,7 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
     void* phy = page_v2p(vm_src->upage, addr);
     if (phy != NULL) {
       u32* copy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
-      kmemmove(copy_addr, phy, PAGE_SIZE);//fix v3s crash copy use current page addr
+      kmemmove(copy_addr, addr, PAGE_SIZE);//fix v3s crash copy use current page addr
       log_debug("-copy vaddr %x addr %x to %x\n", addr, phy, copy_addr);
       vmemory_map(vm_copy->upage, addr, copy_addr, PAGE_SIZE);
     } else {

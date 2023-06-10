@@ -77,9 +77,9 @@ static void cpu_clock_set_pll_cpu(u32 clk) {
     k = 3;
     m = 2;
   }
-  k = 3;
-  m = 2;
-  n = 28;
+  // k = 3;
+  // m = 2;
+  // n = 28;
   /* Switch to 24MHz clock while changing cpu pll */
   val = (2 << 0) | (1 << 8) | (1 << 16);
   io_write32(V3S_CCU_BASE + CCU_CPU_AXI_CFG, val);
@@ -87,10 +87,14 @@ static void cpu_clock_set_pll_cpu(u32 clk) {
   /* cpu pll rate = ((24000000 * n * k) >> p) / m */
   val = (0x1 << 31);
   val |= ((p & 0x3) << 16);
+  val |= ((((clk / (24000000 * k / m)) - 1) & 0x1f) << 8);
+	val |= (((k - 1) & 0x3) << 4);
+	val |= (((m - 1) & 0x3) << 0);
+
   // val |= ((((clk / (24000000 * k / m)) - 1) & 0x1f) << 8);
-  val |= ((n - 1) & 0x1f) << 8;
-  val |= (((k - 1) & 0x3) << 4);
-  val |= (((m - 1) & 0x3) << 0);
+  // val |= ((n - 1) & 0x1f) << 8;
+  // val |= (((k - 1) & 0x3) << 4);
+  // val |= (((m - 1) & 0x3) << 0);
   io_write32(V3S_CCU_BASE + CCU_PLL_CPU_CTRL, val);
   sdelay(200);
 
@@ -153,15 +157,7 @@ void platform_map() {
   page_map(UART0_DR, UART0_DR, L2_NCNB);
   page_map(CORE0_TIMER_IRQCNTL, CORE0_TIMER_IRQCNTL, L2_NCNB);
   page_map(0x01c0f000, 0x01c0f000, 0);//fix v3s_transfer_command 2 failed 4294967295
-  // memory
-  // u32 address = 0x40000000;
-  // kprintf("map memory %x ", address);
-  // for (int i = 0; i < 0x2000000 / 0x1000; i++) {
-  //   page_map(address, address, L2_TEXT_1 | L2_NCB);
-  //   address += 0x1000;
-  // }
-  // kprintf("- %x\n", address);
-
+  
   // ccu -pio timer
   page_map(0x01C20000, 0x01C20000, L2_NCNB);
   // uart
@@ -171,6 +167,8 @@ void platform_map() {
   // gic
   page_map(0x01C81000, 0x01C81000, L2_NCNB);
   page_map(0x01C82000, 0x01C82000, L2_NCNB);
+
+  // test_cpu_speed();
 }
 
 void ipi_enable(int cpu) {}
