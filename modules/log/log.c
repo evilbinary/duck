@@ -7,13 +7,13 @@
 #include "dev/devfs.h"
 
 size_t log_read(device_t* dev, void* buf, size_t len) {
-  u32 ret = 0;
+  u32 ret = 1;
   return ret;
 }
 
 size_t log_write(device_t* dev, const void* buf, size_t len) {
   u32 ret = 0;
-  //log_info(buf);
+  log_debug(buf);
   return ret;
 }
 

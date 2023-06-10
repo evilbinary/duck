@@ -31,7 +31,8 @@ enum {
   DEVICE_SPI,
   DEVICE_SB,
   DEVICE_NET,
-  DEVICE_LOG
+  DEVICE_LOG,
+  DEVICE_NULL
 };
 
 enum {

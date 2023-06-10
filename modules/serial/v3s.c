@@ -3,12 +3,21 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
-#include "serial.h"
 #include "dev/devfs.h"
+#include "serial.h"
 
 void serial_write(char a) { uart_send(a); }
 
-char serial_read() { return uart_receive(); }
+
+char serial_read() {
+  // return uart_receive();
+  unsigned int c = 0;
+  unsigned int addr = 0x01c28000;  // UART0
+  if ((io_read32(addr + 0x14) & (0x1 << 0)) == 0) {
+  }
+  c = io_read32(addr + 0x00);  
+  return c;
+}
 
 void serial_printf(char* fmt, ...) {
   int i;
@@ -23,10 +32,10 @@ void serial_printf(char* fmt, ...) {
 }
 
 static size_t read(device_t* dev, void* buf, size_t len) {
-  u32 ret = len;
+  u32 ret = 0;
   for (int i = 0; i < len; i++) {
     int c = serial_read();
-    if (c >= 0) {
+    if (c > 0) {
       ret++;
       ((char*)buf)[i] = c;
     }
@@ -43,7 +52,7 @@ static size_t write(device_t* dev, void* buf, size_t len) {
 }
 
 int serial_init(void) {
-  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
+  device_t* dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
   dev->name = "serial";
   dev->read = read;
   dev->write = write;

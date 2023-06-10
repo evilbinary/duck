@@ -84,7 +84,7 @@ int run_exec(char* cmd, char** argv, char** env) {
   int p = syscall0(SYS_GETPID);
   if (pid == 0) {  // 子进程
 
-    reopen( "/dev/log");
+    // reopen( "/dev/log");
 
     print_string("cmd===>");
     print_string(cmd);
@@ -175,7 +175,7 @@ void do_shell_cmd(char* cmd, int count, char** env) {
 }
 
 void sleep() {
-  u32 tv[2] = {1, 0};
+  u32 tv[2] = {5, 0};
   syscall4(SYS_CLOCK_NANOSLEEP, 0, 0, &tv, &tv);
 }
 

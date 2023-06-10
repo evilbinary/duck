@@ -12,12 +12,18 @@ void lock_init(lock_t* lock) {
 }
 
 void lock_acquire(lock_t* lock) {
+  if(lock==NULL){
+    return;
+  }
   int turn = cpu_faa(&lock->ticket);
   while (lock->turn != turn)
     ;  // do
 }
 
-void lock_release(lock_t* lock) { 
+void lock_release(lock_t* lock) {
+  if(lock==NULL){
+    return;
+  } 
     //lock->turn += 1; 
     cpu_faa(&lock->turn);
 }
