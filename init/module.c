@@ -25,6 +25,8 @@ extern module_t i2c_module;
 extern module_t gpio_module;
 extern module_t spi_module;
 extern module_t test_module;
+extern module_t pty_module;
+extern module_t rtc_module;
 
 #endif
 
@@ -97,6 +99,9 @@ void modules_init(void) {
   // module_regist(&fat32_module);
   // module_regist(&hello_module);
   module_regist(&test_module);
+  module_regist(&pty_module);
+  module_regist(&rtc_module);
+
 
 #ifdef MUSL_MODULE
   extern module_t musl_module;

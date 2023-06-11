@@ -27,6 +27,7 @@ if arch_type =='arm':
             'gpio/v3s.c',
             'spi/spi.c',
             'spi/v3s.c',
+            'rtc/v3s.c',
         ]
     elif platform=='cubieboard2':
         other=[

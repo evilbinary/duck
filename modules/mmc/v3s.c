@@ -634,7 +634,7 @@ int sdhci_v3s_probe(sdhci_device_t *hci) {
   int status;
 
   sdhci_v3s_reset(hci);
-  sdhci_v3s_setclock(hci, 40000 * 10000);
+  sdhci_v3s_setclock(hci, 40000 * 100000);
   sdhci_v3s_setwidth(hci, MMC_BUS_WIDTH_8);
   // sdhci_v3s_setclock(hci, pdat->clock);
   // sdhci_v3s_setwidth(hci, pdat->width);
