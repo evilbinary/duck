@@ -903,10 +903,10 @@ int sdhci_v3s_probe(sdhci_device_t *hci) {
   kprintf("  Version: %s\n", sdcard_version_string(pdat));
   kprintf("  Capacity: %s\n", ssize(scap, pdat->capacity));
   if (pdat->high_capacity) kprintf("  High capacity card");
-  kprintf("  CID: %x-%x-%x-%x\n", pdat->cid[0], pdat->cid[1],
-          pdat->cid[2], pdat->cid[3]);
-  kprintf("  CSD: %x-%x-%x-%x\n", pdat->csd[0], pdat->csd[1],
-          pdat->csd[2], pdat->csd[3]);
+  kprintf("  CID: %x-%x-%x-%x\n", pdat->cid[0], pdat->cid[1], pdat->cid[2],
+          pdat->cid[3]);
+  kprintf("  CSD: %x-%x-%x-%x\n", pdat->csd[0], pdat->csd[1], pdat->csd[2],
+          pdat->csd[3]);
   kprintf("  Max transfer speed: %d HZ\n", pdat->tran_speed);
   kprintf("  Manufacturer ID: %x\n", extract_mid(pdat));
   kprintf("  OEM/Application ID: %x\n", extract_oid(pdat));
@@ -922,7 +922,7 @@ int sdhci_v3s_probe(sdhci_device_t *hci) {
 }
 
 void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
-  sdhci_v3s_pdata_t *pdat = kmalloc(sizeof(sdhci_v3s_pdata_t),DEFAULT_TYPE);
+  sdhci_v3s_pdata_t *pdat = kmalloc(sizeof(sdhci_v3s_pdata_t), DEFAULT_TYPE);
   sdhci_dev->data = pdat;
   pdat->high_capacity = 0;
   pdat->read_bl_len = BYTE_PER_SECTOR;
@@ -932,7 +932,7 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   pdat->virt = 0x01c0f000;
 
   pdat->voltage = MMC_VDD_27_36;
-  pdat->clock = 25 * 1000 * 1000*2;
+  pdat->clock = 25 * 1000 * 1000 * 2;
   pdat->width = MMC_BUS_WIDTH_4;
 
   pdat->reset = 8;
@@ -964,4 +964,14 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
 
   sdhci_v3s_probe(sdhci_dev);
   kprintf("sdh dev init end\n");
+
+#ifdef CACHE_ENABLED
+  sdhci_dev->cached_blocks = kmalloc(CACHE_ENTRIES, DEFAULT_TYPE);
+  sdhci_dev->cache_buffer = kmalloc(SECTOR_SIZE * CACHE_ENTRIES, DEFAULT_TYPE);
+  int i;
+  for (i = 0; i < CACHE_ENTRIES; i++) {
+    sdhci_dev->cached_blocks[i] = 0xFFFFFFFF;
+  }
+  kmemset(sdhci_dev->cache_buffer, 0, SECTOR_SIZE * CACHE_ENTRIES);
+#endif
 }
