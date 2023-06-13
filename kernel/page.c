@@ -47,6 +47,7 @@ void page_fault_handle(interrupt_context_t *ic) {
           thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
           current->fault_count++;
           // cpu_halt();
+          exception_process_error(current, ic, (void *)&page_error_exit);
           schedule(ic);
         } else if (current->fault_count == 3) {
           log_error("%s memory fault at %x too many\n", current->name,
