@@ -23,7 +23,7 @@ void page_fault_handle(interrupt_context_t *ic) {
     int mode = context_get_mode(current->ctx);
 #ifdef DEBUG
     log_debug("page fault at %x\n", fault_addr);
-    //context_dump_fault(ic, fault_addr);
+    // context_dump_fault(ic, fault_addr);
 #endif
     vmemory_area_t *area = vmemory_area_find(current->vm->vma, fault_addr, 0);
     if (area == NULL) {
@@ -47,16 +47,18 @@ void page_fault_handle(interrupt_context_t *ic) {
           thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
           current->fault_count++;
           // cpu_halt();
+          schedule(ic);
         } else if (current->fault_count == 3) {
           log_error("%s memory fault at %x too many\n", current->name,
                     fault_addr);
           current->fault_count++;
           thread_exit(current, -1);
-
           exception_process_error(current, ic, (void *)&page_error_exit);
+          schedule(ic);
         } else {
           current->fault_count++;
           exception_process_error(current, ic, (void *)&page_error_exit);
+          schedule(ic);
         }
       }
       return;
@@ -77,6 +79,7 @@ void page_fault_handle(interrupt_context_t *ic) {
       context_dump_fault(ic, fault_addr);
       thread_exit(current, -1);
       exception_process_error(current, ic, (void *)&page_error_exit);
+      schedule(ic);
     }
   } else {
     page_map(fault_addr, fault_addr, PAGE_P | PAGE_USR | PAGE_RWX);

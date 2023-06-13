@@ -53,7 +53,7 @@ thread_t* schedule_next(int cpu) {
   return next;
 }
 
-void* schedule(interrupt_context_t* ic) {
+void schedule(interrupt_context_t* ic) {
   thread_t* current_thread = thread_current();
   int cpu = cpu_get_id();
   schedule_state(cpu);
@@ -64,23 +64,20 @@ void* schedule(interrupt_context_t* ic) {
 #ifdef VM_ENABLE
   context_switch_page(next_thread->ctx, next_thread->vm->upage);
 #endif
-  kmemcpy(ic, next_thread->ctx->ksp, sizeof(interrupt_context_t));
-  return next_ic;
 }
 
 void schedule_sleep(u32 nsec) {
   thread_t* current = thread_current();
-  if(current==NULL || current->state!=THREAD_RUNNING){
+  if (current == NULL || current->state != THREAD_RUNNING) {
     return;
   }
   u32 tick = nsec / SCHEDULE_FREQUENCY / 1000;
   // kprintf("%d schedule_sleep nsec=%d tick=%d\n", current->id, nsec,tick);
   thread_sleep(current, tick);
   // this will fail on qemu memory
-  // if(current->ctx!=NULL && current->ctx->ic!=NULL){
-  //   schedule(current->ctx->ic);
-  //   //interrupt_exit_ret();
-  // }
+  if (current->ctx != NULL && current->ctx->ic != NULL) {
+    // schedule(current->ctx->ic);
+  }
 }
 
 void* do_schedule(interrupt_context_t* ic) {

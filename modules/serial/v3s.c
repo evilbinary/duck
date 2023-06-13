@@ -13,9 +13,9 @@ char serial_read() {
   // return uart_receive();
   unsigned int c = 0;
   unsigned int addr = 0x01c28000;  // UART0
-  if ((io_read32(addr + 0x14) & (0x1 << 0)) == 0) {
+  if ((io_read32(addr + 0x14) & (0x1 << 0)) != 0) {
+    c = io_read32(addr + 0x00);  
   }
-  c = io_read32(addr + 0x00);  
   return c;
 }
 
