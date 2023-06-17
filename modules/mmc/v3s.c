@@ -496,7 +496,7 @@ static u32 mmc_read_blocks(sdhci_device_t *hci, u32 start, u32 blkcnt,
   sdhci_data_t dat = {0};
   int status;
 
-  if (blkcnt > 1)
+  if (blkcnt >= 1)
     cmd.cmdidx = MMC_READ_MULTIPLE_BLOCK;
   else
     cmd.cmdidx = MMC_READ_SINGLE_BLOCK;
@@ -523,7 +523,7 @@ static u32 mmc_read_blocks(sdhci_device_t *hci, u32 start, u32 blkcnt,
       }
     } while ((status != MMC_STATUS_TRAN) && (status != MMC_STATUS_DATA));
   }
-  if (blkcnt > 1) {
+  if (blkcnt >= 1) {
     cmd.cmdidx = MMC_STOP_TRANSMISSION;
     cmd.cmdarg = 0;
     cmd.resptype = MMC_RSP_R1B;
