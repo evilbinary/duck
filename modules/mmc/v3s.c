@@ -2,7 +2,7 @@
 #include "v3s.h"
 
 #define SECTOR_SIZE (512)
-// #define CACHE_ENABLED 1 have problem
+// #define CACHE_ENABLED 1  // have problem
 
 #define CACHE_ENTRIES (1 << 4)          ///< 16 entries
 #define CACHE_MASK (CACHE_ENTRIES - 1)  ///< mask 0x0F
@@ -583,11 +583,11 @@ static void print_hex(u8 *addr, u32 size) {
 
 int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, int no, sector_t sector,
                         u32 count, u32 buf) {
+  // kprintf("sdhci_dev_port_read sector:%d count:%d buf:%x\n", sector.startl,
+  //         count, buf);
   u32 ret = 0;
   size_t buf_size = count * BYTE_PER_SECTOR;
 
-  // kprintf("sdhci_dev_port_read sector:%d size:%d buf:%x\n", sector.startl,
-  //         buf_size, buf);
 #ifdef CACHE_ENABLED
   if (count == 1) {
     int index = sector.startl & CACHE_MASK;
@@ -607,7 +607,8 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, int no, sector_t sector,
 #ifdef CACHE_ENABLED
   }
 #endif
-  // kprintf("sd read offset:%x %x buf_size:%d\n", sector.startl * BYTE_PER_SECTOR,
+  // kprintf("sd read offset:%x %x buf_size:%d\n", sector.startl *
+  // BYTE_PER_SECTOR,
   //         sector.starth * BYTE_PER_SECTOR, buf_size);
   // print_hex(buf, buf_size);
   // kprintf("ret %d\n", ret);
