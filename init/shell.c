@@ -59,9 +59,8 @@ char cmd_p[64];
 char* argv_p[64];
 char env_p[512];
 
-
-void reopen(char* name){
- int series = syscall2(SYS_OPEN, name, 0);
+void reopen(char* name) {
+  int series = syscall2(SYS_OPEN, name, 0);
   if (series <= 0) {
     print_string("error open series\n");
   }
@@ -83,28 +82,9 @@ int run_exec(char* cmd, char** argv, char** env) {
   int pid = syscall0(SYS_FORK);
   int p = syscall0(SYS_GETPID);
   if (pid == 0) {  // 子进程
-
     // reopen( "/dev/log");
-
-    print_string("cmd===>");
-    print_string(cmd);
-    // cmd_p 131130 cmd 700fff34
-    sprintf(temp, "fork child pid=%d p=%d cmd_p %x cmd %x\n", pid, p, cmd_p,
-            cmd);
-    print_string(temp);
-    // if (cmd == NULL) {
-    //   syscall3(SYS_EXEC, cmd_p, aa, env_p);
-    //   kmemset(cmd_p,0,64);
-    //   kmemset(argv_p,0,64);
-    // } else {
     syscall3(SYS_EXEC, cmd, argv, env);
-    // }
     syscall1(SYS_EXIT, 0);
-  } else {
-    print_string("cmd2===>");
-    print_string(cmd);
-    sprintf(temp, "fork parent pid=%d p=%d\n", pid, p);
-    print_string(temp);
   }
 #else
   thread_t* t = syscall3(SYS_THREAD_CREATE, cmd, (u32*)&hello_thread, NULL);

@@ -985,7 +985,7 @@ int sys_thread_create(char* name, void* entry, void* data) {
 int sys_thread_dump() {
   thread_t* current = thread_current();
   log_debug("========sys dump start========\n");
-  thread_dump(current, DUMP_DEFAULT| DUMP_CONTEXT | DUMP_STACK);
+  thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT | DUMP_STACK);
   log_debug("========sys dump end========\n");
 
   return current->id;

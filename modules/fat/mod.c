@@ -84,7 +84,7 @@ size_t fat_read_bytes(vnode_t *node, u32 offset, size_t nbytes, u8 *buf) {
     offset += BYTE_PER_SECTOR;
   }
   if (rest > 0) {
-    kmemset(small_buf, 0, BYTE_PER_SECTOR * 2);
+    kmemset(small_buf, 0, BYTE_PER_SECTOR);
     ret = fat_device_read(node, offset, BYTE_PER_SECTOR * 2, small_buf);
     kmemmove(buf, small_buf + offset % BYTE_PER_SECTOR, rest);
   }
@@ -122,8 +122,9 @@ size_t fat_write_bytes(vnode_t *node, u32 offset, size_t nbytes, u8 *buf) {
 };
 
 uint8_t sd_raw_read(offset_t offset, uint8_t *buffer, uintptr_t length) {
-  // kprintf(" sd_raw_read %x buffer %x len %d\n",offset,buffer,length);
+  // kprintf("sd_raw_read %x buffer %x len %d\n",offset,buffer,length);
   fat_read_bytes(default_node, offset, length, buffer);
+  // fat_device_read(default_node, offset, length, buffer);
   return 1;
 }
 
