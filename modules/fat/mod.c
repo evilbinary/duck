@@ -122,9 +122,9 @@ size_t fat_write_bytes(vnode_t *node, u32 offset, size_t nbytes, u8 *buf) {
 };
 
 uint8_t sd_raw_read(offset_t offset, uint8_t *buffer, uintptr_t length) {
-  // kprintf("sd_raw_read %x buffer %x len %d\n",offset,buffer,length);
-  fat_read_bytes(default_node, offset, length, buffer);
-  // fat_device_read(default_node, offset, length, buffer);
+  // kprintf("sd_raw_read %x buffer %x len %d\n", offset, buffer, length);
+  // fat_read_bytes(default_node, offset, length, buffer);
+  fat_device_read(default_node, offset, length, buffer);
   return 1;
 }
 

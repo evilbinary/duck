@@ -10,30 +10,28 @@ static size_t sdhci_read(device_t* dev, void* buf, size_t len) {
     return 0;
   }
   // kprintf("sdhci_read buf:%x len:%d\n", buf, len);
+
   u32 ret = 0;
-
-  // read too small process
-  char* origin_buf = buf;
-  u32 origin_buf_size = len;
-  char small_buf[BYTE_PER_SECTOR];
-
-  if (origin_buf_size < BYTE_PER_SECTOR) {
-    buf = small_buf;
-    len = BYTE_PER_SECTOR;
-    kmemset(small_buf, 0, BYTE_PER_SECTOR);
-  }
-
   sdhci_device_t* sdhci_dev = dev->data;
   int no = dev->id - DEVICE_SATA;
-  ret = sdhci_dev_port_read(sdhci_dev, no, buf, len);
-
-  if (origin_buf_size < BYTE_PER_SECTOR) {
-    kmemmove(origin_buf, small_buf, origin_buf_size);
-    ret = origin_buf_size;
+  sector_t sector;
+  sector.startl = sdhci_dev->offsetl / BYTE_PER_SECTOR;
+  sector.starth = sdhci_dev->offseth / BYTE_PER_SECTOR;
+  u32 count = len / BYTE_PER_SECTOR;
+  u32 rest = len % BYTE_PER_SECTOR;
+  if (rest > 0) {
+    count++;
   }
-  // kprintf("sdhci_read ret %d\n", ret);
 
-  return ret;
+  char* read_buf = kmalloc(count * BYTE_PER_SECTOR, DEVICE_TYPE);
+  ret = sdhci_dev_port_read(sdhci_dev, no, sector, count, read_buf);
+  kmemmove(buf, read_buf + sdhci_dev->offsetl % BYTE_PER_SECTOR, len);
+  kfree(read_buf);
+
+  if (ret == 0) {
+    return -1;
+  }
+  return len;
 }
 
 static size_t sdhci_write(device_t* dev, void* buf, size_t len) {

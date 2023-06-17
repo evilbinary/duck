@@ -1,8 +1,8 @@
 
 #include "v3s.h"
 
-#define SECTOR_SIZE 512 * 2
-#define CACHE_ENABLED 1
+#define SECTOR_SIZE (512)
+// #define CACHE_ENABLED 1 have problem
 
 #define CACHE_ENTRIES (1 << 4)          ///< 16 entries
 #define CACHE_MASK (CACHE_ENTRIES - 1)  ///< mask 0x0F
@@ -479,10 +479,10 @@ static int mmc_status(sdhci_device_t *hci) {
   return -1;
 }
 
-static u32 mmc_read(sdhci_device_t *hci, u8 *buf, u32 buf_size, u32 start) {
+static u32 mmc_read_blocks(sdhci_device_t *hci, u32 start, u32 blkcnt,
+                           u8 *buf) {
   sdhci_v3s_pdata_t *pdat = (sdhci_v3s_pdata_t *)hci->data;
 
-  u32 blkcnt = buf_size / pdat->read_bl_len;
   u32 blksz = pdat->read_bl_len;
 
   if (blkcnt <= 0) {
@@ -573,7 +573,7 @@ static u32 mmc_write_blocks(sdhci_device_t *hci, u8 *buf, u32 start,
 
 static void print_hex(u8 *addr, u32 size) {
   for (int x = 0; x < size; x++) {
-    kprintf("%x ", addr[x]);
+    kprintf("%02x ", addr[x]);
     if (x != 0 && (x % 32) == 0) {
       kprintf("\n");
     }
@@ -581,29 +581,25 @@ static void print_hex(u8 *addr, u32 size) {
   kprintf("\n\r");
 }
 
-int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, int no, u32 *buf,
-                        u32 buf_size) {
+int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, int no, sector_t sector,
+                        u32 count, u32 buf) {
   u32 ret = 0;
-  sector_t sector;
-  sector.startl = sdhci_dev->offsetl / BYTE_PER_SECTOR;
-  sector.starth = sdhci_dev->offseth / BYTE_PER_SECTOR;
+  size_t buf_size = count * BYTE_PER_SECTOR;
 
-  u32 count = buf_size / BYTE_PER_SECTOR;
   // kprintf("sdhci_dev_port_read sector:%d size:%d buf:%x\n", sector.startl,
   //         buf_size, buf);
-
 #ifdef CACHE_ENABLED
   if (count == 1) {
     int index = sector.startl & CACHE_MASK;
     void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
     if (sdhci_dev->cached_blocks[index] != sector.startl) {
-      ret = mmc_read(sdhci_dev, cache_p, buf_size, sector.startl);
+      ret = mmc_read_blocks(sdhci_dev, sector.startl, count, cache_p);
       sdhci_dev->cached_blocks[index] = sector.startl;
     }
     kmemmove(buf, cache_p, SECTOR_SIZE);
   } else {
 #endif
-    ret = mmc_read(sdhci_dev, buf, buf_size, sector.startl);
+    ret = mmc_read_blocks(sdhci_dev, sector.startl, count, buf);
     if (ret < buf_size) {
       kprintf("mm read failed ret:%d\n", ret);
       return -1;
@@ -611,8 +607,7 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, int no, u32 *buf,
 #ifdef CACHE_ENABLED
   }
 #endif
-  // kprintf("sd read offset:%x %x buf_size:%d\n", sector.startl *
-  // BYTE_PER_SECTOR,
+  // kprintf("sd read offset:%x %x buf_size:%d\n", sector.startl * BYTE_PER_SECTOR,
   //         sector.starth * BYTE_PER_SECTOR, buf_size);
   // print_hex(buf, buf_size);
   // kprintf("ret %d\n", ret);
