@@ -54,6 +54,7 @@ if arch_type =='arm':
             'gpio/v3s.c',
             'spi/spi.c',
             'spi/v3s.c',
+            'rtc/v3s.c',
         ]
     elif platform=='raspi2':
         other=[
@@ -69,6 +70,7 @@ if arch_type =='arm':
             'gpio/bcm2836.c',
             'spi/spi.c',
             'spi/bcm2836.c',
+            'rtc/bcm2836.c',
             ]
     elif platform=='stm32f4xx':
             other=[
