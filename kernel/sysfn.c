@@ -159,7 +159,9 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
     return -1;
   }
   u32 ret = vread(node, f->offset, nbytes, buf);
-  f->offset += ret;
+  if(ret>0){
+    f->offset += ret;
+  }
   return ret;
 }
 

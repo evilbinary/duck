@@ -1,6 +1,12 @@
 
 #include "v3s.h"
 
+#define SECTOR_SIZE 512 * 2
+#define CACHE_ENABLED 1
+
+#define CACHE_ENTRIES (1 << 4)          ///< 16 entries
+#define CACHE_MASK (CACHE_ENTRIES - 1)  ///< mask 0x0F
+
 #define UNSTUFF_BITS(resp, start, size)                     \
   ({                                                        \
     const int __size = size;                                \
@@ -146,19 +152,21 @@ static int v3s_transfer_command(sdhci_v3s_pdata_t *pdat, sdhci_cmd_t *cmd,
       cmd->cmdidx == MMC_READ_MULTIPLE_BLOCK)
     cmdval |= SDXC_SEND_AUTO_STOP;
 
-  io_write32(pdat->virt + SD_CAGR, cmd->cmdarg); //Command argument register
+  io_write32(pdat->virt + SD_CAGR, cmd->cmdarg);  // Command argument register
 
   if (dat)
     io_write32(pdat->virt + SD_GCTL,
                io_read32(pdat->virt + SD_GCTL) | 0x80000000);
-  io_write32(pdat->virt + SD_CMDR, cmdval | cmd->cmdidx); //Command register
+  io_write32(pdat->virt + SD_CMDR, cmdval | cmd->cmdidx);  // Command register
 
   timeout = 10000;
   do {
     status = io_read32(pdat->virt + SD_RISR);
     if (!timeout-- || (status & SDXC_INTERRUPT_ERROR_BIT)) {
-      io_write32(pdat->virt + SD_GCTL, SDXC_HARDWARE_RESET);//Control register
-      io_write32(pdat->virt + SD_RISR, 0xffffffff); //Raw interrupt status regi
+      io_write32(pdat->virt + SD_GCTL, SDXC_HARDWARE_RESET);  // Control
+                                                              // register
+      io_write32(pdat->virt + SD_RISR, 0xffffffff);  // Raw interrupt status
+                                                     // regi
       kprintf("v3s_transfer_command 2 failed %d\n", status);
       return FALSE;
     }
@@ -573,23 +581,38 @@ static void print_hex(u8 *addr, u32 size) {
   kprintf("\n\r");
 }
 
-int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, int no, u32* buf,
+int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, int no, u32 *buf,
                         u32 buf_size) {
   u32 ret = 0;
   sector_t sector;
   sector.startl = sdhci_dev->offsetl / BYTE_PER_SECTOR;
   sector.starth = sdhci_dev->offseth / BYTE_PER_SECTOR;
 
+  u32 count = buf_size / BYTE_PER_SECTOR;
   // kprintf("sdhci_dev_port_read sector:%d size:%d buf:%x\n", sector.startl,
   //         buf_size, buf);
 
-  ret = mmc_read(sdhci_dev, buf, buf_size, sector.startl);
-  if (ret < buf_size) {
-    kprintf("mm read failed ret:%d\n", ret);
-    return -1;
+#ifdef CACHE_ENABLED
+  if (count == 1) {
+    int index = sector.startl & CACHE_MASK;
+    void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
+    if (sdhci_dev->cached_blocks[index] != sector.startl) {
+      ret = mmc_read(sdhci_dev, cache_p, buf_size, sector.startl);
+      sdhci_dev->cached_blocks[index] = sector.startl;
+    }
+    kmemmove(buf, cache_p, SECTOR_SIZE);
+  } else {
+#endif
+    ret = mmc_read(sdhci_dev, buf, buf_size, sector.startl);
+    if (ret < buf_size) {
+      kprintf("mm read failed ret:%d\n", ret);
+      return -1;
+    }
+#ifdef CACHE_ENABLED
   }
-
-  // kprintf("sd read offset:%x %x buf_size:%d\n", sector.startl * BYTE_PER_SECTOR,
+#endif
+  // kprintf("sd read offset:%x %x buf_size:%d\n", sector.startl *
+  // BYTE_PER_SECTOR,
   //         sector.starth * BYTE_PER_SECTOR, buf_size);
   // print_hex(buf, buf_size);
   // kprintf("ret %d\n", ret);
@@ -957,5 +980,16 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   page_map(0x01c0f000, 0x01c0f000, 0);
 
   sdhci_v3s_probe(sdhci_dev);
+
+#ifdef CACHE_ENABLED
+  sdhci_dev->cached_blocks = kmalloc(CACHE_ENTRIES, DEFAULT_TYPE);
+  sdhci_dev->cache_buffer = kmalloc(SECTOR_SIZE * CACHE_ENTRIES, DEFAULT_TYPE);
+  int i;
+  for (i = 0; i < CACHE_ENTRIES; i++) {
+    sdhci_dev->cached_blocks[i] = 0xFFFFFFFF;
+  }
+  kmemset(sdhci_dev->cache_buffer, 0, SECTOR_SIZE * CACHE_ENTRIES);
+#endif
+
   kprintf("sdh dev init end\n");
 }
