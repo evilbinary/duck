@@ -160,6 +160,7 @@ void modules_init(void) {
 
   module_regist(&log_module);
 
-
   module_run_all();
+
+  test_kernel();
 }
