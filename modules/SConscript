@@ -8,6 +8,16 @@ import os
 
 Import('env')
 
+
+
+exclude_function_list='do_page_fault,syscall_handler,general_protection,syscall1,syscall2,syscall3,syscall4,syscall5,print_string,do_shell_cmd,print_promot'
+
+exclude_file_list='duck/init,duck/arch,duck/libs,duck/init,duck/kernel/thread.c,duck/kernel/schedule.c,duck/kernel/syscall.c,duck/kernel/sysfn.c,duck/kernel/vfs.c,duck/kernel/devfn.c,duck/kernel/exceptions.c,duck/kernel/logger.c,duck/kernel/page.c,duck/kernel/memory.c,duck/kernel/vmemory.c,modules/serial/bcm2836.c,modules/serial/v3s.c'
+
+cflags='$CFLAGS -finstrument-functions  -finstrument-functions-exclude-function-list=%s -finstrument-functions-exclude-file-list=%s '%(exclude_function_list,exclude_file_list) #-DUSE_POOL -finstrument-functions
+
+cflags='$CFLAGS '
+
 arch_type=env['ARCHTYPE']
 
 platform=env['PLATFORM']
@@ -199,6 +209,7 @@ else:
 
 modules+=[
     'log/log.c',
+    'debug/trace.c',
 ]
 
 libs=[
@@ -228,4 +239,4 @@ env.Library('modules',
     source,
     CPPPATH=include,
     LIBS=libs,
-    CFLAGS='$CFLAGS')
+    CFLAGS=cflags)

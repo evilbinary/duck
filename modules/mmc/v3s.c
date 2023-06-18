@@ -1,7 +1,8 @@
 
 #include "v3s.h"
 
-#define SECTOR_SIZE (512)
+#define CACHE_COUNT 2
+#define SECTOR_SIZE (512*CACHE_COUNT)
 // #define CACHE_ENABLED 1  // have problem
 
 #define CACHE_ENTRIES (1 << 4)          ///< 16 entries
@@ -589,7 +590,7 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, int no, sector_t sector,
   size_t buf_size = count * BYTE_PER_SECTOR;
 
 #ifdef CACHE_ENABLED
-  if (count == 1) {
+  if (count == CACHE_COUNT) {
     int index = sector.startl & CACHE_MASK;
     void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
     if (sdhci_dev->cached_blocks[index] != sector.startl) {

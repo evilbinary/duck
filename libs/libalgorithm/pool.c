@@ -8,11 +8,14 @@ pool_t *pool_create(u32 size) {
 }
 
 void *pool_alloc(pool_t *p, size_t size, u32 align) {
-  size_t real_size = size + align - 1;
+  size_t real_size = size + align;
 
   if (pool_available(p) < real_size) return NULL;
   void *mem = (void *)p->next;
-  void *ptr = (void *)(((u32)mem + align - 1) & ~(u32)(align - 1));
+  void *ptr = mem;
+  if (align > 0) {
+    ptr = (void *)(((u32)mem + align - 1) & ~(u32)(align - 1));
+  }
   p->next += real_size;
   return ptr;
 }

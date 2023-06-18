@@ -11,7 +11,8 @@
 // #define EMMC_DEBUG
 // #define SD_DEBUG
 
-#define SECTOR_SIZE 512
+#define CACHE_COUNT 2
+#define SECTOR_SIZE (512*CACHE_COUNT)
 #define CACHE_ENABLED 1
 
 #ifdef CACHE_ENABLED
@@ -1750,7 +1751,7 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, int no, sector_t sector,
   u32 ret = 0;
 
 #ifdef CACHE_ENABLED
-  if (count == 1) {
+  if (count == CACHE_COUNT) {
     int index = sector.startl & CACHE_MASK;
     void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
     if (sdhci_dev->cached_blocks[index] != sector.startl) {

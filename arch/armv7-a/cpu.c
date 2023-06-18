@@ -4,6 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "cpu.h"
+
 #include "context.h"
 #include "gic2.h"
 
@@ -18,6 +19,22 @@ u32 cpus_id[MAX_CPU];
 /* data cache clean by MVA to PoC */
 void dccmvac(unsigned long mva) {
   asm volatile("mcr p15, 0, %0, c7, c10, 1" : : "r"(mva) : "memory");
+}
+
+void cpu_pmu_enable() {
+  // 使能PMU
+  asm("MCR p15, 0, %0, c9, c12, 0" ::"r"(1));
+  // 使能计数器0
+  asm("MCR p15, 0, %0, c9, c12, 1" ::"r"(1));
+  // 清零计数器0
+  asm("MCR p15, 0, %0, c9, c12, 2" ::"r"(0));
+}
+
+unsigned int cpu_cyclecount(void) {
+  unsigned int value;
+  // Read CCNT Register
+  asm volatile("mrc p15, 0, %0, c9, c13, 0\t\n" : "=r"(value));
+  return value;
 }
 
 void cpu_icache_disable() { asm("mcr  p15, #0, r0, c7, c7, 0\n"); }
@@ -47,9 +64,7 @@ u32 read_dfar() {
   return val;
 }
 
-u32 cpu_get_fault(){
-  return read_dfar();
-}
+u32 cpu_get_fault() { return read_dfar(); }
 
 u32 read_dfsr() {
   u32 val = 0;
@@ -116,7 +131,6 @@ u32 cpu_set_domain(u32 val) {
 void tlbimva(unsigned long mva) {
   asm volatile("mcr p15, 0, %0, c8, c7, 1" : : "r"(mva) : "memory");
 }
-
 
 void cpu_set_page(u32 page_table) {
   // cpu_invalid_tlb();
@@ -293,9 +307,7 @@ void cpu_halt() {
   };
 }
 
-void cpu_wait(){
-  asm("wfi");
-}
+void cpu_wait() { asm("wfi"); }
 
 ulong cpu_get_cs(void) {
   ulong result;
@@ -313,18 +325,18 @@ int cpu_tas(volatile int* addr, int newval) {
 }
 
 void cpu_backtrace(void* tfp, void** buf, int size) {
-  int topfp = tfp;//read_fp();
+  int topfp = tfp;  // read_fp();
   for (int i = 0; i < size; i++) {
     u32 fp = *(((u32*)topfp) - 3);
     u32 sp = *(((u32*)topfp) - 2);
     u32 lr = *(((u32*)topfp) - 1);
     u32 pc = *(((u32*)topfp) - 0);
     if (i == 0) {
-      *buf++=pc;
+      *buf++ = pc;
     }  // top frame
     if (fp != 0) {
-      *buf++=lr;
-      //kprintf(" %x\n", lr);
+      *buf++ = lr;
+      // kprintf(" %x\n", lr);
     }  // middle frame
     else {
       kprintf("bottom frame %x\n", pc);
@@ -341,7 +353,7 @@ u32 cpu_get_id() {
 #if MP_ENABLE
   __asm__ volatile("mrc p15, #0, %0, c0, c0, #5\n" : "=r"(cpu));
 #endif
-  return cpu&0xf;
+  return cpu & 0xf;
 }
 
 u32 cpu_get_index(int idx) {
@@ -361,7 +373,7 @@ int cpu_init_id(u32 id) {
 int cpu_start_id(u32 id, u32 entry) {
   // start at  at entry-point on boot init.c
   // kprintf("cpu start id %d entry: %x\n", id,entry);
-  lcpu_send_start(id,entry);
+  lcpu_send_start(id, entry);
   return 0;
 }
 

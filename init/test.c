@@ -2,10 +2,7 @@
 
 #ifdef XTENSA
 
-void test_gui() {
-
-
-}
+void test_gui() {}
 #else
 
 void test_gui() {
@@ -54,7 +51,7 @@ typedef struct framebuffer_info {
 
 void test_lcd() {
   my_framebuffer_info_t fb;
-  u16 buf[] = {12,12,BLUE};
+  u16 buf[] = {12, 12, BLUE};
 
   int fd = syscall2(SYS_OPEN, "/dev/fb", 0);
   kprintf("screen init fd:%d\n", fd);
@@ -62,7 +59,7 @@ void test_lcd() {
   test_ioctl(fd, IOC_READ_FRAMBUFFER_INFO, &fb);
   kprintf("fd %d buf info %d %d\n", myfd, fb.width, fb.height);
 
-  for (int i=0;i<10;i++) {
+  for (int i = 0; i < 10; i++) {
     int ret = syscall3(SYS_WRITE, 3, buf, sizeof(buf));
     kprintf("ret %d\n", ret);
   }
@@ -73,14 +70,12 @@ void test_cpu_speed() {
     int* p = 0xfb000000;
     for (int i = 0; i < 480; i++) {
       for (int j = 0; j < 272; j++) {
-        *p++=0xff0000;
+        *p++ = 0xff0000;
       }
     }
     kprintf("flush=>\n");
   }
 }
-
-
 
 #define IOC_AHCI_MAGIC 'a'
 #define IOC_READ_OFFSET _IOW(IOC_AHCI_MAGIC, 3, int)
@@ -140,4 +135,106 @@ void test_syscall() {
     scan_code = 0;
     col++;
   }
+}
+
+void run_test_pool_case(u32 pool_size, size_t alloc_size, u32 align) {
+  kprintf("Running test case with pool size %d, alloc size %d, align %d\n",
+          pool_size, alloc_size, align);
+
+  pool_t* pool = pool_create(pool_size);
+  if (pool == NULL) {
+    kprintf("Failed to create memory pool\n");
+    return;
+  }
+
+  void* mem = pool_alloc(pool, alloc_size, align);
+  if (mem == NULL) {
+    kprintf("Failed to allocate memory\n");
+    pool_destroy(pool);
+    return;
+  }
+
+  kprintf("Memory allocated successfully at address: %p\n", mem);
+
+  size_t available = pool_available(pool);
+  kprintf("Available memory in the pool: %d\n", available);
+
+  pool_destroy(pool);
+
+  kprintf("Memory pool destroyed\n");
+}
+
+void test_pool() {
+  // Test case 1: Allocating memory within pool size
+  run_test_pool_case(1024, 128, 4);
+
+  // Test case 2: Allocating memory exceeding pool size
+  run_test_pool_case(256, 512, 4);
+
+  // Test case 3: Allocating memory with larger alignment requirement
+  run_test_pool_case(512, 64, 16);
+}
+
+void run_test_queue_pool_case(u32 size,u32 poll_size, u32 bytes, u32 align) {
+  kprintf("Running test case with size %u, bytes %u, align %u\n", size, bytes,
+          align);
+
+  // 创建队列池
+  queue_pool_t* q;
+  if (align > 0) {
+    q = queue_pool_create_align(size, bytes, align);
+  } else {
+    q = queue_pool_create(size, bytes);
+  }
+  if (q == NULL) {
+    kprintf("Failed to create queue pool\n");
+    return;
+  }
+
+  // 随机生成一些元素
+  int* elements[size];
+  for (int i = 0; i < size; i++) {
+    elements[i] = kmalloc(bytes, KERNEL_TYPE);
+    // 这里假设生成的元素是整数，为了简化测试
+    *elements[i] = i;
+  }
+
+  // 将元素放入队列池
+  for (int i = 0; i < size; i++) {
+    if (queue_pool_put(q, elements[i]) != 0) {
+      kprintf("Success to put element %d into the queue pool\n", i);
+    }
+  }
+
+  // 从队列池中取出元素并验证
+  for (int i = 0; i < poll_size; i++) {
+    void* element = queue_pool_poll(q);
+    if (element == NULL) {
+      kprintf("Failed to poll element %d from the queue pool\n", i);
+    } else {
+      // 这里假设元素是整数，为了简化测试
+      int value = *((int*)element);
+      if (value != i) {
+        kprintf("Polled element has incorrect value: expected %d, actual %d\n",
+                i, value);
+      }
+      // kfree(element);
+    }
+  }
+
+  // 销毁队列池
+  queue_pool_destroy(q);
+
+  kprintf("Test case completed\n");
+}
+
+void test_queue_pool() {
+  // 测试用例 1: 创建队列池，并使用默认对齐方式
+  run_test_queue_pool_case(10,10, sizeof(int), 0);
+
+  // 测试用例 2: 创建队列池，并指定对齐方式
+  run_test_queue_pool_case(10,10, sizeof(int), 16);
+
+  run_test_queue_pool_case(1,2, sizeof(int), 16);
+
 }

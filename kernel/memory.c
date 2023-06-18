@@ -8,6 +8,8 @@
 #include "algorithm/queue_pool.h"
 #include "thread.h"
 
+// #define USE_POOL 1
+
 queue_pool_t* kernel_pool;
 queue_pool_t* user_pool;
 
@@ -109,11 +111,14 @@ void* vm_alloc_alignment(size_t size, int alignment) {
 }
 
 void vm_free(void* ptr) {
-  thread_t* current = thread_current();
   void* addr = kpage_v2p(ptr, 0);
-  kassert(addr!=NULL);
+  kassert(addr != NULL);
   size_t size = mm_get_size(addr);
-  mm_free(addr);
+  if(size>0){
+    mm_free(addr);
+  }else{
+    log_error("mfree error %x",ptr);
+  }
   memory_static(size, MEMORY_TYPE_FREE);
 }
 
@@ -206,6 +211,15 @@ void* kmalloc(size_t size, u32 flag) {
 
 void* kmalloc_alignment(size_t size, int alignment, u32 flag) {
   void* addr = NULL;
+#ifdef USE_POOL
+  if (size == PAGE_SIZE) {
+    void* phy_addr = queue_pool_poll(user_pool);
+    if (phy_addr != NULL) {
+      log_info("use pool addr %x\n", phy_addr);
+      return phy_addr;
+    }
+  }
+#else
   if (flag & KERNEL_TYPE || flag & DEVICE_TYPE) {
     addr = phy_alloc_aligment(size, alignment);
   } else {
@@ -215,6 +229,7 @@ void* kmalloc_alignment(size_t size, int alignment, u32 flag) {
     addr = phy_alloc_aligment(size, alignment);
 #endif
   }
+#endif
 
   return addr;
 }
@@ -222,9 +237,22 @@ void* kmalloc_alignment(size_t size, int alignment, u32 flag) {
 void kfree(void* ptr) { vm_free(ptr); }
 
 void kfree_alignment(void* ptr) {
+#ifdef USE_POOL
+  thread_t* current = thread_current();
+  void* addr = kpage_v2p(ptr, 0);
+  size_t size = mm_get_size(addr);
+  if (size == PAGE_SIZE) {
+    int ret = queue_pool_put(user_pool, addr);
+    if (ret != 0) {
+      log_info("use pool put addr %x\n", addr);
+      return;
+    }
+  }
+#else
   vm_free_alignment(ptr);
-  // size_t size = mm_get_size(ptr);
-  // memory_static(size, MEMORY_TYPE_FREE);
+// size_t size = mm_get_size(ptr);
+// memory_static(size, MEMORY_TYPE_FREE);
+#endif
 }
 
 int kmem_size(void* ptr) {
@@ -289,16 +317,7 @@ void* valloc(void* addr, size_t size) {
 
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
   for (int i = 0; i < pages; i++) {
-#ifdef USE_POOL
-    void* phy_addr = queue_pool_poll(user_pool);
-    if (phy_addr == NULL) {
-      phy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
-    } else {
-      log_info("use pool addr %x\n", phy_addr);
-    }
-#else
     void* phy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
-#endif
     void* paddr = phy_addr;
 #ifdef DEBUG
     log_debug("map page:%x vaddr:%x paddr:%x\n", current->vm->upage, vaddr,
@@ -333,14 +352,7 @@ void vfree(void* addr, size_t size) {
     // todo
     //  unpage_map_on(current->vm->upage, vaddr);
     if (phy != NULL) {
-#ifdef USE_POOL
-      int ret = queue_pool_put(user_pool, phy);
-      if (ret == 0) {
-        kfree_alignment(phy);
-      }
-#else
       kfree_alignment(phy);
-#endif
     }
     vaddr += PAGE_SIZE;
   }
@@ -376,8 +388,8 @@ void* kpage_v2p(void* addr, int size) {
 
 void kpool_init() {
 #ifdef USE_POOL
-  kernel_pool = queue_pool_create(KERNEL_POOL_NUM, PAGE_SIZE);
-  user_pool = queue_pool_create_align(USER_POOL_NUM, PAGE_SIZE, PAGE_SIZE);
+  // kernel_pool = queue_pool_create(KERNEL_POOL_NUM, PAGE_SIZE);
+  user_pool = queue_pool_create_align(USER_POOL_NUM*100 , PAGE_SIZE, PAGE_SIZE);
 #else
   kernel_pool = NULL;
   user_pool = NULL;

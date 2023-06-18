@@ -8,11 +8,15 @@
 
 #include "types.h"
 
+#define DEFAULT_TYPE 1 << 0
+#define KERNEL_TYPE 1 << 1
+#define DEVICE_TYPE 1 << 2
+
 #ifndef fn_malloc
     #ifdef MALLOC_TRACE
         #define fn_malloc(size) kmalloc_trace(size,__FILE__,__LINE__,__FUNCTION__)
     #else
-        #define fn_malloc kmalloc
+        #define fn_malloc(size) kmalloc(size,KERNEL_TYPE)
     #endif
 #endif
 
