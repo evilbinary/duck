@@ -388,8 +388,8 @@ void* kpage_v2p(void* addr, int size) {
 
 void kpool_init() {
 #ifdef USE_POOL
-  // kernel_pool = queue_pool_create(KERNEL_POOL_NUM, PAGE_SIZE);
-  user_pool = queue_pool_create_align(USER_POOL_NUM*100 , PAGE_SIZE, PAGE_SIZE);
+  kernel_pool = queue_pool_create(KERNEL_POOL_NUM, PAGE_SIZE);
+  user_pool = queue_pool_create_align(USER_POOL_NUM , PAGE_SIZE, PAGE_SIZE);
 #else
   kernel_pool = NULL;
   user_pool = NULL;

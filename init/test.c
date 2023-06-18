@@ -175,7 +175,7 @@ void test_pool() {
   run_test_pool_case(512, 64, 16);
 }
 
-void run_test_queue_pool_case(u32 size,u32 poll_size, u32 bytes, u32 align) {
+void run_test_queue_pool_case(u32 size, u32 poll_size, u32 bytes, u32 align) {
   kprintf("Running test case with size %u, bytes %u, align %u\n", size, bytes,
           align);
 
@@ -206,6 +206,15 @@ void run_test_queue_pool_case(u32 size,u32 poll_size, u32 bytes, u32 align) {
     }
   }
 
+  // 验证队列池中的元素数量是否正确
+  size_t elements_count = cqueue_count(q->queue);
+  if (elements_count != size) {
+    kprintf(
+        "Incorrect number of elements in the queue pool: expected %d, actual "
+        "%d\n",
+        size, elements_count);
+  }
+
   // 从队列池中取出元素并验证
   for (int i = 0; i < poll_size; i++) {
     void* element = queue_pool_poll(q);
@@ -222,6 +231,15 @@ void run_test_queue_pool_case(u32 size,u32 poll_size, u32 bytes, u32 align) {
     }
   }
 
+  // 验证队列池中的元素数量是否正确
+  elements_count = cqueue_count(q->queue);
+  if (elements_count != 0) {
+    kprintf(
+        "Incorrect number of elements in the queue pool after polling: "
+        "expected 0, actual %d\n",
+        elements_count);
+  }
+
   // 销毁队列池
   queue_pool_destroy(q);
 
@@ -230,11 +248,26 @@ void run_test_queue_pool_case(u32 size,u32 poll_size, u32 bytes, u32 align) {
 
 void test_queue_pool() {
   // 测试用例 1: 创建队列池，并使用默认对齐方式
-  run_test_queue_pool_case(10,10, sizeof(int), 0);
+  run_test_queue_pool_case(10, 10, sizeof(int), 0);
 
   // 测试用例 2: 创建队列池，并指定对齐方式
-  run_test_queue_pool_case(10,10, sizeof(int), 16);
+  run_test_queue_pool_case(10, 10, sizeof(int), 16);
 
-  run_test_queue_pool_case(1,2, sizeof(int), 16);
+  // 测试用例 3: 测试空队列池的行为
+  run_test_queue_pool_case(0, 0, sizeof(int), 0);
 
+  // 测试用例 4: 测试队列池容量小于元素数量的情况
+  run_test_queue_pool_case(1, 2, sizeof(int), 16);
+
+  // 测试用例 6: 测试使用不同大小的元素和不同对齐方式
+  run_test_queue_pool_case(8, 8 ,sizeof(float), 4);
+  run_test_queue_pool_case(20, 20, sizeof(char), 1);
+  run_test_queue_pool_case(15, 15, sizeof(double), 8);
+
+}
+
+// 内核测试用例
+void test_kernel() {
+  // test_pool();
+  // test_queue_pool();
 }
