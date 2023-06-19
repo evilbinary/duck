@@ -117,7 +117,7 @@ void vm_free(void* ptr) {
   if(size>0){
     mm_free(addr);
   }else{
-    log_error("mfree error %x",ptr);
+    log_error("mfree error %x\n",ptr);
   }
   memory_static(size, MEMORY_TYPE_FREE);
 }
@@ -350,7 +350,7 @@ void vfree(void* addr, size_t size) {
     log_debug("vfree vaddr:%x paddr:%x\n", vaddr, phy);
 #endif
     // todo
-    //  unpage_map_on(current->vm->upage, vaddr);
+     page_unmap_on(current->vm->upage, vaddr);
     if (phy != NULL) {
       kfree_alignment(phy);
     }

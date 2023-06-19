@@ -7,12 +7,11 @@
 
 void vmemory_area_free(vmemory_area_t* area) {
   if (area == NULL) return;
-  for (; area != NULL; area = area->next) {
-    u32 vaddr = area->vaddr;
-    // todo fix me
-    // vfree(vaddr, area->size);
-    area->flags = MEMORY_FREE;
-  }
+  u32 vaddr = area->vaddr;
+  // todo fix me
+  area->flags = MEMORY_FREE;
+  log_debug("vmemory area free %x\n", vaddr);
+  vfree(vaddr, area->size);
 }
 
 // alloc by page fault
@@ -145,6 +144,17 @@ void vmemory_dump(vmemory_t* vm) {
   }
 }
 
+void vmemory_dump_area(vmemory_area_t* area) {
+  char* type[] = {"free", "use",  "share", "heap",
+                  "exec", "data", "stack", "mmap"};
+  vmemory_area_t* p = area;
+  for (; p != NULL; p = p->next) {
+    log_debug("vaddr:%x vend:%x size:%x alloc p:%x size:%x flag:%x type:%s\n",
+              p->vaddr, p->vend, p->size, p->alloc_addr, p->alloc_size,
+              p->flags, type[p->flags]);
+  }
+}
+
 #define DEBUG
 
 void vmemory_map(u32* page_dir, u32 virt_addr, u32 phy_addr, u32 size) {
@@ -156,7 +166,7 @@ void vmemory_map(u32* page_dir, u32 virt_addr, u32 phy_addr, u32 size) {
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
   for (int i = 0; i < pages; i++) {
     page_map_on(page_dir, virt_addr + offset, phy_addr + offset,
-                PAGE_P  | PAGE_RW);
+                PAGE_P | PAGE_RW);
 #ifdef DEBUG
     log_debug("-page:%x map %d vaddr: %x - paddr: %x\n", page_dir, i,
               virt_addr + offset, phy_addr + offset);
@@ -234,7 +244,8 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
     void* phy = page_v2p(vm_src->upage, addr);
     if (phy != NULL) {
       u32* copy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
-      kmemmove(copy_addr, addr, PAGE_SIZE);//fix v3s crash copy use current page addr
+      kmemmove(copy_addr, addr,
+               PAGE_SIZE);  // fix v3s crash copy use current page addr
       log_debug("-copy vaddr %x addr %x to %x\n", addr, phy, copy_addr);
       vmemory_map(vm_copy->upage, addr, copy_addr, PAGE_SIZE);
     } else {
