@@ -1,9 +1,10 @@
 
 #include "v3s.h"
+#include "v3s-reg-ccu.h"
 
-#define CACHE_COUNT 2
-#define SECTOR_SIZE (512*CACHE_COUNT)
-// #define CACHE_ENABLED 1  // have problem
+#define CACHE_COUNT 1
+#define SECTOR_SIZE (512 * CACHE_COUNT)
+#define CACHE_ENABLED 1  // have problem
 
 #define CACHE_ENTRIES (1 << 4)          ///< 16 entries
 #define CACHE_MASK (CACHE_ENTRIES - 1)  ///< mask 0x0F
@@ -335,14 +336,79 @@ static int sdhci_v3s_update_clk(sdhci_v3s_pdata_t *pdat) {
   return TRUE;
 }
 
+static uint32_t pll_periph_get_freq(void) {
+    uint32_t reg = io_read32(V3S_CCU_BASE + CCU_PLL_PERIPH0_CTRL);
+
+    uint32_t mul = (reg >> 8) & 0x1F;
+    uint32_t div = (reg >> 4) & 0x3;
+
+    return (24000000 * (mul + 1) / (div + 1));
+}
+
+// SD card controller clock
+uint32_t clk_sdc_config(uint32_t reg, uint32_t freq) {
+    uint32_t in_freq = 0;
+    uint32_t reg_val = (1 << 31);
+    if(freq <= 24000000) {
+        reg_val |= (0 << 24); // OSC24M
+        in_freq = 24000000;
+        log_debug("clk OSC24M %d\n",in_freq);
+    } else {
+        reg_val |= (1 << 24); // PLL_PERIPH
+        in_freq = pll_periph_get_freq();
+        log_debug("clk PLL_PERIPH %d\n",in_freq);
+    }
+
+    uint8_t div = in_freq / freq;
+    if(in_freq % freq) div++;
+
+    uint8_t prediv = 0;
+    while(div > 16) {
+        prediv++;
+        if(prediv > 3) return 0;
+        div = (div + 1) / 2;
+    }
+
+    /* determine delays */
+    uint8_t samp_phase = 0;
+    uint8_t out_phase  = 0;
+    if(freq <= 400000) {
+        out_phase  = 0;
+        samp_phase = 0;
+    } else if(freq <= 25000000) {
+        out_phase  = 0;
+        samp_phase = 5;
+    } else if(freq <= 52000000) {
+        out_phase  = 3;
+        samp_phase = 4;
+    } else { /* freq > 52000000 */
+        out_phase  = 1;
+        samp_phase = 4;
+    }
+    reg_val |= (samp_phase << 20) | (out_phase << 8);
+    reg_val |= (prediv << 16) | ((div - 1) << 0);
+
+    io_write32(V3S_CCU_BASE + reg, reg_val);
+
+    return in_freq / div;
+}
+
+
 static int sdhci_v3s_setclock(sdhci_device_t *sdhci, u32 clock) {
+
   sdhci_v3s_pdata_t *pdat = (sdhci_v3s_pdata_t *)sdhci->data;
   u32 ratio = (pdat->clock + 2 * clock - 1) / (2 * clock);
+
+  if (pdat->virt == 0x01C0F000)
+    clk_sdc_config(CCU_SDMMC0_CLK, clock);
+  else
+    clk_sdc_config(CCU_SDMMC1_CLK, clock);
 
   if ((ratio & 0xff) != ratio) return FALSE;
   io_write32(pdat->virt + SD_CKCR,
              io_read32(pdat->virt + SD_CKCR) & ~(1 << 16));
-  io_write32(pdat->virt + SD_CKCR, ratio);
+  // io_write32(pdat->virt + SD_CKCR, ratio);
+
   if (!sdhci_v3s_update_clk(pdat)) return FALSE;
   io_write32(pdat->virt + SD_CKCR, io_read32(pdat->virt + SD_CKCR) | (3 << 16));
   if (!sdhci_v3s_update_clk(pdat)) return FALSE;
@@ -600,7 +666,13 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, int no, sector_t sector,
     kmemmove(buf, cache_p, SECTOR_SIZE);
   } else {
 #endif
+    int index = sector.startl & CACHE_MASK;
+    void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
+
     ret = mmc_read_blocks(sdhci_dev, sector.startl, count, buf);
+    sdhci_dev->cached_blocks[index] = sector.startl;
+    kmemmove(cache_p, buf, SECTOR_SIZE);
+
     if (ret < buf_size) {
       kprintf("mm read failed ret:%d\n", ret);
       return -1;
@@ -648,10 +720,10 @@ int sdhci_v3s_probe(sdhci_device_t *hci) {
   int status;
 
   sdhci_v3s_reset(hci);
-  sdhci_v3s_setclock(hci, 400 * 1000);
-  sdhci_v3s_setwidth(hci, MMC_BUS_WIDTH_8);
-  // sdhci_v3s_setclock(hci, pdat->clock);
-  // sdhci_v3s_setwidth(hci, pdat->width);
+  // sdhci_v3s_setclock(hci, 400 * 1000);
+  // sdhci_v3s_setwidth(hci, MMC_BUS_WIDTH_1);
+  sdhci_v3s_setclock(hci, pdat->clock);
+  sdhci_v3s_setwidth(hci, pdat->width);
 
   if (!go_idle_state(hci)) {
     kprintf("prob go idle false\n");
@@ -905,7 +977,6 @@ int sdhci_v3s_probe(sdhci_device_t *hci) {
         sdhci_v3s_setwidth(hci, MMC_BUS_WIDTH_1);
     }
   }
-
   cmd.cmdidx = MMC_SET_BLOCKLEN;
   cmd.cmdarg = pdat->read_bl_len;
   cmd.resptype = MMC_RSP_R1;
@@ -946,7 +1017,7 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   pdat->virt = 0x01c0f000;
 
   pdat->voltage = MMC_VDD_27_36;
-  pdat->clock = 25 * 1000 * 1000 * 2;
+  pdat->clock = 400 * 1000;
   pdat->width = MMC_BUS_WIDTH_4;
 
   pdat->reset = 8;
