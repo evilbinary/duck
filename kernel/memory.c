@@ -334,7 +334,7 @@ void vfree(void* addr, size_t size) {
       int s = mm_get_align_size(phy);
       if (s >= PAGE_SIZE) {
         // fix me
-        //kfree_alignment(phy);
+        kfree_alignment(phy);
         page_unmap_on(current->vm->upage, vaddr);
       } else {
         log_warn("not match free size %x %d\n", phy, s);
