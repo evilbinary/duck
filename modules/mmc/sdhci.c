@@ -24,11 +24,19 @@ static size_t sdhci_read(device_t* dev, void* buf, size_t len) {
   }
 
   int alloc_size = (count + 1) * BYTE_PER_SECTOR;
-  char* read_buf = kmalloc(alloc_size, DEVICE_TYPE);
-  kmemset(read_buf, 0, alloc_size);
-  ret = sdhci_dev_port_read(sdhci_dev, no, sector, count + 1, read_buf);
-  kmemmove(buf, read_buf + sdhci_dev->offsetl % BYTE_PER_SECTOR, len);
-  kfree(read_buf);
+
+  char small_buf[BYTE_PER_SECTOR * 2];
+  if( alloc_size<=BYTE_PER_SECTOR*2 ) {
+    kmemset(small_buf, 0, BYTE_PER_SECTOR * 2);
+    ret = sdhci_dev_port_read(sdhci_dev, no, sector, count + 1, small_buf);
+    kmemmove(buf, small_buf + sdhci_dev->offsetl % BYTE_PER_SECTOR, len);
+  } else {
+    char* read_buf = kmalloc(alloc_size, DEVICE_TYPE);
+    kmemset(read_buf, 0, alloc_size);
+    ret = sdhci_dev_port_read(sdhci_dev, no, sector, count + 1, read_buf);
+    kmemmove(buf, read_buf + sdhci_dev->offsetl % BYTE_PER_SECTOR, len);
+    kfree(read_buf);
+  }
 
   if (ret == 0) {
     return -1;
