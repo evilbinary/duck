@@ -46,8 +46,8 @@
 #define MEMORY_HEAP_SIZE 1024 * 1024 * 100  // 100m
 #define MEMORY_EXEC_SIZE 1024 * 1024 * 100  // 100m
 
-#define KERNEL_POOL_NUM 20
-#define USER_POOL_NUM 20
+#define KERNEL_POOL_NUM 10
+#define USER_POOL_NUM 10
 
 #define MEMORY_TYPE_USE 1   // 使用
 #define MEMORY_TYPE_FREE 2  // 释放

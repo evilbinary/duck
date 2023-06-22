@@ -15,7 +15,6 @@ memory_manager_t mmt;
 
 #ifdef MM_YA_ALLOC
 
-
 void mm_add_block(u32 addr, u32 len);
 
 void ya_alloc_init() {
@@ -52,7 +51,7 @@ void ya_alloc_init() {
       mm_add_block(addr, len);
     }
   }
-  kassert(mmt.blocks!=NULL);
+  kassert(mmt.blocks != NULL);
 }
 
 #define ya_block_ptr(ptr) ((block_t*)ptr - 1);
@@ -236,6 +235,7 @@ void ya_free(void* ptr) {
   // kassert(block->count == 1);
   kassert(block->free == BLOCK_USED);
   kassert(block->magic == MAGIC_USED);
+  kassert(block->size > 0);
 
   int* end = ptr + block->size;
   kassert((*end) == MAGIC_END);
@@ -307,11 +307,22 @@ void mm_dump_phy() {
           boot_info->total_memory / 1024);
 }
 
+size_t ya_real_size(void* ptr) {
+  if (ptr == NULL) {
+    return 0;
+  }
+  block_t* block = ya_block_ptr(ptr);
+  kassert(block->magic == MAGIC_USED || block->magic == MAGIC_FREE);
+  return block->size;
+}
+
+
 void mm_init() {
   kprintf("mm init\n");
   mmt.init = ya_alloc_init;
   mmt.alloc = ya_alloc;
   mmt.free = ya_free;
+  mmt.size = ya_real_size;
   mmt.blocks = NULL;
   mmt.blocks_tail = NULL;
   mmt.g_block_list = NULL;
@@ -330,20 +341,20 @@ void mm_init() {
   mmt.init();
 }
 
-size_t ya_real_size(void* ptr) {
-  block_t* block = ya_block_ptr(ptr);
-  return block->size;
-}
+size_t mm_get_size(void* addr) { return mmt.size(addr); }
 
-size_t mm_get_size(void* addr) { return ya_real_size(addr); }
+size_t mm_get_align_size(void* addr) { return mmt.size(((void**)addr)[-1]); }
 
 void* mm_alloc(size_t size) {
   void* p = mmt.alloc(size);
+  if (p == 0x23e000) {
+    int i = 0;
+  }
   kmemset(p, 0, size);
   return p;
 }
 
-void mm_free(void* p) { return mmt.free(p); }
+void mm_free(void* ptr) { return mmt.free(ptr); }
 
 void* mm_alloc_zero_align(size_t size, u32 alignment) {
   void* p1;   // original block
@@ -658,7 +669,8 @@ void map_mem_block(u32* page, u32 size, u32 flags) {
   for (; p != NULL; p = p->next) {
     u32 address = p->origin_addr;
     page_map_range(page, address, address, size, flags);
-    kprintf("map mem block addr range %x - %x\n", p->origin_addr,p->origin_addr + size);
+    kprintf("map mem block addr range %x - %x\n", p->origin_addr,
+            p->origin_addr + size);
     mmt.last_map_addr = address + size;
   }
 }
@@ -703,10 +715,9 @@ void mm_parse_map(u32* kernel_page_dir) {
 
   kprintf("map mem kernel\n");
   // map kernel
-  page_map_kernel(kernel_page_dir,PAGE_RWX , PAGE_RW);
+  page_map_kernel(kernel_page_dir, PAGE_RWX, PAGE_RW);
   // page_map_kernel(kernel_page_dir, 0, 0);
-  
-  //platform_end
+
+  // platform_end
   platform_map();
-  
 }

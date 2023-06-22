@@ -8,7 +8,7 @@
 #include "algorithm/queue_pool.h"
 #include "thread.h"
 
-// #define USE_POOL 1
+// #define DEBUG 1
 
 queue_pool_t* kernel_pool;
 queue_pool_t* user_pool;
@@ -114,18 +114,21 @@ void vm_free(void* ptr) {
   void* addr = kpage_v2p(ptr, 0);
   kassert(addr != NULL);
   size_t size = mm_get_size(addr);
-  if(size>0){
+  if (size > 0) {
     mm_free(addr);
-  }else{
-    log_error("mfree error %x\n",ptr);
+  } else {
+    log_error("mfree error %x\n", ptr);
   }
   memory_static(size, MEMORY_TYPE_FREE);
 }
 
 void vm_free_alignment(void* ptr) {
-  thread_t* current = thread_current();
   void* addr = kpage_v2p(ptr, 0);
-  size_t size = mm_get_size(addr);
+  if (addr <= 0) {
+    log_error("vm free aligment error %x\n", ptr);
+    return;
+  }
+  size_t size = mm_get_align_size(addr);
   mm_free_align(addr);
   memory_static(size, MEMORY_TYPE_FREE);
 }
@@ -185,7 +188,7 @@ void kfree_trace(void* ptr, void* name, void* no, void* fun) {
 }
 
 void kfree_alignment_trace(void* ptr, void* name, void* no, void* fun) {
-  size_t size = mm_get_size(ptr);
+  size_t size = mm_get_align_size(ptr);
   log_debug("kfreea count:%d total:%dk size:%d addr:%x %s:%d %s\n",
             free_count++, free_total / 1024, size, ptr, name, no, fun);
 
@@ -211,15 +214,6 @@ void* kmalloc(size_t size, u32 flag) {
 
 void* kmalloc_alignment(size_t size, int alignment, u32 flag) {
   void* addr = NULL;
-#ifdef USE_POOL
-  if (size == PAGE_SIZE) {
-    void* phy_addr = queue_pool_poll(user_pool);
-    if (phy_addr != NULL) {
-      log_info("use pool addr %x\n", phy_addr);
-      return phy_addr;
-    }
-  }
-#else
   if (flag & KERNEL_TYPE || flag & DEVICE_TYPE) {
     addr = phy_alloc_aligment(size, alignment);
   } else {
@@ -229,7 +223,6 @@ void* kmalloc_alignment(size_t size, int alignment, u32 flag) {
     addr = phy_alloc_aligment(size, alignment);
 #endif
   }
-#endif
 
   return addr;
 }
@@ -237,22 +230,10 @@ void* kmalloc_alignment(size_t size, int alignment, u32 flag) {
 void kfree(void* ptr) { vm_free(ptr); }
 
 void kfree_alignment(void* ptr) {
-#ifdef USE_POOL
-  thread_t* current = thread_current();
   void* addr = kpage_v2p(ptr, 0);
-  size_t size = mm_get_size(addr);
-  if (size == PAGE_SIZE) {
-    int ret = queue_pool_put(user_pool, addr);
-    if (ret != 0) {
-      log_info("use pool put addr %x\n", addr);
-      return;
-    }
-  }
-#else
+  size_t size = mm_get_align_size(addr);
   vm_free_alignment(ptr);
-// size_t size = mm_get_size(ptr);
-// memory_static(size, MEMORY_TYPE_FREE);
-#endif
+  memory_static(size, MEMORY_TYPE_FREE);
 }
 
 int kmem_size(void* ptr) {
@@ -314,15 +295,15 @@ void* valloc(void* addr, size_t size) {
   u32 page_alignt = PAGE_SIZE - 1;
   void* vaddr = (u32)addr & (~page_alignt);
   // void* vaddr = ALIGN((u32)addr, PAGE_SIZE);
-
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
   for (int i = 0; i < pages; i++) {
-    void* phy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
+    void* phy_addr = NULL;
+    phy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
     void* paddr = phy_addr;
-#ifdef DEBUG
-    log_debug("map page:%x vaddr:%x paddr:%x\n", current->vm->upage, vaddr,
+    // #ifdef DEBUG
+    log_debug("valloc page:%x vaddr:%x paddr:%x\n", current->vm->upage, vaddr,
               paddr);
-#endif
+    // #endif
     if (current != NULL) {
       page_map_on(current->vm->upage, vaddr, paddr,
                   PAGE_P | PAGE_USR | PAGE_RWX);
@@ -346,13 +327,18 @@ void vfree(void* addr, size_t size) {
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
   for (int i = 0; i < pages; i++) {
     void* phy = page_v2p(current->vm->upage, vaddr);
-#ifdef DEBUG
+    // #ifdef DEBUG
     log_debug("vfree vaddr:%x paddr:%x\n", vaddr, phy);
-#endif
-    // todo
-     page_unmap_on(current->vm->upage, vaddr);
+    // #endif
     if (phy != NULL) {
-      kfree_alignment(phy);
+      // fix me
+      int s = mm_get_align_size(phy);
+      if (s >= PAGE_SIZE) {
+        kfree_alignment(phy);
+        page_unmap_on(current->vm->upage, vaddr);
+      } else {
+        log_warn("not match free size %x %d\n", phy, s);
+      }
     }
     vaddr += PAGE_SIZE;
   }
@@ -389,7 +375,7 @@ void* kpage_v2p(void* addr, int size) {
 void kpool_init() {
 #ifdef USE_POOL
   kernel_pool = queue_pool_create(KERNEL_POOL_NUM, PAGE_SIZE);
-  user_pool = queue_pool_create_align(USER_POOL_NUM , PAGE_SIZE, PAGE_SIZE);
+  user_pool = queue_pool_create_align(USER_POOL_NUM, PAGE_SIZE, PAGE_SIZE);
 #else
   kernel_pool = NULL;
   user_pool = NULL;
