@@ -673,3 +673,14 @@ int thread_count() {
   }
   return count;
 }
+
+thread_t* thread_find_id(int id) {
+  for (int i = 0; i < MAX_CPU; i++) {
+    for (thread_t* p = schedulable_head_thread[i]; p != NULL; p = p->next) {
+      if(p->id==id){
+        return p;
+      }
+    }
+  }
+  return NULL;
+}

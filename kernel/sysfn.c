@@ -998,6 +998,19 @@ int sys_thread_dump() {
   return current->id;
 }
 
+int sys_kill(pid_t pid, int sig) {
+  if (pid <= 0) {
+    log_error("cannot kill kernel\n");
+    return -1;
+  }
+  thread_t* t = thread_find_id(pid);
+  if (t == NULL) {
+    return -1;
+  }
+  thread_stop(t);
+  return 0;
+}
+
 void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_READ] = &sys_read;
   syscall_table[SYS_WRITE] = &sys_write;
@@ -1081,4 +1094,6 @@ void sys_fn_init(void** syscall_table) {
 
   syscall_table[SYS_THREAD_CREATE] = &sys_thread_create;
   syscall_table[SYS_THREAD_DUMP] = &sys_thread_dump;
+
+  syscall_table[SYS_KILL] = &sys_kill;
 }
