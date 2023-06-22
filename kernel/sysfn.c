@@ -13,7 +13,7 @@
 #include "thread.h"
 #include "vfs.h"
 
-// #define log_debug
+#define log_debug
 
 int sys_print(char* s) {
   thread_t* current = thread_current();
@@ -343,12 +343,15 @@ int sys_fork() {
     log_error("current is null\n");
     return -1;
   }
+#ifdef DEBUG
   log_debug("sys fork current kstak size %d\n", current->ctx->ksp_size);
-
+#endif
   // thread_stop(current);
   thread_t* copy_thread = thread_copy(current, THREAD_FORK);
   thread_set_ret(copy_thread, 0);
+#ifdef DEBUG
   log_debug("fork copy finished\n");
+#endif
 #ifdef LOG_DEBUG
   log_debug("-------dump current thread %d %s-------------\n", current->id);
   thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
@@ -357,7 +360,9 @@ int sys_fork() {
 #endif
   thread_run(copy_thread);
   thread_run(current);
+#ifdef DEBUG
   log_debug("fork end\n");
+#endif
   return current->id;
 }
 

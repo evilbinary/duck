@@ -20,7 +20,8 @@ u32 recycle_head_thread_count = 0;
 u32 thread_ids = 0;
 lock_t thread_lock;
 
-#define DEBUG 1
+#define log_debug
+// #define DEBUG 1
 
 void thread_init() { lock_init(&thread_lock); }
 
@@ -256,9 +257,10 @@ int thread_check(thread_t* thread) {
     log_error("thread map have error\n");
     return -1;
   }
+#ifdef DEBUG
   vmemory_dump(thread->vm);
   thread_dump(thread, 0);
-
+#endif
   log_debug("tid %d kpage %x upage %x\n", thread->id, thread->vm->kpage,
             thread->vm->upage);
 #endif

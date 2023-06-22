@@ -26,7 +26,7 @@ size_t vioctl(vnode_t *node, u32 cmd, void *args) {
     // va_end(args);
     return ret;
   } else {
-    log_warn("node %s ioctl is null\n", node->name);
+    // log_warn("node %s ioctl is null\n", node->name);
     return 0;
   }
 }

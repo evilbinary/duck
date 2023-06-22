@@ -5,14 +5,14 @@
  ********************************************************************/
 #include "memory.h"
 
+#define log_debug
+
 void vmemory_area_free(vmemory_area_t* area) {
   if (area == NULL) return;
   u32 vaddr = area->vaddr;
   // todo fix me
   area->flags = MEMORY_FREE;
-#ifdef DEBUG
   log_debug("vmemory area free %x - %x\n", vaddr, area->vend);
-#endif
   vfree(vaddr, area->size);
 }
 
