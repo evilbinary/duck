@@ -10,7 +10,9 @@ void vmemory_area_free(vmemory_area_t* area) {
   u32 vaddr = area->vaddr;
   // todo fix me
   area->flags = MEMORY_FREE;
-  log_debug("vmemory area free %x\n", vaddr);
+#ifdef DEBUG
+  log_debug("vmemory area free %x - %x\n", vaddr, area->vend);
+#endif
   vfree(vaddr, area->size);
 }
 
@@ -48,6 +50,9 @@ void vmemory_area_add(vmemory_area_t* areas, vmemory_area_t* area) {
 
 vmemory_area_t* vmemory_area_find_last(vmemory_area_t* areas) {
   vmemory_area_t* p = areas;
+  if (areas == NULL) {
+    return NULL;
+  }
   for (; p->next != NULL; p = p->next) {
   }
   return p;

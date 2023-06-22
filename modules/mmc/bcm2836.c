@@ -11,7 +11,7 @@
 // #define EMMC_DEBUG
 // #define SD_DEBUG
 
-#define CACHE_COUNT 2
+#define CACHE_COUNT 1
 #define SECTOR_SIZE (512*CACHE_COUNT)
 #define CACHE_ENABLED 1
 

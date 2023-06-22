@@ -300,10 +300,10 @@ void* valloc(void* addr, size_t size) {
     void* phy_addr = NULL;
     phy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
     void* paddr = phy_addr;
-    // #ifdef DEBUG
+    #ifdef DEBUG
     log_debug("valloc page:%x vaddr:%x paddr:%x\n", current->vm->upage, vaddr,
               paddr);
-    // #endif
+    #endif
     if (current != NULL) {
       page_map_on(current->vm->upage, vaddr, paddr,
                   PAGE_P | PAGE_USR | PAGE_RWX);
@@ -327,14 +327,14 @@ void vfree(void* addr, size_t size) {
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
   for (int i = 0; i < pages; i++) {
     void* phy = page_v2p(current->vm->upage, vaddr);
-    // #ifdef DEBUG
+    #ifdef DEBUG
     log_debug("vfree vaddr:%x paddr:%x\n", vaddr, phy);
-    // #endif
+    #endif
     if (phy != NULL) {
-      // fix me
       int s = mm_get_align_size(phy);
       if (s >= PAGE_SIZE) {
-        kfree_alignment(phy);
+        // fix me
+        //kfree_alignment(phy);
         page_unmap_on(current->vm->upage, vaddr);
       } else {
         log_warn("not match free size %x %d\n", phy, s);

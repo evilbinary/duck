@@ -260,14 +260,31 @@ void test_queue_pool() {
   run_test_queue_pool_case(1, 2, sizeof(int), 16);
 
   // 测试用例 6: 测试使用不同大小的元素和不同对齐方式
-  run_test_queue_pool_case(8, 8 ,sizeof(float), 4);
+  run_test_queue_pool_case(8, 8, sizeof(float), 4);
   run_test_queue_pool_case(20, 20, sizeof(char), 1);
   run_test_queue_pool_case(15, 15, sizeof(double), 8);
+}
 
+void test_queue_pool_page() {
+  int num=1000;
+  queue_pool_t* q =
+      queue_pool_create_align(num, PAGE_SIZE, PAGE_SIZE);
+  int count = 0;
+  for (int i = 0; i < num; i++) {
+    void* addr = queue_pool_poll(q);
+    if (addr != NULL) {
+      kmemset(addr, 0, PAGE_SIZE);
+      count++;
+    } else {
+      kprintf("Test case %d Failed\n", i);
+    }
+  }
+  kprintf("test success %d\n", count);
 }
 
 // 内核测试用例
 void test_kernel() {
   // test_pool();
   // test_queue_pool();
+  // test_queue_pool_page();
 }

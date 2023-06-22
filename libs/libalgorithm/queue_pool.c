@@ -3,13 +3,15 @@
 queue_pool_t* queue_pool_create_align(u32 size, u32 bytes, u32 align) {
   queue_pool_t* q = fn_malloc(sizeof(queue_pool_t));
   q->capacity = size;
-  q->pool = pool_create(size * bytes);
+  q->pool = pool_create(size * (bytes + align));
   q->bytes = bytes;
   q->queue = cqueue_create(size, CQUEUE_RESIZE);
   for (int i = 0; i < size; i++) {
     void* e = pool_alloc(q->pool, bytes, align);
     if (e != NULL) {
       cqueue_put(q->queue, e);
+    } else {
+      kprintf("pool alloc null\n");
     }
   }
   return q;
