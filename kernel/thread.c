@@ -102,6 +102,11 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   ctx->usp = usp + ustack_size;
   ctx->usp_size = ustack_size;
 
+  u32 mode = USER_MODE;
+  if (level == LEVEL_KERNEL || level == LEVEL_KERNEL_SHARE) {
+    mode = KERNEL_MODE;
+  }
+  
 #ifdef VM_ENABLE
   // vm init
   vmemory_t* vm = kmalloc(sizeof(vmemory_t), KERNEL_TYPE);
@@ -110,10 +115,6 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   // init vm include stack heap exec
   vmemory_init(vm, level, usp, ustack_size, flags);
 
-  u32 mode = USER_MODE;
-  if (level == LEVEL_KERNEL || level == LEVEL_KERNEL_SHARE) {
-    mode = KERNEL_MODE;
-  }
   vmemory_area_t* vm_stack = vmemory_area_find_flag(vm->vma, MEMORY_STACK);
   context_init(ctx, ctx->ksp_end, vm_stack->vend, entry, mode, thread->cpu_id);
 #else

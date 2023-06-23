@@ -1,7 +1,6 @@
 
 #include "kernel/kernel.h"
 
-extern module_t log_module;
 
 #ifdef ARM
 #ifdef ARMV7
@@ -11,6 +10,7 @@ extern module_t gpio_module;
 extern module_t spi_module;
 extern module_t devfs_module;
 extern module_t serial_module;
+extern module_t log_module;
 #else
 
 extern module_t gpu_module;
@@ -46,6 +46,7 @@ extern module_t fat_module;
 extern module_t sb16_module;
 extern module_t test_module;
 extern module_t pty_module;
+extern module_t log_module;
 #elif defined(XTENSA)
 extern module_t hello_module;
 #elif defined(GENERAL)
@@ -54,10 +55,12 @@ extern module_t hello_module;
 extern module_t serial_module;
 extern module_t sdhci_module;
 extern module_t fat_module;
+extern module_t log_module;
 #elif defined(RISCV)
 extern module_t devfs_module;
 extern module_t hello_module;
 extern module_t serial_module;
+extern module_t log_module;
 // extern module_t fat_module;
 
 #else
@@ -82,6 +85,7 @@ void modules_init(void) {
   module_regist(&hello_module);
   module_regist(&spi_module);
   module_regist(&lcd_module);
+  module_regist(&log_module);
 
 #else
   // require
@@ -101,6 +105,7 @@ void modules_init(void) {
   module_regist(&test_module);
   module_regist(&pty_module);
   module_regist(&rtc_module);
+  module_regist(&log_module);
 
 
 #ifdef MUSL_MODULE
@@ -135,6 +140,7 @@ void modules_init(void) {
   module_regist(&ahci_module);
   module_regist(&fat_module);
   module_regist(&test_module);
+  module_regist(&log_module);
 
 #elif defined(XTENSA)
   module_regist(&hello_module);
@@ -147,18 +153,20 @@ void modules_init(void) {
   module_regist(&fat_module);
 
   module_regist(&hello_module);
+  module_regist(&log_module);
 
 #elif defined(RISCV)
   // require
   module_regist(&devfs_module);
 
   module_regist(&serial_module);
+  module_regist(&log_module);
+
   // module_regist(&fat_module);
 #else
   module_regist(&hello_module);
 #endif
 
-  module_regist(&log_module);
 
   module_run_all();
 

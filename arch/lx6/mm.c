@@ -73,7 +73,7 @@ void page_clone(u32* old_page, u32* new_page) {
   // }
 }
 
-void unpage_map_on(page_dir_t* page, u32 virtualaddr) {
+void page_unmap_on(page_dir_t* page, u32 virtualaddr) {
   u32* l1 = page;
   u32 l1_index = virtualaddr >> 20;
   u32 l2_index = virtualaddr >> 12 & 0xFF;
