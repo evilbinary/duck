@@ -5,12 +5,26 @@
  ********************************************************************/
 #include "kernel/kernel.h"
 
+static void do_read_thread() {
+  for (;;) {
+    kprintf("test kernel thread\n");
+  }
+}
+
+void test_kernel_thread() {
+  thread_t* read_thread = thread_create_name_level(
+      "poll", (u32*)&do_read_thread, NULL, LEVEL_KERNEL);
+  thread_run(read_thread);
+}
+
 int test_init(void) {
   log_info("test hello\n");
 #ifdef X86
   test_ahci();
 #endif
   // test_fat();
+  
+  // test_kernel_thread();
   return 0;
 }
 

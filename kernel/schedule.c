@@ -67,7 +67,6 @@ void schedule(interrupt_context_t* ic) {
 }
 
 void schedule_switch() {
-  cpu_cli();
   thread_t* current_thread = thread_current();
   interrupt_context_t* ic = current_thread->ctx->ic;
   int cpu = cpu_get_id();

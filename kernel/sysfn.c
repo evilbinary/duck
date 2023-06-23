@@ -6,13 +6,13 @@
 
 #include "sysfn.h"
 
+#include "event.h"
 #include "fd.h"
 #include "kernel.h"
 #include "kernel/elf.h"
 #include "loader.h"
 #include "thread.h"
 #include "vfs.h"
-#include "event.h"
 
 #define log_debug
 
@@ -163,10 +163,12 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
   if (ret > 0) {
     f->offset += ret;
   }
+#ifdef USE_BLOCK
   if (ret == 0) {
     source_t* source = event_source_io_create(node, f, nbytes, buf);
     event_wait(current, source);
   }
+#endif
   return ret;
 }
 
@@ -1016,6 +1018,15 @@ int sys_kill(pid_t pid, int sig) {
   return 0;
 }
 
+void* sys_thread_addr(void* vaddr) {
+  void* phy_addr = kpage_v2p(vaddr, 0);
+  kprintf("===>>%x=>%x\n", vaddr, phy_addr);
+  kprintf("phy_addr value===>%x vaddr value:%x %x\n", *((char*)phy_addr),
+          *((char*)vaddr));
+  // *((char*)vaddr)= *((char*)phy_addr);
+  return phy_addr;
+}
+
 void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_READ] = &sys_read;
   syscall_table[SYS_WRITE] = &sys_write;
@@ -1101,4 +1112,5 @@ void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_THREAD_DUMP] = &sys_thread_dump;
 
   syscall_table[SYS_KILL] = &sys_kill;
+  syscall_table[SYS_THREAD_ADDR] = &sys_thread_addr;
 }

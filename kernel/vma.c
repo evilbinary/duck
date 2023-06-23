@@ -6,7 +6,7 @@
 #include "memory.h"
 #include "thread.h"
 
-// #define log_debug
+#define log_debug
 
 void vmemory_area_free(vmemory_area_t* area) {
   if (area == NULL) return;

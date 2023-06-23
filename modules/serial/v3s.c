@@ -8,13 +8,12 @@
 
 void serial_write(char a) { uart_send(a); }
 
-
 char serial_read() {
   // return uart_receive();
   unsigned int c = 0;
   unsigned int addr = 0x01c28000;  // UART0
   if ((io_read32(addr + 0x14) & (0x1 << 0)) != 0) {
-    c = io_read32(addr + 0x00);  
+    c = io_read32(addr + 0x00);
   }
   return c;
 }
@@ -31,19 +30,19 @@ void serial_printf(char* fmt, ...) {
   }
 }
 
-static size_t read(device_t* dev, void* buf, size_t len) {
+static size_t read(device_t* dev, char* buf, size_t len) {
   u32 ret = 0;
   for (int i = 0; i < len; i++) {
-    int c = serial_read();
-    if (c > 0) {
+    char c = serial_read();
+    if (c != 0) {
       ret++;
-      ((char*)buf)[i] = c;
+      buf[i] = c;
     }
   }
   return ret;
 }
 
-static size_t write(device_t* dev, void* buf, size_t len) {
+static size_t write(device_t* dev, char* buf, size_t len) {
   u32 ret = len;
   for (int i = 0; i < len; i++) {
     serial_write(((char*)buf)[i]);

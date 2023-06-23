@@ -82,6 +82,7 @@ enum {
   SYS_THREAD_SELF = 514,
   SYS_THREAD_CREATE = 515,
   SYS_THREAD_DUMP = 516,
+  SYS_THREAD_ADDR = 517,
 };
 
 #elif defined(X86)
@@ -156,6 +157,7 @@ enum {
   SYS_THREAD_SELF = 514,
   SYS_THREAD_CREATE = 515,
   SYS_THREAD_DUMP = 516,
+  SYS_THREAD_ADDR = 517,
 };
 
 #else
@@ -227,7 +229,7 @@ enum {
   SYS_THREAD_SELF = 514,
   SYS_THREAD_CREATE = 515,
   SYS_THREAD_DUMP = 516,
-
+  SYS_THREAD_ADDR = 517,
 };
 #endif
 
