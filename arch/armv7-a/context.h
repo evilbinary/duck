@@ -73,7 +73,7 @@ typedef struct context_t {
       :                                          \
       : "i"(VEC), "i"(CODE), "i"(TYPE))
 
-#define interrupt_exit_context(duck_context) \
+#define interrupt_exit_context(ksp) \
   asm volatile(                              \
       "ldr sp,%0 \n"                         \
       "ldmfd sp!,{r1,r2}\n"                  \
@@ -83,7 +83,7 @@ typedef struct context_t {
       "add sp,sp,#60\n"                      \
       "subs pc,lr,#0\n"                      \
       :                                      \
-      : "m"(duck_context->ksp))
+      : "m"(ksp))
 
 #define interrupt_exit_ret()       \
   asm volatile(                    \
@@ -116,7 +116,7 @@ typedef struct context_t {
 #define context_ret(context) context->r0
 #define context_set_entry(context, entry) (((interrupt_context_t*)context)->pc = entry);
 
-#define context_restore(duck_context) interrupt_exit_context(duck_context);
+#define context_restore(duck_context) interrupt_exit_context(duck_context->ksp);
 
 int context_clone(context_t* context, context_t* src);
 int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,

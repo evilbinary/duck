@@ -21,6 +21,11 @@
 #define THREAD_SLEEP 5
 #define THREAD_UNINTERRUPTIBLE 15
 
+#define LEVEL_KERNEL 0
+#define LEVEL_KERNEL_SHARE 1
+#define LEVEL_USER 3
+
+
 #define FS_CLONE 1 << 1
 #define VM_CLONE_ALL 1 << 2
 #define VM_CLONE 1 << 3

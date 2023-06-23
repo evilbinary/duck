@@ -29,7 +29,7 @@ int kmain(int argc, char* argv[]) {
   kernel_init();
 
   thread_t* t1 = thread_create_name_level("kernel", (u32*)&do_kernel_thread,
-                                          NULL, KERNEL_MODE);
+                                          NULL, LEVEL_KERNEL_SHARE);
   thread_t* t2 = thread_create_name("shell", (u32*)&do_shell_thread, NULL);
   thread_run(t1);
   thread_run(t2);

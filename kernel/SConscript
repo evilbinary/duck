@@ -44,7 +44,8 @@ env.Library('yiyiya', [
     'trace.c',
     'logger.c',
     'vma.c',
-    'page.c'
+    'page.c',
+    'event.c'
     ],
     CPPPATH=include,
     LIBS=libs,

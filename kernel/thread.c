@@ -48,7 +48,7 @@ thread_t* thread_create_name_level(char* name, void* entry, void* data,
 }
 
 thread_t* thread_create(void* entry, void* data) {
-  return thread_create_level(entry, data, USER_MODE);
+  return thread_create_level(entry, data, LEVEL_USER);
 }
 
 thread_t* thread_create_ex_name(char* name, void* entry, u32 size, void* data,
@@ -110,12 +110,14 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   // init vm include stack heap exec
   vmemory_init(vm, level, usp, ustack_size, flags);
 
+  u32 mode = USER_MODE;
+  if (level == LEVEL_KERNEL || level == LEVEL_KERNEL_SHARE) {
+    mode = KERNEL_MODE;
+  }
   vmemory_area_t* vm_stack = vmemory_area_find_flag(vm->vma, MEMORY_STACK);
-  context_init(ctx, ctx->ksp_end, vm_stack->vend, entry, thread->level,
-               thread->cpu_id);
+  context_init(ctx, ctx->ksp_end, vm_stack->vend, entry, mode, thread->cpu_id);
 #else
-  context_init(ctx, ctx->ksp_end, ctx->usp, entry, thread->level,
-               thread->cpu_id);
+  context_init(ctx, ctx->ksp_end, ctx->usp, entry, mode, thread->cpu_id);
 #endif
 
   // vfs
@@ -186,7 +188,7 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
     copy->fd_number = thread->fd_number;
     copy->fds = kmalloc(sizeof(fd_t*) * thread->fd_size, KERNEL_TYPE);
     kmemmove(copy->fds, thread->fds, sizeof(fd_t*) * thread->fd_size);
-  }else{
+  } else {
     thread_fill_fd(thread);
   }
 
@@ -293,7 +295,7 @@ void thread_wait(thread_t* thread) {
             thread->id);
 #endif
   thread->state = THREAD_WAITING;
-  schedule_next();
+  schedule_switch();
 }
 
 void thread_wake(thread_t* thread) {
@@ -303,7 +305,6 @@ void thread_wake(thread_t* thread) {
 #endif
   thread->state = THREAD_RUNNING;
   thread->sleep_counter = 0;
-  schedule_next();
 }
 
 void thread_set_entry(thread_t* thread, void* entry) {
@@ -333,7 +334,7 @@ void thread_set_ret(thread_t* thread, u32 ret) {
     log_error("context is null cannot set ret\n");
     return;
   }
-  context_ret(ic) = 0;
+  context_ret(ic) = ret;
 }
 
 void thread_set_params(thread_t* thread, void* args, int size) {
@@ -650,7 +651,9 @@ void thread_dumps() {
       }
       kprintf("%-8s %4d %6d %4dk %4dk %4dk %4d %6d     %1d\n", str, p->cpu_id,
               p->counter,
-              p->vm!=NULL && p->vm->vma != NULL ? p->vm->vma->alloc_size / 1024 : 0,
+              p->vm != NULL && p->vm->vma != NULL
+                  ? p->vm->vma->alloc_size / 1024
+                  : 0,
               p->mem / 1024, p->ctx->usp_size / 1024, p->fd_number,
               p->sleep_counter, p->level);
     }
@@ -677,7 +680,7 @@ int thread_count() {
 thread_t* thread_find_id(int id) {
   for (int i = 0; i < MAX_CPU; i++) {
     for (thread_t* p = schedulable_head_thread[i]; p != NULL; p = p->next) {
-      if(p->id==id){
+      if (p->id == id) {
         return p;
       }
     }

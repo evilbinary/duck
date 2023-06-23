@@ -66,6 +66,24 @@ void schedule(interrupt_context_t* ic) {
 #endif
 }
 
+void schedule_switch() {
+  cpu_cli();
+  thread_t* current_thread = thread_current();
+  interrupt_context_t* ic = current_thread->ctx->ic;
+  int cpu = cpu_get_id();
+  schedule_state(cpu);
+  thread_t* next_thread = schedule_next(cpu);
+  thread_set_current(next_thread);
+
+  interrupt_context_t* next_ic =
+      context_switch(ic, current_thread->ctx, next_thread->ctx);
+
+#ifdef VM_ENABLE
+  context_switch_page(next_thread->ctx, next_thread->vm->upage);
+#endif
+  interrupt_exit_context(next_ic);
+}
+
 void schedule_sleep(u32 nsec) {
   thread_t* current = thread_current();
   if (current == NULL || current->state != THREAD_RUNNING) {

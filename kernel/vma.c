@@ -4,8 +4,9 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "memory.h"
+#include "thread.h"
 
-#define log_debug
+// #define log_debug
 
 void vmemory_area_free(vmemory_area_t* area) {
   if (area == NULL) return;
@@ -182,7 +183,7 @@ void vmemory_map(u32* page_dir, u32 virt_addr, u32 phy_addr, u32 size) {
 
 void vmemory_init(vmemory_t* vm, u32 level, u32 usp, u32 usp_size, u32 flags) {
   u32 koffset = 0;
-  if (level == KERNEL_MODE) {
+  if (level == LEVEL_KERNEL || level == LEVEL_KERNEL_SHARE) {
     koffset += KERNEL_OFFSET;
   }
   if (vm == NULL) {
@@ -195,8 +196,10 @@ void vmemory_init(vmemory_t* vm, u32 level, u32 usp, u32 usp_size, u32 flags) {
   }
   vm->vma = vmemory_create_default(koffset);
   vm->kpage = page_kernel_dir();
-  if (level == KERNEL_MODE) {
+  if (level == LEVEL_KERNEL_SHARE) {
     vm->upage = vm->kpage;
+  } else if (level == LEVEL_KERNEL) {
+    vm->upage = page_clone(vm->kpage, KERNEL_MODE);
   } else {
     vm->upage = page_clone(vm->kpage, level);
     // vm->upage = page_create(0);
@@ -213,9 +216,9 @@ void vmemory_init(vmemory_t* vm, u32 level, u32 usp, u32 usp_size, u32 flags) {
     vmemory_map(vm->upage, vm_stack->alloc_addr, usp - usp_size, usp_size);
   }
 
-  if (level == KERNEL_MODE) {
+  if (level == LEVEL_KERNEL || level == LEVEL_KERNEL_SHARE) {
     log_debug("tid %d kernel vm init end\n", vm->tid);
-  } else if (level == USER_MODE) {
+  } else if (level == LEVEL_USER) {
     log_debug("tid %d user vm init end\n", vm->tid);
   }
 }

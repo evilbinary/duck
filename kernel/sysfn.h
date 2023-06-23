@@ -10,6 +10,7 @@
 #include "kernel/sysinfo.h"
 #include "kernel/time.h"
 #include "types.h"
+#include "kernel/event.h"
 
 #if defined(ARM)
 enum {

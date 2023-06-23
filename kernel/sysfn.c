@@ -12,6 +12,7 @@
 #include "loader.h"
 #include "thread.h"
 #include "vfs.h"
+#include "event.h"
 
 #define log_debug
 
@@ -161,6 +162,10 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
   u32 ret = vread(node, f->offset, nbytes, buf);
   if (ret > 0) {
     f->offset += ret;
+  }
+  if (ret == 0) {
+    source_t* source = event_source_io_create(node, f, nbytes, buf);
+    event_wait(current, source);
   }
   return ret;
 }

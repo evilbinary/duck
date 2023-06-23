@@ -251,7 +251,7 @@ void memory_static(u32 size, int type) {
     op = -1;
   }
   if (current != NULL) {
-    if (current->level == USER_MODE) {
+    if (current->level == LEVEL_USER) {
       memory_summary.user_used += size * op;
       current->mem += size * op;
     } else {

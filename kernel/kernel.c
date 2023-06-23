@@ -28,6 +28,8 @@ void kernel_init() {
     vfs_init();
     log_info("kernel init end\n");
     thread_init();
+    log_info("event init end\n");
+    event_init();
   }else{
     log_info("ap kernel init\n");
     schedule_init();
