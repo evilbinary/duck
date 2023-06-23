@@ -87,7 +87,7 @@ typedef struct context_t {
       :                                    \
       : "i"(VEC), "i"(CODE))
 
-#define interrupt_exit_context(duck_context) \
+#define interrupt_exit_context(ksp) \
   asm volatile(                              \
       "l32i sp,%0\n"                         \
       "l32i a2,sp,2*4 \n"                    \
@@ -111,7 +111,7 @@ typedef struct context_t {
       "l32i a1,sp,4*4 \n"                    \
       "rfe\n"                                \
       :                                      \
-      : "m"(duck_context->ksp))
+      : "m"(ksp))
 
 #define interrupt_entering(VEC) interrupt_entering_code(VEC, 0)
 
@@ -126,6 +126,6 @@ typedef struct context_t {
 #define context_ret(context) context->a2
 #define context_set_entry(context, entry) ((interrupt_context_t*)((context)));
 
-#define context_restore(duck_context) interrupt_exit_context(duck_context);
+#define context_restore(duck_context) interrupt_exit_context(duck_context->ksp);
 
 #endif

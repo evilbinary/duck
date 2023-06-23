@@ -132,7 +132,7 @@ void timer_init(int hz);
       :                      \
       :)
 
-#define interrupt_exit_context(context) \
+#define interrupt_exit_context(ksp) \
   asm volatile(                         \
       "mov %0,%%esp\n"                  \
       "pop %%gs\n"                      \
@@ -144,14 +144,14 @@ void timer_init(int hz);
       "sti\n"                           \
       "iret\n"                          \
       :                                 \
-      : "m"(context->ksp))
+      : "m"(ksp))
 
 #define context_fn(context) context->eax
 #define context_ret(context) context->eax
 #define context_set_entry(context, entry) \
   ((interrupt_context_t*)context)->eip = entry
 
-#define context_restore(duck_context) interrupt_exit_context(duck_context)
+#define context_restore(duck_context) interrupt_exit_context(duck_context->ksp)
 int context_clone(context_t* context, context_t* src);
 int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
                  u32 level, int cpu);

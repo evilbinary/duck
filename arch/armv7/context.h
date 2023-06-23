@@ -83,7 +83,7 @@ typedef struct context_t {
                                              : \
                                              :)
 
-#define interrupt_exit_context(duck_context)   \
+#define interrupt_exit_context(usp)   \
   asm volatile(                              \ 
       "ldr r0,%0 \n"                           \
       "ldmfd r0!,{r1,r2}\n"                    \
@@ -93,7 +93,7 @@ typedef struct context_t {
       "isb\n"                                  \
       "bx lr\n"                                \
                                              : \
-                                             : "m"(duck_context->usp))
+                                             : "m"(usp))
 
 #define interrupt_entering(VEC) interrupt_entering_code(VEC, 0)
 

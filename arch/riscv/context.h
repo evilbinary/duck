@@ -146,7 +146,7 @@ typedef struct context_t {
       :                                          \
       : "i"(VEC), "i"(CODE))
 
-#define interrupt_exit_context(duck_context) \
+#define interrupt_exit_context(ksp) \
   asm volatile(                              \
       "mv sp, %0\n"                          \
       "lw t0, 29*4(sp)\n"                    \
@@ -185,7 +185,7 @@ typedef struct context_t {
       "csrrw sp, sscratch, sp\n"             \
       "sret\n"                               \
       :                                      \
-      : "r"(duck_context->ksp)               \
+      : "r"(ksp)               \
       : "memory");
 
 #define interrupt_exit_ret()     \
@@ -278,7 +278,7 @@ typedef struct context_t {
 
 #define context_set_entry(context, entry) \
   (((interrupt_context_t*)context)->ra = entry);
-#define context_restore(duck_context) interrupt_exit_context(duck_context);
+#define context_restore(duck_context) interrupt_exit_context(duck_context->ksp);
 
 int context_clone(context_t* context, context_t* src);
 int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
