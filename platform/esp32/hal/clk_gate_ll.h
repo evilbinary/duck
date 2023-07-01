@@ -10,8 +10,8 @@
 extern "C" {
 #endif
 
-#include <stdint.h>
-#include <stdbool.h>
+// #include <stdint.h>
+// #include <stdbool.h>
 #include "esp_attr.h"
 #include "soc/periph_defs.h"
 #include "soc/dport_reg.h"

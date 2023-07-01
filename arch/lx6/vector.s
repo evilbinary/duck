@@ -131,7 +131,7 @@ window_underflow_12:
 .align 64
  kernel_exception:
     wsr.excsave1 a1
-    wsr.depc a0
+    /*wsr.depc a0*/
 
     call0 kernel_excetpion_handler
 
@@ -143,7 +143,7 @@ window_underflow_12:
 .align 64
 user_exception:
     wsr.excsave1 a1
-    wsr.depc a0
+    /*wsr.depc a0*/
 
     call0 user_excetpion_handler
 

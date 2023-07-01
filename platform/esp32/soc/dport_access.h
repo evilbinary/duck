@@ -7,9 +7,10 @@
 #ifndef _DPORT_ACCESS_H_
 #define _DPORT_ACCESS_H_
 
-#include <stdint.h>
+// #include <stdint.h>
 #include "soc/soc_caps.h"
-#include "sdkconfig.h"
+// #include "sdkconfig.h"
+#include "types.h"
 
 #ifdef __cplusplus
 extern "C" {

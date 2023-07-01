@@ -31,7 +31,7 @@ char printf_buffer[KPRINT_BUF];
 
 int kprintf(const char* fmt, ...) {
   kmemset(printf_buffer,0,KPRINT_BUF);
-  int i;
+  int i=0;
 	va_list args;
 	va_start(args, fmt);
 	i = vsprintf(printf_buffer, fmt, args);

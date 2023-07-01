@@ -11,13 +11,8 @@ MEMORY {
 ENTRY(_kstart)
 
 SECTIONS {
-  .text : ALIGN(4) {
-    *(.text.boot)
-    *(.literal*)
-    *(.text .text.*)
-  } > irom
 
-  .text.vectors : ALIGN(4) {
+   .text.vectors : ALIGN(4) {
     . = ALIGN(64);
     _idt = .;
     KEEP(*(.WindowOverflow4.text));
@@ -53,7 +48,21 @@ SECTIONS {
     . = ALIGN(0x400);
     KEEP(*(.vector))
     KEEP(*(.vector*))
+    KEEP(*(.irq*))  
   } > iram
+
+  .iram0 : ALIGN(4) {
+    *(.iram0.literal*)
+    KEEP(*(.kernel_excetpion_handler*))
+  } > iram
+
+  .text : ALIGN(4) {
+    *(.text.boot)
+    *(.literal*)
+    *(.text .text.*)
+  } > irom
+
+ 
 
   .bss : ALIGN(4) {
      _bss_start = .;

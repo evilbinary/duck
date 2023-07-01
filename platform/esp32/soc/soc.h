@@ -7,7 +7,7 @@
 #pragma once
 
 #ifndef __ASSEMBLER__
-#include <stdint.h>
+// #include <stdint.h>
 #include "esp_assert.h"
 #include "soc/soc_caps.h"
 #endif

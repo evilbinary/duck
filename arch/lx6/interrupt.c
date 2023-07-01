@@ -9,16 +9,17 @@
 #include "context.h"
 #include "cpu.h"
 
-#define IRAM_ATTR(SECTION) __attribute__((section(SECTION )))
+#define INTERRUPT_SERVICE __attribute__((section(".iram0"),naked))
+
 
 extern boot_info_t* boot_info;
 
 interrupt_handler_t* interrutp_handlers[IDT_NUMBER];
-extern u64 _idt[IDT_NUMBER]  __attribute__((aligned(16)));
+extern u64 _idt[IDT_NUMBER] __attribute__((aligned(16)));
 
 void interrupt_init() {
-  u64* pidt=_idt;
-  kprintf("interrupt init %x\n",pidt);
+  u64* pidt = _idt;
+  kprintf("interrupt init %x\n", pidt);
   boot_info->idt_base = pidt;
   boot_info->idt_number = IDT_NUMBER;
   for (int i = 0; i < boot_info->idt_number; i++) {
@@ -34,10 +35,9 @@ void interrupt_regist(u32 vec, interrupt_handler_t handler) {
 
 void interrutp_set(int i) {
   u32 base = (u32)interrutp_handlers[i];
-  u64* idt_base=boot_info->idt_base;
+  u64* idt_base = boot_info->idt_base;
   // idt_base[i] = base;
 }
-
 
 INTERRUPT_SERVICE
 void reset_handler() {
@@ -50,7 +50,8 @@ INTERRUPT_SERVICE
 void l1_handler() {
   interrupt_entering_code(0, 0);
   interrupt_process(interrupt_default_handler);
-  cpu_halt();
+  // cpu_halt();
+  interrupt_exit();
 }
 
 INTERRUPT_SERVICE
@@ -97,6 +98,8 @@ void nmi_excetpion_handler() {
 
 INTERRUPT_SERVICE
 void kernel_excetpion_handler() {
+  kprintf("haha\n");
+  cpu_halt();
   interrupt_entering_code(0, 0);
   interrupt_process(interrupt_default_handler);
   interrupt_exit();
@@ -113,7 +116,8 @@ INTERRUPT_SERVICE
 void double_excetpion_handler() {
   interrupt_entering_code(0, 0);
   interrupt_process(interrupt_default_handler);
-  cpu_halt();
+  // cpu_halt();
+  interrupt_exit();
 }
 
 void exception_info(interrupt_context_t* ic) {

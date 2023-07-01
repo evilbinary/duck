@@ -28,7 +28,7 @@ u32 cpu_get_sp() {
 
 void cpu_set_vector(u32 addr) {
   kprintf("set vector a %x\n", addr);
-	asm volatile ("wsr.vecbase %0" :: "r" (addr));
+	asm volatile ("wsr %0,vecbase" :: "r" (addr));
   asm volatile("rsync\n");
 }
 
@@ -61,6 +61,12 @@ void cpu_wait(){
 }
 
 int cpu_get_id(){
+    // u32 id;
+    // asm volatile (
+    //     "rsr.prid %0\n"
+    //     "extui %0,%0,13,1"
+    //     :"=r"(id));
+    // return id;
   return 0;
 }
 
