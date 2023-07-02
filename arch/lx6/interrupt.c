@@ -98,8 +98,6 @@ void nmi_excetpion_handler() {
 
 INTERRUPT_SERVICE
 void kernel_excetpion_handler() {
-  kprintf("haha\n");
-  cpu_halt();
   interrupt_entering_code(0, 0);
   interrupt_process(interrupt_default_handler);
   interrupt_exit();
