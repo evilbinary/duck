@@ -27,7 +27,7 @@ extern module_t spi_module;
 extern module_t test_module;
 extern module_t pty_module;
 extern module_t rtc_module;
-
+extern module_t log_module;
 #endif
 
 #elif defined(X86)

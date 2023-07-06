@@ -16,21 +16,4 @@ extern voperator_t no_rw_operator;
 extern voperator_t device_operator;
 
 
-voperator_t no_rw_operator = {.close = device_close,
-                              .read = device_read,
-                              .write = device_write,
-                              .open = vfs_open,
-                              .find = vfs_find,
-                              .mount = vfs_mount,
-                              .readdir = vfs_readdir};
-
-voperator_t device_operator = {.ioctl = device_ioctl,
-                               .close = device_close,
-                               .open = device_open,
-                               .read = device_read,
-                               .write = device_write,
-                               .find = vfs_find,
-                               .mount = vfs_mount,
-                               .readdir = vfs_readdir};
-
 #endif
