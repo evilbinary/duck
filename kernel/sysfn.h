@@ -7,10 +7,10 @@
 #define SYSFN_H
 
 #include "kernel.h"
+#include "kernel/event.h"
 #include "kernel/sysinfo.h"
 #include "kernel/time.h"
 #include "types.h"
-#include "kernel/event.h"
 
 #if defined(ARM)
 enum {
@@ -36,7 +36,7 @@ enum {
   SYS_UMASK = 60,
   SYS_DUP2 = 63,
   SYS_GETPPID = 64,
-  SYS_READLINK =85,
+  SYS_READLINK = 85,
   SYS_READDIR = 89,
   SYS_MUNMAP = 91,
   SYS_STAT = 106,
@@ -60,6 +60,7 @@ enum {
   SYS_FCNT64 = 221,
   SYS_GETDENTS64 = 217,  // diff from x86
   SYS_CLOCK_NANOSLEEP = 230,
+  SYS_FUTEX = 240,
   SYS_SET_THREAD_AREA = 243,
   SYS_EXIT_GROUP = 248,  // diff from x86
   SYS_SET_TID_ADDRESS = 256,
@@ -110,7 +111,7 @@ enum {
   SYS_UMASK = 60,
   SYS_DUP2 = 63,
   SYS_GETPPID = 64,
-  SYS_READLINK =85,
+  SYS_READLINK = 85,
   SYS_READDIR = 89,
   SYS_MUNMAP = 91,
   SYS_STAT = 106,
@@ -135,6 +136,7 @@ enum {
   SYS_MADVISE = 219,
   SYS_GETDENTS64 = 220,
   SYS_CLOCK_NANOSLEEP = 230,
+  SYS_FUTEX = 240,
   SYS_SET_THREAD_AREA = 243,
   SYS_EXIT_GROUP = 252,  // diff from arm
   SYS_SET_TID_ADDRESS = 258,
@@ -183,7 +185,7 @@ enum {
   SYS_UMASK = 60,
   SYS_DUP2 = 63,
   SYS_GETPPID = 64,
-  SYS_READLINK =85,
+  SYS_READLINK = 85,
   SYS_READDIR = 89,
   SYS_STAT = 106,
   SYS_FSTAT = 108,
@@ -207,6 +209,7 @@ enum {
   SYS_FCNT64 = 221,
   SYS_GETDENTS64 = 220,
   SYS_CLOCK_NANOSLEEP = 230,
+  SYS_FUTEX = 240,
   SYS_SET_THREAD_AREA = 243,
   SYS_EXIT_GROUP = 252,  // diff from arm
   SYS_SET_TID_ADDRESS = 258,
@@ -260,16 +263,14 @@ typedef struct iovec {
   size_t iov_len;
 } iovec_t;
 
-
-#define	F_DUPFD					0
-#define	F_GETFD					1
-#define	F_SETFD					2
-#define	F_GETFL					3
-#define	F_SETFL					4
-#define	F_GETLK					5
-#define	F_SETLK					6
-#define	F_SETLKW				7
-
+#define F_DUPFD 0
+#define F_GETFD 1
+#define F_SETFD 2
+#define F_GETFL 3
+#define F_SETFL 4
+#define F_GETLK 5
+#define F_SETLK 6
+#define F_SETLKW 7
 
 u32 sys_open(char* name, int attr, ...);
 // size_t sys_ioctl(u32 fd, u32 cmd, ...);

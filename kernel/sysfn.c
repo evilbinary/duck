@@ -207,6 +207,10 @@ void sys_exit(int status) {
   //   cpu_sti();
   // }
   // cpu_cli();
+
+  if (current->info != NULL) {
+    current->info->detach_state = 0;
+  }
 }
 
 void* sys_vmap(void* addr, size_t size) {
@@ -864,9 +868,11 @@ int sys_thread_self() {
     current->info->self = current->info;
     current->info->tid = current->id;
     current->info->errno = 0;
+    current->info->prev = current->info->next = NULL;
     current->info->locale = kmalloc(sizeof(locale_t), KERNEL_TYPE);
     log_debug("locale at %x\n", current->info->locale);
   }
+  log_debug("sys thread self at %x\n", current->info);
   return current->info;
 }
 
@@ -1035,7 +1041,17 @@ int sys_fn_faild(interrupt_context_t* ic) {
   }
 }
 
+int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
+              const struct timespec* timeout, /* or: uint32_t val2 */
+              uint32_t* uaddr2, uint32_t val3) {
+  log_debug("sys futext not impl\n");
+
+  return 0;
+}
+
 void sys_fn_init(void** syscall_table) {
+  sys_fn_init_regist_faild(sys_fn_faild);
+
   syscall_table[SYS_READ] = &sys_read;
   syscall_table[SYS_WRITE] = &sys_write;
   syscall_table[SYS_YIELD] = &sys_yeild;
@@ -1122,5 +1138,5 @@ void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_KILL] = &sys_kill;
   syscall_table[SYS_THREAD_ADDR] = &sys_thread_addr;
 
-  sys_fn_init_regist_faild(sys_fn_faild);
+  syscall_table[SYS_FUTEX] = &sys_futex;
 }
