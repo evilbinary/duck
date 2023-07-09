@@ -308,13 +308,27 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   return 0;
 }
 
-int sys_clone(void* fn, void* stack, void* arg) {
+int sys_clone(void* fn, void* stack, int flags, void* arg, .../*, int parent_tid,
+              void* tls, int child_tid*/) {
   thread_t* current = thread_current();
   if (current == NULL) {
     log_error("current is null\n");
     return -1;
   }
-  thread_t* copy_thread = thread_copy(current, THREAD_FORK);
+  va_list ap;
+  va_start(ap, arg);
+  int* parent_tid = va_arg(ap, int*);
+  int* tls = va_arg(ap, int*);
+  int* child_tid = va_arg(ap, int*);
+  va_end(ap);
+
+
+  thread_t* find = thread_find_id(*parent_tid);
+  if (find == NULL) {
+    log_error("find parent tid %d is null\n", *parent_tid);
+    find = current;
+  }
+  thread_t* copy_thread = thread_copy(find, THREAD_FORK);
 #ifdef LOG_DEBUG
   kprintf("-------dump current thread %d %s-------------\n", current->id);
   thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);

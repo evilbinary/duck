@@ -339,7 +339,8 @@ int sys_fcntl64(int fd, int cmd, void* arg);
 int sys_getcwd(char* buf, size_t size);
 int sys_fchdir(int fd);
 
-int sys_clone(void* stack, void* fn, void* arg);
+int sys_clone(void* fn, void* stack, int flags, void* arg, .../* int parent_tid,
+              void* tls, int child_tid */);
 int sys_llseek(int fd, int offset_hi, int offset_lo, off_t* result, int whence);
 
 int sys_umask(int mask);
