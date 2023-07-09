@@ -15,6 +15,8 @@
 
 
 typedef void* (*sys_fn_handler_t)(void** syscall_table);
+typedef int (*sys_fn_handler_fail_t)(void* context);
+
 
 void syscall_init();
 void sys_fn_init_regist(sys_fn_handler_t handler);

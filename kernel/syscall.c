@@ -6,6 +6,7 @@
 #include "syscall.h"
 
 static void* syscall_table[SYSCALL_NUMBER] = {0};
+sys_fn_handler_fail_t sys_fn_faild_call_fn;
 
 void* do_syscall(interrupt_context_t* ic) {
   // kprintf("syscall %d\n", context_fn(ic));
@@ -20,6 +21,13 @@ void* do_syscall(interrupt_context_t* ic) {
     } else {
       log_debug("syscall %d not found\n", context_fn(ic));
     }
+  } else if (sys_fn_faild_call_fn != NULL) {
+    int ret = sys_fn_faild_call_fn(ic);
+    if (ret >= 0) {
+      return context_ret(ic);
+    }
+  } else {
+    log_debug("syscall did not found %d\n", context_fn(ic));
   }
   return NULL;
 }
@@ -27,6 +35,11 @@ void* do_syscall(interrupt_context_t* ic) {
 void sys_fn_init_regist(sys_fn_handler_t handler) {
   if (handler == NULL) return;
   handler(syscall_table);
+}
+
+void sys_fn_init_regist_faild(void* fn) {
+  if (fn == NULL) return;
+  sys_fn_faild_call_fn = fn;
 }
 
 void syscall_init() {

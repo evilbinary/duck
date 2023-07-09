@@ -14,7 +14,7 @@
 #include "thread.h"
 #include "vfs.h"
 
-#define log_debug
+// #define log_debug
 
 int sys_print(char* s) {
   thread_t* current = thread_current();
@@ -704,7 +704,7 @@ int sys_rename(const char* old, const char* new) {
 
 int sys_set_thread_area(void* set) {
   log_debug("sys set thread area not impl \n");
-  return 1;
+  return 0;
 }
 
 int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
@@ -1027,6 +1027,14 @@ void* sys_thread_addr(void* vaddr) {
   return phy_addr;
 }
 
+int sys_fn_faild(interrupt_context_t* ic) {
+  int call_id = context_fn(ic);
+  log_debug("sys fn faild %x\n", call_id);
+  if (call_id == 0xf0005) {
+    return sys_fn_call(ic, &sys_set_thread_area);
+  }
+}
+
 void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_READ] = &sys_read;
   syscall_table[SYS_WRITE] = &sys_write;
@@ -1113,4 +1121,6 @@ void sys_fn_init(void** syscall_table) {
 
   syscall_table[SYS_KILL] = &sys_kill;
   syscall_table[SYS_THREAD_ADDR] = &sys_thread_addr;
+
+  sys_fn_init_regist_faild(sys_fn_faild);
 }
