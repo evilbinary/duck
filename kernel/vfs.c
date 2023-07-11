@@ -138,6 +138,19 @@ void vfs_add_child(vnode_t *parent, vnode_t *child) {
   parent->child[parent->child_number++] = child;
 }
 
+vnode_t *vfs_find_child(vnode_t *parent, char *name) {
+  vnode_t *find_one = NULL;
+  for (int i = 0; i < parent->child_number; i++) {
+    vnode_t *n = parent->child[i];
+    if (n == NULL) continue;
+    if (kstrcmp(name, n->name) == 0) {
+      find_one = n;
+      break;
+    }
+  }
+  return find_one;
+}
+
 vnode_t *vfs_find(vnode_t *root, u8 *path) {
   char *token;
   const char *split = "/";
@@ -168,15 +181,9 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
     // if (kstrcmp(token, parent->name) == 0) {
     //   continue;
     // }
-    vnode_t *find_one = NULL;
-    for (int i = 0; i < parent->child_number; i++) {
-      vnode_t *n = parent->child[i];
-      if (n == NULL) continue;
-      if (kstrcmp(token, n->name) == 0) {
-        parent = n;
-        find_one = n;
-        break;
-      }
+    vnode_t *find_one = vfs_find_child(parent, token);
+    if (find_one != NULL) {
+      parent = find_one;
     }
     node = find_one;
     token = kstrtok(NULL, split);
@@ -188,24 +195,37 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
   if (node == NULL && parent->super != NULL) {
     kstrcpy(s, path);
     token = kstrtok(s, split);
-    if (kstrcmp(split, parent->name) == 0) {
-    } else {
+    char *last_token = token;
+    vnode_t *find_node = vfind(parent->super, token);
+    if (find_node != NULL) {
+      vnode_t *child = vfs_find_child(parent, token);
+      if (child == NULL) {
+        vfs_add_child(parent, find_node);
+      }
       while (token != NULL) {
-        if (kstrcmp(token, parent->name) == 0) {
+        last_token = token;
+        token = kstrtok(NULL, split);
+        if (token == NULL) {
           break;
         }
-        token = kstrtok(NULL, split);
+        vnode_t *find_one = vfind(find_node, token);
+        if (find_node == NULL) {
+          break;
+        }
+        // find add to parent
+        vnode_t *child = vfs_find_child(find_node, token);
+        if (child == NULL) {
+          vfs_add_child(find_node, find_one);
+        }
+        find_node = find_one;
       }
     }
 
-    vnode_t *find_node = vfind(parent->super, token);
     if (find_node == NULL) {
       log_error("open find %s failed \n", path);
       return NULL;
     }
     node = find_node;
-    // mount to vfs
-    vfs_add_child(parent, node);
   }
   if (node == NULL) {
     log_error("cannot found file %s\n", path);
@@ -246,8 +266,8 @@ u32 vfs_open(vnode_t *node, u32 mode) {
   if (node->super != NULL) {
     node->super->op->open(node, mode);
   } else if (node->op != NULL) {
-    //fix not vfs sda mount
-    if(node->op->open!= &vfs_open){
+    // fix not vfs sda mount
+    if (node->op->open != &vfs_open) {
       node->op->open(node, mode);
     }
   }

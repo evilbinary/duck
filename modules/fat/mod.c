@@ -284,7 +284,11 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
   struct fat_fs_struct *fs = file_info->fs;
   struct fat_dir_entry_struct directory;
   uint8_t res;
-  res = fat_get_dir_entry_of_path(fs, "/", &directory);
+  if ((node->flags & V_BLOCKDEVICE) == V_BLOCKDEVICE) {
+    res = fat_get_dir_entry_of_path(fs, "/", &directory);
+  } else {
+    res = fat_get_dir_entry_of_path(fs, node->name, &directory);
+  }
   if (!res) {
     log_error("bad direc /\n");
     return NULL;
