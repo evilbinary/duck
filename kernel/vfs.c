@@ -178,12 +178,16 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
     // node = parent;
   }
   while (token != NULL) {
-    // if (kstrcmp(token, parent->name) == 0) {
-    //   continue;
-    // }
     vnode_t *find_one = vfs_find_child(parent, token);
     if (find_one != NULL) {
       parent = find_one;
+    } else {
+      // not found try found in file
+      // not found vfs vnode,is super block then find on block
+      find_one = vfind(parent->super != NULL ? parent->super : parent, token);
+      if (find_one != NULL) {
+        vfs_add_child(parent, find_one);
+      }
     }
     node = find_one;
     token = kstrtok(NULL, split);
@@ -191,42 +195,7 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
   if (path_len >= MAX_PATH_BUFFER) {
     kfree(start);
   }
-  // not found vfs vnode,is super block then find on block
-  if (node == NULL && parent->super != NULL) {
-    kstrcpy(s, path);
-    token = kstrtok(s, split);
-    char *last_token = token;
-    vnode_t *find_node = vfind(parent->super, token);
-    if (find_node != NULL) {
-      vnode_t *child = vfs_find_child(parent, token);
-      if (child == NULL) {
-        vfs_add_child(parent, find_node);
-      }
-      while (token != NULL) {
-        last_token = token;
-        token = kstrtok(NULL, split);
-        if (token == NULL) {
-          break;
-        }
-        vnode_t *find_one = vfind(find_node, token);
-        if (find_node == NULL) {
-          break;
-        }
-        // find add to parent
-        vnode_t *child = vfs_find_child(find_node, token);
-        if (child == NULL) {
-          vfs_add_child(find_node, find_one);
-        }
-        find_node = find_one;
-      }
-    }
 
-    if (find_node == NULL) {
-      log_error("open find %s failed \n", path);
-      return NULL;
-    }
-    node = find_node;
-  }
   if (node == NULL) {
     log_error("cannot found file %s\n", path);
   }
