@@ -382,11 +382,17 @@ size_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args) {
     if (file_info->dd != NULL) {
       stat->st_size = file_info->dd->dir_entry.file_size;
       stat->st_mtim = file_info->dd->dir_entry.modification_time;
-      stat->st_mode = file_info->dd->dir_entry.attributes;
+      stat->st_mode = S_IFREG;
+      if (file_info->dd->dir_entry.attributes & FAT_ATTRIB_DIR) {
+        stat->st_mode |= S_IFDIR;
+      }
     } else if (file_info->fd != NULL) {
       stat->st_size = file_info->fd->dir_entry.file_size;
       stat->st_mtim = file_info->fd->dir_entry.modification_time;
-      stat->st_mode = file_info->fd->dir_entry.attributes;
+      stat->st_mode = S_IFREG;
+      if (file_info->fd->dir_entry.attributes & FAT_ATTRIB_DIR) {
+        stat->st_mode |= S_IFREG;
+      }
     }
 
     return 0;

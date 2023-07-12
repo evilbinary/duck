@@ -322,7 +322,6 @@ int sys_clone(void* fn, void* stack, int flags, void* arg, .../*, int parent_tid
   int* child_tid = va_arg(ap, int*);
   va_end(ap);
 
-
   thread_t* find = thread_find_id(*parent_tid);
   if (find == NULL) {
     log_error("find parent tid %d is null\n", *parent_tid);
@@ -893,6 +892,22 @@ int sys_thread_self() {
 int sys_statx(int dirfd, const char* restrict pathname, int flags,
               unsigned int mask, struct statx* restrict statxbuf) {
   log_debug("sys statx not impl pathname %s\n", pathname);
+
+  if (statxbuf == NULL) {
+    return -1;
+  }
+
+  struct stat buf;
+  int ret = sys_stat(pathname, &buf);
+  if (ret < 0) {
+    return 0;
+  }
+
+  statxbuf->stx_mode = buf.st_mode;
+  statxbuf->stx_gid = buf.st_gid;
+  statxbuf->stx_uid = buf.st_uid;
+  statxbuf->stx_size = buf.st_size;
+  statxbuf->stx_blocks = buf.st_blocks;
 
   return 0;
 }

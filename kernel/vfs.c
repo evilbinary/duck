@@ -187,6 +187,7 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
       find_one = vfind(parent->super != NULL ? parent->super : parent, token);
       if (find_one != NULL) {
         vfs_add_child(parent, find_one);
+        parent = find_one;
       }
     }
     node = find_one;
