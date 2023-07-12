@@ -17,6 +17,14 @@ void test_kernel_thread() {
   thread_run(read_thread);
 }
 
+void test_vfs(){
+
+  vnode_t* node=vfs_find(NULL,"/file/fgetc.txt");
+
+
+}
+
+
 int test_init(void) {
   log_info("test hello\n");
 #ifdef X86
@@ -25,6 +33,9 @@ int test_init(void) {
   // test_fat();
   
   // test_kernel_thread();
+
+  // test_vfs();
+
   return 0;
 }
 
