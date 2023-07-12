@@ -282,7 +282,6 @@ vnode_t *vfs_open_attr(vnode_t *root, u8 *name, u32 attr) {
     }
     char *last = kstrrstr(name, root->name);
     if (last != NULL) {
-      last += kstrlen(node->name);
       if (last[0] == '/') last++;
     }
     file = vfs_create_node(last, V_FILE);
@@ -293,7 +292,7 @@ vnode_t *vfs_open_attr(vnode_t *root, u8 *name, u32 attr) {
         file->op = node->super->op;
       }
     } else {
-      file->op = node->parent->op;
+      file->op = node->op;
     }
     file->super = node->super;
     vfs_add_child(node, file);
