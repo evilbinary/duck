@@ -286,7 +286,7 @@ void cpu_enable_page() {
   // reg |= 1 << 28; //TEX remap enable.
   reg |= 1 << 12;  // Instruction cache enable:
   reg |= 1 << 2;   // Cache enable.
-  reg |= 1 << 1;   // Alignment check enable.
+  // reg |= 1 << 1;   // Alignment check enable.
   reg |= 1 << 11;  // Branch prediction enable
   asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");  // SCTLR
   dsb();
