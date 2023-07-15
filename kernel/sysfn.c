@@ -1078,6 +1078,18 @@ int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
   return 0;
 }
 
+int sys_mkdir(const char* pathname, mode_t mode) {
+  log_debug("sys mkdir not impl %s\n", pathname);
+
+  return 0;
+}
+
+int sys_access(const char* pathname, int mode) {
+  log_debug("sys access not impl %s\n", pathname);
+
+  return 0;
+}
+
 void sys_fn_init(void** syscall_table) {
   sys_fn_init_regist_faild(sys_fn_faild);
 
@@ -1168,4 +1180,6 @@ void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_THREAD_ADDR] = &sys_thread_addr;
 
   syscall_table[SYS_FUTEX] = &sys_futex;
+  syscall_table[SYS_MKDIR] = &sys_mkdir;
+  syscall_table[SYS_ACESS] = &sys_access;
 }
