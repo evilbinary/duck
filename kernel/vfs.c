@@ -329,10 +329,12 @@ int vfs_close(vnode_t *node) {
 int vfs_path_append(vnode_t *node, char *name, char *buf) {
   int len = 0;
   vnode_t *p = node;
-  len = kstrlen(name);
-  kstrncpy(buf + 1, name, len);
-  buf[0] = '/';
-  len++;
+  if (name != NULL) {
+    len = kstrlen(name);
+    kstrncpy(buf + 1, name, len);
+    buf[0] = '/';
+    len++;
+  }
   while (p != NULL) {
     int l = kstrlen(p->name);
     if (l == 1 && p->name[0] == '/') {

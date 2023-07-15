@@ -282,7 +282,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   }
   sys_close(fd);
   if (node->parent != NULL) {
-    current->vfs->pwd = node->parent;
+    // current->vfs->pwd = node->parent;
   } else {
     current->vfs->pwd = node;
   }
@@ -770,7 +770,7 @@ int sys_getcwd(char* buf, size_t size) {
     return -1;
   }
   if (vfs->pwd != NULL) {
-    ret == kstrcpy(buf, vfs->pwd->name);
+    ret = vfs_path_append(vfs->pwd, "", buf);
   } else {
     buf[0] = 0;
   }
