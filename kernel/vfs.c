@@ -181,6 +181,7 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
     vnode_t *find_one = vfs_find_child(parent, token);
     if (find_one != NULL) {
       parent = find_one;
+      token = kstrtok(NULL, split);
     } else {
       // not found try found in file
       // not found vfs vnode,is super block then find on block
@@ -188,10 +189,12 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
       if (find_one != NULL) {
         vfs_add_child(parent, find_one);
         parent = find_one;
+        token = kstrtok(NULL, split);
+      } else {
+        break;
       }
     }
     node = find_one;
-    token = kstrtok(NULL, split);
   }
   if (path_len >= MAX_PATH_BUFFER) {
     kfree(start);
@@ -321,6 +324,28 @@ int vfs_close(vnode_t *node) {
     return vclose(node->super);
   }
   return 0;
+}
+
+int vfs_path_append(vnode_t *node, char *name, char *buf) {
+  int len = 0;
+  vnode_t *p = node;
+  len = kstrlen(name);
+  kstrncpy(buf + 1, name, len);
+  buf[0] = '/';
+  len++;
+  while (p != NULL) {
+    int l = kstrlen(p->name);
+    if (l == 1 && p->name[0] == '/') {
+      break;
+    }
+    kmemmove(buf + l + 1, buf, len);
+    kstrncpy(buf + 1, p->name, l);
+    buf[0] = '/';
+    p = p->parent;
+    len += (1 + l);
+  }
+  buf[len] = 0;
+  return len;
 }
 
 int vfs_init() {

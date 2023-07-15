@@ -217,7 +217,8 @@ int open_file_in_dir(struct fat_fs_struct *fs, struct fat_dir_struct *dd,
   }
   u32 ret = find_file_in_dir(fs, dd, name, &file_entry);
   if (!ret) {
-    log_error("find file %s in dir failed\n", name);
+    log_error("find file %s in dir %s failed \n", name,
+              dd->dir_entry.long_name);
     return 0;
   }
   if (file_entry.attributes & FAT_ATTRIB_DIR) {
@@ -287,10 +288,19 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
   if ((node->flags & V_BLOCKDEVICE) == V_BLOCKDEVICE) {
     res = fat_get_dir_entry_of_path(fs, "/", &directory);
   } else {
-    res = fat_get_dir_entry_of_path(fs, node->name, &directory);
+    if (file_info->dd == NULL) {
+      res = 0;
+      // char buf[MAX_PATH_BUFFER];
+      // kmemset(buf, 0, MAX_PATH_BUFFER);
+      // vfs_path_append(node, name, buf);
+      // res = fat_get_dir_entry_of_path(fs, buf, &directory);
+    } else {
+      directory = file_info->dd->dir_entry;
+      res = 1;
+    }
   }
   if (!res) {
-    log_error("bad direc /\n");
+    log_error("bad dir %s\n", node->name);
     return NULL;
   }
   struct fat_dir_struct *dd = fat_open_dir(fs, &directory);

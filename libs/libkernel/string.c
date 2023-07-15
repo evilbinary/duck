@@ -8,7 +8,6 @@
 
 size_t kstrlen(const char* s);
 
-
 void* kmemcpy(void* /* restrict */ s1, const void* /* restrict */ s2,
               size_t n) {
   char* cdest;
@@ -32,18 +31,44 @@ void* kmemcpy(void* /* restrict */ s1, const void* /* restrict */ s2,
   return s1;
 }
 
-void* kmemmove(void* s1, const void* s2, size_t n) {
-  char *dest, *src;
-  int i;
 
-  dest = (char*)s1;
-  src = (char*)s2;
-  for (i = 0; i < n; i++) {
-    dest[i] = src[i];
-  }
+void * kmemmove(void *dest, const void *src, size_t n) {
+    char *d = dest;
+    const char *s = src;
 
-  return s1;
+    if (d < s) {  // 如果目标在源之前
+        // 从前向后复制 non-overlapping 内存
+        for (size_t i = 0; i < n; i++) {
+            d[i] = s[i];
+        }
+    } else {
+        // 如果目标在源之后
+        // 先复制非重叠内存
+        for (size_t i = n; i > 0; i--) {
+            d[i - 1] = s[i - 1];
+        }
+
+        // 再覆盖重叠内存
+        // for (size_t i = 0; i < n; i++) {
+        //     d[i] = s[i];
+        // }
+    }
+
+    return dest;
 }
+
+// void* kmemmove(void* s1, const void* s2, size_t n) {
+//   char *dest, *src;
+//   int i;
+
+//   dest = (char*)s1;
+//   src = (char*)s2;
+//   for (i = 0; i < n; i++) {
+//     dest[i] = src[i];
+//   }
+
+//   return s1;
+// }
 
 char* kstrcpy(char* /* restrict */ s1, const char* /* restrict */ s2) {
   int i = 0;
@@ -129,7 +154,6 @@ void* kmemchr(const void* s, int c, size_t n) {
 
   return NULL;
 }
-
 
 char* kstrchr(const char* s, int c) {
   int i;
@@ -232,13 +256,13 @@ typedef struct block {
 
 void* kmemset(void* s, int c, size_t n) {
 #ifdef MALLOC_TRACE
-  block_t* block=ya_block_ptr(s);
-  if(block!=NULL){
-    if(block->magic==999999999|| block->magic==888888888){
-      kassert(block->size>=n);
+  block_t* block = ya_block_ptr(s);
+  if (block != NULL) {
+    if (block->magic == 999999999 || block->magic == 888888888) {
+      kassert(block->size >= n);
       block->count++;
-      if(block->count>=2){
-        kprintf("block kmemset addr =%x %d\n",block,block->count);
+      if (block->count >= 2) {
+        kprintf("block kmemset addr =%x %d\n", block, block->count);
         // kassert(false);
       }
     }
