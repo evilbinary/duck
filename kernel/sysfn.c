@@ -14,7 +14,7 @@
 #include "thread.h"
 #include "vfs.h"
 
-// #define log_debug
+#define log_debug
 
 int sys_print(char* s) {
   thread_t* current = thread_current();
@@ -507,8 +507,9 @@ int sys_chdir(const char* path) {
 
 int sys_brk(u32 end) {
   thread_t* current = thread_current();
+#ifdef LOG_BRK
   log_debug("sys brk tid:%x addr:%x\n", current->id, end);
-
+#endif
   vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
   if (vm == NULL) {
     log_error("sys brk not found vm\n");
@@ -519,7 +520,9 @@ int sys_brk(u32 end) {
       vm->alloc_addr = vm->vaddr + end;
     }
     end = vm->alloc_addr;
+#ifdef LOG_BRK
     log_debug("sys brk return first addr:%x\n", end);
+#endif
     return end;
   }
   int size = end - (u32)vm->alloc_addr;
@@ -531,8 +534,9 @@ int sys_brk(u32 end) {
   int addr = end;
   vm->alloc_size += size;
   vm->alloc_addr = end;
-
+#ifdef LOG_BRK
   log_debug("sys brk return alloc addr:%x\n", addr);
+#endif
   return addr;
 }
 
@@ -579,8 +583,9 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
       log_error("map fix %x faild out of range\n", start_addr);
       return MAP_FAILED;
     }
-
+#ifdef LOG_MMAP
     log_debug("map fix return addr %x\n", start_addr);
+#endif
     return start_addr;
   }
 
@@ -599,7 +604,9 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
 
   // 匿名内存
   if ((flags & MAP_ANON) == MAP_ANON) {
+#ifdef LOG_MMAP
     log_debug("map anon return addr %x\n", start_addr);
+#endif
     return start_addr;
   } else if ((flags & MAP_ANON) == 0) {
     // 有名
@@ -610,7 +617,9 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
     }
   }
   if ((flags & MAP_SHARED) == MAP_SHARED) {
+#ifdef LOG_MMAP
     log_debug("map shared return addr %x\n", start_addr);
+#endif
     return start_addr;
   } else if ((flags & MAP_PRIVATE) == MAP_PRIVATE) {
     log_debug("map private return addr %x\n", start_addr);
