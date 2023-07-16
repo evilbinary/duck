@@ -545,12 +545,13 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
     log_error("sys mmap2 not found vm\n");
     return MAP_FAILED;
   }
+#ifdef LOG_MMAP
   log_debug(
       "sys mmap2 addr=%x length=%d prot = %x,flags = %x, fd = %d, "
       "pgoffset = %d "
       "\n",
       addr, length, prot, flags, fd, pgoffset);
-
+#endif
   if (length <= 0) {
     log_error("map failed length 0\n");
     return MAP_FAILED;
@@ -673,8 +674,9 @@ void* sys_mremap(void* old_address, size_t old_size, size_t new_size, int flags,
 }
 
 int sys_munmap(void* addr, size_t size) {
+#ifdef LOG_MMAP
   log_debug("sys munmap addr: %x size: %d\n", addr, size);
-
+#endif
   thread_t* current = thread_current();
   vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
   if (vm == NULL) {
