@@ -55,7 +55,6 @@ void hello_thread(void) {
   syscall1(SYS_EXIT, 0);
 }
 
-char cmd_p[64];
 char* argv_p[64];
 char env_p[512];
 
@@ -106,9 +105,16 @@ int do_exec(char* cmd, int count, char** env) {
   if (i <= 0 || argv[1] == ' ' || argv[0] == NULL) {
     return 0;
   }
-  sprintf(buf, "/%s", argv[0]);
-  sprintf(cmd_p, "/%s", argv[0]);
-  int pid = run_exec(buf, argv, env);
+  sprintf(buf, "/bin/%s", argv[0]);
+  int ret = syscall2(SYS_ACESS, buf, 0);
+  if (ret < 0) {
+    sprintf(buf, "/%s", argv[0]);
+    ret = syscall2(SYS_ACESS, buf, 0);
+  }
+  int pid = 0;
+  if (ret == 0) {
+    pid = run_exec(buf, argv, env);
+  }
   return pid;
 }
 

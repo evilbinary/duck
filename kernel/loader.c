@@ -173,6 +173,7 @@ void run_elf_thread(void* a) {
   } else {
     log_error("load faild not elf %s\n", exec->filename);
     entry = NULL;
+    syscall1(SYS_EXIT, -1);
   }
   ret = -1;
   if (entry != NULL) {
@@ -183,5 +184,6 @@ void run_elf_thread(void* a) {
     ret = entry(&exec_info);
   }else{
     log_error("entry not found\n");
+    syscall1(SYS_EXIT, -1);
   }
 }

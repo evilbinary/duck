@@ -191,6 +191,7 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
         parent = find_one;
         token = kstrtok(NULL, split);
       } else {
+        node = find_one;
         break;
       }
     }

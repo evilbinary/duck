@@ -11,6 +11,7 @@
 #include "kernel/sysinfo.h"
 #include "kernel/time.h"
 #include "types.h"
+#include "kernel/error.h"
 
 #if defined(ARM)
 enum {

@@ -132,6 +132,12 @@ struct statx {
 	uint64_t spare[14];
 };
 
+
+#define F_OK 0
+#define R_OK 4
+#define W_OK 2
+#define X_OK 1
+
 #ifdef __cplusplus
 }
 #endif

@@ -82,8 +82,10 @@ u32 sys_open(char* name, int attr, ...) {
   // current pwd
   vnode_t* pwd = NULL;
   if (kstrlen(name) >= 2 && name[0] == '.' && name[1] == '/') {
-    pwd = current->vfs->pwd;
     kstrcpy(name, &name[2]);
+    current->vfs->pwd;
+  } else if (kstrlen(name) == 1 && name[0] == '/') {
+    pwd = current->vfs->root;
   }
 
   int f = thread_find_fd_name(current, name);
@@ -727,7 +729,7 @@ int sys_set_thread_area(void* set) {
 int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
   thread_t* current = thread_current();
   fd_t* findfd = thread_find_fd_id(current, fd);
-  if (fd == NULL) {
+  if (findfd == NULL) {
     log_error("getdents64 not found fd %d\n", fd);
     return 0;
   }
@@ -885,7 +887,7 @@ int sys_thread_self() {
     current->info->locale = kmalloc(sizeof(locale_t), KERNEL_TYPE);
     log_debug("locale at %x\n", current->info->locale);
   }
-  log_debug("sys thread self at %x\n", current->info);
+  // log_debug("sys thread self at %x\n", current->info);
   return current->info;
 }
 
@@ -1086,7 +1088,13 @@ int sys_mkdir(const char* pathname, mode_t mode) {
 
 int sys_access(const char* pathname, int mode) {
   log_debug("sys access not impl %s\n", pathname);
-
+  if (pathname == NULL) {
+    return -1;
+  }
+  int fd = sys_open(pathname, 0);
+  if (fd < 0) {
+    return -1;
+  }
   return 0;
 }
 
