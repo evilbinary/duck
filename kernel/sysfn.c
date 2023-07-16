@@ -292,7 +292,9 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   // init data
   int argc = 0;
   while (argv != NULL && argv[argc] != NULL) {
-    log_debug("argv[%d]=%s %x\n", argc, argv[argc], &argv[argc]);
+    if (argv[argc] != NULL && kstrlen(argv[argc]) > 0) {
+      log_debug("argv[%d]=%s %x\n", argc, argv[argc], &argv[argc]);
+    }
     argc++;
   }
 
