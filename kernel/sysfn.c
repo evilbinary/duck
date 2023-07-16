@@ -83,7 +83,7 @@ u32 sys_open(char* name, int attr, ...) {
   vnode_t* pwd = NULL;
   if (kstrlen(name) >= 2 && name[0] == '.' && name[1] == '/') {
     kstrcpy(name, &name[2]);
-    current->vfs->pwd;
+    pwd = current->vfs->pwd;
   } else if (kstrlen(name) == 1 && name[0] == '/') {
     pwd = current->vfs->root;
   }
@@ -291,11 +291,13 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
 
   // init data
   int argc = 0;
-  while (argv != NULL && argv[argc] != NULL) {
-    if (argv[argc] != NULL && kstrlen(argv[argc]) > 0) {
+  int i = 0;
+  while (argv != NULL && argv[i] != NULL) {
+    if (argv[i] != NULL && kstrlen(argv[i]) > 0) {
       log_debug("argv[%d]=%s %x\n", argc, argv[argc], &argv[argc]);
+      argc++;
     }
-    argc++;
+    i++;
   }
 
   exec_t* data = kmalloc(sizeof(exec_t), KERNEL_TYPE);
