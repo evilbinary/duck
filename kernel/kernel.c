@@ -7,8 +7,8 @@
 #include "kernel.h"
 
 void kernel_init() {
-  int cpu=cpu_get_id();
-  if(cpu==0){
+  int cpu = cpu_get_id();
+  if (cpu == 0) {
     log_info("kernel init\n");
     log_info("log init\n");
     log_init();
@@ -30,13 +30,15 @@ void kernel_init() {
     thread_init();
     log_info("event init end\n");
     event_init();
-  }else{
+    log_info("kernel init end\n");
+  } else {
     log_info("ap kernel init\n");
     schedule_init();
+    log_info("ap kernel init end\n");
   }
 }
 
-void kernel_run(){
-  context_t* context=thread_current_context();
+void kernel_run() {
+  context_t* context = thread_current_context();
   context_restore(context);
 }

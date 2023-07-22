@@ -172,7 +172,7 @@ void do_shell_thread(void) {
 
   // wait module ready
   while (module_ready <= 0) {
-    sleep();
+    //sleep();
   }
 
   print_logo();

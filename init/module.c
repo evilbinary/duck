@@ -2,10 +2,11 @@
 #include "kernel/kernel.h"
 
 // 定义模块注册宏
-#define REGISTER_MODULE(module_name) {   \
-  extern module_t module_name##_module; \
-  module_regist(&module_name##_module );}
-
+#define REGISTER_MODULE(module_name)      \
+  {                                       \
+    extern module_t module_name##_module; \
+    module_regist(&module_name##_module); \
+  }
 
 void modules_init(void) {
   u32 i = 0;
@@ -13,11 +14,10 @@ void modules_init(void) {
 
   log_info("module regist\n");
 
-#ifdef ARM
-
-#ifdef ARMV7
   // require
   REGISTER_MODULE(devfs);
+
+#ifdef ARMV7
 
   REGISTER_MODULE(gpio);
   REGISTER_MODULE(serial);
@@ -25,9 +25,7 @@ void modules_init(void) {
   REGISTER_MODULE(spi);
   REGISTER_MODULE(lcd);
 
-#else
-  // require
-  REGISTER_MODULE(devfs);
+#elif ARMV7_A
 
   // optional module
   REGISTER_MODULE(serial);
@@ -43,15 +41,10 @@ void modules_init(void) {
   REGISTER_MODULE(test);
   REGISTER_MODULE(rtc);
 
-#endif
-
 #elif defined(DUMMY)
   REGISTER_MODULE(hello);
 
 #elif defined(X86)
-  // require
-  REGISTER_MODULE(devfs);
-
   // optional module
   REGISTER_MODULE(serial);
   REGISTER_MODULE(pci);
@@ -70,8 +63,6 @@ void modules_init(void) {
   REGISTER_MODULE(hello);
 
 #elif defined(GENERAL)
-  // require
-  REGISTER_MODULE(devfs);
   REGISTER_MODULE(serial);
   REGISTER_MODULE(sdhci);
   REGISTER_MODULE(fat);
@@ -79,8 +70,6 @@ void modules_init(void) {
   REGISTER_MODULE(hello);
 
 #elif defined(RISCV)
-  // require
-  REGISTER_MODULE(devfs);
 
   REGISTER_MODULE(serial);
 
@@ -89,8 +78,21 @@ void modules_init(void) {
   REGISTER_MODULE(hello);
 #endif
 
+
+#ifdef POSIX_MODULE
+  REGISTER_MODULE(posix);
+#endif
+
 #ifdef PTY_MODULE
   REGISTER_MODULE(pty);
+#endif
+
+#ifdef LOG_MODULE
+  REGISTER_MODULE(log);
+#endif
+
+#ifdef LOADER_MODULE
+  REGISTER_MODULE(loader);
 #endif
 
 #ifdef MUSL_MODULE
@@ -103,13 +105,8 @@ void modules_init(void) {
   REGISTER_MODULE(ewok);
 #endif
 
-#ifdef LOG_MODULE
-  REGISTER_MODULE(log);
-#endif
 
-#ifdef LOADER_MODULE
-  REGISTER_MODULE(loader);
-#endif
+  log_info("module regist end\n");
 
   module_run_all();
 

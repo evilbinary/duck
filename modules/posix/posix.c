@@ -7,14 +7,14 @@
 #include "sysfn.h"
 
 int posix_init(void) {
-  kprintf("posix init\n");
+  log_info("posix init\n");
 
   sys_fn_init_regist(sys_fn_init);
 
   return 0;
 }
 
-void posix_exit(void) { kprintf("posix exit\n"); }
+void posix_exit(void) { log_info("posix exit\n"); }
 
 module_t posix_module = {
     .name = "posix", .init = posix_init, .exit = posix_exit};

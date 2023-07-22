@@ -9,24 +9,42 @@ import os
 Import('env')
 
 
+exclude_function_list = 'do_page_fault,syscall_handler,general_protection,syscall1,syscall2,syscall3,syscall4,syscall5,print_string,do_shell_cmd,print_promot'
 
-exclude_function_list='do_page_fault,syscall_handler,general_protection,syscall1,syscall2,syscall3,syscall4,syscall5,print_string,do_shell_cmd,print_promot'
+exclude_file_list = 'duck/init,duck/arch,duck/libs,duck/init,duck/kernel/thread.c,duck/kernel/schedule.c,duck/kernel/syscall.c,duck/kernel/sysfn.c,duck/kernel/vfs.c,duck/kernel/devfn.c,duck/kernel/exceptions.c,duck/kernel/logger.c,duck/kernel/page.c,duck/kernel/memory.c,duck/kernel/vmemory.c,modules/serial/bcm2836.c,modules/serial/v3s.c'
 
-exclude_file_list='duck/init,duck/arch,duck/libs,duck/init,duck/kernel/thread.c,duck/kernel/schedule.c,duck/kernel/syscall.c,duck/kernel/sysfn.c,duck/kernel/vfs.c,duck/kernel/devfn.c,duck/kernel/exceptions.c,duck/kernel/logger.c,duck/kernel/page.c,duck/kernel/memory.c,duck/kernel/vmemory.c,modules/serial/bcm2836.c,modules/serial/v3s.c'
+cflags = '$CFLAGS $LIBCFLAGS -finstrument-functions  -finstrument-functions-exclude-function-list=%s -finstrument-functions-exclude-file-list=%s ' % (
+    exclude_function_list, exclude_file_list)  # -DUSE_POOL -finstrument-functions
 
-cflags='$CFLAGS $LIBCFLAGS -finstrument-functions  -finstrument-functions-exclude-function-list=%s -finstrument-functions-exclude-file-list=%s '%(exclude_function_list,exclude_file_list) #-DUSE_POOL -finstrument-functions
+cflags = '$CFLAGS $LIBCFLAGS '
 
-cflags='$CFLAGS $LIBCFLAGS '
+arch_type = env['ARCHTYPE']
 
-arch_type=env['ARCHTYPE']
+platform = env['PLATFORM']
 
-platform=env['PLATFORM']
+modules = []
+other = []
 
-modules=[]
-other=[]
-if arch_type =='arm':
-    if platform=='v3s':
-        other=[
+libs = [
+    'yiyiya',
+    'arch',
+    'algorithm',
+    'kernel'
+]
+include = [
+    '.',
+    '../',
+    '../libs/include',
+    '../platform',
+    '../kernel',
+    '../../',
+    '../platform/'+env.get('PLATFORM')
+]
+
+
+if arch_type == 'arm':
+    if platform == 'v3s':
+        other = [
             'gpu/v3s.c',
             'mmc/v3s.c',
             'serial/v3s.c',
@@ -39,8 +57,8 @@ if arch_type =='arm':
             'spi/v3s.c',
             'rtc/v3s.c',
         ]
-    elif platform=='cubieboard2':
-        other=[
+    elif platform == 'cubieboard2':
+        other = [
             'gpu/v3s.c',
             'mmc/v3s.c',
             'serial/v3s.c',
@@ -52,8 +70,8 @@ if arch_type =='arm':
             'spi/spi.c',
             'spi/v3s.c',
         ]
-    elif platform=='orangepi-pc':
-        other=[
+    elif platform == 'orangepi-pc':
+        other = [
             'gpu/v3s.c',
             'mmc/v3s.c',
             'serial/v3s.c',
@@ -66,8 +84,8 @@ if arch_type =='arm':
             'spi/v3s.c',
             'rtc/v3s.c',
         ]
-    elif platform=='raspi2':
-        other=[
+    elif platform == 'raspi2':
+        other = [
             'gpu/bcm2836.c',
             'gpu/mailbox.c',
             'mmc/bcm2836.c',
@@ -81,98 +99,95 @@ if arch_type =='arm':
             'spi/spi.c',
             'spi/bcm2836.c',
             'rtc/bcm2836.c',
-            ]
-    elif platform=='stm32f4xx':
-            other=[
-                'gpio/gpio.c',
-                'gpio/stm32.c',
-                'i2c/i2c.c',
-                'i2c/stm32.c',
-                'spi/spi.c',
-                'spi/stm32.c',
-                'lcd/lcd.c',
-                'lcd/st7735.c',
-                'serial/stm32.c',
-                ]
-    elif platform=='rk3128':
-            other=[
-                'gpu/rk3128.c',
-                'mmc/rk3128.c',
-                'serial/rk3128.c',
-                'mouse/rk3128.c',
-                'i2c/i2c.c',
-                'i2c/rk3128.c',
-                'gpio/gpio.c',
-                'gpio/rk3128.c',
-                'spi/spi.c',
-                'spi/rk3128.c',
-                ]
-    elif platform=='rk3288':
-            other=[
-                'gpu/rk3128.c',
-                'mmc/rk3128.c',
-                'serial/rk3128.c',
-                'mouse/rk3128.c',
-                'i2c/i2c.c',
-                'i2c/rk3128.c',
-                'gpio/gpio.c',
-                'gpio/rk3128.c',
-                'spi/spi.c',
-                'spi/rk3128.c',
-                ]
-    modules=[
+        ]
+    elif platform == 'stm32f4xx':
+        other = [
+            'gpio/gpio.c',
+            'gpio/stm32.c',
+            'i2c/i2c.c',
+            'i2c/stm32.c',
+            'spi/spi.c',
+            'spi/stm32.c',
+            'lcd/lcd.c',
+            'lcd/st7735.c',
+            'serial/stm32.c',
+        ]
+    elif platform == 'rk3128':
+        other = [
+            'gpu/rk3128.c',
+            'mmc/rk3128.c',
+            'serial/rk3128.c',
+            'mouse/rk3128.c',
+            'i2c/i2c.c',
+            'i2c/rk3128.c',
+            'gpio/gpio.c',
+            'gpio/rk3128.c',
+            'spi/spi.c',
+            'spi/rk3128.c',
+        ]
+    elif platform == 'rk3288':
+        other = [
+            'gpu/rk3128.c',
+            'mmc/rk3128.c',
+            'serial/rk3128.c',
+            'mouse/rk3128.c',
+            'i2c/i2c.c',
+            'i2c/rk3128.c',
+            'gpio/gpio.c',
+            'gpio/rk3128.c',
+            'spi/spi.c',
+            'spi/rk3128.c',
+        ]
+    modules = [
         'fat/fat.c',
         'fat/byteordering.c',
         'fat/partition.c',
         'fat/mod.c',
         # 'fat32/fat32.c',
-        
+
         'gpu/gpu.c',
         'mmc/sdhci.c',
         'hello/hello.c',
-        'dev/devfs.c',
         'test/test.c',
         'test/test-fat.c',
     ]+other
 
-elif arch_type=='x86':
-    modules=['pci.c',
-    'pic/pic.c',
-    'ahci/ahci.c',
-    'dma/dma.c',
+elif arch_type == 'x86':
+    modules = ['pci.c',
+               'pic/pic.c',
+               'ahci/ahci.c',
+               'dma/dma.c',
 
-    'hello/hello.c',
-    'serial/serial.c',
-    'dev/devfs.c',
-    'rtc/rtc.c',
-    'vga/vga.c',
-    'vga/mode.c',
-    'vga/qemu.c',
-    'mouse/mouse.c',
-    'keyboard/keyboard.c',
-    'fat32/fat32.c',
-    
-    'fat/fat.c',
-    'fat/byteordering.c',
-    'fat/partition.c',
-    'fat/mod.c',
+               'hello/hello.c',
+               'serial/serial.c',
+               'rtc/rtc.c',
+               'vga/vga.c',
+               'vga/mode.c',
+               'vga/qemu.c',
+               'mouse/mouse.c',
+               'keyboard/keyboard.c',
+               'fat32/fat32.c',
 
-    'sound/sb16.c',
-    'net/net.c',
-    'net/e1000.c',
+               'fat/fat.c',
+               'fat/byteordering.c',
+               'fat/partition.c',
+               'fat/mod.c',
 
-    'test/test.c',
-    'test/test-ahci.c',
-    'test/test-fat.c',
+               'sound/sb16.c',
+               'net/net.c',
+               'net/e1000.c',
+
+               'test/test.c',
+               'test/test-ahci.c',
+               'test/test-fat.c',
+               ]
+
+elif arch_type == 'xtensa':
+    modules = [
+        'hello/hello.c',
     ]
-
-elif arch_type=='xtensa':
-     modules=[
-          'hello/hello.c',
-        ]
-elif arch_type=='general':
-     modules=[
-        'dev/devfs.c',
+elif arch_type == 'general':
+    modules = [
         'hello/hello.c',
         'serial/general.c',
         'mmc/sdhci.c',
@@ -183,52 +198,37 @@ elif arch_type=='general':
         'fat/partition.c',
         'fat/mod.c',
 
-        ]
-elif arch_type=='riscv':
-    if platform=='riscv-virt':
-        other=[
+    ]
+elif arch_type == 'riscv':
+    if platform == 'riscv-virt':
+        other = [
             'serial/riscv-virt.c',
         ]
 
-    modules=[
-        'dev/devfs.c',
+    modules = [
         'hello/hello.c',
 
         # 'fat/fat.c',
         # 'fat/byteordering.c',
         # 'fat/partition.c',
         # 'fat/mod.c',
-        ]+ other
+    ] + other
 else:
-    modules=[
-          'hello/hello.c',
+    modules = [
+        'hello/hello.c',
     ]
 
-libs=[
-    'yiyiya',
-    'arch',
-    'algorithm',
-    'kernel'
-    ]
-include=[
-        '.',
-        '../',
-        '../libs/include',
-        '../platform',
-        '../kernel',
-        '../../',
-        '../platform/'+env.get('PLATFORM') 
-    ]
 
+modules += Glob('dev/*.c')
 
 if env.get('MODULES'):
     for module in env.get('MODULES'):
-        modules+= Glob(module+'/*.c') 
+        modules += Glob(module+'/*.c')
 
-source=modules
+source = modules
 
 env.Library('modules',
-    source,
-    CPPPATH=include,
-    LIBS=libs,
-    CFLAGS=cflags)
+            source,
+            CPPPATH=include,
+            LIBS=libs,
+            CFLAGS=cflags)
