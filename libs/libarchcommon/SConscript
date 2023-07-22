@@ -13,8 +13,6 @@ arch_type= env['ARCHTYPE']
 source=[]
 source+=Glob(arch_type+'/*.c')
 
-print(source)
-
 include=[
     '.',
     "%s"""%(env.get('ARCHTYPE')),
