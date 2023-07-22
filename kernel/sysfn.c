@@ -14,7 +14,7 @@
 #include "thread.h"
 #include "vfs.h"
 
-#define log_debug
+// #define log_debug
 
 int sys_print(char* s) {
   thread_t* current = thread_current();
@@ -276,7 +276,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     log_error("read not found fd %d tid %d\n", fd, current->id);
     return 0;
   }
-  thread_set_entry(current, (u32*)&run_elf_thread);
+  thread_set_entry(current, load_thread_entry);
   vnode_t* node = f->data;
   if (node == NULL) {
     log_error("sys exec node is null pwd\n");
@@ -300,18 +300,18 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     i++;
   }
 
-  exec_t* data = kmalloc(sizeof(exec_t), KERNEL_TYPE);
-  data->filename = filename;
-  data->argv = argv;
-  data->argc = argc;
-  data->envp = envp;
+  int* data = kmalloc(sizeof(int*) * 4, KERNEL_TYPE);
+  data[0] = argc;
+  data[1] = argv;
+  data[2] = envp;
+  data[3] = filename;
   current->exec = data;
-  // thread_set_arg(t, data);
+  thread_set_arg(current, data);
   thread_run(current);
 
   kmemmove(current->ctx->ic, current->ctx->ksp, sizeof(interrupt_context_t));
 
-  return 0;
+  return data;
 }
 
 int sys_clone(void* fn, void* stack, int flags, void* arg, .../*, int parent_tid,

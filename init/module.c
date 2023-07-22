@@ -28,6 +28,7 @@ extern module_t test_module;
 extern module_t pty_module;
 extern module_t rtc_module;
 extern module_t log_module;
+extern module_t loader_module;
 #endif
 
 #elif defined(X86)
@@ -47,6 +48,7 @@ extern module_t sb16_module;
 extern module_t test_module;
 extern module_t pty_module;
 extern module_t log_module;
+extern module_t loader_module;
 #elif defined(XTENSA)
 extern module_t hello_module;
 #elif defined(GENERAL)
@@ -56,12 +58,14 @@ extern module_t serial_module;
 extern module_t sdhci_module;
 extern module_t fat_module;
 extern module_t log_module;
+extern module_t loader_module;
 #elif defined(RISCV)
 extern module_t devfs_module;
 extern module_t hello_module;
 extern module_t serial_module;
 extern module_t log_module;
 // extern module_t fat_module;
+extern module_t loader_module;
 
 #else
 extern module_t hello_module;
@@ -106,7 +110,7 @@ void modules_init(void) {
   module_regist(&pty_module);
   module_regist(&rtc_module);
   module_regist(&log_module);
-
+  module_regist(&loader_module);
 
 #ifdef MUSL_MODULE
   extern module_t musl_module;
@@ -141,6 +145,7 @@ void modules_init(void) {
   module_regist(&fat_module);
   module_regist(&test_module);
   module_regist(&log_module);
+  module_regist(&loader_module);
 
 #elif defined(XTENSA)
   module_regist(&hello_module);
@@ -161,6 +166,7 @@ void modules_init(void) {
 
   module_regist(&serial_module);
   module_regist(&log_module);
+  module_regist(&loader_module);
 
   // module_regist(&fat_module);
 #else

@@ -212,6 +212,10 @@ modules+=[
     'debug/trace.c',
 ]
 
+# modules+= Glob('gaga/*.c')
+
+modules+= Glob('loader/*.c')
+
 libs=[
     '../kernel/libyiyiya.a',
     '../arch/libarch.a',

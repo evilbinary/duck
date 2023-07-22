@@ -6,26 +6,15 @@
 #ifndef LOADER_H
 #define LOADER_H
 
-
 #include "config.h"
 
-#ifndef MAX_PHDR 
-#define MAX_PHDR 12
-#endif
+typedef void (*loader_entry_fn)(void* arg);
 
-#ifndef MAX_SHDR 
-#define MAX_SHDR 30
-#endif
+void loader_regist(loader_entry_fn fn);
 
-typedef struct exec{
-    int argc;
-    char** argv;
-    char **envp;
-    char* filename;
-}exec_t;
 
-typedef int (*entry_fn)(exec_t*);
+extern loader_entry_fn load_thread_entry;
 
-void run_elf_thread();
+void run_load_thread(void* arg);
 
 #endif
