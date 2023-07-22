@@ -4,19 +4,17 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "kernel/kernel.h"
-#include "kernel/loader.h"
-#include "loader.h"
+#include "sysfn.h"
 
+int posix_init(void) {
+  kprintf("posix init\n");
 
-int loader_init(void) {
-  log_debug("loader init\n");
-
-  loader_regist(&run_elf_thread);
+  sys_fn_init_regist(sys_fn_init);
 
   return 0;
 }
 
-void loader_exit(void) { log_debug("loader exit\n"); }
+void posix_exit(void) { kprintf("posix exit\n"); }
 
-module_t loader_module = {
-    .name = "loader", .init = loader_init, .exit = loader_exit};
+module_t posix_module = {
+    .name = "posix", .init = posix_init, .exit = posix_exit};

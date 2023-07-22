@@ -52,8 +52,8 @@ void exception_process_error(thread_t *current, interrupt_context_t *ic,
 
 // in user mode
 void exception_error_exit() {
-  syscall1(SYS_PRINT, "exception erro exit ^_^!!\n");
-  syscall1(SYS_EXIT, 555);
+  log_debug("exception erro exit ^_^!!\n");
+  syscall1(1, 555);
   kprintf("exception exit loop\n");
   for (;;) {
   }

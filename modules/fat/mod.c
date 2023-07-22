@@ -4,6 +4,7 @@
 #include "kernel/memory.h"
 #include "kernel/stat.h"
 #include "rtc/rtc.h"
+#include "posix/sysfn.h"
 
 #ifdef ARM
 #include "mmc/sdhci.h"

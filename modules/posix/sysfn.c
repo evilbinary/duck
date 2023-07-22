@@ -3,16 +3,19 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
-
 #include "sysfn.h"
 
-#include "event.h"
-#include "fd.h"
-#include "kernel.h"
+#include "kernel/kernel.h"
+#include "kernel/devfn.h"
+#include "kernel/loader.h"
+
+#include "kernel/event.h"
+#include "kernel/fd.h"
+#include "kernel/kernel.h"
 #include "kernel/elf.h"
-#include "loader.h"
-#include "thread.h"
-#include "vfs.h"
+#include "kernel/loader.h"
+#include "kernel/thread.h"
+#include "kernel/vfs.h"
 
 // #define log_debug
 

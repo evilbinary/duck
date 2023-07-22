@@ -5,6 +5,7 @@
  ********************************************************************/
 #include "kernel/kernel.h"
 #include "loader.h"
+#include "posix/sysfn.h"
 
 // #define LOAD_ELF_DEBUG 1
 

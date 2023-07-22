@@ -19,12 +19,18 @@ include=[
         '../platform',
     ]
 
-libs=['../arch/libarch.a',
-    '../libs/libarchcommon/libarchcommon.a',
-    '../libs/libalgorithm/libalgorithm.a',
-    '../libs/libkernel/libkernel.a',]
+libpath=[
+    '../libs/libalgorithm/',
+    '../libs/libkernel/'
+]
 
-env.Library('yiyiya', [
+libs=['arch',
+    'archcommon',
+    'algorithm',
+    'kernelcommon',
+    ]
+
+env.Library('kernel', [
     'kernel.c',
     'thread.c',
     'schedule.c',
@@ -34,12 +40,9 @@ env.Library('yiyiya', [
     'module.c',
     'device.c',
     'vfs.c',
-    'sysfn.c',
     'devfn.c',
     'fd.c',
     'loader.c',
-    'rw_queue.c',
-    'pipe.c',
     'mp.c',
     'trace.c',
     'logger.c',
@@ -48,6 +51,7 @@ env.Library('yiyiya', [
     'event.c'
     ],
     CPPPATH=include,
+    LIBPATH=libpath,
     LIBS=libs,
     CFLAGS=cflags
     )

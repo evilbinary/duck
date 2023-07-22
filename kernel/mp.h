@@ -10,7 +10,6 @@
 #include "device.h"
 #include "kernel/stdarg.h"
 #include "devfn.h"
-#include "sysfn.h"
 #include "config.h"
 
 

@@ -7,16 +7,16 @@
 
 
 
-int hello_init(void) {
-  kprintf("hello init\n");
+int ipc_init(void) {
+  kprintf("ipc init\n");
   return 0;
 }
 
-void hello_exit(void) { kprintf("hello exit\n"); }
+void ipc_exit(void) { kprintf("ipc exit\n"); }
 
 
-module_t hello_module = {
-    .name ="hello",
-    .init=hello_init,
-    .exit=hello_exit
+module_t ipc_module = {
+    .name ="ipc",
+    .init=ipc_init,
+    .exit=ipc_exit
 };

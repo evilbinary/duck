@@ -18,7 +18,7 @@ include=[
 ]
 
 
-env.Library('kernel', 
+env.Library('kernelcommon', 
     ['string.c',
     'vsprintf.c',
     'common.c',

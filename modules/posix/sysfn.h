@@ -6,7 +6,7 @@
 #ifndef SYSFN_H
 #define SYSFN_H
 
-#include "kernel.h"
+#include "kernel/kernel.h"
 #include "kernel/event.h"
 #include "kernel/sysinfo.h"
 #include "kernel/time.h"
@@ -355,5 +355,8 @@ int sys_umask(int mask);
 int sys_stat(const char* path, struct stat* buf);
 int sys_fstat(int fd, struct stat* buf);
 int sys_self(void* t);
+
+
+void sys_fn_init(void** syscall_table);
 
 #endif

@@ -1,6 +1,6 @@
 #include "pty.h"
 
-#include "kernel/rw_queue.h"
+#include "ipc/rw_queue.h"
 
 voperator_t pty_master_operator = {.close = NULL,
                                    .read = pty_master_read,

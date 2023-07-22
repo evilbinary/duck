@@ -14,6 +14,26 @@ const char* log_level_strings[] = {
 
 const char* log_level_color[] = {LOG_CYAN, LOG_GREEN, LOG_YELLOW, LOG_PURPLE};
 
+static size_t log_write(u32 fd, void* buf, size_t nbytes) {
+  thread_t* current = thread_current();
+  fd_t* f = thread_find_fd_id(current, fd);
+  if (f == NULL) {
+    log_error("write not found fd %d tid %d\n", fd, current->id);
+    thread_dump_fd(current);
+    return 0;
+  }
+  vnode_t* node = f->data;
+  if (node == NULL) {
+    log_error("log write node is null tid %d \n", current->id);
+    return -1;
+  }
+  // kprintf("sys write %d %s fd:%s\n",current->id,buf,f->name);
+  u32 ret = vwrite(node, f->offset, nbytes, buf);
+  f->offset += nbytes;
+  return ret;
+}
+
+
 void log_default(int tag, const char* message, va_list args) {
   int ticks = schedule_get_ticks();
   int tid = 0;
@@ -29,10 +49,10 @@ void log_default(int tag, const char* message, va_list args) {
   } else {
     kmemset(logger_buf, 0, LOG_MSG_BUF);
     vsprintf(logger_buf, "[%08d] tid: %d ", ticks, tid);
-    sys_write(log_info_mod.fd, logger_buf, kstrlen(logger_buf));
+    log_write(log_info_mod.fd, logger_buf, kstrlen(logger_buf));
     kmemset(logger_buf, 0, LOG_MSG_BUF);
     vsprintf(logger_buf, message, args);
-    sys_write(log_info_mod.fd, logger_buf, kstrlen(logger_buf));
+    log_write(log_info_mod.fd, logger_buf, kstrlen(logger_buf));
   }
 }
 
@@ -66,13 +86,13 @@ void log_default_color(int tag, const char* message, va_list args) {
     if (size > LOG_MSG_BUF) {
       kprintf("log overflow %d\n",size);
     }
-    sys_write(log_info_mod.fd, logger_buf, kstrlen(logger_buf));
+    log_write(log_info_mod.fd, logger_buf, kstrlen(logger_buf));
     kmemset(logger_buf, 0, LOG_MSG_BUF);
     size = vsprintf(logger_buf, message, args);
     if (size > LOG_MSG_BUF) {
       kprintf("log overflow %d\n",size);
     }
-    sys_write(log_info_mod.fd, logger_buf, kstrlen(logger_buf));
+    log_write(log_info_mod.fd, logger_buf, kstrlen(logger_buf));
   }
 }
 

@@ -1,76 +1,11 @@
 
 #include "kernel/kernel.h"
 
+// 定义模块注册宏
+#define REGISTER_MODULE(module_name) {   \
+  extern module_t module_name##_module; \
+  module_regist(&module_name##_module );}
 
-#ifdef ARM
-#ifdef ARMV7
-extern module_t hello_module;
-extern module_t lcd_module;
-extern module_t gpio_module;
-extern module_t spi_module;
-extern module_t devfs_module;
-extern module_t serial_module;
-extern module_t log_module;
-#else
-
-extern module_t gpu_module;
-extern module_t devfs_module;
-extern module_t sdhci_module;
-extern module_t fat_module;
-extern module_t serial_module;
-extern module_t fat32_module;
-extern module_t mouse_module;
-extern module_t hello_module;
-extern module_t i2c_module;
-extern module_t gpio_module;
-extern module_t spi_module;
-extern module_t test_module;
-extern module_t pty_module;
-extern module_t rtc_module;
-extern module_t log_module;
-extern module_t loader_module;
-#endif
-
-#elif defined(X86)
-extern module_t keyboard_module;
-extern module_t hello_module;
-extern module_t pci_module;
-extern module_t vga_module;
-extern module_t qemu_module;
-extern module_t mouse_module;
-extern module_t serial_module;
-extern module_t ahci_module;
-extern module_t devfs_module;
-extern module_t fat32_module;
-extern module_t rtc_module;
-extern module_t fat_module;
-extern module_t sb16_module;
-extern module_t test_module;
-extern module_t pty_module;
-extern module_t log_module;
-extern module_t loader_module;
-#elif defined(XTENSA)
-extern module_t hello_module;
-#elif defined(GENERAL)
-extern module_t devfs_module;
-extern module_t hello_module;
-extern module_t serial_module;
-extern module_t sdhci_module;
-extern module_t fat_module;
-extern module_t log_module;
-extern module_t loader_module;
-#elif defined(RISCV)
-extern module_t devfs_module;
-extern module_t hello_module;
-extern module_t serial_module;
-extern module_t log_module;
-// extern module_t fat_module;
-extern module_t loader_module;
-
-#else
-extern module_t hello_module;
-
-#endif
 
 void modules_init(void) {
   u32 i = 0;
@@ -82,97 +17,99 @@ void modules_init(void) {
 
 #ifdef ARMV7
   // require
-  module_regist(&devfs_module);
+  REGISTER_MODULE(devfs);
 
-  module_regist(&gpio_module);
-  module_regist(&serial_module);
-  module_regist(&hello_module);
-  module_regist(&spi_module);
-  module_regist(&lcd_module);
-  module_regist(&log_module);
+  REGISTER_MODULE(gpio);
+  REGISTER_MODULE(serial);
+  REGISTER_MODULE(hello);
+  REGISTER_MODULE(spi);
+  REGISTER_MODULE(lcd);
 
 #else
   // require
-  module_regist(&devfs_module);
+  REGISTER_MODULE(devfs);
 
   // optional module
-  module_regist(&serial_module);
-  module_regist(&i2c_module);
-  module_regist(&gpio_module);
-  module_regist(&spi_module);
-  module_regist(&gpu_module);
-  module_regist(&mouse_module);
-  module_regist(&sdhci_module);
-  module_regist(&fat_module);
-  // module_regist(&fat32_module);
-  // module_regist(&hello_module);
-  module_regist(&test_module);
-  module_regist(&pty_module);
-  module_regist(&rtc_module);
-  module_regist(&log_module);
-  module_regist(&loader_module);
-
-#ifdef MUSL_MODULE
-  extern module_t musl_module;
-  module_regist(&musl_module);
-#endif
-
-#ifdef EWOK_MODULE
-  extern module_t ewok_module;
-  module_regist(&ewok_module);
-#endif
+  REGISTER_MODULE(serial);
+  REGISTER_MODULE(i2c);
+  REGISTER_MODULE(gpio);
+  REGISTER_MODULE(spi);
+  REGISTER_MODULE(gpu);
+  REGISTER_MODULE(mouse);
+  REGISTER_MODULE(sdhci);
+  REGISTER_MODULE(fat);
+  // REGISTER_MODULE(fat32);
+  // REGISTER_MODULE(hello);
+  REGISTER_MODULE(test);
+  REGISTER_MODULE(rtc);
 
 #endif
 
 #elif defined(DUMMY)
-  module_regist(&hello_module);
+  REGISTER_MODULE(hello);
 
 #elif defined(X86)
   // require
-  module_regist(&devfs_module);
+  REGISTER_MODULE(devfs);
 
   // optional module
-  module_regist(&serial_module);
-  module_regist(&pci_module);
-  module_regist(&keyboard_module);
-  module_regist(&rtc_module);
-  // module_regist(&vga_module);
-  module_regist(&qemu_module);
-  module_regist(&mouse_module);
-  module_regist(&pty_module);
-  module_regist(&sb16_module);
-  module_regist(&ahci_module);
-  module_regist(&fat_module);
-  module_regist(&test_module);
-  module_regist(&log_module);
-  module_regist(&loader_module);
+  REGISTER_MODULE(serial);
+  REGISTER_MODULE(pci);
+  REGISTER_MODULE(keyboard);
+  REGISTER_MODULE(rtc);
+  // REGISTER_MODULE(vga);
+  REGISTER_MODULE(qemu);
+  REGISTER_MODULE(mouse);
+  REGISTER_MODULE(pty);
+  REGISTER_MODULE(sb16);
+  REGISTER_MODULE(ahci);
+  REGISTER_MODULE(fat);
+  REGISTER_MODULE(test);
 
 #elif defined(XTENSA)
-  module_regist(&hello_module);
+  REGISTER_MODULE(hello);
 
 #elif defined(GENERAL)
   // require
-  module_regist(&devfs_module);
-  module_regist(&serial_module);
-  module_regist(&sdhci_module);
-  module_regist(&fat_module);
+  REGISTER_MODULE(devfs);
+  REGISTER_MODULE(serial);
+  REGISTER_MODULE(sdhci);
+  REGISTER_MODULE(fat);
 
-  module_regist(&hello_module);
-  module_regist(&log_module);
+  REGISTER_MODULE(hello);
 
 #elif defined(RISCV)
   // require
-  module_regist(&devfs_module);
+  REGISTER_MODULE(devfs);
 
-  module_regist(&serial_module);
-  module_regist(&log_module);
-  module_regist(&loader_module);
+  REGISTER_MODULE(serial);
 
-  // module_regist(&fat_module);
+  // REGISTER_MODULE(fat);
 #else
-  module_regist(&hello_module);
+  REGISTER_MODULE(hello);
 #endif
 
+#ifdef PTY_MODULE
+  REGISTER_MODULE(pty);
+#endif
+
+#ifdef MUSL_MODULE
+  extern module_t musl_module;
+  REGISTER_MODULE(musl);
+#endif
+
+#ifdef EWOK_MODULE
+  extern module_t ewok_module;
+  REGISTER_MODULE(ewok);
+#endif
+
+#ifdef LOG_MODULE
+  REGISTER_MODULE(log);
+#endif
+
+#ifdef LOADER_MODULE
+  REGISTER_MODULE(loader);
+#endif
 
   module_run_all();
 

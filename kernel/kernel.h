@@ -20,10 +20,10 @@
 #include "kernel/stat.h"
 #include "kernel/logger.h"
 #include "kernel/event.h"
-
+#include "kernel/loader.h"
+#include "kernel/devfn.h"
 #include "algorithm/circle_queue.h"
 #include "algorithm/queue_pool.h"
-
 
 void kernel_init();
 void kernel_run();

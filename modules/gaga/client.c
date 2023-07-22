@@ -3,20 +3,18 @@
 * 作者: evilbinary on 01/01/20
 * 邮箱: rootdebug@163.com
 ********************************************************************/
-#include "kernel/kernel.h"
+#include "gaga.h"
 
 
+void client_poll(client_t* client){
 
-int hello_init(void) {
-  kprintf("hello init\n");
-  return 0;
+
 }
 
-void hello_exit(void) { kprintf("hello exit\n"); }
+void client_regist(){
+    
+}
 
+void clirent_un_regist(){
 
-module_t hello_module = {
-    .name ="hello",
-    .init=hello_init,
-    .exit=hello_exit
-};
+}

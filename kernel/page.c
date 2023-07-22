@@ -9,8 +9,8 @@
 
 // in user mode
 void page_error_exit() {
-  syscall1(SYS_PRINT, "page erro exit ^_^!!\n");
-  syscall1(SYS_EXIT, 555);
+  log_debug("page erro exit ^_^!!\n");
+  syscall1(1, 555);
   for (;;) {
   }
   // never jmp here

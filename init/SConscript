@@ -5,53 +5,55 @@
 # * 邮箱: rootdebug@163.com
 # ********************************************************************
 import os
-import platform 
+import platform
 plt = platform.system()
 
 Import('env')
 
-current=Dir('.').srcnode().path+'/../xlinker/'
+current = Dir('.').srcnode().path+'/../xlinker/'
 
-linkflags=''
-cflags='$CFLAGS '
+linkflags = ''
+cflags = '$CFLAGS $LIBCLAGS '
 
 if env.get('LINKLD'):
-    linkflags=linkflags+ ' $LDFLAGS $LINKFLAGS -T '+current+env.get('LINKLD') # -Xlinker
+    linkflags = linkflags + ' $LDFLAGS $LINKFLAGS -T ' + \
+        current+env.get('LINKLD')  # -Xlinker
 
-include= [
-        '../',
-        '../libs/include',
-        '../platform',
-        env.get('LINKLD'),
-    ]
+include = [
+    '../',
+    '../libs/include',
+    '../platform',
+    env.get('LINKLD'),
+]
 
-libs=[
-    'yiyiya',
+libs = [
     'modules',
+    'kernel',
     'arch',
     'platform',
     'archcommon',
+    'kernelcommon',
     'algorithm',
-    'kernel'
 ]
 
-libpath=[
+libpath = [
     '../kernel/',
-    '../modules',
+    '../modules/',
     '../arch/',
     '../platform/',
     '../libs/libarchcommon/',
+    '../libs/libkernelcommon/',
     '../libs/libalgorithm/',
     '../libs/libkernel/',
 ]
 
-kernel=[
+kernel = [
     'main.c',
     'module.c',
     'shell.c',
     'monitor.c',
     'test.c'
-    ]
+]
 
 if env.get('MYLIB'):
     libs.append(env.get('MYLIB'))
@@ -59,20 +61,20 @@ if env.get('MYLIB'):
 
 
 if env.get('SINGLE_KERNEL'):
-    arch=env.get('ARCHTYPE')
+    arch = env.get('ARCHTYPE')
     kernel.append('../../boot/'+arch+'/boot.o')
     kernel.append('../../boot/'+arch+'/init.o')
 
-env.Program('kernel.elf',kernel,
-    CPPPATH=include,
-    LIBPATH=libpath,
-    LIBS=libs,
-    CFLAGS='$CFLAGS',
-    LINKFLAGS = linkflags,
-    )
+env.Program('kernel.elf', kernel,
+            CPPPATH=include,
+            LIBPATH=libpath,
+            LIBS=libs,
+            CFLAGS=cflags,
+            LINKFLAGS=linkflags,
+            )
 
 if env.get('OBJCOPY'):
-    env.Objcopy('kernel','kernel.elf',OBJCOPYFLAGS='-S')
-    env.Objcopy('kernel.dbg','kernel.elf',OBJCOPYFLAGS='--only-keep-debug')
+    env.Objcopy('kernel', 'kernel.elf', OBJCOPYFLAGS='-S')
+    env.Objcopy('kernel.dbg', 'kernel.elf', OBJCOPYFLAGS='--only-keep-debug')
     # env.Objcopy('kernel.hex','kernel.elf',OBJCOPYFLAGS='-S -O ihex')
-    env.Objcopy('kernel.bin','kernel.elf',OBJCOPYFLAGS='-S -O binary')
+    env.Objcopy('kernel.bin', 'kernel.elf', OBJCOPYFLAGS='-S -O binary')

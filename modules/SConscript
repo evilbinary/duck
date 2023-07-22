@@ -14,9 +14,9 @@ exclude_function_list='do_page_fault,syscall_handler,general_protection,syscall1
 
 exclude_file_list='duck/init,duck/arch,duck/libs,duck/init,duck/kernel/thread.c,duck/kernel/schedule.c,duck/kernel/syscall.c,duck/kernel/sysfn.c,duck/kernel/vfs.c,duck/kernel/devfn.c,duck/kernel/exceptions.c,duck/kernel/logger.c,duck/kernel/page.c,duck/kernel/memory.c,duck/kernel/vmemory.c,modules/serial/bcm2836.c,modules/serial/v3s.c'
 
-cflags='$CFLAGS -finstrument-functions  -finstrument-functions-exclude-function-list=%s -finstrument-functions-exclude-file-list=%s '%(exclude_function_list,exclude_file_list) #-DUSE_POOL -finstrument-functions
+cflags='$CFLAGS $LIBCFLAGS -finstrument-functions  -finstrument-functions-exclude-function-list=%s -finstrument-functions-exclude-file-list=%s '%(exclude_function_list,exclude_file_list) #-DUSE_POOL -finstrument-functions
 
-cflags='$CFLAGS '
+cflags='$CFLAGS $LIBCFLAGS '
 
 arch_type=env['ARCHTYPE']
 
@@ -131,8 +131,6 @@ if arch_type =='arm':
         'mmc/sdhci.c',
         'hello/hello.c',
         'dev/devfs.c',
-        'pty/pty.c',
-
         'test/test.c',
         'test/test-fat.c',
     ]+other
@@ -147,7 +145,6 @@ elif arch_type=='x86':
     'serial/serial.c',
     'dev/devfs.c',
     'rtc/rtc.c',
-    'pty/pty.c',
     'vga/vga.c',
     'vga/mode.c',
     'vga/qemu.c',
@@ -207,20 +204,11 @@ else:
           'hello/hello.c',
     ]
 
-modules+=[
-    'log/log.c',
-    'debug/trace.c',
-]
-
-# modules+= Glob('gaga/*.c')
-
-modules+= Glob('loader/*.c')
-
 libs=[
-    '../kernel/libyiyiya.a',
-    '../arch/libarch.a',
-    '../libs/libalgorithm/libalgorithm.a',
-    '../libs/libkernel/libkernel.a'
+    'yiyiya',
+    'arch',
+    'algorithm',
+    'kernel'
     ]
 include=[
         '.',

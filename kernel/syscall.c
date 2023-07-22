@@ -44,5 +44,5 @@ void sys_fn_init_regist_faild(void* fn) {
 
 void syscall_init() {
   exception_regist(EX_SYS_CALL, do_syscall);
-  sys_fn_init(syscall_table);
+
 }

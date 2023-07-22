@@ -8,7 +8,7 @@
 
 #include "kernel/kernel.h"
 #include "algorithm/buffer.h"
-#include "kernel/rw_queue.h"
+#include "rw_queue.h"
 
 #define PIPE_BUFFER 128
 #define PIPE_WAIT_QUEUE_SIZE 20

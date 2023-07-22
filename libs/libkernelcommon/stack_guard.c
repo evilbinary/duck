@@ -10,5 +10,4 @@ uintptr_t __stack_chk_guard=0xBADCAFE;
 
 void __stack_chk_fail(){
   kprintf("stack oops\n");
-  sys_exit(-100);
 }
