@@ -5,14 +5,11 @@
  ********************************************************************/
 #include "sysfn.h"
 
-#include "kernel/kernel.h"
 #include "kernel/devfn.h"
-#include "kernel/loader.h"
-
+#include "kernel/elf.h"
 #include "kernel/event.h"
 #include "kernel/fd.h"
 #include "kernel/kernel.h"
-#include "kernel/elf.h"
 #include "kernel/loader.h"
 #include "kernel/thread.h"
 #include "kernel/vfs.h"
@@ -303,18 +300,28 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     i++;
   }
 
-  int* data = kmalloc(sizeof(int*) * 4, KERNEL_TYPE);
-  data[0] = argc;
-  data[1] = argv;
-  data[2] = envp;
-  data[3] = filename;
-  current->exec = data;
-  thread_set_arg(current, data);
+  long* args = kmalloc(sizeof(long*) * argc + 1, KERNEL_TYPE);
+  args[0] = argc;
+  argc = 1;
+  i = 0;
+  while (argv != NULL && argv[i] != NULL) {
+    if (argv[i] != NULL && kstrlen(argv[i]) > 0) {
+      args[argc] = argv[i];
+      argc++;
+    }
+    i++;
+  }
+  args[argc++] = envp;
+  args[argc++] = filename;
+  args[argc++] = 0;
+
+  current->exec = args;
+  thread_set_arg(current, args);
   thread_run(current);
 
   kmemmove(current->ctx->ic, current->ctx->ksp, sizeof(interrupt_context_t));
 
-  return data;
+  return args;
 }
 
 int sys_clone(void* fn, void* stack, int flags, void* arg, .../*, int parent_tid,

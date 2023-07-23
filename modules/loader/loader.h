@@ -14,6 +14,8 @@
 #define MAX_SHDR 30
 #endif
 
+#define MAX_INTERP_PATH 64
+
 
 typedef int (*load_fn)(void* data, u32 fd);
 typedef int (*check_type_fn)(void* data, u32 fd);
@@ -25,17 +27,11 @@ typedef struct load{
     load_fn fn;
 }load_t;
 
-typedef struct exec{
-    int argc;
-    char ** argv;
-    char **envp;
-    char* filename;
-}exec_t;
-
-typedef int (*entry_fn)(exec_t*);
+typedef int (*entry_fn)(long * args);
 
 
 void run_elf_thread(void* arg);
-
+void* load_elf_interp(char* filename,void* arg);
+void go_start(entry_fn entry,long* exec);
 
 #endif
