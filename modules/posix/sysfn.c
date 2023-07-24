@@ -300,20 +300,26 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     i++;
   }
 
-  long* args = kmalloc(sizeof(long*) * argc + 1, KERNEL_TYPE);
+  long* args = kmalloc(sizeof(long*) * argc + 4 + 38, KERNEL_TYPE);
   args[0] = argc;
-  argc = 1;
   i = 0;
-  while (argv != NULL && argv[i] != NULL) {
-    if (argv[i] != NULL && kstrlen(argv[i]) > 0) {
-      args[argc] = argv[i];
-      argc++;
-    }
-    i++;
+  int pos = 1;
+  for (i = 0; i < argc; i++) {
+    args[pos] = argv[i];
+    pos++;
   }
-  args[argc++] = envp;
-  args[argc++] = filename;
-  args[argc++] = 0;
+  log_debug("envp %x argc %d\n", envp, argc);
+
+  long* p = args;
+  char** pargv = (void*)(p + 1);
+  char** penvp = pargv + argc + 1;
+
+  args[1] = filename;
+  args[pos++] = 0;
+  for (i = 0; i < 38; i++) {
+    args[pos++] = envp[i];
+  }
+  args[pos++] = 0;
 
   current->exec = args;
   thread_set_arg(current, args);

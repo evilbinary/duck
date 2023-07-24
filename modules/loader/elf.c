@@ -7,7 +7,12 @@
 #include "loader.h"
 #include "posix/sysfn.h"
 
-#define LOAD_ELF_DEBUG 1
+// #define LOAD_ELF_DEBUG 1
+
+#define PROT_NONE 0
+#define PROT_READ 1
+#define PROT_WRITE 2
+#define PROT_EXEC 4
 
 #ifdef LOAD_ELF_DEBUG
 #define log_debug kprintf
@@ -16,7 +21,7 @@
 #endif
 #define log_error kprintf
 
-int load_elf(Elf32_Ehdr* elf_header, u32 fd, void* arg) {
+int load_elf(Elf32_Ehdr* elf_header, u32 fd, void* arg, u32 base) {
 #ifdef LOAD_ELF_DEBUG
   int p = syscall0(SYS_GETPID);
   log_debug("load elf fd %d tid %d\n", fd, p);
@@ -57,7 +62,7 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd, void* arg) {
 #endif
 
           char* start = phdr[i].p_offset;
-          char* vaddr = phdr[i].p_vaddr;
+          char* vaddr = phdr[i].p_vaddr + base;
           syscall3(SYS_SEEK, fd, start, 0);
           entry_txt = vaddr;
           u32 ret = syscall3(SYS_READ, fd, vaddr, phdr[i].p_filesz);
@@ -68,7 +73,7 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd, void* arg) {
                     phdr[i].p_memsz);
 #endif
           char* start = phdr[i].p_offset;
-          char* vaddr = phdr[i].p_vaddr;
+          char* vaddr = phdr[i].p_vaddr + base;
           syscall3(SYS_SEEK, fd, start, 0);
           u32 ret = syscall3(SYS_READ, fd, vaddr, phdr[i].p_filesz);
         }
@@ -141,17 +146,22 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd, void* arg) {
   return 0;
 }
 
-void run_elf_thread(void* args) {
+void run_elf_thread(long* p) {
   log_debug("run load elf\n");
   Elf32_Ehdr elf;
   int ret = 0;
-  if (args == NULL) {
+  if (p == NULL) {
     log_error("get current thread args error\n");
     return;
   }
-  long* arg = args;
-  int argc = arg[0];
-  char* filename = arg[argc + 2];
+
+  int argc = p[0];
+  char** argv = (void*)(p + 1);
+  char** envp = argv + argc + 1;
+  char* filename = p[1];
+
+  log_debug("envp==>%x\n", envp);
+
   log_debug("run load elf %s\n", filename);
 
   u32 fd = syscall2(SYS_OPEN, filename, 0);
@@ -171,14 +181,14 @@ void run_elf_thread(void* args) {
   entry_fn entry = NULL;
   if (elf_header->e_ident[0] == ELFMAG0 || elf_header->e_ident[1] == ELFMAG1) {
     entry = elf_header->e_entry;
-    load_elf(elf_header, fd, args);
+    load_elf(elf_header, fd, p, 0);
   } else {
     log_error("load faild not elf %s\n", filename);
     entry = NULL;
     syscall1(SYS_EXIT, -1);
   }
   ret = -1;
-  go_start(entry, args);
+  go_start(entry, p);
 }
 
 void go_start(entry_fn entry, long* args) {
@@ -208,12 +218,15 @@ void* load_elf_interp(char* filename, void* args) {
   void* entry = NULL;
   if (elf_header->e_ident[0] == ELFMAG0 || elf_header->e_ident[1] == ELFMAG1) {
     entry = elf_header->e_entry;
-    load_elf(elf_header, fd, args);
+    void* base = (size_t)sys_mmap2(0, 100 * PAGE_SIZE, PROT_READ | PROT_WRITE,
+                                   MAP_PRIVATE | MAP_ANON, -1, 0);
+    entry = (u32)entry + (u32)base;
+    load_elf(elf_header, fd, args, base);
   } else {
     // log_error("load faild not elf %s\n", filename);
     entry = NULL;
   }
   log_debug("interp entry %x\n", entry);
-  // go_start(entry, arg);
+  // go_start(entry, args);
   return entry;
 }

@@ -95,6 +95,9 @@ vnode_t *vfind(vnode_t *node, char *name) {
     node = root_node;
   }
   if (node->op->find != NULL) {
+    if (node->op->find == &vfs_find) {
+      return NULL;
+    }
     return node->op->find(node, name);
   } else {
     log_error("node find is null\n");
@@ -183,9 +186,10 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
       parent = find_one;
       token = kstrtok(NULL, split);
     } else {
+      vnode_t *op_node = parent->super != NULL ? parent->super : parent;
       // not found try found in file
       // not found vfs vnode,is super block then find on block
-      find_one = vfind(parent->super != NULL ? parent->super : parent, token);
+      find_one = vfind(op_node, token);
       if (find_one != NULL) {
         vfs_add_child(parent, find_one);
         parent = find_one;
