@@ -96,15 +96,16 @@ void modules_init(void) {
 #endif
 
 #ifdef MUSL_MODULE
-  extern module_t musl_module;
   REGISTER_MODULE(musl);
 #endif
 
 #ifdef EWOK_MODULE
-  extern module_t ewok_module;
   REGISTER_MODULE(ewok);
 #endif
 
+#ifdef GAGA_MODULE
+  REGISTER_MODULE(gaga);
+#endif
 
   log_info("module regist end\n");
 

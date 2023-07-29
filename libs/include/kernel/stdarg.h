@@ -9,6 +9,15 @@ typedef __builtin_va_list va_list;
 #define va_arg(v,l)     __builtin_va_arg(v,l)
 #define va_copy(d,s)    __builtin_va_copy(d,s)
 
+
+typedef unsigned char * ka_list;
+
+#define ka_start(va, last_arg) (va = (ka_list)&last_arg + sizeof(last_arg))
+#define ka_arg(va, type) ( ((va += sizeof(type)) - sizeof(type)))
+#define ka_end(va) (va = (ka_list)0)
+
+
+
 // typedef char *va_list;
 
 // /* Amount of space required in an argument list for an arg of type TYPE.
