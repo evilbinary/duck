@@ -67,9 +67,13 @@ void service_map_client_api(client_t* src, client_t* des) {
   }
   thread_t* current = thread_current();
 
+  client_t c = *des;
+  kmemcpy(des, src, sizeof(client_t));
+  des->name = c.name;
+
   int len = sizeof(api_t) * src->api_size;
   des->api_size = src->api_size;
-  des->apis = sys_mmap2(src->apis, len, 0, MAP_ANON, 0, 0);
+  des->apis = sys_mmap2(NULL, PAGE_SIZE, 0, MAP_ANON, 0, 0);
   page_map_on(current->vm->upage, des->apis, src->apis,
               PAGE_P | PAGE_USR | PAGE_RWX);
   log_debug("mmap addr %x to %x api_size %d\n", src->apis, des->apis,
@@ -97,6 +101,26 @@ size_t service_write(vnode_t* node, const void* buf, size_t len) {
   return ret;
 }
 
+void service_client_dump(client_t* client) {
+  if (client == NULL) {
+    return;
+  }
+  for (int i = 0; i < client->api_size; i++) {
+    api_t* api = &client->apis[i];
+    log_debug("fn: %d state: %d ret: %d args: %x\n", api->fn, api->state,
+              api->ret, api->args);
+  }
+}
+
+void do_dump_thread() {
+  for (;;) {
+    client_t* client = service_get_client_name("serviceb");
+    service_client_dump(client);
+    u32 tv[2] = {5, 0};
+    sys_clock_nanosleep( 0, 0, &tv, &tv);
+  }
+}
+
 size_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
   u32 ret = 0;
   if (node == NULL) {
@@ -114,13 +138,14 @@ size_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
     if (client == NULL) {
       return -1;
     }
-    kmemcpy(ctl->client, client, sizeof(client_t));
     service_map_client_api(client, ctl->client);
+    // thread_t* t1 = thread_create_name_level("dump", (u32*)&do_dump_thread,
+    //                                         NULL, LEVEL_KERNEL_SHARE);
+    // thread_run(t1);
 
   } else if (cmd == SYS_NEW_CLIENT) {
     client_t* client = service_create_client(ctl->name, 1);
     int no = service_add_client(client);
-    kmemcpy(ctl->client, client, sizeof(client_t));
     service_map_client_api(client, ctl->client);
     ret = no;
     // mmap
