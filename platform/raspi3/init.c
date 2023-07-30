@@ -32,29 +32,35 @@ u32 read_core0timer_pending(void) {
 }
 
 void timer_init(int hz) {
-  kprintf("timer init\n");
-  cntfrq = read_cntfrq();
-  cntfrq=cntfrq/hz;
-  kprintf("cntfrq %d\n", cntfrq);
-  write_cntv_tval(cntfrq);
+  // kprintf("timer init\n");
+  // cntfrq = read_cntfrq();
+  // cntfrq=cntfrq/hz;
+  // kprintf("cntfrq %d\n", cntfrq);
+  // write_cntv_tval(cntfrq);
 
-  u32 val = read_cntv_tval();
-  kprintf("val %d\n", val);
-  io_write32(CORE0_TIMER_IRQCNTL, 0x08);
-  enable_cntv(1);
+  // u32 val = read_cntv_tval();
+  // kprintf("val %d\n", val);
+  // io_write32(CORE0_TIMER_IRQCNTL, 0x08);
+  // enable_cntv(1);
 }
 
 void timer_end() {
-  if (read_core0timer_pending() & 0x08) {
-    write_cntv_tval(cntfrq);
-    // kprintf("cntfrq:%x cnt val:%x\n", read_cntvct(),read_cntv_tval());
-    // cpu_sti();
-  }
+  // if (read_core0timer_pending() & 0x08) {
+  //   write_cntv_tval(cntfrq);
+  //   // kprintf("cntfrq:%x cnt val:%x\n", read_cntvct(),read_cntv_tval());
+  //   // cpu_sti();
+  // }
 }
 
 
 void platform_init(){
     
+}
+
+void platform_map(){
+  page_map(MMIO_BASE, MMIO_BASE, 0);
+  page_map(UART0_DR, UART0_DR, 0);
+  page_map(CORE0_TIMER_IRQCNTL & ~0xfff, CORE0_TIMER_IRQCNTL & ~0xfff, 0);
 }
 
 void platform_end(){
