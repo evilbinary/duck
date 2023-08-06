@@ -1129,6 +1129,12 @@ int sys_access(const char* pathname, int mode) {
   return 0;
 }
 
+int sys_gettid(){
+  thread_t* current = thread_current();
+  return current->id;
+}
+
+
 void sys_fn_init(void** syscall_table) {
   sys_fn_init_regist_faild(sys_fn_faild);
 
@@ -1221,4 +1227,6 @@ void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_FUTEX] = &sys_futex;
   syscall_table[SYS_MKDIR] = &sys_mkdir;
   syscall_table[SYS_ACESS] = &sys_access;
+
+  syscall_table[SYS_GETTID] = &sys_gettid;
 }
