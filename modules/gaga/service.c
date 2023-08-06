@@ -49,9 +49,11 @@ client_t* service_create_client(char* name, int size) {
   client->name = kmalloc(len, DEVICE_TYPE);
   kstrncpy(client->name, name, len);
   client->state = SYS_INIT;
+  client->tid = thread_current()->id;
   // alloc apis
   client->api_size = size;
-  client->apis = kmalloc(sizeof(api_t) * client->api_size, DEVICE_TYPE);
+  client->apis = sys_mmap2(NULL, PAGE_SIZE, 0, MAP_ANON, 0, 0);
+  // client->apis = kmalloc(sizeof(api_t) * client->api_size, DEVICE_TYPE);
   log_debug("create client %s %d %x\n", name, client->api_size, client->apis);
   return client;
 }
@@ -73,8 +75,20 @@ void service_map_client_api(client_t* src, client_t* des) {
 
   int len = sizeof(api_t) * src->api_size;
   des->api_size = src->api_size;
+
+  thread_t* t = thread_find_id(src->tid);
+  if (t == NULL) {
+    log_error("service thread is null\n");
+    return;
+  }
+
+  void* addr = page_v2p(t->vm->upage, src->apis);
+  if (addr == NULL) {
+    log_warn("addr is null %s\n", t->name);
+    return;
+  }
   des->apis = sys_mmap2(NULL, PAGE_SIZE, 0, MAP_ANON, 0, 0);
-  page_map_on(current->vm->upage, des->apis, src->apis,
+  page_map_on(current->vm->upage, des->apis, addr,
               PAGE_P | PAGE_USR | PAGE_RWX);
   log_debug("mmap addr %x to %x api_size %d\n", src->apis, des->apis,
             des->api_size);
@@ -117,7 +131,7 @@ void do_dump_thread() {
     client_t* client = service_get_client_name("serviceb");
     service_client_dump(client);
     u32 tv[2] = {5, 0};
-    sys_clock_nanosleep( 0, 0, &tv, &tv);
+    sys_clock_nanosleep(0, 0, &tv, &tv);
   }
 }
 
@@ -136,11 +150,13 @@ size_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
   if (cmd == SYS_GET_CLIENT) {
     client_t* client = service_get_client_name(ctl->name);
     if (client == NULL) {
+      log_error("client is null\n");
       return -1;
     }
     service_map_client_api(client, ctl->client);
     // thread_t* t1 = thread_create_name_level("dump", (u32*)&do_dump_thread,
-    //                                         NULL, LEVEL_KERNEL_SHARE);
+    // NULL,
+    //                                         LEVEL_KERNEL_SHARE);
     // thread_run(t1);
 
   } else if (cmd == SYS_NEW_CLIENT) {

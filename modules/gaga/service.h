@@ -42,6 +42,7 @@ typedef struct api {
 
 typedef struct client {
   char* name;
+  int tid;
   int id;
   int token;
   int fd;
