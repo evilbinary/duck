@@ -20,12 +20,22 @@ int service_get_client_no(client_t* client) {
 }
 
 client_t* service_get_client_name(char* name) {
+  client_t* client = NULL;
+  int count = 0;
   for (int i = 0; i < client_number; i++) {
     if (kstrcmp(clients[i]->name, name) == 0) {
-      return clients[i];
+      thread_t* t = thread_find_id(clients[i]->tid);
+      if (t->state == THREAD_RUNNING) {
+        if (client == NULL) {
+          client = clients[i];
+          client->count = 0;
+        } else {
+          client->instance[client->count++] = clients[i];
+        }
+      }
     }
   }
-  return NULL;
+  return client;
 }
 
 client_t* service_get_client(int id) {
@@ -69,9 +79,9 @@ void service_map_client_api(client_t* src, client_t* des) {
   }
   thread_t* current = thread_current();
 
-  client_t c = *des;
+  char* name = des->name;
   kmemcpy(des, src, sizeof(client_t));
-  des->name = c.name;
+  des->name = name;
 
   int len = sizeof(api_t) * src->api_size;
   des->api_size = src->api_size;

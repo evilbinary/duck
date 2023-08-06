@@ -10,6 +10,7 @@
 #define MAX_CLIENTS 100
 
 #define MAX_ARGS_BUF 128
+#define MAX_INSTANCE 16
 
 enum {
   SYS_NEW_CLIENT = 1,
@@ -51,6 +52,8 @@ typedef struct client {
   int api_size;
   api_t* apis;
   int state;
+  int count;
+  struct client *instance[MAX_INSTANCE];
 } client_t;
 
 typedef struct client_ctl {
