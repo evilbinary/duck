@@ -1,5 +1,7 @@
 
 #include "v3s.h"
+
+#include "gpio/v3s.h"
 #include "v3s-reg-ccu.h"
 
 #define CACHE_COUNT 1
@@ -337,65 +339,64 @@ static int sdhci_v3s_update_clk(sdhci_v3s_pdata_t *pdat) {
 }
 
 static uint32_t pll_periph_get_freq(void) {
-    uint32_t reg = io_read32(V3S_CCU_BASE + CCU_PLL_PERIPH0_CTRL);
+  uint32_t reg = io_read32(V3S_CCU_BASE + CCU_PLL_PERIPH0_CTRL);
 
-    uint32_t mul = (reg >> 8) & 0x1F;
-    uint32_t div = (reg >> 4) & 0x3;
+  uint32_t mul = (reg >> 8) & 0x1F;
+  uint32_t div = (reg >> 4) & 0x3;
 
-    return (24000000 * (mul + 1) / (div + 1));
+  return (24000000 * (mul + 1) / (div + 1));
 }
 
 // SD card controller clock
 uint32_t clk_sdc_config(uint32_t reg, uint32_t freq) {
-    uint32_t in_freq = 0;
-    uint32_t reg_val = (1 << 31);
-    if(freq <= 24000000) {
-        reg_val |= (0 << 24); // OSC24M
-        in_freq = 24000000;
-        log_debug("clk OSC24M %d\n",in_freq);
-    } else {
-        reg_val |= (1 << 24); // PLL_PERIPH
-        in_freq = pll_periph_get_freq();
-        log_debug("clk PLL_PERIPH %d\n",in_freq);
-    }
+  log_debug("clk sdc freq %d\n", freq);
+  uint32_t in_freq = 0;
+  uint32_t reg_val = (1 << 31);
+  if (freq <= 24000000) {
+    reg_val |= (0 << 24);  // OSC24M
+    in_freq = 24000000;
+    log_debug("clk OSC24M %d\n", in_freq);
+  } else {
+    reg_val |= (1 << 24);  // PLL_PERIPH
+    in_freq = pll_periph_get_freq();
+    log_debug("clk PLL_PERIPH %d\n", in_freq);
+  }
 
-    uint8_t div = in_freq / freq;
-    if(in_freq % freq) div++;
+  uint8_t div = in_freq / freq;
+  if (in_freq % freq) div++;
 
-    uint8_t prediv = 0;
-    while(div > 16) {
-        prediv++;
-        if(prediv > 3) return 0;
-        div = (div + 1) / 2;
-    }
+  uint8_t prediv = 0;
+  while (div > 16) {
+    prediv++;
+    if (prediv > 3) return 0;
+    div = (div + 1) / 2;
+  }
 
-    /* determine delays */
-    uint8_t samp_phase = 0;
-    uint8_t out_phase  = 0;
-    if(freq <= 400000) {
-        out_phase  = 0;
-        samp_phase = 0;
-    } else if(freq <= 25000000) {
-        out_phase  = 0;
-        samp_phase = 5;
-    } else if(freq <= 52000000) {
-        out_phase  = 3;
-        samp_phase = 4;
-    } else { /* freq > 52000000 */
-        out_phase  = 1;
-        samp_phase = 4;
-    }
-    reg_val |= (samp_phase << 20) | (out_phase << 8);
-    reg_val |= (prediv << 16) | ((div - 1) << 0);
+  /* determine delays */
+  uint8_t samp_phase = 0;
+  uint8_t out_phase = 0;
+  if (freq <= 400000) {
+    out_phase = 0;
+    samp_phase = 0;
+  } else if (freq <= 25000000) {
+    out_phase = 0;
+    samp_phase = 5;
+  } else if (freq <= 52000000) {
+    out_phase = 3;
+    samp_phase = 4;
+  } else { /* freq > 52000000 */
+    out_phase = 1;
+    samp_phase = 4;
+  }
+  reg_val |= (samp_phase << 20) | (out_phase << 8);
+  reg_val |= (prediv << 16) | ((div - 1) << 0);
 
-    io_write32(V3S_CCU_BASE + reg, reg_val);
+  io_write32(V3S_CCU_BASE + reg, reg_val);
 
-    return in_freq / div;
+  return in_freq / div;
 }
 
-
 static int sdhci_v3s_setclock(sdhci_device_t *sdhci, u32 clock) {
-
   sdhci_v3s_pdata_t *pdat = (sdhci_v3s_pdata_t *)sdhci->data;
   u32 ratio = (pdat->clock + 2 * clock - 1) / (2 * clock);
 
@@ -650,8 +651,9 @@ static void print_hex(u8 *addr, u32 size) {
 
 int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, int no, sector_t sector,
                         u32 count, u32 buf) {
-  // kprintf("sdhci_dev_port_read sector:%d count:%d buf:%x\n", sector.startl,
-  //         count, buf);
+  // log_debug("   sdhci_dev_port_read sector:%d count:%d buf:%x\n", sector.startl,count, buf);
+  // u32 ticks = cpu_cyclecount();
+
   u32 ret = 0;
   size_t buf_size = count * BYTE_PER_SECTOR;
 
@@ -660,6 +662,7 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, int no, sector_t sector,
     int index = sector.startl & CACHE_MASK;
     void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
     if (sdhci_dev->cached_blocks[index] != sector.startl) {
+      // log_debug("   sdhci_dev_port_read new!!\n");
       ret = mmc_read_blocks(sdhci_dev, sector.startl, count, cache_p);
       sdhci_dev->cached_blocks[index] = sector.startl;
     }
@@ -685,6 +688,9 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, int no, sector_t sector,
   //         sector.starth * BYTE_PER_SECTOR, buf_size);
   // print_hex(buf, buf_size);
   // kprintf("ret %d\n", ret);
+
+  // u32 ticks_end = cpu_cyclecount();
+  // log_debug("   tick =>%d %d diff= %d\n",ticks,ticks_end,ticks_end-ticks);
   return ret;
 }
 
@@ -839,6 +845,8 @@ int sdhci_v3s_probe(sdhci_device_t *hci) {
   unit = tran_speed_unit[(pdat->csd[0] & 0x7)];
   time = tran_speed_time[((pdat->csd[0] >> 3) & 0xf)];
   pdat->tran_speed = time * unit;
+  log_debug("unit %d time %d tran_speed %d\n", unit, time, pdat->tran_speed);
+
   pdat->dsr_imp = UNSTUFF_BITS(pdat->csd, 76, 1);
 
   pdat->read_bl_len = 1 << UNSTUFF_BITS(pdat->csd, 80, 4);

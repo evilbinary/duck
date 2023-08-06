@@ -317,10 +317,7 @@ ulong cpu_get_cs(void) {
 
 int cpu_tas(volatile int* addr, int newval) {
   int result = newval;
-  // asm volatile("lock; xchg %0, %1"
-  //              : "+m"(*addr), "=r"(result)
-  //              : "1"(newval)
-  //              : "cc");
+  result=__sync_bool_compare_and_swap(addr,newval,result);
   return result;
 }
 

@@ -9,7 +9,6 @@ static size_t sdhci_read(device_t* dev, void* buf, size_t len) {
   if (len <= 0) {
     return 0;
   }
-  // kprintf("sdhci_read buf:%x len:%d\n", buf, len);
 
   u32 ret = 0;
   sdhci_device_t* sdhci_dev = dev->data;
@@ -22,6 +21,10 @@ static size_t sdhci_read(device_t* dev, void* buf, size_t len) {
   if (rest > 0) {
     count++;
   }
+
+  // log_debug("##sdhci read buf:%x start:%d len:%d\n", buf,sector.startl, len);
+  // cpu_pmu_enable();
+  // u32 ticks = cpu_cyclecount();
 
   int alloc_size = (count + 1) * BYTE_PER_SECTOR;
 
@@ -37,6 +40,8 @@ static size_t sdhci_read(device_t* dev, void* buf, size_t len) {
     kmemmove(buf, read_buf + sdhci_dev->offsetl % BYTE_PER_SECTOR, len);
     kfree(read_buf);
   }
+  // u32 ticks_end = cpu_cyclecount();
+  // log_debug("##tick =>%d %d diff= %d\n",ticks,ticks_end,ticks_end-ticks);
 
   if (ret == 0) {
     return -1;

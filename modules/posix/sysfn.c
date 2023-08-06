@@ -98,7 +98,7 @@ u32 sys_open(char* name, int attr, ...) {
   vnode_t* file = vfs_open_attr(pwd, name, attr);
   if (file == NULL) {
     log_error("sys open file %s error, attr %x \n", name, attr);
-    return -1;
+    return ENOENT;
   }
   fd_t* fd = fd_open(file, DEVICE_TYPE_FILE, name);
   if (fd == NULL) {
