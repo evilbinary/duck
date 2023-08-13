@@ -1129,11 +1129,22 @@ int sys_access(const char* pathname, int mode) {
   return 0;
 }
 
-int sys_gettid(){
+int sys_gettid() {
   thread_t* current = thread_current();
   return current->id;
 }
 
+int sys_thread_map(int tid, u32 virt_addr, u32 phy_addr, u32 size) {
+  thread_t* current = NULL;
+  current = thread_find_id(tid);
+  if (current == NULL) {
+    current = thread_current();
+  }
+  log_debug("sys thread %s map %x %x %d\n", current->name, virt_addr, phy_addr,
+            size);
+
+  return thread_map(current, virt_addr, phy_addr, size);
+}
 
 void sys_fn_init(void** syscall_table) {
   sys_fn_init_regist_faild(sys_fn_faild);
@@ -1229,4 +1240,5 @@ void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_ACESS] = &sys_access;
 
   syscall_table[SYS_GETTID] = &sys_gettid;
+  syscall_table[SYS_THREAD_MAP] = &sys_thread_map;
 }

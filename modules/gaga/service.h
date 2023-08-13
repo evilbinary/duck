@@ -45,6 +45,7 @@ typedef struct client {
   char* name;
   int tid;
   int id;
+  int cid;
   int token;
   int fd;
   int service_id;

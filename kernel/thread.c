@@ -106,7 +106,7 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   if (level == LEVEL_KERNEL || level == LEVEL_KERNEL_SHARE) {
     mode = KERNEL_MODE;
   }
-  
+
 #ifdef VM_ENABLE
   // vm init
   vmemory_t* vm = kmalloc(sizeof(vmemory_t), KERNEL_TYPE);
@@ -561,6 +561,12 @@ fd_t* thread_set_fd(thread_t* thread, u32 fd, fd_t* nfd) {
     return NULL;
   }
   return thread->fds[fd] = nfd;
+}
+
+int thread_map(thread_t* thread, u32 virt_addr, u32 phy_addr, u32 size) {
+  log_debug("thread map %x %x %d\n", virt_addr, phy_addr, size);
+  vmemory_map(thread->vm->upage, virt_addr, phy_addr, size);
+  return 0;
 }
 
 void thread_dump_fd(thread_t* thread) {

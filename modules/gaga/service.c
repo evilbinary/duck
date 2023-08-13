@@ -163,14 +163,15 @@ size_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
       log_error("client is null\n");
       return -1;
     }
+    client->cid = current->id;
     service_map_client_api(client, ctl->client);
     // thread_t* t1 = thread_create_name_level("dump", (u32*)&do_dump_thread,
     // NULL,
     //                                         LEVEL_KERNEL_SHARE);
     // thread_run(t1);
-
   } else if (cmd == SYS_NEW_CLIENT) {
     client_t* client = service_create_client(ctl->name, 1);
+    client->cid = current->id;
     int no = service_add_client(client);
     service_map_client_api(client, ctl->client);
     ret = no;

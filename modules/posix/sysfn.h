@@ -6,12 +6,12 @@
 #ifndef SYSFN_H
 #define SYSFN_H
 
-#include "kernel/kernel.h"
+#include "kernel/error.h"
 #include "kernel/event.h"
+#include "kernel/kernel.h"
 #include "kernel/sysinfo.h"
 #include "kernel/time.h"
 #include "types.h"
-#include "kernel/error.h"
 
 #if defined(ARM)
 enum {
@@ -88,6 +88,7 @@ enum {
   SYS_THREAD_CREATE = 515,
   SYS_THREAD_DUMP = 516,
   SYS_THREAD_ADDR = 517,
+  SYS_THREAD_MAP = 518,
 };
 
 #elif defined(X86)
@@ -167,6 +168,7 @@ enum {
   SYS_THREAD_CREATE = 515,
   SYS_THREAD_DUMP = 516,
   SYS_THREAD_ADDR = 517,
+  SYS_THREAD_MAP = 518,
 };
 
 #else
@@ -243,6 +245,7 @@ enum {
   SYS_THREAD_CREATE = 515,
   SYS_THREAD_DUMP = 516,
   SYS_THREAD_ADDR = 517,
+  SYS_THREAD_MAP = 518,
 };
 #endif
 
@@ -358,7 +361,6 @@ int sys_umask(int mask);
 int sys_stat(const char* path, struct stat* buf);
 int sys_fstat(int fd, struct stat* buf);
 int sys_self(void* t);
-
 
 void sys_fn_init(void** syscall_table);
 
