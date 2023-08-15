@@ -18,7 +18,7 @@ static size_t log_write(u32 fd, void* buf, size_t nbytes) {
   thread_t* current = thread_current();
   fd_t* f = thread_find_fd_id(current, fd);
   if (f == NULL) {
-    log_error("write not found fd %d tid %d\n", fd, current->id);
+    log_error("log write not found fd %d tid %d\n", fd, current->id);
     thread_dump_fd(current);
     return 0;
   }
