@@ -136,7 +136,6 @@ size_t sys_write(u32 fd, void* buf, size_t nbytes) {
   fd_t* f = thread_find_fd_id(current, fd);
   if (f == NULL) {
     log_error("write not found fd %d tid %d\n", fd, current->id);
-    thread_dump_fd(current);
     return 0;
   }
   vnode_t* node = f->data;
