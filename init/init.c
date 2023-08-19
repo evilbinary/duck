@@ -3,7 +3,7 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
-#include "shell.h"
+#include "init.h"
 
 #define VERSION "1.3"
 
@@ -56,7 +56,7 @@ void hello_thread(void) {
 }
 
 char* argv_p[64];
-char env_p[512];
+char env_p[512] = {0};
 
 void reopen(char* name) {
   int series = syscall2(SYS_OPEN, name, 0);
@@ -165,14 +165,14 @@ void sleep() {
   syscall4(SYS_CLOCK_NANOSLEEP, 0, 0, &tv, &tv);
 }
 
-void do_shell_thread(void) {
+void do_init_thread(void) {
   char buf[64];
   int count = 0;
   int ret = 0;
 
   // wait module ready
   while (module_ready <= 0) {
-    //sleep();
+    // sleep();
   }
 
   print_logo();
@@ -225,6 +225,22 @@ void do_shell_thread(void) {
   }
 }
 
+void try_run(char* cmd, char** argv, char** env) {
+  char buf[128];
+  sprintf(buf, "/bin/%s", argv[0]);
+  int ret = syscall2(SYS_ACESS, buf, 0);
+  if (ret < 0) {
+    sprintf(buf, "/%s", argv[0]);
+    ret = syscall2(SYS_ACESS, buf, 0);
+  }
+  if (ret > 0) {
+    run_exec(buf, argv, env);
+    for (;;) {
+      sleep();
+    }
+  }
+}
+
 void pre_launch() {
   // must init global for armv7-a
   char* scm_argv[] = {"/scheme", "-b", "/scheme.boot", "--verbose", NULL};
@@ -234,6 +250,7 @@ void pre_launch() {
   char* showimg_argv[] = {"/showimage", "/pngtest.png", NULL};
   char* gnuboy_argv[] = {"/gnuboy", "./pokemon.gbc", NULL};
   char* nes_argv[] = {"infones", "/mario.nes", NULL};
+  char* shell_argv[] = {"shell", "", NULL};
 
 #ifdef X86
   // int fd = syscall2(SYS_OPEN, "/dev/stdin", 0);
@@ -267,6 +284,8 @@ void pre_launch() {
 
   // for (;;)
   //   ;
+#elif defined(ARMV7_A)
+  try_run("/bin/shell", shell_argv, NULL);
 #elif defined(ARMV7)
   // test_lcd();
 #else defined(ARM)
@@ -329,5 +348,4 @@ void build_env(char** env) {
   auxv_set(auxv++, AT_HWCAP, 0);
   auxv_set(auxv++, AT_CLKTCK, 0);
   auxv_set(auxv++, AT_NULL, 0);
-
 }
