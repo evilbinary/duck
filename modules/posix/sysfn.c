@@ -1125,7 +1125,8 @@ int sys_access(const char* pathname, int mode) {
     return -1;
   }
   int fd = sys_open(pathname, 0);
-  if (fd < 0) {
+  if (fd < 0 || fd == ENOENT) {
+    log_error("access faild\n");
     return -1;
   }
   return 0;
