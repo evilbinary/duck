@@ -98,7 +98,7 @@ u32 sys_open(char* name, int attr, ...) {
   vnode_t* file = vfs_open_attr(pwd, name, attr);
   if (file == NULL) {
     log_error("sys open file %s error, attr %x \n", name, attr);
-    return ENOENT;
+    return -1;
   }
   fd_t* fd = fd_open(file, DEVICE_TYPE_FILE, name);
   if (fd == NULL) {
@@ -1125,7 +1125,7 @@ int sys_access(const char* pathname, int mode) {
     return -1;
   }
   int fd = sys_open(pathname, 0);
-  if (fd < 0 || fd == ENOENT) {
+  if (fd < 0) {
     log_error("access faild\n");
     return -1;
   }
