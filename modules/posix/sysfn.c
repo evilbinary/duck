@@ -478,14 +478,23 @@ int sys_readdir(int fd, int index, void* dirent) {
 }
 
 int sys_readv(int fd, iovec_t* vector, int count) {
-  int ret = 0;
+  int ret = -1;
   int n;
   int i;
-  for (i = 0; i < count; i++, vector++) {
-    n = sys_read(fd, vector->iov_base, vector->iov_len);
-    if (n < 0) return n;
-    ret += n;
-    if (n != vector->iov_len) break;
+  int num = 0;
+  int total = 0;
+  for (i = 0; i < count;) {
+    n = sys_read(fd, vector[i].iov_base, vector[i].iov_len);
+    if (n > 0) {
+      num += n;
+      ret = num;
+      total += vector[i].iov_len;
+    } else if (n < 0) {
+      break;
+    }
+    if (num >= total) {
+      i++;
+    }
   }
   return ret;
 }

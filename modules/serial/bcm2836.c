@@ -3,9 +3,9 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
+#include "dev/devfs.h"
 #include "gpio.h"
 #include "serial.h"
-#include "dev/devfs.h"
 
 void serial_write(char a) { uart_send(a); }
 
@@ -30,12 +30,13 @@ void serial_printf(char* fmt, ...) {
 }
 
 static size_t read(device_t* dev, void* buf, size_t len) {
-  u32 ret = 0;
+  u32 count = 0;
+  int ret = -1;
   for (int i = 0; i < len; i++) {
     char c = serial_read();
     if (c != 0) {
-      ret++;
-      ((char*)buf)[i] = c;
+      ((char*)buf)[count++] = c;
+      ret = count;
     }
   }
   return ret;
@@ -50,7 +51,7 @@ static size_t write(device_t* dev, void* buf, size_t len) {
 }
 
 int serial_init(void) {
-  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
+  device_t* dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
   dev->name = "serial";
   dev->read = read;
   dev->write = write;
@@ -58,9 +59,8 @@ int serial_init(void) {
   dev->type = DEVICE_TYPE_CHAR;
   device_add(dev);
 
-
   // series
-  vnode_t *series = vfs_create_node("series", V_FILE);
+  vnode_t* series = vfs_create_node("series", V_FILE);
   vfs_mount(NULL, "/dev", series);
   series->device = dev;
   series->op = &device_operator;

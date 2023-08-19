@@ -16,11 +16,13 @@ char serial_read() {
 }
 
 static size_t read(device_t* dev, void* buf, size_t len) {
-  u32 ret = 0;
+  u32 count = 0;
+  int ret = -1;
   for (int i = 0; i < len; i++) {
-    ((char*)buf)[i] = serial_read();
-    if(((char*)buf)[i]>0){
-      ret++;
+    char c = serial_read();
+    if (c != 0) {
+      ((char*)buf)[count++] = c;
+      ret = count;
     }
   }
   return ret;

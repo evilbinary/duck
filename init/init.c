@@ -233,7 +233,7 @@ void try_run(char* cmd, char** argv, char** env) {
     sprintf(buf, "/%s", argv[0]);
     ret = syscall2(SYS_ACESS, buf, 0);
   }
-  if (ret > 0) {
+  if (ret >= 0) {
     run_exec(buf, argv, env);
     for (;;) {
       sleep();
@@ -285,7 +285,7 @@ void pre_launch() {
   // for (;;)
   //   ;
 #elif defined(ARMV7_A)
-  try_run("/bin/shell", shell_argv, NULL);
+  try_run("/bin/shell", shell_argv, env_p);
 #elif defined(ARMV7)
   // test_lcd();
 #else defined(ARM)

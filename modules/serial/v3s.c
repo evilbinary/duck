@@ -31,12 +31,13 @@ void serial_printf(char* fmt, ...) {
 }
 
 static size_t read(device_t* dev, char* buf, size_t len) {
-  u32 ret = 0;
+  u32 count = 0;
+  int ret = -1;
   for (int i = 0; i < len; i++) {
     char c = serial_read();
     if (c != 0) {
-      ret++;
-      buf[i] = c;
+      ((char*)buf)[count++] = c;
+      ret = count;
     }
   }
   return ret;
