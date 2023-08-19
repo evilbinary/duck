@@ -58,6 +58,7 @@ typedef struct block {
   u32 free;
   u32 count;
   u32 no;
+  u32 tid;
   u32 magic;
 } block_t;
 

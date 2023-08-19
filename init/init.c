@@ -224,17 +224,16 @@ void do_init_thread(void) {
     }
   }
 }
-
+char cmd_buf[64];
 void try_run(char* cmd, char** argv, char** env) {
-  char buf[128];
-  sprintf(buf, "/bin/%s", argv[0]);
-  int ret = syscall2(SYS_ACESS, buf, 0);
+  sprintf(cmd_buf, "/bin/%s", argv[0]);
+  int ret = syscall2(SYS_ACESS, cmd_buf, 0);
   if (ret < 0) {
-    sprintf(buf, "/%s", argv[0]);
-    ret = syscall2(SYS_ACESS, buf, 0);
+    sprintf(cmd_buf, "/%s", argv[0]);
+    ret = syscall2(SYS_ACESS, cmd_buf, 0);
   }
   if (ret >= 0) {
-    run_exec(buf, argv, env);
+    run_exec(cmd_buf, argv, env);
     for (;;) {
       sleep();
     }

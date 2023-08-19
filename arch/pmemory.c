@@ -134,8 +134,9 @@ block_t* ya_find_free_block(size_t size) {
   block_t* find_block = NULL;
   while (block) {
     if (!(block->magic == MAGIC_USED || block->magic == MAGIC_FREE)) {
-      log_error("errro find free block addr %x,magic error is %d\n", block,
-                block->magic);
+      log_error(
+          "errro find free block addr %x tid %d,magic error is %d addr %x\n",
+          block, block->tid, block->magic, &block->magic);
       cpu_halt();
       break;
     }
@@ -173,11 +174,20 @@ void* ya_alloc(size_t size) {
   mmt.alloc_size += size;
 
 #ifdef DEBUG
+#include "kernel/thread.h"
+  thread_t* t = thread_current();
+  if (t != NULL) {
+    block->tid = t->id;
+  } else {
+    block->tid = 66666;
+  }
+
   kprintf(
-      "alloc %x size=%d count=%d total=%dk  baddr=%x bsize=%d bcount=%d last "
+      "tid %d alloc %x size=%d count=%d total=%dk  baddr=%x bsize=%d bcount=%d "
+      "last "
       "map=%x\n",
-      addr, size, mmt.alloc_count, mmt.alloc_size / 1024, block, block->size,
-      block->count, mmt.last_map_addr);
+      t->id, addr, size, mmt.alloc_count, mmt.alloc_size / 1024, block,
+      block->size, block->count, mmt.last_map_addr);
   ya_verify();
   // kprintf("ya_alloc(%d);//no %d addr %x \n", size, block->no, addr);
 #endif
@@ -199,6 +209,8 @@ void ya_verify() {
       kassert(current->magic == MAGIC_FREE);
       free += current->size;
     } else {
+      kprintf("tid %d block error addr %x free %d\n", current->tid,
+              &current->free, current->free);
       kassert((current->free == BLOCK_FREE || current->free == BLOCK_USED));
     }
     void* addr = ya_block_addr(current);
@@ -315,7 +327,6 @@ size_t ya_real_size(void* ptr) {
   kassert(block->magic == MAGIC_USED || block->magic == MAGIC_FREE);
   return block->size;
 }
-
 
 void mm_init() {
   kprintf("mm init\n");
