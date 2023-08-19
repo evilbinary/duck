@@ -14,6 +14,8 @@ extern "C" {
 #define IOC_READ_REG _IOW(IOC_MAGIC, 1, int)
 #define IOC_WRITE_REG _IOW(IOC_MAGIC, 2, int)
 #define IOC_STAT _IOW(IOC_MAGIC, 3, int)
+#define IOC_STATFS _IOW(IOC_MAGIC, 4, int)
+
 
 struct stat {
 	dev_t st_dev;
@@ -137,6 +139,20 @@ struct statx {
 #define R_OK 4
 #define W_OK 2
 #define X_OK 1
+
+
+struct statfs {
+   long    f_type;     /* type of filesystem */
+   long    f_bsize;    /* optimal transfer block size */
+   long    f_blocks;   /* total data blocks in file system */
+   long    f_bfree;    /* free blocks in fs */
+   long    f_bavail;   /* free blocks avail to non-superuser */
+   long    f_files;    /* total file nodes in file system */
+   long    f_ffree;    /* free file nodes in fs */
+   long    f_fsid;     /* file system id */
+   long    f_namelen;  /* maximum length of filenames */
+   long    f_spare[6]; /* spare for later */
+};
 
 #ifdef __cplusplus
 }

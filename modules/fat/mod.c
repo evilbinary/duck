@@ -3,8 +3,8 @@
 #include "kernel/device.h"
 #include "kernel/memory.h"
 #include "kernel/stat.h"
-#include "rtc/rtc.h"
 #include "posix/sysfn.h"
+#include "rtc/rtc.h"
 
 #ifdef ARM
 #include "mmc/sdhci.h"
@@ -405,6 +405,15 @@ size_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args) {
         stat->st_mode |= S_IFREG;
       }
     }
+
+    return 0;
+  } else if (cmd == IOC_STATFS) {
+    file_info_t *file_info = node->data;
+    if (file_info == NULL) {
+      file_info = node->super->data;
+      node->data = file_info;
+    }
+    struct statfs *stat = args;
 
     return 0;
   }

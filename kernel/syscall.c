@@ -19,7 +19,7 @@ void* do_syscall(interrupt_context_t* ic) {
       // kprintf(" ret=%x\n",context_ret(ic));
       return context_ret(ic);
     } else {
-      log_debug("syscall %d not found\n", context_fn(ic));
+      log_warn("syscall %d not found\n", context_fn(ic));
     }
   } else if (sys_fn_faild_call_fn != NULL) {
     int ret = sys_fn_faild_call_fn(ic);
@@ -27,7 +27,7 @@ void* do_syscall(interrupt_context_t* ic) {
       return context_ret(ic);
     }
   } else {
-    log_debug("syscall did not found %d\n", context_fn(ic));
+    log_warn("syscall did not found %d\n", context_fn(ic));
   }
   return NULL;
 }
@@ -42,7 +42,4 @@ void sys_fn_init_regist_faild(void* fn) {
   sys_fn_faild_call_fn = fn;
 }
 
-void syscall_init() {
-  exception_regist(EX_SYS_CALL, do_syscall);
-
-}
+void syscall_init() { exception_regist(EX_SYS_CALL, do_syscall); }

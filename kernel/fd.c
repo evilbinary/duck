@@ -74,21 +74,22 @@ int fd_std_init() {
 }
 int fd_init() { return 1; }
 
-void fd_close(fd_t* fd) {
+int fd_close(fd_t* fd) {
   if (fd == NULL) {
     kprintf("fd close is null\n");
-    return;
+    return -1;
   }
   fd->use_count--;
   if (fd->use_count <= 0) {
     vnode_t* file = fd->data;
     if (file == NULL) {
       log_error("sys close node is null ,name is  %s\n", file->name);
-      return;
+      return -1;
     }
     // reset offset
     // fd->offset = 0;
     // u32 ret = vclose(file);
+    return 1;
   }
 }
 

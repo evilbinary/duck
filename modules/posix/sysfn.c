@@ -126,8 +126,11 @@ int sys_close(u32 fd) {
     log_error("close not found fd %d tid %d\n", fd, current->id);
     return 0;
   }
-  thread_set_fd(current, fd, NULL);
-  fd_close(f);
+  int ret = fd_close(f);
+  if (ret == 1) {
+    // fd use by other do not close
+    thread_set_fd(current, fd, NULL);
+  }
   return 0;
 }
 
@@ -1147,6 +1150,30 @@ int sys_thread_map(int tid, u32 virt_addr, u32 phy_addr, u32 size) {
 
 int sys_fstat64(int fd, struct stat* stat) { return sys_fstat(fd, stat); }
 
+int sys_statfs64(const char* filename, struct statfs* stat) {
+  if (stat == NULL) {
+    return -1;
+  }
+  thread_t* current = thread_current();
+  int f = thread_find_fd_name(current, filename);
+  if (f < 0) {
+    f = sys_open(filename, 0);
+  }
+  if (f < 0) {
+    log_error("statfs not found name %s tid %d\n", filename, current->id);
+    return -1;
+  }
+  fd_t* fd = thread_find_fd_id(current, f);
+  if (fd == NULL) {
+    log_error("statfs fd not found name %s tid %d\n", filename, current->id);
+    return 0;
+  }
+  vnode_t* node = fd->data;
+  u32 cmd = IOC_STATFS;
+  u32 ret = vioctl(node, cmd, stat);
+  return ret;
+}
+
 void sys_fn_init(void** syscall_table) {
   sys_fn_init_regist_faild(sys_fn_faild);
 
@@ -1243,4 +1270,5 @@ void sys_fn_init(void** syscall_table) {
   syscall_table[SYS_GETTID] = &sys_gettid;
   syscall_table[SYS_THREAD_MAP] = &sys_thread_map;
   syscall_table[SYS_FSTAT64] = &sys_fstat64;
+  syscall_table[SYS_STATFS64] = &sys_statfs64;
 }
