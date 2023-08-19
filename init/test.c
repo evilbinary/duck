@@ -1,5 +1,5 @@
 #include "kernel/kernel.h"
-#include "shell.h"
+#include "init.h"
 
 #ifdef XTENSA
 

@@ -6,7 +6,7 @@
 #include "main.h"
 
 extern void modules_init();
-extern void do_shell_thread(void);
+extern void do_init_thread(void);
 extern void do_kernel_thread();
 extern void do_monitor_thread();
 
@@ -30,7 +30,7 @@ int kmain(int argc, char* argv[]) {
 
   thread_t* t1 = thread_create_name_level("kernel", (u32*)&do_kernel_thread,
                                           NULL, LEVEL_KERNEL_SHARE);
-  thread_t* t2 = thread_create_name("shell", (u32*)&do_shell_thread, NULL);
+  thread_t* t2 = thread_create_name("init", (u32*)&do_init_thread, NULL);
   thread_run(t1);
   thread_run(t2);
 

@@ -50,7 +50,7 @@ libpath = [
 kernel = [
     'main.c',
     'module.c',
-    'shell.c',
+    'init.c',
     'monitor.c',
     'test.c'
 ]
