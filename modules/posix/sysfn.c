@@ -1145,6 +1145,8 @@ int sys_thread_map(int tid, u32 virt_addr, u32 phy_addr, u32 size) {
   return thread_map(current, virt_addr, phy_addr, size);
 }
 
+int sys_fstat64(int fd, struct stat* stat) { return sys_fstat(fd, stat); }
+
 void sys_fn_init(void** syscall_table) {
   sys_fn_init_regist_faild(sys_fn_faild);
 
@@ -1240,4 +1242,5 @@ void sys_fn_init(void** syscall_table) {
 
   syscall_table[SYS_GETTID] = &sys_gettid;
   syscall_table[SYS_THREAD_MAP] = &sys_thread_map;
+  syscall_table[SYS_FSTAT64] = &sys_fstat64;
 }
