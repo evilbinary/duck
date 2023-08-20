@@ -863,12 +863,18 @@ int sys_stat(const char* path, struct stat* stat) {
   if (stat == NULL) {
     return -1;
   }
+  if (path == NULL) {
+    return -1;
+  }
   int fd = sys_open(path, 0);
   return sys_fstat(fd, stat);
 }
 
 int sys_fstat(int fd, struct stat* stat) {
   if (stat == NULL) {
+    return -1;
+  }
+  if (fd < 0) {
     return -1;
   }
   thread_t* current = thread_current();
@@ -945,7 +951,7 @@ int sys_statx(int dirfd, const char* restrict pathname, int flags,
   struct stat buf;
   int ret = sys_stat(pathname, &buf);
   if (ret < 0) {
-    return 0;
+    return -1;
   }
 
   statxbuf->stx_mode = buf.st_mode;
