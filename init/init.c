@@ -56,7 +56,7 @@ void hello_thread(void) {
 }
 
 char* argv_p[64];
-char env_p[512] = {0};
+char env_p[512];
 
 void reopen(char* name) {
   int series = syscall2(SYS_OPEN, name, 0);
@@ -224,21 +224,23 @@ void do_init_thread(void) {
     }
   }
 }
-char cmd_buf[64];
+
 void try_run(char* cmd, char** argv, char** env) {
-  sprintf(cmd_buf, "/bin/%s", argv[0]);
-  int ret = syscall2(SYS_ACESS, cmd_buf, 0);
+  char buf[64];
+  sprintf(buf, "/bin/%s", argv[0]);
+  int ret = syscall2(SYS_ACESS, buf, 0);
   if (ret < 0) {
-    sprintf(cmd_buf, "/%s", argv[0]);
-    ret = syscall2(SYS_ACESS, cmd_buf, 0);
+    sprintf(buf, "/%s", argv[0]);
+    ret = syscall2(SYS_ACESS, buf, 0);
   }
   if (ret >= 0) {
-    run_exec(cmd_buf, argv, env);
+    run_exec(buf, argv, env);
     for (;;) {
       sleep();
     }
   }
 }
+
 
 void pre_launch() {
   // must init global for armv7-a
@@ -249,7 +251,7 @@ void pre_launch() {
   char* showimg_argv[] = {"/showimage", "/pngtest.png", NULL};
   char* gnuboy_argv[] = {"/gnuboy", "./pokemon.gbc", NULL};
   char* nes_argv[] = {"infones", "/mario.nes", NULL};
-  char* shell_argv[] = {"shell", "", NULL};
+  char* shell_argv[] = {"shell", NULL, NULL};
 
 #ifdef X86
   // int fd = syscall2(SYS_OPEN, "/dev/stdin", 0);
@@ -284,7 +286,7 @@ void pre_launch() {
   // for (;;)
   //   ;
 #elif defined(ARMV7_A)
-  try_run("/bin/shell", shell_argv, env_p);
+//  try_run("/bin/shell", shell_argv, env_p);
 #elif defined(ARMV7)
   // test_lcd();
 #else defined(ARM)
