@@ -1713,24 +1713,34 @@ int sd_write(uint8_t *buf, size_t buf_size, uint32_t block_no) {
 
 void sdhci_dev_prob(sdhci_device_t *sdhci_dev) { sd_card_init(); }
 
-int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, int no, sector_t sector,
-                         u32 count, u32 buf) {
+int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
   u32 ret = 0;
-  size_t buf_size = count * BYTE_PER_SECTOR;
-  ret = sd_write((uint8_t *)buf, buf_size, sector.startl);
-  if (ret < buf_size) {
-    return SD_ERROR;
+  u32 bno = sdhci_dev->offsetl / BYTE_PER_SECTOR;
+  u32 boffset = sdhci_dev->offsetl % BYTE_PER_SECTOR;
+  u32 bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
+  u32 bsize = bcount * BYTE_PER_SECTOR;
+
+  if (sdhci_dev->write_buf == NULL) {
+    sdhci_dev->write_buf = kmalloc(bsize, DEVICE_TYPE);
+    sdhci_dev->write_buf_size = bsize;
   }
+  if (bsize > sdhci_dev->write_buf_size) {
+    kfree(sdhci_dev->write_buf);
+    sdhci_dev->write_buf = kmalloc(bsize, DEVICE_TYPE);
+  }
+
+  ret = sd_write(buf, bsize, bno);
+
 #ifdef CACHE_ENABLED
   int i;
   u8 *p = buf;
-  for (i = 0; i < count; i++) {
-    int index = (sector.startl + i) & CACHE_MASK;
+  for (i = 0; i < bcount; i++) {
+    int index = (bno + i) & CACHE_MASK;
     void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
-
     kmemmove(cache_p, &p[SECTOR_SIZE * i], SECTOR_SIZE);
   }
 #endif
+
   return ret;
 }
 
@@ -1776,7 +1786,7 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
 
   ret = sd_read(sdhci_dev->read_buf, bsize, bno);
   kmemmove(buf, sdhci_dev->read_buf + boffset, len);
-  
+
   return ret;
 }
 

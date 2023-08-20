@@ -688,21 +688,32 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
 int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, int no, sector_t sector,
                          u32 count, u32 buf) {
   u32 ret = 0;
-  size_t buf_size = count * BYTE_PER_SECTOR;
-  ret = mmc_write_blocks(sdhci_dev, buf, sector.startl, count);
-  if (ret < buf_size) {
-    return -1;
+  u32 bno = sdhci_dev->offsetl / BYTE_PER_SECTOR;
+  u32 boffset = sdhci_dev->offsetl % BYTE_PER_SECTOR;
+  u32 bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
+  u32 bsize = bcount * BYTE_PER_SECTOR;
+
+  if (sdhci_dev->write_buf == NULL) {
+    sdhci_dev->write_buf = kmalloc(bsize, DEVICE_TYPE);
+    sdhci_dev->write_buf_size = bsize;
   }
+  if (bsize > sdhci_dev->write_buf_size) {
+    kfree(sdhci_dev->write_buf);
+    sdhci_dev->write_buf = kmalloc(bsize, DEVICE_TYPE);
+  }
+
+  ret = mmc_write_blocks(sdhci_dev, buf, bno, bcount);
+
 #ifdef CACHE_ENABLED
   int i;
   u8 *p = buf;
-  for (i = 0; i < count; i++) {
-    int index = (sector.startl + i) & CACHE_MASK;
+  for (i = 0; i < bcount; i++) {
+    int index = (bno + i) & CACHE_MASK;
     void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
-
-    kmemcpy(cache_p, &p[SECTOR_SIZE * i], SECTOR_SIZE);
+    kmemmove(cache_p, &p[SECTOR_SIZE * i], SECTOR_SIZE);
   }
 #endif
+
   return ret;
 }
 

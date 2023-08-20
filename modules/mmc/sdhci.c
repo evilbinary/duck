@@ -16,28 +16,13 @@ static size_t sdhci_read(device_t* dev, void* buf, size_t len) {
 }
 
 static size_t sdhci_write(device_t* dev, void* buf, size_t len) {
-  if (len == 0) {
+  if (len <= 0) {
     return 0;
   }
-  sdhci_device_t* sdhci_dev = dev->data;
-  int no = dev->id - DEVICE_SATA;
-  u32 startl = sdhci_dev->offsetl / BYTE_PER_SECTOR;
-  u32 starth = sdhci_dev->offseth / BYTE_PER_SECTOR;
-  u32 count = len / BYTE_PER_SECTOR;
-  u32 rest = len % BYTE_PER_SECTOR;
-  if (rest > 0) {
-    kprintf("sdhci write is more, may have error\n");
-    count++;
-  }
   u32 ret = 0;
-  sector_t sector;
-  sector.startl = startl;
-  sector.starth = starth;
-  ret = sdhci_dev_port_write(sdhci_dev, no, sector, count, buf);
-  if (ret == 0) {
-    return -1;
-  }
-  return count * BYTE_PER_SECTOR;
+  sdhci_device_t* sdhci_dev = dev->data;
+  ret = sdhci_dev_port_write(sdhci_dev, buf, len);
+  return ret;
 }
 
 static size_t sdhci_ioctl(device_t* dev, u32 cmd, ...) {
