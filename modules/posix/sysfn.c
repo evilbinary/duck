@@ -490,7 +490,7 @@ int sys_readv(int fd, iovec_t* vector, int count) {
       num += n;
       ret = num;
       total += vector[pos].iov_len;
-    } else if (n < 0) {
+    } else if (n <= 0) {
       break;
     }
     if (num >= total) {
@@ -875,7 +875,7 @@ int sys_fstat(int fd, struct stat* stat) {
   fd_t* f = thread_find_fd_id(current, fd);
   if (f == NULL) {
     log_error("stat not found fd %d tid %d\n", fd, current->id);
-    return 0;
+    return -1;
   }
   vnode_t* node = f->data;
   u32 cmd = IOC_STAT;
