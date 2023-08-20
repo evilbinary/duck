@@ -649,48 +649,39 @@ static void print_hex(u8 *addr, u32 size) {
   kprintf("\n\r");
 }
 
-int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, int no, sector_t sector,
-                        u32 count, u32 buf) {
-  // log_debug("   sdhci_dev_port_read sector:%d count:%d buf:%x\n", sector.startl,count, buf);
-  // u32 ticks = cpu_cyclecount();
-
+int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
   u32 ret = 0;
-  size_t buf_size = count * BYTE_PER_SECTOR;
+
+  u32 bno = sdhci_dev->offsetl / BYTE_PER_SECTOR;
+  u32 boffset = sdhci_dev->offsetl % BYTE_PER_SECTOR;
+  u32 bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
+  u32 bsize = bcount * BYTE_PER_SECTOR;
+
+  if (sdhci_dev->read_buf == NULL) {
+    sdhci_dev->read_buf = kmalloc(bsize, DEVICE_TYPE);
+    sdhci_dev->read_buf_size = bsize;
+  }
+  if (bsize > sdhci_dev->read_buf_size) {
+    kfree(sdhci_dev->read_buf);
+    sdhci_dev->read_buf = kmalloc(bsize, DEVICE_TYPE);
+  }
 
 #ifdef CACHE_ENABLED
-  if (count == CACHE_COUNT) {
-    int index = sector.startl & CACHE_MASK;
+  if (bcount == CACHE_COUNT) {
+    int index = bno & CACHE_MASK;
     void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
-    if (sdhci_dev->cached_blocks[index] != sector.startl) {
-      // log_debug("   sdhci_dev_port_read new!!\n");
-      ret = mmc_read_blocks(sdhci_dev, sector.startl, count, cache_p);
-      sdhci_dev->cached_blocks[index] = sector.startl;
+    if (sdhci_dev->cached_blocks[index] != bno) {
+      ret = mmc_read_blocks(sdhci_dev, bcount, bno, cache_p);
+      sdhci_dev->cached_blocks[index] = bno;
     }
-    kmemmove(buf, cache_p, SECTOR_SIZE);
-  } else {
-#endif
-    int index = sector.startl & CACHE_MASK;
-    void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
-
-    ret = mmc_read_blocks(sdhci_dev, sector.startl, count, buf);
-    sdhci_dev->cached_blocks[index] = sector.startl;
-    kmemmove(cache_p, buf, SECTOR_SIZE);
-
-    if (ret < buf_size) {
-      kprintf("mm read failed ret:%d\n", ret);
-      return -1;
-    }
-#ifdef CACHE_ENABLED
+    kmemmove(buf, cache_p + boffset, len);
+    return ret;
   }
 #endif
-  // kprintf("sd read offset:%x %x buf_size:%d\n", sector.startl *
-  // BYTE_PER_SECTOR,
-  //         sector.starth * BYTE_PER_SECTOR, buf_size);
-  // print_hex(buf, buf_size);
-  // kprintf("ret %d\n", ret);
 
-  // u32 ticks_end = cpu_cyclecount();
-  // log_debug("   tick =>%d %d diff= %d\n",ticks,ticks_end,ticks_end-ticks);
+  ret = mmc_read_blocks(sdhci_dev, bcount, bno, sdhci_dev->read_buf);
+  kmemmove(buf, sdhci_dev->read_buf + boffset, len);
+
   return ret;
 }
 

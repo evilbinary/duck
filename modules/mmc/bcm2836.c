@@ -1776,11 +1776,7 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
 
   ret = sd_read(sdhci_dev->read_buf, bsize, bno);
   kmemmove(buf, sdhci_dev->read_buf + boffset, len);
-
-  // kprintf("sd read offset:%x %x
-  // count:%d\n",sector.startl*BYTE_PER_SECTOR,sector.starth*BYTE_PER_SECTOR,count);
-  // print_hex(buf,buf_size);
-  // kprintf("ret %d\n",ret);
+  
   return ret;
 }
 
