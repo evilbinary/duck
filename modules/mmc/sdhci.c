@@ -9,44 +9,10 @@ static size_t sdhci_read(device_t* dev, void* buf, size_t len) {
   if (len <= 0) {
     return 0;
   }
-
   u32 ret = 0;
   sdhci_device_t* sdhci_dev = dev->data;
-  int no = dev->id - DEVICE_SATA;
-  sector_t sector;
-  sector.startl = sdhci_dev->offsetl / BYTE_PER_SECTOR;
-  sector.starth = sdhci_dev->offseth / BYTE_PER_SECTOR;
-  u32 count = len / BYTE_PER_SECTOR;
-  u32 rest = len % BYTE_PER_SECTOR;
-  if (rest > 0) {
-    count++;
-  }
-
-  // log_debug("##sdhci read buf:%x start:%d len:%d\n", buf,sector.startl, len);
-  // cpu_pmu_enable();
-  // u32 ticks = cpu_cyclecount();
-
-  int alloc_size = (count + 1) * BYTE_PER_SECTOR;
-
-  char small_buf[BYTE_PER_SECTOR * 2];
-  if( alloc_size<=BYTE_PER_SECTOR*2 ) {
-    kmemset(small_buf, 0, BYTE_PER_SECTOR * 2);
-    ret = sdhci_dev_port_read(sdhci_dev, no, sector, count , small_buf);
-    kmemmove(buf, small_buf + sdhci_dev->offsetl % BYTE_PER_SECTOR, len);
-  } else {
-    char* read_buf = kmalloc(alloc_size, DEVICE_TYPE);
-    kmemset(read_buf, 0, alloc_size);
-    ret = sdhci_dev_port_read(sdhci_dev, no, sector, count + 1, read_buf);
-    kmemmove(buf, read_buf + sdhci_dev->offsetl % BYTE_PER_SECTOR, len);
-    kfree(read_buf);
-  }
-  // u32 ticks_end = cpu_cyclecount();
-  // log_debug("##tick =>%d %d diff= %d\n",ticks,ticks_end,ticks_end-ticks);
-
-  if (ret == 0) {
-    return -1;
-  }
-  return len;
+  ret = sdhci_dev_port_read(sdhci_dev, buf, len);
+  return ret;
 }
 
 static size_t sdhci_write(device_t* dev, void* buf, size_t len) {
@@ -110,7 +76,12 @@ int sdhci_init(void) {
   sdhci_device_t* sdhci_dev = kmalloc(sizeof(sdhci_device_t), DEFAULT_TYPE);
   sdhci_dev->offseth = 0;
   sdhci_dev->offsetl = 0;
+  sdhci_dev->port = dev->id - DEVICE_SATA;
   dev->data = sdhci_dev;
+  sdhci_dev->read_buf = NULL;
+  sdhci_dev->write_buf = NULL;
+  sdhci_dev->read_buf_size = 0;
+  sdhci_dev->write_buf_size = 0;
   sdhci_dev_init(sdhci_dev);
 
   return 0;

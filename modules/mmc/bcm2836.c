@@ -12,7 +12,7 @@
 // #define SD_DEBUG
 
 #define CACHE_COUNT 1
-#define SECTOR_SIZE (512*CACHE_COUNT)
+#define SECTOR_SIZE (512 * CACHE_COUNT)
 #define CACHE_ENABLED 1
 
 #ifdef CACHE_ENABLED
@@ -404,7 +404,7 @@ extern int printf(const char *format, ...);
 #endif
 
 // Enable 1.8V support
-//#define SD_1_8V_SUPPORT
+// #define SD_1_8V_SUPPORT
 
 // Enable 4-bit support
 #define SD_4BIT_DATA
@@ -413,7 +413,7 @@ extern int printf(const char *format, ...);
 #define SDXC_MAXIMUM_PERFORMANCE
 
 // Enable EXPERIMENTAL (and possibly DANGEROUS) SD write support
-//#define SD_WRITE_SUPPORT
+// #define SD_WRITE_SUPPORT
 
 #ifdef SD_DEBUG
 static char *sd_versions[] = {"unknown", "1.0 and 1.01", "1.10",
@@ -1331,8 +1331,7 @@ int sd_card_init(void) {
   // definitely
   //  support SDR12 mode which runs at 25 MHz
   // emmc_set_clock(SD_CLOCK_NORMAL);
-   emmc_set_clock(SD_CLOCK_HIGH);
-  
+  emmc_set_clock(SD_CLOCK_HIGH);
 
 #ifdef SD_1_8V_SUPPORT
   // A small wait before the voltage switch
@@ -1724,12 +1723,12 @@ int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, int no, sector_t sector,
   }
 #ifdef CACHE_ENABLED
   int i;
-  u8* p=buf;
+  u8 *p = buf;
   for (i = 0; i < count; i++) {
     int index = (sector.startl + i) & CACHE_MASK;
     void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
-   
-    kmemmove(cache_p,&p[SECTOR_SIZE * i], SECTOR_SIZE);
+
+    kmemmove(cache_p, &p[SECTOR_SIZE * i], SECTOR_SIZE);
   }
 #endif
   return ret;
@@ -1745,30 +1744,41 @@ static void print_hex(u8 *addr, u32 size) {
   kprintf("\n\r");
 }
 
-int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, int no, sector_t sector,
-                        u32 count, u32 buf) {
-  size_t buf_size = count * BYTE_PER_SECTOR;
+int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
   u32 ret = 0;
 
+  u32 bno = sdhci_dev->offsetl / BYTE_PER_SECTOR;
+  u32 boffset = sdhci_dev->offsetl % BYTE_PER_SECTOR;
+  u32 bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
+  u32 bsize = bcount * BYTE_PER_SECTOR;
+
+  if (sdhci_dev->read_buf == NULL) {
+    sdhci_dev->read_buf = kmalloc(bsize, DEVICE_TYPE);
+    sdhci_dev->read_buf_size = bsize;
+  }
+  if (bsize > sdhci_dev->read_buf_size) {
+    kfree(sdhci_dev->read_buf);
+    sdhci_dev->read_buf = kmalloc(bsize, DEVICE_TYPE);
+  }
+
 #ifdef CACHE_ENABLED
-  if (count == CACHE_COUNT) {
-    int index = sector.startl & CACHE_MASK;
+  if (bcount == CACHE_COUNT) {
+    int index = bno & CACHE_MASK;
     void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
-    if (sdhci_dev->cached_blocks[index] != sector.startl) {
-      ret = sd_read(cache_p, buf_size, sector.startl);
-      sdhci_dev->cached_blocks[index] = sector.startl;
+    if (sdhci_dev->cached_blocks[index] != bno) {
+      ret = sd_read(cache_p, bsize, bno);
+      sdhci_dev->cached_blocks[index] = bno;
     }
-    kmemmove(buf, cache_p, SECTOR_SIZE);
-  } else {
-#endif
-    ret = sd_read(buf, buf_size, sector.startl);
-    if (ret < buf_size) {
-      return SD_ERROR;
-    }
-#ifdef CACHE_ENABLED
+    kmemmove(buf, cache_p + boffset, len);
+    return ret;
   }
 #endif
-  // kprintf("sd read offset:%x %x count:%d\n",sector.startl*BYTE_PER_SECTOR,sector.starth*BYTE_PER_SECTOR,count);
+
+  ret = sd_read(sdhci_dev->read_buf, bsize, bno);
+  kmemmove(buf, sdhci_dev->read_buf + boffset, len);
+
+  // kprintf("sd read offset:%x %x
+  // count:%d\n",sector.startl*BYTE_PER_SECTOR,sector.starth*BYTE_PER_SECTOR,count);
   // print_hex(buf,buf_size);
   // kprintf("ret %d\n",ret);
   return ret;
@@ -1780,8 +1790,8 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   sdhci_dev_prob(sdhci_dev);
 
 #ifdef CACHE_ENABLED
-  sdhci_dev->cached_blocks = kmalloc(CACHE_ENTRIES,DEFAULT_TYPE);
-  sdhci_dev->cache_buffer = kmalloc(SECTOR_SIZE * CACHE_ENTRIES,DEFAULT_TYPE);
+  sdhci_dev->cached_blocks = kmalloc(CACHE_ENTRIES, DEFAULT_TYPE);
+  sdhci_dev->cache_buffer = kmalloc(SECTOR_SIZE * CACHE_ENTRIES, DEFAULT_TYPE);
   int i;
   for (i = 0; i < CACHE_ENTRIES; i++) {
     sdhci_dev->cached_blocks[i] = 0xFFFFFFFF;
