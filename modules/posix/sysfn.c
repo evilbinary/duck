@@ -483,17 +483,18 @@ int sys_readv(int fd, iovec_t* vector, int count) {
   int i;
   int num = 0;
   int total = 0;
-  for (i = 0; i < count;) {
-    n = sys_read(fd, vector[i].iov_base, vector[i].iov_len);
+  int pos = 0;
+  for (i = 0; i < count; i++) {
+    n = sys_read(fd, vector[pos].iov_base, vector[pos].iov_len);
     if (n > 0) {
       num += n;
       ret = num;
-      total += vector[i].iov_len;
+      total += vector[pos].iov_len;
     } else if (n < 0) {
       break;
     }
     if (num >= total) {
-      i++;
+      pos++;
     }
   }
   return ret;
