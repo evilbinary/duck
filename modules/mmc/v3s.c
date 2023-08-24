@@ -657,10 +657,6 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
   u32 bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
   u32 bsize = bcount * BYTE_PER_SECTOR;
 
-  if (sdhci_dev->read_buf == NULL) {
-    sdhci_dev->read_buf = kmalloc(bsize, DEVICE_TYPE);
-    sdhci_dev->read_buf_size = bsize;
-  }
   if (bsize > sdhci_dev->read_buf_size) {
     kfree(sdhci_dev->read_buf);
     sdhci_dev->read_buf = kmalloc(bsize, DEVICE_TYPE);
@@ -693,13 +689,10 @@ int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, int no, sector_t sector,
   u32 bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
   u32 bsize = bcount * BYTE_PER_SECTOR;
 
-  if (sdhci_dev->write_buf == NULL) {
-    sdhci_dev->write_buf = kmalloc(bsize, DEVICE_TYPE);
-    sdhci_dev->write_buf_size = bsize;
-  }
   if (bsize > sdhci_dev->write_buf_size) {
     kfree(sdhci_dev->write_buf);
     sdhci_dev->write_buf = kmalloc(bsize, DEVICE_TYPE);
+    sdhci_dev->read_buf_size = bsize;
   }
 
   ret = mmc_write_blocks(sdhci_dev, buf, bno, bcount);

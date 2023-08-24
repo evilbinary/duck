@@ -6,8 +6,8 @@
 #include "sdhci.h"
 
 static size_t sdhci_read(device_t* dev, void* buf, size_t len) {
-  if (len <= 0) {
-    return 0;
+  if (len <= 0 || buf == NULL) {
+    return -1;
   }
   u32 ret = 0;
   sdhci_device_t* sdhci_dev = dev->data;
@@ -16,8 +16,8 @@ static size_t sdhci_read(device_t* dev, void* buf, size_t len) {
 }
 
 static size_t sdhci_write(device_t* dev, void* buf, size_t len) {
-  if (len <= 0) {
-    return 0;
+  if (len <= 0 || buf == NULL) {
+    return -1;
   }
   u32 ret = 0;
   sdhci_device_t* sdhci_dev = dev->data;
@@ -63,10 +63,12 @@ int sdhci_init(void) {
   sdhci_dev->offsetl = 0;
   sdhci_dev->port = dev->id - DEVICE_SATA;
   dev->data = sdhci_dev;
-  sdhci_dev->read_buf = NULL;
-  sdhci_dev->write_buf = NULL;
-  sdhci_dev->read_buf_size = 0;
-  sdhci_dev->write_buf_size = 0;
+
+  sdhci_dev->read_buf = kmalloc(BYTE_PER_SECTOR, DEVICE_TYPE);
+  sdhci_dev->read_buf_size = BYTE_PER_SECTOR;
+
+  sdhci_dev->write_buf = kmalloc(BYTE_PER_SECTOR, DEVICE_TYPE);
+  sdhci_dev->write_buf_size = BYTE_PER_SECTOR;
   sdhci_dev_init(sdhci_dev);
 
   return 0;
