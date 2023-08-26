@@ -681,8 +681,7 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
   return ret;
 }
 
-int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, int no, sector_t sector,
-                         u32 count, u32 buf) {
+int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
   u32 ret = 0;
   u32 bno = sdhci_dev->offsetl / BYTE_PER_SECTOR;
   u32 boffset = sdhci_dev->offsetl % BYTE_PER_SECTOR;
