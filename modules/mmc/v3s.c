@@ -660,6 +660,7 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
   if (bsize > sdhci_dev->read_buf_size) {
     kfree(sdhci_dev->read_buf);
     sdhci_dev->read_buf = kmalloc(bsize, DEVICE_TYPE);
+    sdhci_dev->read_buf_size = bsize;
   }
 
 #ifdef CACHE_ENABLED
@@ -667,15 +668,15 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
     int index = bno & CACHE_MASK;
     void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
     if (sdhci_dev->cached_blocks[index] != bno) {
-      ret = mmc_read_blocks(sdhci_dev, bcount, bno, cache_p);
+      ret = mmc_read_blocks(sdhci_dev, bno, bcount, cache_p);
       sdhci_dev->cached_blocks[index] = bno;
     }
     kmemmove(buf, cache_p + boffset, len);
     return ret;
   }
 #endif
-
-  ret = mmc_read_blocks(sdhci_dev, bcount, bno, sdhci_dev->read_buf);
+  kmemset(sdhci_dev->read_buf, 0, len);
+  ret = mmc_read_blocks(sdhci_dev, bno, bcount, sdhci_dev->read_buf);
   kmemmove(buf, sdhci_dev->read_buf + boffset, len);
 
   return ret;
