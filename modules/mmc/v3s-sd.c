@@ -38,57 +38,56 @@ void sd_deinit(void) {
 }
 
 static uint32_t pll_periph_get_freq(void) {
-    uint32_t reg = CCU->PLL_PERIPH0_CTRL;
-    uint32_t mul = (reg >> 8) & 0x1F;
-    uint32_t div = (reg >> 4) & 0x3;
-    return (24000000 * (mul + 1) / (div + 1));
+  uint32_t reg = CCU->PLL_PERIPH0_CTRL;
+  uint32_t mul = (reg >> 8) & 0x1F;
+  uint32_t div = (reg >> 4) & 0x3;
+  return (24000000 * (mul + 1) / (div + 1));
 }
 
 u32 clk_sdc_config(u32 freq) {
-    uint32_t in_freq = 0;
-    uint32_t reg_val = (1 << 31);
-    if(freq <= 24000000) {
-        reg_val |= (0 << 24); // OSC24M
-        in_freq = 24000000;
-        log_debug("clk OSC24M %d\n",in_freq);
-    } else {
-        reg_val |= (1 << 24); // PLL_PERIPH
-        in_freq = pll_periph_get_freq();
-        log_debug("clk PLL_PERIPH %d\n",in_freq);
-    }
+  uint32_t in_freq = 0;
+  uint32_t reg_val = (1 << 31);
+  if (freq <= 24000000) {
+    reg_val |= (0 << 24);  // OSC24M
+    in_freq = 24000000;
+    log_debug("clk OSC24M %d\n", in_freq);
+  } else {
+    reg_val |= (1 << 24);  // PLL_PERIPH
+    in_freq = pll_periph_get_freq();
+    log_debug("clk PLL_PERIPH %d\n", in_freq);
+  }
 
-    uint8_t div = in_freq / freq;
-    if(in_freq % freq) div++;
+  uint8_t div = in_freq / freq;
+  if (in_freq % freq) div++;
 
-    uint8_t prediv = 0;
-    while(div > 16) {
-        prediv++;
-        if(prediv > 3) return 0;
-        div = (div + 1) / 2;
-    }
+  uint8_t prediv = 0;
+  while (div > 16) {
+    prediv++;
+    if (prediv > 3) return 0;
+    div = (div + 1) / 2;
+  }
 
-    /* determine delays */
-    uint8_t samp_phase = 0;
-    uint8_t out_phase  = 0;
-    if(freq <= 400000) {
-        out_phase  = 0;
-        samp_phase = 0;
-    } else if(freq <= 25000000) {
-        out_phase  = 0;
-        samp_phase = 5;
-    } else if(freq <= 52000000) {
-        out_phase  = 3;
-        samp_phase = 4;
-    } else { /* freq > 52000000 */
-        out_phase  = 1;
-        samp_phase = 4;
-    }
-    reg_val |= (samp_phase << 20) | (out_phase << 8);
-    reg_val |= (prediv << 16) | ((div - 1) << 0);
+  /* determine delays */
+  uint8_t samp_phase = 0;
+  uint8_t out_phase = 0;
+  if (freq <= 400000) {
+    out_phase = 0;
+    samp_phase = 0;
+  } else if (freq <= 25000000) {
+    out_phase = 0;
+    samp_phase = 5;
+  } else if (freq <= 52000000) {
+    out_phase = 3;
+    samp_phase = 4;
+  } else { /* freq > 52000000 */
+    out_phase = 1;
+    samp_phase = 4;
+  }
+  reg_val |= (samp_phase << 20) | (out_phase << 8);
+  reg_val |= (prediv << 16) | ((div - 1) << 0);
 
-    return reg_val;
+  return reg_val;
 }
-
 
 void sd_init(void) {
   sd_deinit();
@@ -103,9 +102,9 @@ void sd_init(void) {
 
 int sd_card_detect(void) {
   u32 ris = SD0->RIS & ((1 << 31) | (1 << 30));
-  log_debug("RIS===>%x\n",ris);
+  log_debug("RIS===>%x\n", ris);
   SD0->RIS = ris;
-  log_debug("RIS1===>%x\n",ris);
+  log_debug("RIS1===>%x\n", ris);
   if (ris & (1 << 31)) {
     sd_init();
   }
@@ -276,64 +275,66 @@ void sd_detect_thread() {
   }
 }
 
-int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, int no, sector_t sector,
-                        u32 count, u32 buf) {
+int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
   // kprintf("sdhci_dev_port_read sector:%d count:%d buf:%x\n", sector.startl,
   //         count, buf);
   u32 ret = 0;
-  size_t buf_size = count * BYTE_PER_SECTOR;
+
+  u32 bno = sdhci_dev->offsetl / BYTE_PER_SECTOR;
+  u32 boffset = sdhci_dev->offsetl % BYTE_PER_SECTOR;
+  u32 bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
+  u32 bsize = bcount * BYTE_PER_SECTOR;
+
+  if (bsize > sdhci_dev->read_buf_size) {
+    kfree(sdhci_dev->read_buf);
+    sdhci_dev->read_buf = kmalloc(bsize, DEVICE_TYPE);
+    sdhci_dev->read_buf_size = bsize;
+  }
 
 #ifdef CACHE_ENABLED
-  if (count == CACHE_COUNT) {
-    int index = sector.startl & CACHE_MASK;
+  if (bcount == CACHE_COUNT) {
+    int index = bno & CACHE_MASK;
     void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
-    if (sdhci_dev->cached_blocks[index] != sector.startl) {
-      ret = sd_read(cache_p, sector.startl, count);
-      sdhci_dev->cached_blocks[index] = sector.startl;
+    if (sdhci_dev->cached_blocks[index] != bno) {
+      ret = sd_read(cache_p, bno, bcount);
+      sdhci_dev->cached_blocks[index] = bno;
     }
-    kmemmove(buf, cache_p, SECTOR_SIZE);
-  } else {
-#endif
-    int index = sector.startl & CACHE_MASK;
-    void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
-
-    ret = sd_read(buf, sector.startl, count);
-    sdhci_dev->cached_blocks[index] = sector.startl;
-    kmemmove(cache_p, buf, SECTOR_SIZE);
-
-    if (ret < count) {
-      kprintf("mm read failed ret:%d\n", ret);
-      return -1;
-    }
-#ifdef CACHE_ENABLED
+    kmemmove(buf, cache_p + boffset, len);
+    return ret;
   }
 #endif
-  // kprintf("sd read offset:%x %x buf_size:%d\n", sector.startl *
-  // BYTE_PER_SECTOR,
-  //         sector.starth * BYTE_PER_SECTOR, buf_size);
-  // print_hex(buf, buf_size);
-  // kprintf("ret %d\n", ret);
+  kmemset(sdhci_dev->read_buf, 0, len);
+  ret = sd_read(sdhci_dev->read_buf, bno, bcount);
+  kmemmove(buf, sdhci_dev->read_buf + boffset, len);
+
   return ret;
 }
 
-int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, int no, sector_t sector,
-                         u32 count, u32 buf) {
+int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
   u32 ret = 0;
-  size_t buf_size = count * BYTE_PER_SECTOR;
-  ret = sd_write(buf, sector.startl, count);
-  if (ret < buf_size) {
-    return -1;
+  u32 bno = sdhci_dev->offsetl / BYTE_PER_SECTOR;
+  u32 boffset = sdhci_dev->offsetl % BYTE_PER_SECTOR;
+  u32 bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
+  u32 bsize = bcount * BYTE_PER_SECTOR;
+
+  if (bsize > sdhci_dev->write_buf_size) {
+    kfree(sdhci_dev->write_buf);
+    sdhci_dev->write_buf = kmalloc(bsize, DEVICE_TYPE);
+    sdhci_dev->write_buf_size = bsize;
   }
+
+  ret = sd_write(buf, bno, bcount);
+
 #ifdef CACHE_ENABLED
   int i;
   u8 *p = buf;
-  for (i = 0; i < count; i++) {
-    int index = (sector.startl + i) & CACHE_MASK;
+  for (i = 0; i < bcount; i++) {
+    int index = (bno + i) & CACHE_MASK;
     void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
-
-    kmemcpy(cache_p, &p[SECTOR_SIZE * i], SECTOR_SIZE);
+    kmemmove(cache_p, &p[SECTOR_SIZE * i], SECTOR_SIZE);
   }
 #endif
+
   return ret;
 }
 

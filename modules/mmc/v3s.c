@@ -692,7 +692,7 @@ int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
   if (bsize > sdhci_dev->write_buf_size) {
     kfree(sdhci_dev->write_buf);
     sdhci_dev->write_buf = kmalloc(bsize, DEVICE_TYPE);
-    sdhci_dev->read_buf_size = bsize;
+    sdhci_dev->write_buf_size = bsize;
   }
 
   ret = mmc_write_blocks(sdhci_dev, buf, bno, bcount);

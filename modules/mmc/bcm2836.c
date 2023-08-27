@@ -1723,6 +1723,7 @@ int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
   if (bsize > sdhci_dev->write_buf_size) {
     kfree(sdhci_dev->write_buf);
     sdhci_dev->write_buf = kmalloc(bsize, DEVICE_TYPE);
+    sdhci_dev->write_buf_size = bsize;
   }
 
   ret = sd_write(buf, bsize, bno);
