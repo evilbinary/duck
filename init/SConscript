@@ -10,6 +10,8 @@ plt = platform.system()
 
 Import('env')
 
+env=env.Clone()
+
 current = Dir('.').srcnode().path+'/../xlinker/'
 
 linkflags = ''
