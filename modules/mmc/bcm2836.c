@@ -1777,12 +1777,8 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
     return ret;
   }
 #endif
-  kmemset(sdhci_dev->read_buf, 0, len);
 
   ret = sd_read(sdhci_dev->read_buf, bsize, bno);
-  if (ret < bsize) {
-    return SD_ERROR;
-  }
   kmemmove(buf, sdhci_dev->read_buf + boffset, len);
 
   return ret;
