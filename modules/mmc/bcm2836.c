@@ -1768,7 +1768,7 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
 #ifdef CACHE_ENABLED
   if (bcount == CACHE_COUNT) {
     int index = bno & CACHE_MASK;
-    void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
+    char *cache_p = (sdhci_dev->cache_buffer + SECTOR_SIZE * index);
     if (sdhci_dev->cached_blocks[index] != bno) {
       ret = sd_read(cache_p, bsize, bno);
       sdhci_dev->cached_blocks[index] = bno;

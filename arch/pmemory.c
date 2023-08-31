@@ -95,12 +95,16 @@ void* ya_sbrk(size_t size) {
     kprintf("extend kernel phy mem addr:%x last addr:%x extend count:%d\n",
             addr, mmt.last_map_addr, mmt.extend_phy_count);
     // extend 400k*mmt.extend_phy_count phy mem
+    int len = 0;
+    u32 baddr = mmt.last_map_addr;
+    mmt.extend_phy_count++;
     for (int i = 0; i < 100 * mmt.extend_phy_count; i++) {
       page_map(mmt.last_map_addr, mmt.last_map_addr,
                PAGE_P | PAGE_USR | PAGE_RWX);
       mmt.last_map_addr += PAGE_SIZE;
+      len += PAGE_SIZE;
     }
-    mmt.extend_phy_count++;
+    //mm_add_block(baddr, len);
   }
   return addr;
 }
