@@ -56,7 +56,6 @@ void hello_thread(void) {
 }
 
 char* argv_p[64];
-char env_p[512];
 
 void reopen(char* name) {
   int series = syscall2(SYS_OPEN, name, 0);
@@ -195,8 +194,7 @@ void do_init_thread(void) {
 
   syscall1(SYS_CHDIR, "/");
 
-  char** env = env_p;
-  build_env(env);
+  char** env = NULL;
   pre_launch();
 
   for (;;) {
@@ -320,33 +318,4 @@ void pre_launch() {
 // test_cpu_speed();
 //  for(;;);
 #endif
-}
-
-void auxv_set(Elf32_auxv_t* auxv, int a_type, int a_val) {
-  auxv[a_type].a_type = a_type;
-  auxv[a_type].a_un.a_val = a_val;
-}
-
-void build_env(char** env) {
-  char** envp = env;
-  Elf32_auxv_t* auxv = envp;
-
-  auxv_set(auxv++, AT_IGNORE, 0);
-  auxv_set(auxv++, AT_EXECFD, 0);
-  auxv_set(auxv++, AT_PHDR, 0);
-  auxv_set(auxv++, AT_PHENT, 0);
-  auxv_set(auxv++, AT_PHNUM, 0);
-  auxv_set(auxv++, AT_PAGESZ, PAGE_SIZE);
-  auxv_set(auxv++, AT_BASE, 0);
-  auxv_set(auxv++, AT_FLAGS, 0);
-  auxv_set(auxv++, AT_ENTRY, 0);
-  auxv_set(auxv++, AT_NOTELF, 0);
-  auxv_set(auxv++, AT_UID, 0);
-  auxv_set(auxv++, AT_EUID, 0);
-  auxv_set(auxv++, AT_GID, 0);
-  auxv_set(auxv++, AT_EGID, 0);
-  auxv_set(auxv++, AT_PLATFORM, 0);
-  auxv_set(auxv++, AT_HWCAP, 0);
-  auxv_set(auxv++, AT_CLKTCK, 0);
-  auxv_set(auxv++, AT_NULL, 0);
 }

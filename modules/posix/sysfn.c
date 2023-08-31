@@ -259,11 +259,6 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     return -1;
   }
 
-  if (envp == NULL) {
-    log_error("sys exec envp is null %x\n", argv);
-    return -1;
-  }
-
   char* name = kmalloc(kstrlen(filename), KERNEL_TYPE);
   kstrcpy(name, filename);
   current->name = name;
@@ -318,8 +313,10 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
 
   args[1] = filename;
   args[pos++] = 0;
-  for (i = 0; i < 38; i++) {
-    args[pos++] = envp[i];
+  if (envp != NULL) {
+    for (i = 0; i < 38 && envp[i]; i++) {
+      args[pos++] = envp[i];
+    }
   }
   args[pos++] = 0;
 
