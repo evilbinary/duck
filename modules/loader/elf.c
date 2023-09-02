@@ -76,15 +76,27 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd, void* arg, u32 base) {
           char* vaddr = phdr[i].p_vaddr + base;
           syscall3(SYS_SEEK, fd, start, 0);
           u32 ret = syscall3(SYS_READ, fd, vaddr, phdr[i].p_filesz);
+
+          log_debug("content =%x\n", *((int*)vaddr));
         }
       } break;
+      case PT_ARM_EXIDX: {
+        log_debug(" %s %x %x %x %s %x %x ", "EXIDX", phdr[i].p_offset,
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
+        char* start = phdr[i].p_offset;
+        char* vaddr = phdr[i].p_vaddr + base;
+        //syscall3(SYS_SEEK, fd, start, 0);
+        //u32 ret = syscall3(SYS_READ, fd, vaddr, phdr[i].p_filesz);
+
+      } break;
       case PT_DYNAMIC:
-        log_debug(" %s %x %x %x\r\n %s %x %x ", "DYNAMIC", phdr[i].p_offset,
+        log_debug(" %s %x %x %x %s %x %x \r\n", "DYNAMIC", phdr[i].p_offset,
                   phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
                   phdr[i].p_memsz);
         break;
       case PT_INTERP:
-        log_debug(" %s %x %x %x\r\n %s %x %x ", "INTERP", phdr[i].p_offset,
+        log_debug(" %s %x %x %x %s %x %x \r\n", "INTERP", phdr[i].p_offset,
                   phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
                   phdr[i].p_memsz);
         char* start = phdr[i].p_offset;
@@ -93,43 +105,43 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd, void* arg, u32 base) {
         interp_name = interp_buf;
         break;
       case PT_NOTE:
-        log_debug(" %s %x %x %x\r\n %s %x %x ", "NOTE", phdr[i].p_offset,
+        log_debug(" %s %x %x %x %s %x %x \r\n", "NOTE", phdr[i].p_offset,
                   phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
                   phdr[i].p_memsz);
         break;
       case PT_SHLIB:
-        log_debug(" %s %x %x %x\r\n %s %x %x ", "SHLIB", phdr[i].p_offset,
+        log_debug(" %s %x %x %x %s %x %x \r\n", "SHLIB", phdr[i].p_offset,
                   phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
                   phdr[i].p_memsz);
         break;
       case PT_PHDR:
-        log_debug(" %s %x %x %x\r\n %s %x %x ", "PHDR", phdr[i].p_offset,
+        log_debug(" %s %x %x %x %s %x %x \r\n", "PHDR", phdr[i].p_offset,
                   phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
                   phdr[i].p_memsz);
         break;
       case PT_TLS:
-        log_debug(" %s %x %x %x\r\n %s %x %x ", "TLS", phdr[i].p_offset,
+        log_debug(" %s %x %x %x %s %x %x ", "TLS", phdr[i].p_offset,
                   phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
                   phdr[i].p_memsz);
         break;
       case PT_NUM:
-        kprintf(" %s %x %x %x\r\n %s %x %x ", "NUM", phdr[i].p_offset,
+        kprintf(" %s %x %x %x %s %x %x \r\n", "NUM", phdr[i].p_offset,
                 phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
                 phdr[i].p_memsz);
         break;
       case PT_GNU_EH_FRAME:
-        log_debug(" %s %x %x %x\r\n %s %x %x ", "GNU_EH_FRAME",
+        log_debug(" %s %x %x %x %s %x %x \r\n", "GNU_EH_FRAME",
                   phdr[i].p_offset, phdr[i].p_vaddr, phdr[i].p_paddr, "",
                   phdr[i].p_filesz, phdr[i].p_memsz);
         break;
       case PT_GNU_RELRO:
-        log_debug(" %s %x %x %x\r\n %s %x %x ", "GNU_RELRO", phdr[i].p_offset,
+        log_debug(" %s %x %x %x %s %x %x \r\n", "GNU_RELRO", phdr[i].p_offset,
                   phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
                   phdr[i].p_memsz);
         break;
       case PT_GNU_STACK:
 #ifdef LOAD_ELF_DEBUG
-        log_debug(" %s %x %x %x\r\n %s %x %x ", "GNU_STACK", phdr[i].p_offset,
+        log_debug(" %s %x %x %x %s %x %x \r\n", "GNU_STACK", phdr[i].p_offset,
                   phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
                   phdr[i].p_memsz);
 #endif
@@ -140,7 +152,7 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd, void* arg, u32 base) {
   }
   if (interp_name != NULL) {
     log_debug("interp name %s\n", interp_name);
-    // load_elf_interp(interp_name, arg);
+    load_elf_interp(interp_name, arg);
   }
 
   return 0;
