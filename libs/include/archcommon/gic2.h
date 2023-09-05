@@ -6,7 +6,7 @@
 #ifndef GIC2_H
 #define GIC2_H
 
-#include "libs/include/types.h"
+#include "types.h"
 
 //GIC v2 版本专用 gic400
 

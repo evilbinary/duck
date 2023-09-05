@@ -8,6 +8,14 @@
 
 size_t kstrlen(const char* s);
 
+void* memset(void* ptr, int value, size_t num) {
+    unsigned char* p = (unsigned char*) ptr;
+    for (size_t i = 0; i < num; i++) {
+        *p++ = (unsigned char) value;
+    }
+    return ptr;
+}
+
 void* kmemcpy(void* /* restrict */ s1, const void* /* restrict */ s2,
               size_t n) {
   char* cdest;

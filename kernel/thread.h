@@ -42,7 +42,9 @@
 #define DUMP_CONTEXT 2
 #define DUMP_STACK 4
 
+#ifndef THREAD_DUMP_STOP_COUNT
 #define THREAD_DUMP_STOP_COUNT 2
+#endif
 
 #define PTHREAD_LIBMUSL 1
 #define TLS_ABOVE_TP 1
