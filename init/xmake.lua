@@ -35,8 +35,6 @@ target("kernel.elf")
 
     add_ldflags("-T "..path.join(os.scriptdir(), "/../xlinker/link-$(plat).ld"),  {force = true})
 
-    set_values("arch_type",arch_type)
-
     add_rules("kernel-objcopy")
 
 
@@ -46,5 +44,4 @@ target('boot-config')
     add_files(
         "$(buildir)/$(plat)/$(arch)/$(mode)/kernel.elf"
     )
-    set_values("arch_type",arch_type)
     add_rules("kernel-gen")
