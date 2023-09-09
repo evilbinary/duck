@@ -309,7 +309,7 @@ void mm_add_block(u32 addr, u32 len) {
     mmt.blocks_tail->next = block;
     mmt.blocks_tail = block;
   }
-  kprintf("block:%x type:%d size:%d start: %x end:%x\n", block, block->type,
+  kprintf("add block:%x type:%d size:%d start: %x end:%x\n", block, block->type,
           block->size, block->addr, block->addr + block->size);
 }
 

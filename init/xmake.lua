@@ -42,6 +42,6 @@ target('boot-config')
     add_deps('kernel.elf')
 
     add_files(
-        "$(buildir)/$(plat)/$(arch)/$(mode)/kernel.elf"
+        "$(buildir)/$(plat)/$(arch)/$(mode)/kernel"
     )
     add_rules("kernel-gen")
