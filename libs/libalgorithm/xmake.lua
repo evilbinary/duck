@@ -14,5 +14,6 @@ target("algorithm")
         '../include/algorithm',
         '../include/kernel',
         '../include',
-        '../../'
+        '../../',
+        {public = true}
     )
