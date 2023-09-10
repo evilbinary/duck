@@ -3,9 +3,11 @@ target("archcommon")
     set_kind("static")
     set_arch(arch)
     
-    add_files(
-                "./"..arch_type.."/*.c"
-                )
+    if arch_type then
+        add_files(
+                    "./"..arch_type.."/*.c"
+                    )
+    end
 
     add_includedirs(
         '../include',
