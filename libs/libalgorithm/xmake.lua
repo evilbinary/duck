@@ -12,8 +12,8 @@ target("algorithm")
 
     add_includedirs(
         '../include/algorithm',
-        '../include/kernel',
         '../include',
-        '../../',
+        '../../'
+        ,
         {public = true}
     )
