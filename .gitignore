@@ -6,3 +6,5 @@
 *.elf
 *.dbg
 init/kernel
+__pycache__/ya.cpython-311.pyc
+**.pyc

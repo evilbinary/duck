@@ -1,0 +1,48 @@
+# coding:utf-8
+# *******************************************************************
+# * Copyright 2021-present evilbinary
+# * 作者: evilbinary on 01/01/20
+# * 邮箱: rootdebug@163.com
+# ********************************************************************
+target("kernel.elf")
+set_kind("binary")
+add_deps(
+    'modules',
+    'kernel',
+    'arch',
+    'platform',
+    'archcommon',
+    'kernelcommon',
+    'algorithm'
+)
+
+add_files(
+    'main.c',
+    'module.c',
+    'init.c',
+    'monitor.c',
+    'test.c'
+)
+
+if get_config('SINGLE_KERNEL'):
+    add_files(
+            '../../boot/'+arch+'/boot.o',
+            '../../boot/'+arch+'/init.o')
+
+add_includedirs(
+    '../platform/{plat}',
+    '../libs/include',
+    '../',
+    '../libs/include/archcommon'
+)
+
+
+arch=get_arch()
+def_arch=arch.replace("-", "_").upper()
+
+arch_type=get_arch_type()
+def_arch_type=arch_type.replace( "-", "_").upper()
+
+add_defines(def_arch)
+add_defines(def_arch_type)
+
