@@ -38,7 +38,11 @@ add_includedirs(
 
 
 arch=get_arch()
+
+
+
 def_arch=arch.replace("-", "_").upper()
+
 
 arch_type=get_arch_type()
 def_arch_type=arch_type.replace( "-", "_").upper()
@@ -46,3 +50,16 @@ def_arch_type=arch_type.replace( "-", "_").upper()
 add_defines(def_arch)
 add_defines(def_arch_type)
 
+add_ldflags("-T"+path.join(os.scriptdir(), "../xlinker/link-{plat}.ld"),  force = True)
+
+
+add_rules("kernel-objcopy")
+
+
+target('boot-config')
+add_deps('kernel.elf')
+
+add_files(
+    "{buildir}/kernel"
+)
+add_rules("kernel-gen")
