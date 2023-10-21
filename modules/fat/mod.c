@@ -170,7 +170,12 @@ uint8_t sd_raw_write_interval(offset_t offset, uint8_t *buffer,
 u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   file_info_t *file_info = node->data;
   if (file_info->fd == NULL) {
-    log_error("read error fd null\n");
+    log_error("read error fd null %s\n", node->name);
+    if (file_info->dd != NULL) {
+      if (file_info->dd->dir_entry.attributes & FAT_ATTRIB_DIR) {
+        log_error("cannot read dir %s\n", file_info->dd->dir_entry.long_name);
+      }
+    }
     return -1;
   }
   fat_seek_file(file_info->fd, &offset, FAT_SEEK_SET);
