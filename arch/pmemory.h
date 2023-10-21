@@ -77,6 +77,9 @@ typedef struct memory_manager {
 
   block_t* g_block_list;
   block_t* g_block_list_last;
+  block_t* g_block_free;
+  block_t* g_block_free_last;
+  
   u32 alloc_count;
   u32 alloc_size;
   u32 last_map_addr;

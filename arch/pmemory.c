@@ -104,7 +104,7 @@ void* ya_sbrk(size_t size) {
       mmt.last_map_addr += PAGE_SIZE;
       len += PAGE_SIZE;
     }
-    //mm_add_block(baddr, len);
+    // mm_add_block(baddr, len);
   }
   return addr;
 }
@@ -134,7 +134,7 @@ block_t* ya_new_block(size_t size) {
 }
 
 block_t* ya_find_free_block(size_t size) {
-  block_t* block = mmt.g_block_list;
+  block_t* block = mmt.g_block_free;
   block_t* find_block = NULL;
   while (block) {
     if (!(block->magic == MAGIC_USED || block->magic == MAGIC_FREE)) {
@@ -261,7 +261,30 @@ void ya_free(void* ptr) {
   block->count = 0;
   kmemset(ptr, 0, block->size);
   block->count = 0;
+
+  // remove from block list
+  block_t* prev = block->prev;
   block_t* next = block->next;
+  if (prev != NULL) {
+    prev->next = next;
+  }
+  if (next != NULL) {
+    next->prev = prev;
+  }
+  block->next = NULL;
+  block->prev = NULL;
+  if (block == mmt.g_block_list) {
+    mmt.g_block_list = mmt.g_block_list_last = NULL;
+  }
+
+  if (mmt.g_block_free == NULL) {
+    mmt.g_block_free = block;
+    mmt.g_block_free_last = block;
+  } else {
+    mmt.g_block_free_last->next = block;
+    block->prev = mmt.g_block_free_last;
+    mmt.g_block_free_last = block;
+  }
   ptr = NULL;
 
   // todo merge
@@ -342,6 +365,8 @@ void mm_init() {
   mmt.blocks_tail = NULL;
   mmt.g_block_list = NULL;
   mmt.g_block_list_last = NULL;
+  mmt.g_block_free = NULL;
+  mmt.g_block_free_last = NULL;
   mmt.alloc_count = 0;
   mmt.alloc_size = 0;
   mmt.last_map_addr = 0;
