@@ -10,7 +10,7 @@ extern boot_info_t* boot_info;
 
 memory_manager_t mmt;
 
-// #define DEBUG 1
+#define DEBUG 1
 #define MM_YA_ALLOC 1
 
 #ifdef MM_YA_ALLOC
@@ -226,6 +226,32 @@ void ya_verify() {
     current = current->next;
     total++;
   }
+
+  current = mmt.g_block_free;
+  while (current) {
+
+    kassert(current->size > 0);
+    if (current->free == BLOCK_USED) {
+      kassert(current->magic == MAGIC_USED);
+      used += current->size;
+    } else if (current->free == BLOCK_FREE) {
+      kassert(current->magic == MAGIC_FREE);
+      free += current->size;
+    } else {
+      kprintf("tid %d block error addr %x free %d\n", current->tid,
+              &current->free, current->free);
+      kassert((current->free == BLOCK_FREE || current->free == BLOCK_USED));
+    }
+    void* addr = ya_block_addr(current);
+    kassert(addr != NULL);
+    int* end = addr + current->size;
+    *end = MAGIC_END;  // check overflow
+    kassert((*end) == MAGIC_END);
+
+    current = current->next;
+    total++;
+  }
+
   kprintf("-------------------------------\n");
   kprintf("verify total %d free %dk used %dk\n", total, free / 1024,
           used / 1024, mmt);
