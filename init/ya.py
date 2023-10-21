@@ -24,10 +24,15 @@ add_files(
     'test.c'
 )
 
-if get_config('SINGLE_KERNEL'):
+arch=get_arch()
+arch_type=get_arch_type()
+
+if has_config('single-kernel'):
+    get_build_obj_dir()
+    add_defines('SINGLE_KERNEL')
     add_files(
-            '../../boot/'+arch+'/boot.o',
-            '../../boot/'+arch+'/init.o')
+            '../../boot/'+arch_type+'/boot-'+arch+'.s',
+            '../../boot/'+arch_type+'/init.c')
 
 add_includedirs(
     '../platform/{plat}',
@@ -37,14 +42,11 @@ add_includedirs(
 )
 
 
-arch=get_arch()
-
 
 
 def_arch=arch.replace("-", "_").upper()
 
 
-arch_type=get_arch_type()
 def_arch_type=arch_type.replace( "-", "_").upper()
 
 add_defines(def_arch)
@@ -54,7 +56,6 @@ add_ldflags("-T"+path.join(os.scriptdir(), "../xlinker/link-{plat}.ld"),  force 
 
 
 add_rules("kernel-objcopy")
-
 
 target('boot-config')
 add_deps('kernel.elf')
