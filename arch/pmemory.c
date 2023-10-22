@@ -229,7 +229,6 @@ void ya_verify() {
 
   current = mmt.g_block_free;
   while (current) {
-
     kassert(current->size > 0);
     if (current->free == BLOCK_USED) {
       kassert(current->magic == MAGIC_USED);
@@ -297,10 +296,9 @@ void ya_free(void* ptr) {
   if (next != NULL) {
     next->prev = prev;
   }
-  block->next = NULL;
-  block->prev = NULL;
+
   if (block == mmt.g_block_list) {
-    mmt.g_block_list = mmt.g_block_list_last = NULL;
+    mmt.g_block_list = next;
   }
 
   if (mmt.g_block_free == NULL) {
@@ -311,6 +309,8 @@ void ya_free(void* ptr) {
     block->prev = mmt.g_block_free_last;
     mmt.g_block_free_last = block;
   }
+  block->next = NULL;
+  block->prev = NULL;
   ptr = NULL;
 
   // todo merge
