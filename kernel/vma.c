@@ -213,7 +213,7 @@ void vmemory_init(vmemory_t* vm, u32 level, u32 usp, u32 usp_size, u32 flags) {
   if (vm_stack != NULL) {
     vm_stack->alloc_addr = vm_stack->vend - usp_size;
     vm_stack->alloc_size += usp_size;
-    vmemory_map(vm->upage, vm_stack->alloc_addr, usp - usp_size, usp_size);
+    vmemory_map(vm->upage, vm_stack->alloc_addr, usp, usp_size);
   }
 
   if (level == LEVEL_KERNEL || level == LEVEL_KERNEL_SHARE) {
