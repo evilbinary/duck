@@ -267,7 +267,6 @@ void ya_free(void* ptr) {
     return;
   }
   block_t* block = ya_block_ptr(ptr);
-
 #ifdef DEBUG
   // kprintf("ya_free_no(%d);\n", block->no);
   kprintf("free  %x size=%d baddr=%x bsize=%d bcount=%d\n", ptr, block->size,

@@ -39,6 +39,8 @@ void modules_init(void) {
   // REGISTER_MODULE(fat32);
   // REGISTER_MODULE(hello);
   REGISTER_MODULE(test);
+  REGISTER_MODULE(test);
+
   REGISTER_MODULE(rtc);
 
 #elif defined(DUMMY)

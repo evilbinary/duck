@@ -482,7 +482,7 @@ void fat_init(void) {
     if (dev == NULL) {
       continue;
     }
-    name = kmalloc(4, DEFAULT_TYPE);
+    name = kmalloc(4, KERNEL_TYPE);
     name[0] = 's';
     name[1] = 'd';
     name[2] = 0x61 + i;

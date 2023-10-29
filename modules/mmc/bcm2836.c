@@ -378,7 +378,7 @@ static struct emmc_block_dev block_dev __attribute__((aligned(4)));
 #endif
 
 #if defined(EMMC_DEBUG) || defined(SD_DEBUG)
-extern int printf(const char *format, ...);
+extern int kprintf(const char *format, ...);
 #endif
 
 #ifdef EMMC_DEBUG
@@ -1679,6 +1679,7 @@ int sd_read(uint8_t *buf, size_t buf_size, uint32_t block_no) {
   SD_TRACE("Card ready, reading from block %u", block_no);
 
   if (sd_do_data_command(0, buf, buf_size, block_no) < 0) {
+    log_error("sd read error %x %d %d\n",buf,buf_size,block_no);
     return -1;
   }
 
@@ -1790,8 +1791,8 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   sdhci_dev_prob(sdhci_dev);
 
 #ifdef CACHE_ENABLED
-  sdhci_dev->cached_blocks = kmalloc(CACHE_ENTRIES, DEFAULT_TYPE);
-  sdhci_dev->cache_buffer = kmalloc(SECTOR_SIZE * CACHE_ENTRIES, DEFAULT_TYPE);
+  sdhci_dev->cached_blocks = kmalloc(CACHE_ENTRIES, KERNEL_TYPE);
+  sdhci_dev->cache_buffer = kmalloc(SECTOR_SIZE * CACHE_ENTRIES, KERNEL_TYPE);
   int i;
   for (i = 0; i < CACHE_ENTRIES; i++) {
     sdhci_dev->cached_blocks[i] = 0xFFFFFFFF;

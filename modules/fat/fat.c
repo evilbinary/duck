@@ -140,10 +140,13 @@ uint32_t fat_read_header(struct fat_fs_struct* fs) {
 #endif
 
   if (sector_count == 0) {
-    if (sector_count_16 == 0) /* illegal volume size */
+    if (sector_count_16 == 0){ /* illegal volume size */
+      log_error("illegal volume size\n");
       return -4;
-    else
+    }
+    else{
       sector_count = sector_count_16;
+    }
   }
 #if FAT_FAT32_SUPPORT
   if (sectors_per_fat != 0)
