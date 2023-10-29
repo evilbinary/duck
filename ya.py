@@ -4,6 +4,11 @@
 # * 作者: evilbinary on 01/01/20
 # * 邮箱: rootdebug@163.com
 # ********************************************************************
+modules =get_config('modules')
+
+for value in modules:
+    mod=string.upper(value)+'_MODULE '
+    add_defines(mod)
 
 add_subs('./**/ya.py')
 add_subs("./libs/*/ya.py")
