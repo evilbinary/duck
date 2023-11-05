@@ -140,6 +140,7 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   thread_t* copy = kmalloc(sizeof(thread_t), KERNEL_TYPE);
   kmemset(copy, 0, sizeof(thread_t));
   kmemmove(copy, thread, sizeof(thread_t));
+  copy->info=NULL;
 
   log_debug("thread init default\n");
 
