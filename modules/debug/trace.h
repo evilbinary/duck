@@ -7,6 +7,5 @@
 #define TRACE_H
 
 #include "kernel/kernel.h"
-#include "thread.h"
 
 #endif

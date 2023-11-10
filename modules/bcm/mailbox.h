@@ -2,7 +2,7 @@
 #define MAILBOX_H
 
 #include "kernel/kernel.h"
-#include "bcm2836.h"
+#include "bcm2835.h"
 
 
  // Tag Framebuffer

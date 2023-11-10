@@ -4,15 +4,15 @@
 # * 作者: evilbinary on 01/01/20
 # * 邮箱: rootdebug@163.com
 # ********************************************************************
-target("modules")
+target("mod-ipc")
 set_kind("static")
+
 add_deps(
-    'arch',
-    'algorithm',
     'kernel',
+    'arch',
 )
 
-for m in get_config('modules'):
-    add_deps('mod-'+m)
 
-add_subs('./**/ya.py')
+add_files(
+    './*.c'
+)

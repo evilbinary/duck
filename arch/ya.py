@@ -7,7 +7,7 @@
 target("arch")
 set_kind("static")
 
-add_deps("archcommon")
+add_deps("archcommon",'platform')
 
 add_files(
 'arch.c',
