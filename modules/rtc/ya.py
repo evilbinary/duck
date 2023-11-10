@@ -9,8 +9,8 @@ set_kind("static")
 
 add_deps(
     'arch',
+    'kernel',
     'mod-devfs',
-    'kernel'
 )
 
 arch=get_arch()

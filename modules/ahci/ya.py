@@ -15,3 +15,6 @@ add_deps(
 add_files(
     'ahci.c'
 )
+
+
+add_includedirs('../')

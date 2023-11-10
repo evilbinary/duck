@@ -40,3 +40,5 @@ if plat_source.get(plat):
 add_files(
     source+common_source
 )
+
+add_includedirs('../')

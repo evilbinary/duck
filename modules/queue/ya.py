@@ -4,13 +4,12 @@
 # * 作者: evilbinary on 01/01/20
 # * 邮箱: rootdebug@163.com
 # ********************************************************************
-target("mod-ipc")
+target("mod-queue")
 set_kind("static")
 
 add_deps(
     'kernel',
-    'arch',
-    'mod-queue'
+    'algorithm'
 )
 
 

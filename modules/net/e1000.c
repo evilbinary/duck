@@ -4,7 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "kernel/kernel.h"
-#include "pci.h"
+#include "pci/pci.h"
 #include "e1000.h"
 
 size_t e1000_read(device_t* dev, void* buf, size_t len) {

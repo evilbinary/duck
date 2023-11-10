@@ -14,3 +14,5 @@ add_deps(
 add_files(
     './*.c'
 )
+
+add_includedirs('../')

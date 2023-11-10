@@ -12,6 +12,41 @@ add_deps(
 )
 
 
+arch=get_arch()
+arch_type=get_arch_type()
+plat=get_plat()
+
+plat_source={
+ 
+    'stm32':[
+        'lcd.c',
+        'st7735.c'
+    ],
+}
+arch_source={
+    'arm': [
+
+    ],
+    'x86':[
+
+    ]
+}
+common_source=[
+
+]
+
+
+source=[]
+
+if arch_source.get(arch_type):
+    source+=arch_source.get(arch_type)
+
+if plat_source.get(plat):
+    source+=plat_source.get(plat)
+
+
 add_files(
-    './*.c'
+    source+common_source
 )
+
+add_includedirs('../')

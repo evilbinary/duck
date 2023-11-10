@@ -9,6 +9,7 @@
 
 #include "types.h"
 #include "algorithm/circle_queue.h"
+#include "kernel/kernel.h"
 
 typedef struct rw_queue{
     cqueue_t* read_queue;

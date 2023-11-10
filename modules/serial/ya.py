@@ -9,7 +9,7 @@ set_kind("static")
 
 add_deps(
     'arch',
-    'kernel'
+    'kernel',
 )
 
 arch=get_arch()

@@ -7,7 +7,7 @@
 #define AHCI_H
 
 #include "kernel/kernel.h"
-#include "pci.h"
+#include "pci/pci.h"
 
 #define IOC_AHCI_MAGIC 'a'
 #define IOC_READ_OFFSET _IOW(IOC_AHCI_MAGIC, 3, int)

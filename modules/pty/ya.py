@@ -10,7 +10,7 @@ set_kind("static")
 add_deps(
     'algorithm',
     'kernel',
-    'mod-ipc',
+    'mod-queue'
 )
 
 

@@ -8,10 +8,13 @@ target("mod-keyboard")
 set_kind("static")
 
 add_deps(
-    'kernel'
+    'kernel',
+    'mod-pic'
 )
 
 
 add_files(
     './*.c'
 )
+
+add_includedirs('../')

@@ -6,7 +6,6 @@
  ********************************************************************/
 #include "rw_queue.h"
 
-#include "thread.h"
 
 rw_queue_t* rw_queue_create(u32 size) {
   rw_queue_t* rwq = kmalloc(sizeof(rw_queue_t),KERNEL_TYPE);

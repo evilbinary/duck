@@ -7,7 +7,7 @@
 #define VGA_H
 
 #include "kernel/kernel.h"
-#include "pci.h"
+#include "pci/pci.h"
 #define DOUBLE_BUFFER 1
 
 enum VGA_MODE {
