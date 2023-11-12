@@ -35,8 +35,13 @@ void modules_init(void) {
   REGISTER_MODULE(gpu);
   REGISTER_MODULE(mouse);
   REGISTER_MODULE(sdhci);
-  //REGISTER_MODULE(fat);
+#ifdef FAT_MODULE
+  REGISTER_MODULE(fat);
+#endif
+
+#ifdef FATFS_MODULE
   REGISTER_MODULE(fatfs);
+#endif
   // REGISTER_MODULE(fat32);
   // REGISTER_MODULE(hello);
   REGISTER_MODULE(test);
