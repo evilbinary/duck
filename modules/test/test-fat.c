@@ -1,9 +1,10 @@
-#include "../ahci/ahci.h"
-#include "../fat/fat.h"
+#include "fat/fat.h"
 #include "kernel/kernel.h"
 
 #define PRINT_WIDTH 24
 #define READ_BUFFER 24 * 20
+
+#ifdef FAT
 
 void test_fat_read() {
   device_t* dev = device_find(DEVICE_SATA);
@@ -59,6 +60,7 @@ void test_fat_read_small() {
     }
   }
 }
+#endif
 
 void test_fat_read_file() {
   vnode_t* node = vfs_find(NULL, "/dev/sda");
@@ -77,10 +79,18 @@ void test_fat_read_file() {
     log_error("duck node is null\n");
     return;
   }
-  int ret = duck->op->read(duck, offset, READ_BUFFER, buffer);
+  
+  int ret = duck->op->open(duck, 0);
+  if (ret <= 0) {
+    log_error("open <=0\n");
+  }
+
+  ret = duck->op->read(duck, offset, READ_BUFFER, buffer);
   if (ret <= 0) {
     log_error("read <=0\n");
   }
+
+
   if (buffer[0] != 0x19) {
     log_error("test read file error 1\n");
   }
@@ -99,7 +109,7 @@ void test_fat_read_file() {
 }
 
 void test_fat() {
-  test_fat_read();
-  test_fat_read_small();
+  // test_fat_read();
+  // test_fat_read_small();
   test_fat_read_file();
 }

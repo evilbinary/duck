@@ -8,7 +8,7 @@ target("mod-fatfs")
 set_kind("static")
 
 add_deps(
-    'kernel'
+    'kernel',
 )
 
 add_files(

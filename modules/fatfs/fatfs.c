@@ -79,7 +79,7 @@ void MMC_disk_initialize() { log_debug("MMC_disk_initialize\n"); }
 int MMC_disk_status() { return RES_OK; }
 
 int MMC_disk_read(char *buffer, LBA_t sector, int count) {
-  log_debug("MMC_disk_read\n");
+  // log_debug("MMC_disk_read %x %d\n",sector,count);
 
   u32 offset = sector * FF_MIN_SS;
   u32 length = count * FF_MIN_SS;
@@ -90,7 +90,7 @@ int MMC_disk_read(char *buffer, LBA_t sector, int count) {
 }
 
 int MMC_disk_write(char *buffer, LBA_t sector, int count) {
-  log_debug("MMC_disk_write\n");
+  // log_debug("MMC_disk_write\n");
 
   u32 offset = sector * FF_MIN_SS;
   u32 length = count * FF_MIN_SS;
@@ -102,7 +102,7 @@ int MMC_disk_write(char *buffer, LBA_t sector, int count) {
 }
 
 int MMC_disk_ioctl(u8 pdrv, u8 cmd, void *buff) {
-  log_debug("MMC_disk_ioctl\n");
+  // log_debug("MMC_disk_ioctl\n");
   return RES_OK;
 }
 
@@ -130,8 +130,22 @@ u32 get_fattime(void) {
          (u32)time.second >> 1;
 }
 
+static void print_hex(u8 *addr, u32 size) {
+  for (int x = 0; x < size; x++) {
+    kprintf("%02x ", addr[x]);
+    if (x != 0 && (x % 32) == 0) {
+      kprintf("\n");
+    }
+  }
+  kprintf("\n\r");
+}
+
+
 u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   file_info_t *file_info = node->data;
+
+  // log_debug("fat_op_read %x %d\n",offset,nbytes);
+  f_lseek(&file_info->fil,offset);
 
   int readbytes = 0;
   int res = f_read(&file_info->fil, buffer, nbytes, &readbytes);
@@ -139,12 +153,15 @@ u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
     log_error("fat read %s error code %d\n", node->name, res);
     return -1;
   }
+  // print_hex(buffer,nbytes);
 
   return nbytes;
 }
 
 u32 fat_op_write(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   file_info_t *file_info = node->data;
+  // log_debug("fat_op_write\n");
+  f_lseek(&file_info->fil,offset);
 
   int readbytes = 0;
   int res = f_write(&file_info->fil, buffer, nbytes, &readbytes);
@@ -194,7 +211,8 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
 
   file_info_t *new_file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
 
-  new_file_info->dir = file_info->dir;
+  kmemcpy(&new_file_info->dir, &file_info->dir, sizeof(DIR));
+
   // find file in dir
   new_file_info->dir.pat = name;
   FILINFO find_file;
@@ -230,6 +248,8 @@ u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
     log_debug("read dir failed for not file flags is %x\n", node->flags);
     return 0;
   }
+  log_debug("fat_op_read_dir\n");
+
   // file_info_t *file_info = node->data;
   // struct fat_dir_entry_struct dir_entry;
   u32 i = 0;
@@ -274,6 +294,7 @@ int fat_op_close(vnode_t *node) {
 
 size_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args) {
   u32 ret = 0;
+  log_debug("fat_op_ioctl\n");
 
   if (cmd == IOC_STAT) {
     file_info_t *file_info = node->data;
