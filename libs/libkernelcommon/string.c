@@ -4,16 +4,17 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "string.h"
+
 #include "common.h"
 
 size_t kstrlen(const char* s);
 
 void* memset(void* ptr, int value, size_t num) {
-    unsigned char* p = (unsigned char*) ptr;
-    for (size_t i = 0; i < num; i++) {
-        *p++ = (unsigned char) value;
-    }
-    return ptr;
+  unsigned char* p = (unsigned char*)ptr;
+  for (size_t i = 0; i < num; i++) {
+    *p++ = (unsigned char)value;
+  }
+  return ptr;
 }
 
 void* kmemcpy(void* /* restrict */ s1, const void* /* restrict */ s2,
@@ -39,30 +40,29 @@ void* kmemcpy(void* /* restrict */ s1, const void* /* restrict */ s2,
   return s1;
 }
 
+void* kmemmove(void* dest, const void* src, size_t n) {
+  char* d = dest;
+  const char* s = src;
 
-void * kmemmove(void *dest, const void *src, size_t n) {
-    char *d = dest;
-    const char *s = src;
-
-    if (d < s) {  // 如果目标在源之前
-        // 从前向后复制 non-overlapping 内存
-        for (size_t i = 0; i < n; i++) {
-            d[i] = s[i];
-        }
-    } else {
-        // 如果目标在源之后
-        // 先复制非重叠内存
-        for (size_t i = n; i > 0; i--) {
-            d[i - 1] = s[i - 1];
-        }
-
-        // 再覆盖重叠内存
-        // for (size_t i = 0; i < n; i++) {
-        //     d[i] = s[i];
-        // }
+  if (d < s) {  // 如果目标在源之前
+    // 从前向后复制 non-overlapping 内存
+    for (size_t i = 0; i < n; i++) {
+      d[i] = s[i];
+    }
+  } else {
+    // 如果目标在源之后
+    // 先复制非重叠内存
+    for (size_t i = n; i > 0; i--) {
+      d[i - 1] = s[i - 1];
     }
 
-    return dest;
+    // 再覆盖重叠内存
+    // for (size_t i = 0; i < n; i++) {
+    //     d[i] = s[i];
+    // }
+  }
+
+  return dest;
 }
 
 // void* kmemmove(void* s1, const void* s2, size_t n) {
@@ -78,12 +78,17 @@ void * kmemmove(void *dest, const void *src, size_t n) {
 //   return s1;
 // }
 
-char* kstrcpy(char* /* restrict */ s1, const char* /* restrict */ s2) {
-  int i = 0;
-  do {
-    s1[i] = s2[i];
-  } while (s2[i++] != '\0');
-  return s1;
+char* kstrcpy(char* dest, const char* src) {
+  char* origin_dest = dest;
+
+  // 逐字符复制 src 字符串到 dest 字符串
+  while (*src != '\0') {
+    *dest = *src;
+    dest++;
+    src++;
+  }
+  *dest = '\0';
+  return origin_dest;
 }
 
 char* kstrncpy(char* /* restrict */ s1, const char* /* restrict */ s2,

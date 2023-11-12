@@ -143,8 +143,10 @@ static void print_hex(u8 *addr, u32 size) {
 u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   file_info_t *file_info = node->data;
 
-  // log_debug("fat_op_read %x %d\n",offset,nbytes);
-  f_lseek(&file_info->fil, offset);
+  if (offset > 0) {
+    f_lseek(&file_info->fil, offset);
+  }
+  // log_debug("fat_op_read %x %d\n", offset, nbytes);
 
   int readbytes = 0;
   int res = f_read(&file_info->fil, buffer, nbytes, &readbytes);
@@ -154,7 +156,7 @@ u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   }
   // print_hex(buffer,nbytes);
 
-  return nbytes;
+  return readbytes;
 }
 
 u32 fat_op_write(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
@@ -281,6 +283,7 @@ u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
     }
     i++;
   }
+  file_info->offset=0;
 
   return nbytes;
 }

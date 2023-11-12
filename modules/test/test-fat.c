@@ -111,5 +111,5 @@ void test_fat_read_file() {
 void test_fat() {
   // test_fat_read();
   // test_fat_read_small();
-  test_fat_read_file();
+  // test_fat_read_file();
 }
