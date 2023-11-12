@@ -247,7 +247,6 @@ u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
     log_debug("read dir failed for not file flags is %x\n", node->flags);
     return 0;
   }
-  log_debug("fat_op_read_dir\n");
 
   file_info_t *file_info = node->data;
   u32 i = 0;
@@ -310,21 +309,24 @@ size_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args) {
       node->data = file_info;
     }
     struct stat *stat = args;
-    // if (file_info->dd != NULL) {
-    // stat->st_size = file_info->dd->dir_entry.file_size;
-    // stat->st_mtim = file_info->dd->dir_entry.modification_time;
-    // stat->st_mode = S_IFREG;
-    // if (file_info->dd->dir_entry.attributes & FAT_ATTRIB_DIR) {
-    //   stat->st_mode |= S_IFDIR;
-    // }
-    // } else if (file_info->fd != NULL) {
-    // stat->st_size = file_info->fd->dir_entry.file_size;
-    // stat->st_mtim = file_info->fd->dir_entry.modification_time;
-    // stat->st_mode = S_IFREG;
-    // if (file_info->fd->dir_entry.attributes & FAT_ATTRIB_DIR) {
-    //   stat->st_mode |= S_IFREG;
-    // }
-    // }
+    FILINFO fno;
+    int res = get_fileinfo(&file_info->dir, &fno);
+    if (res != FR_OK) {
+      log_error("get file info error %s code %d\n", node->name, res);
+      ret = -1;
+      return ret;
+    }
+
+    if ((fno.fattrib & AM_DIR) == AM_DIR) {
+      stat->st_size = fno.fsize;
+      stat->st_mtim = fno.fdate << 16 | fno.ftime;
+      stat->st_mode = S_IFREG;
+      stat->st_mode |= S_IFDIR;
+    } else {
+      stat->st_size = fno.fsize;
+      stat->st_mtim = fno.fdate << 16 | fno.ftime;
+      stat->st_mode = S_IFREG;
+    }
 
     return 0;
   } else if (cmd == IOC_STATFS) {
