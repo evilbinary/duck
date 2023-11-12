@@ -16,7 +16,7 @@
 
 #define VOLUME_ROOT _T("1:/")
 
-#define MAX_FILE_PATH 100
+#define MAX_FILE_PATH 256
 
 void fat_init_op(vnode_t *node);
 
@@ -156,7 +156,7 @@ u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   }
   // print_hex(buffer,nbytes);
 
-  return readbytes;
+  return nbytes;
 }
 
 u32 fat_op_write(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
@@ -176,13 +176,21 @@ u32 fat_op_write(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
 
 u32 fat_op_open(vnode_t *node, u32 mode) {
   file_info_t *file_info = node->data;
-
+  char buf[MAX_FILE_PATH];
   if (file_info == NULL) {
     return 1;
   }
   if ((mode & O_CREAT) == O_CREAT) {
-  } else {
+  } else if ((mode & O_DIRECTORY) == O_DIRECTORY) {
     char buf[MAX_FILE_PATH];
+    kstrcpy(buf, VOLUME);
+    vfs_path_append(node, "", &buf[2]);
+    int res = f_opendir(&file_info->dir, buf);
+    if (res != FR_OK) {
+      log_error("open dir %s error code %d\n", node->name, res);
+      return -1;
+    }
+  } else {
     kstrcpy(buf, VOLUME);
     vfs_path_append(node, "", &buf[2]);
     int res = f_open(&file_info->fil, buf, FA_READ | FA_WRITE);
@@ -249,18 +257,31 @@ u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
     log_debug("read dir failed for not file flags is %x\n", node->flags);
     return 0;
   }
+  char buf[MAX_FILE_PATH];
+  int res = 0;
 
   file_info_t *file_info = node->data;
+  if (file_info == NULL) {
+    file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
+    node->data = file_info;
+
+    kstrcpy(buf, VOLUME);
+    int ret = vfs_path_append(node, "", &buf[2]);
+    res = f_opendir(&file_info->dir, buf);
+  }
+
   u32 i = 0;
   u32 nbytes = 0;
   u32 read_count = 0;
   FILINFO fno;
-  int res = 0;
+
   while (true) {
+    fno.fname[0] = 0;
     res = f_readdir(&file_info->dir, &fno);
-    if (res != FR_OK) {
+    if (res != FR_OK || fno.fname[0] == 0) {
       break;
     }
+
     if (i < file_info->offset) {  // 定位到某个文件数量开始
       i++;
       continue;
@@ -283,7 +304,8 @@ u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
     }
     i++;
   }
-  file_info->offset=0;
+  file_info->offset = 0;
+  f_closedir(&file_info->dir);
 
   return nbytes;
 }

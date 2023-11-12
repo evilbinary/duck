@@ -69,10 +69,6 @@ u32 sys_open(char* name, int attr, ...) {
     log_error("open attr range error %x\n", attr);
     return -1;
   }
-  va_list ap;
-  va_start(ap, attr);
-  int mode = va_arg(ap, int);
-  va_end(ap);
 
   thread_t* current = thread_current();
   if (current == NULL) {

@@ -226,7 +226,7 @@ void vfs_mount(vnode_t *root, u8 *path, vnode_t *node) {
 u32 vfs_readdir(vnode_t *node, vdirent_t *dirent, u32 count) {
   // todo search int vfs
   if (node->super != NULL) {
-    return node->super->op->readdir(node->super, dirent, count);
+    return node->super->op->readdir(node, dirent, count);
   }
   return 0;
 }
