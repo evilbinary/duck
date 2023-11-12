@@ -140,12 +140,11 @@ static void print_hex(u8 *addr, u32 size) {
   kprintf("\n\r");
 }
 
-
 u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   file_info_t *file_info = node->data;
 
   // log_debug("fat_op_read %x %d\n",offset,nbytes);
-  f_lseek(&file_info->fil,offset);
+  f_lseek(&file_info->fil, offset);
 
   int readbytes = 0;
   int res = f_read(&file_info->fil, buffer, nbytes, &readbytes);
@@ -161,7 +160,7 @@ u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
 u32 fat_op_write(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   file_info_t *file_info = node->data;
   // log_debug("fat_op_write\n");
-  f_lseek(&file_info->fil,offset);
+  f_lseek(&file_info->fil, offset);
 
   int readbytes = 0;
   int res = f_write(&file_info->fil, buffer, nbytes, &readbytes);
@@ -250,35 +249,39 @@ u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
   }
   log_debug("fat_op_read_dir\n");
 
-  // file_info_t *file_info = node->data;
-  // struct fat_dir_entry_struct dir_entry;
+  file_info_t *file_info = node->data;
   u32 i = 0;
   u32 nbytes = 0;
   u32 read_count = 0;
-  // while (fat_read_dir(file_info->dd, &dir_entry)) {
-  //   if (i < file_info->offset) {  // 定位到某个文件数量开始
-  //     i++;
-  //     continue;
-  //   }
-  //   if (read_count < count) {
-  //     if ((dir_entry.attributes & FAT_ATTRIB_DIR) == FAT_ATTRIB_DIR) {
-  //       dirent->type = DT_DIR;
-  //     } else if ((dir_entry.attributes & FAT_ATTRIB_ARCHIVE) ==
-  //                FAT_ATTRIB_ARCHIVE) {
-  //       dirent->type = DT_REG;
-  //     }
-  //     kstrcpy(dirent->name, dir_entry.long_name);
-  //     dirent->offset = i;
-  //     dirent->length = sizeof(struct vdirent);
-  //     nbytes += dirent->length;
-  //     dirent++;  // maybe change to offset
-  //     file_info->offset++;
-  //     read_count++;
-  //   } else {
-  //     break;
-  //   }
-  //   i++;
-  // }
+  FILINFO fno;
+  int res = 0;
+  while (true) {
+    res = f_readdir(&file_info->dir, &fno);
+    if (res != FR_OK) {
+      break;
+    }
+    if (i < file_info->offset) {  // 定位到某个文件数量开始
+      i++;
+      continue;
+    }
+    if (read_count < count) {
+      if ((fno.fattrib & AM_DIR) == AM_DIR) {
+        dirent->type = DT_DIR;
+      } else if ((fno.fattrib & AM_ARC) == AM_ARC) {
+        dirent->type = DT_REG;
+      }
+      kstrcpy(dirent->name, fno.fname);
+      dirent->offset = i;
+      dirent->length = sizeof(struct vdirent);
+      nbytes += dirent->length;
+      dirent++;  // maybe change to offset
+      file_info->offset++;
+      read_count++;
+    } else {
+      break;
+    }
+    i++;
+  }
 
   return nbytes;
 }
@@ -287,7 +290,11 @@ int fat_op_close(vnode_t *node) {
   file_info_t *file_info = node->data;
   if (file_info != NULL) {
     file_info->offset = 0;
-    // fat_close_file(file_info->fd);
+    if (file_info->file.fattrib == AM_DIR) {
+      f_closedir(&file_info->dir);
+    } else {
+      f_close(&file_info->fil);
+    }
   }
   return 0;
 }
