@@ -9,7 +9,8 @@ set_kind("static")
 
 add_deps(
     'kernel',
-    'algorithm'
+    'algorithm',
+    'arch'
 )
 
 

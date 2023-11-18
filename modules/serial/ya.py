@@ -34,6 +34,9 @@ plat_source={
     ],
     'riscv-virt':[
         'riscv-virt.c'
+    ],
+    'miyoo':[
+        'ssd202s.c'
     ]
 }
 arch_source={
@@ -61,3 +64,9 @@ if plat_source.get(plat):
 add_files(
     source+common_source
 )
+
+
+add_includedirs(
+    '.',
+    '../'
+    )

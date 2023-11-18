@@ -32,6 +32,9 @@ plat_source={
     ],
     'rk3128':[
         'rk3128.c'
+    ],
+    'miyoo':[
+        'ssd202s.c'
     ]
 }
 arch_source={

@@ -27,6 +27,9 @@ plat_source={
     ],
     'stm32':[
         'stm32.c'
+    ],
+    'miyoo':[
+        'ssd202s.c'
     ]
 }
 arch_source={

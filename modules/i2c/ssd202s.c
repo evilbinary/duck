@@ -3,20 +3,14 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
-#ifndef SERIAL_H
-#define SERIAL_H
-
+#include "i2c.h"
 #include "kernel/kernel.h"
-#include "pci/pci.h"
 
+int i2c_init_device(device_t* dev) {
+  i2c_t* i2c = kmalloc(sizeof(i2c_t),DEFAULT_TYPE);
+  dev->data = i2c;
 
-#define PORT_COM1 0x3f8
-#define PORT_COM2	0x2F8
-#define PORT_COM3	0x3E8
-#define PORT_COM4	0x2E8
-
-
-void serial_printf(char *fmt, ...);
-void serial_write(char a);
-
-#endif
+  i2c->inited = 0;
+  
+  return 0;
+}

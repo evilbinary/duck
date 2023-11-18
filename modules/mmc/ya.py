@@ -32,6 +32,9 @@ plat_source={
     ],
     'general':[
         'general.c'
+    ],
+    'miyoo':[
+        'ssd202s.c'
     ]
 }
 arch_source={

@@ -31,6 +31,9 @@ plat_source={
     'general':[
         'general.c'
     ],
+    'miyoo':[
+        'ssd202s.c'
+    ]
 }
 arch_source={
     'arm':[ 
@@ -57,3 +60,5 @@ if plat_source.get(plat):
 add_files(
     source+common_source
 )
+
+add_includedirs('../')
