@@ -10,13 +10,23 @@ char uart_read() {
   return c;
 }
 
-void uart_send(unsigned int c) {
+void uart_send_char(unsigned int c) {
   while (!(UART_REG8(UART_LSR) & UART_LSR_THRE))
     ;
   UART_REG8(UART_TX) = c;
 }
 
-void platform_init() { io_add_write_channel(uart_send); }
+void uart_send(unsigned int c) {
+  if (c == '\n') {
+    uart_send_char(c);
+    c = '\r';
+  }
+  uart_send_char(c);
+}
+
+void platform_init() { 
+  io_add_write_channel(uart_send); 
+}
 
 void platform_end() {}
 
