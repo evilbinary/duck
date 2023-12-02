@@ -2,8 +2,8 @@
 #define BCM2836_H
 
 #include "kernel/kernel.h"
-#include "bcm2835.h"
-#include "mailbox.h"
+#include "bcm/bcm2835.h"
+#include "bcm/mailbox.h"
 
 typedef struct pixel {
     uint8_t red;

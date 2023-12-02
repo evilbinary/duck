@@ -74,7 +74,7 @@ void service_map_client_api(client_t* src, client_t* des) {
     return;
   }
   if (des == NULL) {
-    log_error("map client des is null\n");
+    log_error("map client des is null, src id %d\n", src->id);
     return;
   }
   thread_t* current = thread_current();
@@ -153,14 +153,17 @@ size_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
   }
   thread_t* current = thread_current();
 
-  log_debug("ioctl cmd= %x\n", cmd);
+  log_debug("current thread name %s\n", current->name);
+
+
+  // log_debug("ioctl cmd= %x args= %x\n", cmd, args);
 
   client_ctl_t* ctl = args;
 
   if (cmd == SYS_GET_CLIENT) {
     client_t* client = service_get_client_name(ctl->name);
     if (client == NULL) {
-      log_error("client is null\n");
+      log_error("client %s get is null\n", ctl->name);
       return -1;
     }
     client->cid = current->id;
@@ -174,6 +177,10 @@ size_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
     client->cid = current->id;
     int no = service_add_client(client);
     service_map_client_api(client, ctl->client);
+
+    vnode_t* node_client = vfs_create_node(client->name, V_FILE);
+    vfs_add_child(node, node_client);
+
     ret = no;
     // mmap
   } else if (cmd == SYS_DEL_CLIENT) {
@@ -181,8 +188,55 @@ size_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
     client_t* client = service_get_client(id);
     client->state = SYS_DINIT;
     service_remove_client(client);
+
+    vnode_t* node_client = vfs_find_child(node, client->name);
+    if (node_client != NULL) {
+      vfs_remove_child(node, node_client);
+    }
+  } else if (cmd == SYS_GET_CLIENT_BY_ID) {
+    int id = args;
+    client_t* client = service_get_client(id);
+    if (client == NULL) {
+      log_error("client get id %d is null\n", id);
+      return -1;
+    }
+    client->cid = current->id;
+    service_map_client_api(client, ctl->client);
   }
   return ret;
 }
 
 vnode_t* service_find(vnode_t* node, char* name) { return NULL; }
+
+u32 service_readdir(vnode_t* node, struct vdirent* dirent, u32* offset,
+                    u32 count) {
+  if (!((node->flags & V_FILE) == V_FILE ||
+        (node->flags & V_DIRECTORY) == V_DIRECTORY)) {
+    log_debug("read dir failed for not file flags is %x\n", node->flags);
+    return 0;
+  }
+  u32 i = 0;
+  u32 nbytes = 0;
+  u32 read_count = 0;
+  while (i < node->child_number) {
+    if (i < *offset) {  // 定位到某个文件数量开始
+      i++;
+      continue;
+    }
+    if (read_count < count) {
+      dirent->type = DT_REG;
+      kstrcpy(dirent->name, node->child[i]);
+      dirent->offset = i;
+      dirent->length = sizeof(struct vdirent);
+      nbytes += dirent->length;
+      dirent++;  // maybe change to offset
+      *offset++;
+      read_count++;
+    } else {
+      break;
+    }
+    i++;
+  }
+
+  return nbytes;
+}

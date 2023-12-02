@@ -466,7 +466,7 @@ int sys_readdir(int fd, int index, void* dirent) {
     log_error("readdir not found fd %d\n", fd);
     return 0;
   }
-  u32 ret = vreaddir(findfd->data, dirent, index);
+  u32 ret = vreaddir(findfd->data, dirent, &findfd->offset, index);
   return ret;
 }
 
@@ -769,7 +769,7 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
     log_error("getdents64 not found fd %d\n", fd);
     return 0;
   }
-  u32 ret = vreaddir(findfd->data, dir, count);
+  u32 ret = vreaddir(findfd->data, dir,&findfd->offset, count);
   return ret;
 }
 
@@ -1135,7 +1135,7 @@ int sys_access(const char* pathname, int mode) {
   }
   int fd = sys_open(pathname, 0);
   if (fd < 0) {
-    log_error("access faild %s\n",pathname);
+    log_error("access faild %s\n", pathname);
     return -1;
   }
   sys_close(fd);

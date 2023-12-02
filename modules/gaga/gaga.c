@@ -13,7 +13,8 @@ voperator_t gaga_operator = {.write = service_write,
                              .find = service_find,
                              .mount = vfs_mount,
                              .ioctl = service_ioctl,
-                             .readdir = vfs_readdir};
+                             .readdir = service_readdir
+};
 
 int gaga_init(void) {
   log_debug("gaga init\n");

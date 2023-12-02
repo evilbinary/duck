@@ -65,10 +65,10 @@ u32 vclose(vnode_t *node) {
     return -1;
   }
 }
-u32 vreaddir(vnode_t *node, vdirent_t *dirent, u32 count) {
+u32 vreaddir(vnode_t *node, vdirent_t *dirent, u32* offset, u32 count) {
   if (node->op->readdir != NULL) {
     if ((node->flags & V_DIRECTORY) == V_DIRECTORY) {
-      return node->op->readdir(node, dirent, count);
+      return node->op->readdir(node, dirent, offset, count);
     } else {
       log_error("node readdir is not dir\n");
     }
@@ -139,6 +139,21 @@ void vfs_add_child(vnode_t *parent, vnode_t *child) {
   }
   child->parent = parent;
   parent->child[parent->child_number++] = child;
+}
+
+void vfs_remove_child(vnode_t *parent, vnode_t *child) {
+  vnode_t *find_one = NULL;
+  for (int i = 0; i < parent->child_number; i++) {
+    vnode_t *n = parent->child[i];
+    if (n == NULL) continue;
+    if (n == child) {
+      find_one = n;
+      for (int j = i; (j + 1) < parent->child_number; j++) {
+        parent->child[j] = parent->child[j + 1];
+      }
+      break;
+    }
+  }
 }
 
 vnode_t *vfs_find_child(vnode_t *parent, char *name) {
@@ -223,10 +238,10 @@ void vfs_mount(vnode_t *root, u8 *path, vnode_t *node) {
   }
 }
 
-u32 vfs_readdir(vnode_t *node, vdirent_t *dirent, u32 count) {
+u32 vfs_readdir(vnode_t *node, vdirent_t *dirent,u32 *offset, u32 count) {
   // todo search int vfs
   if (node->super != NULL) {
-    return node->super->op->readdir(node, dirent, count);
+    return node->super->op->readdir(node, dirent,offset, count);
   }
   return 0;
 }

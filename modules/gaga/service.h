@@ -7,6 +7,28 @@
 #define __SERVICE__
 
 #include "kernel/kernel.h"
+
+enum {
+  DT_UNKNOWN = 0,
+#define DT_UNKNOWN DT_UNKNOWN
+  DT_FIFO = 1,
+#define DT_FIFO DT_FIFO
+  DT_CHR = 2,
+#define DT_CHR DT_CHR
+  DT_DIR = 4,
+#define DT_DIR DT_DIR
+  DT_BLK = 6,
+#define DT_BLK DT_BLK
+  DT_REG = 8,
+#define DT_REG DT_REG
+  DT_LNK = 10,
+#define DT_LNK DT_LNK
+  DT_SOCK = 12,
+#define DT_SOCK DT_SOCK
+  DT_WHT = 14
+#define DT_WHT DT_WHT
+};
+
 #define MAX_CLIENTS 100
 
 #define MAX_ARGS_BUF 128
@@ -16,6 +38,7 @@ enum {
   SYS_NEW_CLIENT = 1,
   SYS_GET_CLIENT = 2,
   SYS_DEL_CLIENT = 3,
+  SYS_GET_CLIENT_BY_ID = 4,
 };
 
 enum {
@@ -59,8 +82,8 @@ typedef struct client {
 
 typedef struct client_ctl {
   char* name;
+  int id;
   client_t* client;
-
 } client_ctl_t;
 
 u32 service_open(vnode_t* node, u32 mode);
@@ -74,5 +97,6 @@ size_t service_write(vnode_t* node, const void* buf, size_t len);
 size_t service_ioctl(vnode_t* node, u32 cmd, void* args);
 
 vnode_t* service_find(vnode_t*, char* name);
-
+u32 service_readdir(vnode_t* node, struct vdirent* dirent, u32* offset,
+                    u32 count);
 #endif

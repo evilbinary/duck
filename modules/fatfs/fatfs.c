@@ -45,7 +45,6 @@ typedef struct file_info {
   FIL fil;
   DIR dir;
   FILINFO file;
-  u32 offset;
 } file_info_t;
 
 vnode_t *default_node = NULL;
@@ -251,7 +250,7 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
   return file;
 }
 
-u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
+u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent,u32* offset, u32 count) {
   if (!((node->flags & V_FILE) == V_FILE ||
         (node->flags & V_DIRECTORY) == V_DIRECTORY)) {
     log_debug("read dir failed for not file flags is %x\n", node->flags);
@@ -282,7 +281,7 @@ u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
       break;
     }
 
-    if (i < file_info->offset) {  // 定位到某个文件数量开始
+    if (i < *offset) {  // 定位到某个文件数量开始
       i++;
       continue;
     }
@@ -297,14 +296,13 @@ u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
       dirent->length = sizeof(struct vdirent);
       nbytes += dirent->length;
       dirent++;  // maybe change to offset
-      file_info->offset++;
+      *offset++;
       read_count++;
     } else {
       break;
     }
     i++;
   }
-  file_info->offset = 0;
   f_closedir(&file_info->dir);
 
   return nbytes;
@@ -313,7 +311,6 @@ u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
 int fat_op_close(vnode_t *node) {
   file_info_t *file_info = node->data;
   if (file_info != NULL) {
-    file_info->offset = 0;
     if (file_info->file.fattrib == AM_DIR) {
       f_closedir(&file_info->dir);
     } else {
