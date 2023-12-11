@@ -32,6 +32,7 @@ void ya_alloc_init() {
     // mm_add_block(addr, len);
     u32 kernel_start = boot_info->kernel_base;
     u32 kernel_end = kernel_start + boot_info->kernel_size;
+    kprintf("kernel base %x end %x\n",kernel_start,kernel_end);
     if (is_line_intersect(addr, addr + len, kernel_start, kernel_end)) {
       int a1 = addr;
       int a2 = addr + len;
