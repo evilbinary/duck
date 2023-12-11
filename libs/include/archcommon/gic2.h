@@ -97,10 +97,15 @@ typedef struct gic{
     gic_cpu_t*  cpu;
 }gic_t;
 
+#define GICD_OFFSET 0x1000
+#define GICC_OFFSET 0x2000
+
+#define G0_ENABLE 0x01
+#define G1_ENABLE 0x02
 
 void gic_init_base(void *cpu_addr, void *dist_addr);
 void gic_enable(int cpu, int irq);
-void gic_init();
+void gic_init(void* base);
 void gic_send_sgi(int cpu, int irq);
 
 
