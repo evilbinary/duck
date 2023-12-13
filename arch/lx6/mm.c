@@ -44,7 +44,7 @@ void mm_page_enable(u32 page_dir) {
   // start_dump();
   kprintf("enable page\n");
   cpu_enable_page();
-  kprintf("paging scucess\n");
+  kprintf("paging success\n");
 }
 
 void page_clone(u32* old_page, u32* new_page) {

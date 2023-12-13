@@ -45,7 +45,7 @@ void unpage_map_on(page_dir_t* page, u32 virtualaddr) {}
 void mm_page_enable(u32 page_dir) {
   kprintf("enable page\n");
   cpu_enable_page();
-  kprintf("paging scucess\n");
+  kprintf("paging success\n");
 }
 
 void mm_init_default(u32 kernel_page_dir) {}
