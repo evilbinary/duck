@@ -81,9 +81,7 @@ void timer_init(int hz) {
 void timer_end() {
   int irq= gic_irqwho();
   gic_irqack(irq);
-  kprintf("irq %d %d\n",irq,timer_count++);
-
-  // write_cntv_tval(cntfrq[0]);
+  write_cntv_tval(cntfrq[0]);
 
 }
 
