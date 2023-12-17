@@ -82,7 +82,6 @@ void timer_end() {
   int irq= gic_irqwho();
   gic_irqack(irq);
   write_cntv_tval(cntfrq[0]);
-
 }
 
 void lcpu_send_start(u32 cpu, u32 entry) {}
