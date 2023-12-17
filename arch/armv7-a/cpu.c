@@ -374,10 +374,72 @@ int cpu_start_id(u32 id, u32 entry) {
   return 0;
 }
 
-void cpu_delay(int n) {
-  for (int i = 0; i < 10000 * n; i++)
-    ;
+
+u32 read_cntv_tval(void) {
+  u32 val;
+  asm volatile("mrc p15, 0, %0, c14, c3, 0" : "=r"(val));
+  return val;
 }
+
+void write_cntv_tval(u32 val) {
+  asm volatile("mcr p15, 0, %0, c14, c3, 0" ::"r"(val));
+  return;
+}
+
+u32 read_cntfrq(void) {
+  u32 val;
+  asm volatile("mrc p15, 0, %0, c14, c0, 0" : "=r"(val));
+  return val;
+}
+
+void enable_cntv(u32 cntv_ctl) {
+  asm volatile("mcr p15, 0, %0, c14, c3, 1" ::"r"(cntv_ctl));  // write CNTV_CTL
+}
+
+void disable_cntv(u32 cntv_ctl) {
+  asm volatile("mcr p15, 0, %0, c14, c3, 1" ::"r"(cntv_ctl));  // write CNTV_CTL
+}
+
+uint64_t read_cntvct(void) {
+  uint64_t val;
+  asm volatile("mrrc p15, 1, %Q0, %R0, c14" : "=r"(val));
+  return (val);
+}
+
+/*do fast 64bit div constant
+*	because 52 bit timer can provide 23 years cycle loop
+* 	we can do 64bit divided as below：
+* 	x / 6 = x / (4096/682) = x * 682 / 4096 = (x * 682) >> 12
+*   it will save hundreds of cpu cycle
+*/
+static __inline uint64_t fast_div64_6(uint64_t x){
+	return (x*682)>>12;
+}
+
+static inline uint64_t timer_read_sys_usec(void) { //read microsec
+	return fast_div64_6(read_cntvct());
+}
+
+void cpu_delay_usec(uint64_t count) {
+	uint64_t s = timer_read_sys_usec();
+	uint64_t t = s + count;
+	while(s < t) {
+		s = timer_read_sys_usec();
+	}
+}
+
+void cpu_delay_msec(uint32_t count) {
+	cpu_delay_usec(count*1000);
+}
+
+void cpu_delay(int n) {
+  // cpu_delay_msec(n);
+  while(n > 0) {
+		n--;
+	}
+}
+
+
 
 // void* syscall0(u32 num) {
 //   int ret;

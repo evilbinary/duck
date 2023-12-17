@@ -29,11 +29,6 @@
 #include "ssd202d_sdmmc.h"
 
 
-void _delay(int x){
-	for(int i=0;i<x;i++){
-		int j=0;
-	}
-}
 
 #define prtstring(s)	kprintf(s)
 #define prtUInt(v) 		kprintf("%u", v)
@@ -42,8 +37,8 @@ void _delay(int x){
 #define prtU16Hex(v)	kprintf("0x%04X", v)
 #define prtU32Hex(v)	kprintf("0x%08X", v)
 
-#define Hal_Timer_mDelay(x)     _delay(x*1000)
-#define Hal_Timer_uDelay(x)     _delay(x)
+#define Hal_Timer_mDelay(x)     cpu_delay(x*1000)
+#define Hal_Timer_uDelay(x)     cpu_delay(x)
 
 #define TR_H_SDMMC(p)
 //***********************************************************************************************************
