@@ -62,7 +62,7 @@ struct fat_fs_struct* fat_open(struct partition_struct* partition) {
   fs->partition = partition;
   u32 ret=fat_read_header(fs);
   if (!ret) {
-    log_error("fat header error ret %d\n ",ret);
+    log_error("fat header error ret %d\n",ret);
 #if USE_DYNAMIC_MEMORY
     kfree(fs);
 #else

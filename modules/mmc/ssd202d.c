@@ -5,9 +5,50 @@
  ********************************************************************/
 #include "kernel/kernel.h"
 #include "sdhci.h"
+#include "ssd202d_sdmmc.h"
+
+static u32 mmc_read_blocks(sdhci_device_t *hci, u32 start, u32 blkcnt,
+                           u8 *buf) {
+  RspStruct * pst_rsp;
+	pst_rsp = HAL_SDMMC_DATAReq(0, 17, start, blkcnt, 512, EV_DMA, buf);  //CMD17
+
+  log_debug("=> (Err: 0x%04X)\n", (uint16_t)pst_rsp->eErrCode);
+
+  return pst_rsp->eErrCode;
+}
 
 int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
+  log_debug("sdhci_dev_port_read %x %d\n",buf,len);
+
   u32 ret = 0;
+  u32 bno = sdhci_dev->offsetl / BYTE_PER_SECTOR;
+  u32 boffset = sdhci_dev->offsetl % BYTE_PER_SECTOR;
+  u32 bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
+  u32 bsize = bcount * BYTE_PER_SECTOR;
+
+
+  if (bsize > sdhci_dev->read_buf_size) {
+    kfree(sdhci_dev->read_buf);
+    sdhci_dev->read_buf = kmalloc(bsize, DEVICE_TYPE);
+    sdhci_dev->read_buf_size = bsize;
+  }
+
+#ifdef CACHE_ENABLED
+  if (bcount == CACHE_COUNT) {
+    int index = bno & CACHE_MASK;
+    char *cache_p = (sdhci_dev->cache_buffer + SECTOR_SIZE * index);
+    if (sdhci_dev->cached_blocks[index] != bno) {
+      ret = mmc_read_blocks(sdhci_dev, bno, bcount, cache_p);
+      sdhci_dev->cached_blocks[index] = bno;
+    }
+    kmemmove(buf, cache_p + boffset, len);
+    return ret;
+  }
+#endif
+  kmemset(sdhci_dev->read_buf, 0, len);
+  ret = mmc_read_blocks(sdhci_dev, bno, bcount, sdhci_dev->read_buf);
+  kmemmove(buf, sdhci_dev->read_buf + boffset, len);
+
   return ret;
 }
 
@@ -15,4 +56,21 @@ int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
   return 0;
 }
 
-void sdhci_dev_init(sdhci_device_t *sdhci_dev) {}
+void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
+  log_info("ssd202d dev init\n");
+  // sd mmc0
+  // page_map(0x01c0f000, 0x01c0f000, 0);
+
+#ifdef CACHE_ENABLED
+  sdhci_dev->cached_blocks = kmalloc(CACHE_ENTRIES, DEFAULT_TYPE);
+  sdhci_dev->cache_buffer = kmalloc(SECTOR_SIZE * CACHE_ENTRIES, DEFAULT_TYPE);
+  int i;
+  for (i = 0; i < CACHE_ENTRIES; i++) {
+    sdhci_dev->cached_blocks[i] = 0xFFFFFFFF;
+  }
+  kmemset(sdhci_dev->cache_buffer, 0, SECTOR_SIZE * CACHE_ENTRIES);
+#endif
+
+  log_info("ssd202d init end\n");
+  
+}

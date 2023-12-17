@@ -508,7 +508,7 @@ void fat_init(void) {
   fat_init_op(node);
   struct partition_struct *partition =
       partition_open(sd_raw_read, sd_raw_read_interval, sd_raw_write,
-                     sd_raw_write_interval, -1);
+                     sd_raw_write_interval, 0);
 
   if (!partition) {
     log_error("open partition error\n");
