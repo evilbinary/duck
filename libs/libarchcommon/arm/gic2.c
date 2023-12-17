@@ -59,10 +59,10 @@ void gic_init(void *base) {
   }
 
   //enable
-  dp->ctl = G0_ENABLE;
-  cp->pm = 0xff;
-  cp->bp = 0x7;
-  cp->ctl = G0_ENABLE;
+  // dp->ctl = G0_ENABLE;
+  // cp->pm = 0xff;
+  // cp->bp = 0x7;
+  // cp->ctl = G0_ENABLE;
 
   kprintf("GIC init end\n");
 
@@ -77,6 +77,8 @@ void gic_irq_enable(int irq) {
 
 void gic_enable(int cpu, int irq) {
   gic_dist_t *gp = gic.dist;
+  gic_cpu_t *cp = gic.cpu;
+
   // 设置目标 cpu
   gp->itargets[irq] |= (1 << cpu) & 0xff;
   // 优先级别设置
@@ -91,6 +93,12 @@ void gic_enable(int cpu, int irq) {
 
   // irq开启
   gic_irq_enable(irq);
+
+  gp->ctl = G0_ENABLE;
+  cp->pm = 0xff;
+  cp->bp = 0x7;
+  cp->ctl = G0_ENABLE;
+
 }
 
 void gic_unpend(int irq) {

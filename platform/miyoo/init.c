@@ -3,6 +3,8 @@
 #include "gpio.h"
 #include "gic2.h"
 
+#define IRQ_TIMER0 27
+
 static u32 cntfrq[MAX_CPU] = {
     0,
 };
@@ -47,19 +49,21 @@ void platform_map() {
 
 void ipi_enable(int cpu) {}
 
+int timer_count=0;
+
 void timer_init(int hz) {
   int cpu = cpu_get_id();
   kprintf("timer init %d\n",cpu);
 
   int frq=read_cntfrq();
   kprintf("timer frq %d\n",frq);
-  cntfrq[cpu] = frq;
+  cntfrq[cpu] = frq/hz;
 
-  if(cntfrq[cpu]<0){
-    cntfrq[cpu]=6000000;
+  if(cntfrq[cpu]<=0){
+    cntfrq[cpu]=6000000/hz;
   }
 
-  cntfrq[cpu] = cntfrq[cpu] / hz;
+  // cpu_cli();
   kprintf("cntfrq %d\n", cntfrq[cpu]);
   write_cntv_tval(cntfrq[cpu]);
 
@@ -67,13 +71,19 @@ void timer_init(int hz) {
   kprintf("val %d\n", val);
   enable_cntv(1);
 
+
+
   gic_init(0);
+  gic_enable(0, IRQ_TIMER0);
+
 }
 
 void timer_end() {
-  kprintf("timer end\n");
+  int irq= gic_irqwho();
+  gic_irqack(irq);
+  kprintf("irq %d %d\n",irq,timer_count++);
 
-  write_cntv_tval(cntfrq[0]);
+  // write_cntv_tval(cntfrq[0]);
 
 }
 

@@ -26,9 +26,9 @@ void kernel_init() {
     memory_init();
     log_info("vfs init\n");
     vfs_init();
-    log_info("kernel init end\n");
+    log_info("thread init\n");
     thread_init();
-    log_info("event init end\n");
+    log_info("event init\n");
     event_init();
     log_info("kernel init end\n");
   } else {
