@@ -34,7 +34,6 @@ static size_t read(device_t* dev, char* buf, size_t len) {
 }
 
 static size_t write(device_t* dev, char* buf, size_t len) {
-  log_debug("write %x %d\n",buf,len);
   u32 ret = len;
   for (int i = 0; i < len; i++) {
     serial_write(((char*)buf)[i]);
