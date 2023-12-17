@@ -10,15 +10,14 @@
 static u32 mmc_read_blocks(sdhci_device_t *hci, u32 start, u32 blkcnt,
                            u8 *buf) {
   RspStruct * pst_rsp;
-	pst_rsp = HAL_SDMMC_DATAReq(0, 17, start, blkcnt, 512, EV_DMA, buf);  //CMD17
+	pst_rsp = HAL_SDMMC_DATAReq(0, 17, start, blkcnt, BYTE_PER_SECTOR, EV_DMA, buf);  //CMD17
 
-  log_debug("=> (Err: 0x%04X)\n", (uint16_t)pst_rsp->eErrCode);
-
-  return pst_rsp->eErrCode;
+  // log_debug("=> (Err: 0x%04X)\n", (uint16_t)pst_rsp->eErrCode);
+  return blkcnt* BYTE_PER_SECTOR;
 }
 
 int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
-  log_debug("sdhci_dev_port_read %x %d\n",buf,len);
+  // log_debug("sdhci_dev_port_read %x %d\n",buf,len);
 
   u32 ret = 0;
   u32 bno = sdhci_dev->offsetl / BYTE_PER_SECTOR;
@@ -59,7 +58,8 @@ int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
 void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   log_info("ssd202d dev init\n");
   // sd mmc0
-  // page_map(0x01c0f000, 0x01c0f000, 0);
+  page_map(A_FCIE1_0_BANK, A_FCIE1_0_BANK, 0);
+  page_map(A_FCIE1_1_BANK, A_FCIE1_1_BANK, 0);
 
 #ifdef CACHE_ENABLED
   sdhci_dev->cached_blocks = kmalloc(CACHE_ENTRIES, DEFAULT_TYPE);

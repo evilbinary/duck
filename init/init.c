@@ -191,7 +191,6 @@ void do_init_thread(void) {
   if (syscall2(SYS_DUP2, series, 2) < 0) {
     print_string("err in dup2\n");
   }
-
   syscall1(SYS_CHDIR, "/");
 
   char** env = NULL;

@@ -19,7 +19,7 @@ char serial_read() {
 }
 
 static size_t read(device_t* dev, char* buf, size_t len) {
-  log_debug("read %x %d\n",buf,len);
+  // log_debug("read %x %d\n",buf,len);
 
   u32 count = 0;
   int ret = -1;
