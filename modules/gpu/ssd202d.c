@@ -16,6 +16,14 @@ int ssd202_lcd_init(vga_device_t *vga) {
     paddr += 0x1000;
   }
 
+  log_info("fb addr:%x end:%x len:%x\n", vga->frambuffer,vga->frambuffer+vga->framebuffer_length, vga->framebuffer_length);
+
+  // u8 *buffer = vga->frambuffer;
+  //   for (int i = 0; i < vga->framebuffer_length / 8; i++) {
+  //     buffer[i] = 0xff;
+  // }
+
+
   return 0;
 }
 
@@ -57,6 +65,8 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
   vga->framebuffer_count = 1;
   vga->pframbuffer = 0x27c00000;
   vga->frambuffer = 0xfb000000;
+
+  vga->framebuffer_length = vga->width * vga->height * vga->bpp * 8;
 
   ssd202_lcd_init(vga);
 
