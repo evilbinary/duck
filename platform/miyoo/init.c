@@ -45,6 +45,10 @@ void platform_map() {
   page_map(0x16002000, 0x16002000, L2_NCNB);
   page_map(0x16001000, 0x16001000, L2_NCNB);
 
+  // mmc
+  page_map(0x1f282000, 0x1f282000, L2_NCNB);
+
+
 }
 
 void ipi_enable(int cpu) {}

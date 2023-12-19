@@ -48,7 +48,7 @@
 // Enable Setting
 //-----------------------------------------------------------------------------------------------------------
 #define EN_TRFUNC                   (FALSE)
-#define EN_DUMPREG                  (TRUE)
+#define EN_DUMPREG                  (FALSE)
 #define EN_BYPASSMODE               (FALSE)    //BYPASS MODE or ADVANCE MODE(SDR/DDR)
 
 
@@ -866,8 +866,9 @@ RspErrEmType Hal_SDMMC_SendCmdAndWaitProcess(IPEmType eIP, TransEmType eTransTyp
 
 	Hal_Timer_uDelay(gu16_WT_NRC[eIP]);
 
-	if( _REG_ClearSDSTS(eIP, RT_CLEAN_SDSTS) || _REG_ClearMIEEvent(eIP, RT_CLEAN_MIEEVENT) )
+	if( _REG_ClearSDSTS(eIP, RT_CLEAN_SDSTS) || _REG_ClearMIEEvent(eIP, RT_CLEAN_MIEEVENT) ){
 		return _SDMMC_EndProcess(eIP, eCmdType, EV_STS_RIU_ERR, bCloseClk, __LINE__);;
+	}
 
 #if(EN_BIND_CARD_INT)
 	//Hal_CARD_INT_SetMIEIntEn(eIP, EV_INT_SD, V_MIE_INT_EN_INIT | u16MIE_TRANS_END);
@@ -909,8 +910,9 @@ RspErrEmType Hal_SDMMC_SendCmdAndWaitProcess(IPEmType eIP, TransEmType eTransTyp
 
 	if( (eCmdType == EV_CMDWRITE) && (!M_REG_STSERR(eIP)) )
 	{
-		if( _REG_ClearSDSTS(eIP, RT_CLEAN_SDSTS) || _REG_ClearMIEEvent(eIP, RT_CLEAN_MIEEVENT) )
+		if( _REG_ClearSDSTS(eIP, RT_CLEAN_SDSTS) || _REG_ClearMIEEvent(eIP, RT_CLEAN_MIEEVENT) ){
             return _SDMMC_EndProcess(eIP, eCmdType, EV_STS_RIU_ERR, bCloseClk, __LINE__);
+		}
 
 		CARD_REG(A_SD_CTL_REG(eIP)) = V_SD_CTL_INIT |(eCmdType>>4) | ((uint8_t)(eTransType & R_ADMA_EN));
         CARD_REG_SETBIT(A_SD_CTL_REG(eIP), (R_DTRX_EN) );
@@ -950,8 +952,9 @@ RspErrEmType Hal_SDMMC_RunBrokenDmaAndWaitProcess(IPEmType eIP, CmdEmType eCmdTy
 	else if(eCmdType==EV_CMDWRITE)
 		u32WaitMS = WT_EVENT_WRITE;
 
-	if ( _REG_ClearMIEEvent(eIP, RT_CLEAN_MIEEVENT) )
+	if ( _REG_ClearMIEEvent(eIP, RT_CLEAN_MIEEVENT) ){
 		return _SDMMC_EndProcess(eIP, eCmdType, EV_STS_RIU_ERR, FALSE, __LINE__);
+	}
 
     CARD_REG_CLRBIT(A_SD_CTL_REG(eIP), R_CMD_EN );
 	CARD_REG_SETBIT(A_SD_CTL_REG(eIP), (R_DTRX_EN | R_JOB_START) );
@@ -1242,7 +1245,7 @@ RspStruct * HAL_SDMMC_DATAReq(uint8_t u8Slot, uint8_t u8Cmd, uint32_t u32Arg, ui
 		bCloseClock = TRUE;
 
 	Hal_SDMMC_SetCmdToken(eIP, u8Cmd, u32Arg);
-	Hal_SDMMC_TransCmdSetting(eIP, eTransType, u16BlkCnt, u16BlkSize, pu8Buf, pu8Buf);
+	Hal_SDMMC_TransCmdSetting(eIP, eTransType, u16BlkCnt, u16BlkSize, Hal_CARD_TransMIUAddr(pu8Buf), pu8Buf);
 	Hal_SDMMC_SendCmdAndWaitProcess(eIP, eTransType, eCmdType, EV_R1, bCloseClock);
 	eRspSt = Hal_SDMMC_GetRspToken(eIP);
 
@@ -1250,4 +1253,58 @@ RspStruct * HAL_SDMMC_DATAReq(uint8_t u8Slot, uint8_t u8Cmd, uint32_t u32Arg, ui
 	return eRspSt;
 
 
+}
+
+
+uint16_t SDMMC_Init(uint8_t u8Slot)
+{
+	IPEmType eIP  = EV_IP_FCIE1;
+	RspStruct * eRspSt;
+
+	// _SDMMC_InfoInit(u8Slot);
+
+	// SDMMC_SwitchPAD(u8Slot);
+	// SDMMC_SetPower(u8Slot, EV_POWER_OFF);
+	// SDMMC_SetPower(u8Slot, EV_POWER_ON);
+	// SDMMC_SetPower(u8Slot, EV_POWER_UP);
+
+	// SDMMC_SetClock(u8Slot, 400000, 0);
+	// SDMMC_SetBusTiming(u8Slot, EV_BUS_LOW);
+
+	// Hal_SDMMC_SetDataWidth(eIP, EV_BUS_1BIT);
+	// //Hal_SDMMC_SetSDIOClk(eIP, TRUE); //For Measure Clock, Don't Stop Clock
+
+    // //--------------------------------------------------------------------------------------------------------
+    // eRspSt = _SDMMC_Identification(u8Slot);
+    // //--------------------------------------------------------------------------------------------------------
+    // if(eRspSt->eErrCode)
+    //     pr_sd_info(" errCmd:%d:x%x\n", eRspSt->u8Cmd, eRspSt->eErrCode);
+    // if(eRspSt->eErrCode)
+	// 	return (uint16_t)eRspSt->eErrCode;
+
+    // //--------------------------------------------------------------------------------------------------------
+    // eRspSt = _SDMMC_CMDReq(u8Slot, 9, 0, EV_R2);  //CMD9
+    // //--------------------------------------------------------------------------------------------------------
+    // if(eRspSt->eErrCode)
+	// 	return (uint16_t)eRspSt->eErrCode;
+	// else
+	// 	_SDMMC_GetCSDInfo(u8Slot, eRspSt->u8ArrRspToken+1);
+
+    // //--------------------------------------------------------------------------------------------------------
+    // eRspSt = _SDMMC_SEND_STAUS(u8Slot); //CMD13
+    // //--------------------------------------------------------------------------------------------------------
+    // if(eRspSt->eErrCode)
+	// 	return (uint16_t)eRspSt->eErrCode;
+
+    // //--------------------------------------------------------------------------------------------------------
+    // eRspSt = _SDMMC_CMDReq(u8Slot,  7, 0, EV_R1B); //CMD7;
+    // //--------------------------------------------------------------------------------------------------------
+    // if(eRspSt->eErrCode)
+	// 	return (uint16_t)eRspSt->eErrCode;
+
+	// // eRspSt = _SDMMC_SEND_SCR(u8Slot, _sector_buf);
+
+
+    // return (uint16_t)eRspSt->eErrCode;
+	return 0;
 }
