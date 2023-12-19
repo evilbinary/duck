@@ -7,13 +7,35 @@
 #include "sdhci.h"
 #include "ssd202d_sdmmc.h"
 
+#define CACHE_COUNT 1
+#define SECTOR_SIZE (512 * CACHE_COUNT)
+// #define CACHE_ENABLED 1  // have problem
+
+#define CACHE_ENTRIES (1 << 4)          ///< 16 entries
+#define CACHE_MASK (CACHE_ENTRIES - 1)  ///< mask 0x0F
+
 static u32 mmc_read_blocks(sdhci_device_t *hci, u32 start, u32 blkcnt,
                            u8 *buf) {
   RspStruct *pst_rsp;
-  
-  pst_rsp = HAL_SDMMC_DATAReq(0, 17, start, blkcnt, BYTE_PER_SECTOR, EV_DMA, buf);  // CMD17
+  int u8Slot = 0;
 
-  // log_debug("=> (Err: 0x%04X)\n", (uint16_t)pst_rsp->eErrCode);
+  u16 u8CMD = 17;
+  if (blkcnt > 1) {
+    u8CMD = 18;
+  }
+  pst_rsp =
+      HAL_SDMMC_DATAReq(u8Slot, u8CMD, start, blkcnt, BYTE_PER_SECTOR, EV_DMA,
+                        buf);  // CMD17
+  if (pst_rsp->eErrCode != 0) {
+    log_error("log read block error start %x count %d=> (Err: 0x%04X)\n", start,
+              blkcnt, (uint16_t)pst_rsp->eErrCode);
+  }
+  if (blkcnt > 1) {
+    pst_rsp = HAL_SDMMC_CMDReq(u8Slot, 12, 0x00000000, EV_R1B);  // CMD12;
+  }
+
+  // log_debug("start %x count %d=> (Err: 0x%04X)\n", start, blkcnt,
+  //           (uint16_t)pst_rsp->eErrCode);
   return blkcnt * BYTE_PER_SECTOR;
 }
 
@@ -60,12 +82,11 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   // sd mmc0
   page_map(A_FCIE1_0_BANK, A_FCIE1_0_BANK, L2_NCNB);
 
-  u32 addr = GET_CARD_BANK(0, 0); //0x1f282000
+  u32 addr = GET_CARD_BANK(0, 0);  // 0x1f282000
   log_debug("addr =>%x\n", addr);
   // page_map(addr, addr, 0);
 
   SDMMC_Init(0);
-
 
 #ifdef CACHE_ENABLED
   sdhci_dev->cached_blocks = kmalloc(CACHE_ENTRIES, DEFAULT_TYPE);

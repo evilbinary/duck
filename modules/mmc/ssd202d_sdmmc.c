@@ -1212,7 +1212,7 @@ uint16_t Hal_SDMMC_GetMIEEvent(IPEmType eIP)
 *
 * @param u32Addr : Original address
 *
-* @return U32_T  : DMA address
+* @return uint32_t  : DMA address
 ----------------------------------------------------------------------------------------------------------*/
 uint32_t Hal_CARD_TransMIUAddr(uint32_t u32Addr)
 {
@@ -1253,6 +1253,23 @@ RspStruct * HAL_SDMMC_DATAReq(uint8_t u8Slot, uint8_t u8Cmd, uint32_t u32Arg, ui
 	return eRspSt;
 
 
+}
+
+RspStruct *HAL_SDMMC_CMDReq(uint8_t u8Slot, uint8_t u8Cmd, uint32_t u32Arg, SDMMCRspEmType eRspType)
+{
+	IPEmType eIP = EV_IP_FCIE1;
+	//RspErrEmType eErr = EV_STS_OK;
+	RspStruct * eRspSt;
+
+	// pr_sd_main("_[sdmmc_%u] CMD_%u (0x%08X)", u8Slot, u8Cmd, u32Arg);
+
+	Hal_SDMMC_SetCmdToken(eIP, u8Cmd, u32Arg);
+	Hal_SDMMC_SendCmdAndWaitProcess(eIP, EV_EMP, EV_CMDRSP, eRspType, TRUE);
+	eRspSt = Hal_SDMMC_GetRspToken(eIP);
+
+	// pr_sd_main("=> (Err: 0x%04X)\n", (uint16_t)eRspSt->eErrCode);
+
+	return eRspSt;
 }
 
 
