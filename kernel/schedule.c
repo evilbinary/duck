@@ -13,7 +13,8 @@ u32 schedule_get_ticks() {
   return timer_ticks[cpu];
 }
 
-void schedule_state(int cpu) {
+int schedule_state(int cpu) {
+  int count=0;
   thread_t* v = thread_head();
   for (; v != NULL; v = v->next) {
     if (v->state == THREAD_SLEEP) {
@@ -22,8 +23,11 @@ void schedule_state(int cpu) {
       if (v->sleep_counter <= 0) {
         thread_wake(v);
       }
+    }else if(v->state==THREAD_RUNNING){
+      count++;
     }
   }
+  return count;
 }
 
 thread_t* schedule_next(int cpu) {
@@ -89,17 +93,23 @@ void schedule_sleep(u32 nsec) {
 
 void* do_schedule(interrupt_context_t* ic) {
   int cpu = cpu_get_id();
-  thread_t* next_thread = NULL;
   thread_t* current_thread = thread_current();
+  thread_t* next_thread = current_thread;
+
   if (current_thread == NULL) {
     log_debug("schedule current is null\n");
     return NULL;
   }
-  schedule_state(cpu);
-  next_thread = schedule_next(cpu);
-  if (next_thread == NULL) {
-    log_debug("schedule error next\n");
-    return NULL;
+  
+  int count=schedule_state(cpu);
+
+  if (timer_ticks[cpu] % (count*10) == 1) {
+    next_thread = schedule_next(cpu);
+
+    if (next_thread == NULL) {
+      log_debug("schedule error next\n");
+      return NULL;
+    }
   }
 
   current_thread->counter++;
