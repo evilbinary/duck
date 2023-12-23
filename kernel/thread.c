@@ -76,6 +76,7 @@ void thread_init_default(thread_t* thread, u32 level, u32* entry, void* data) {
   thread->fd_number = 0;
   thread->data = data;
   thread->mem = 0;
+  thread->ticks = 0;
 }
 
 thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
@@ -140,7 +141,7 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   thread_t* copy = kmalloc(sizeof(thread_t), KERNEL_TYPE);
   kmemset(copy, 0, sizeof(thread_t));
   kmemmove(copy, thread, sizeof(thread_t));
-  copy->info=NULL;
+  copy->info = NULL;
 
   log_debug("thread init default\n");
 
@@ -150,10 +151,11 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   // copy->name = kmalloc(kstrlen(thread->name), KERNEL_TYPE);
   // kstrcpy(copy->name, thread->name);
   copy->name = thread->name;
-  copy->counter = 0;
+  copy->counter = thread->counter;
   copy->fault_count = 0;
   copy->sleep_counter = 0;
   copy->dump_count = 0;
+  copy->ticks = 0;
 
   // context init
   context_t* ctx = kmalloc(sizeof(context_t), KERNEL_TYPE);
@@ -289,6 +291,7 @@ void thread_fill_fd(thread_t* thread) {
 void thread_sleep(thread_t* thread, u32 count) {
   thread->state = THREAD_SLEEP;
   thread->sleep_counter = count;
+  thread->counter += count;
 }
 
 void thread_wait(thread_t* thread) {
@@ -642,9 +645,9 @@ void thread_dumps() {
                         "waitting", "sleep",   "unkown"};
   char* str = "unkown";
 
-  int ticks=schedule_get_ticks();
-  log_debug("kernel ticks: %d\n",ticks);
-  
+  int ticks = schedule_get_ticks();
+  log_debug("kernel ticks: %d\n", ticks);
+
   kprintf(
       "id   pid  name           state     cpu  count  "
       "  vm   pm   nstack  file  sleep  level\n");

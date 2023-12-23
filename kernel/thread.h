@@ -132,6 +132,7 @@ typedef struct thread {
   u8* name;
   int priority;
   int counter;
+  u32 ticks;
   int state;
   int sleep_counter;
   struct thread* next;

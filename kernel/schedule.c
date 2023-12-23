@@ -16,14 +16,11 @@ u32 schedule_get_ticks() {
 void schedule_state(int cpu) {
   thread_t* v = thread_head();
   for (; v != NULL; v = v->next) {
-    if (v->sleep_counter <= 0 && v->state != THREAD_STOPPED) {
-      thread_wake(v);
-    }
     if (v->state == THREAD_SLEEP) {
       u32 ticks = timer_ticks[cpu];
-      v->sleep_counter -= ticks - v->counter;
+      v->sleep_counter--;
       if (v->sleep_counter <= 0) {
-        v->sleep_counter = 0;
+        thread_wake(v);
       }
     }
   }
@@ -31,25 +28,18 @@ void schedule_state(int cpu) {
 
 thread_t* schedule_next(int cpu) {
   thread_t* current = thread_current();
-  thread_t* next = NULL;
   thread_t* v = thread_head();
+  thread_t* next = v;
   // find next priority
-  // if(current_thread->counter<0){
-  //   current_thread->counter=0;
-  // }
   for (; v != NULL; v = v->next) {
-    if (v == current) continue;
-    if (v->state != THREAD_RUNNING) continue;
-    if (next == NULL) {
-      next = v;
-    } else if (v->counter <= next->counter) {
+    if (v->state != THREAD_RUNNING) {
+      continue;
+    }
+    if (v->counter <= next->counter) {
       next = v;
     }
   }
-  if (next == NULL) {
-    next = thread_head();
-  }
-  next->counter++;
+
   return next;
 }
 
@@ -111,9 +101,13 @@ void* do_schedule(interrupt_context_t* ic) {
     log_debug("schedule error next\n");
     return NULL;
   }
+
+  current_thread->counter++;
+  current_thread->ticks = timer_ticks[cpu];
   timer_ticks[cpu]++;
 
   if (next_thread->id >= 0) {
+    // log_debug("next tid %d\n",next_thread->id);
     //   int i = 0;
     // log_debug("next tid %d ksp %x ksp->pc %x ic->pc %x inst:%x\n",
     //           next_thread->id, next_thread->ctx->ksp,

@@ -20,7 +20,10 @@ void do_kernel_thread(void) {
     if (i % 4 == 0) {
       i = 0;
     }
-    cpu_wait();
+    // log_debug("count=%d\n",count);
+    // test_fb(count);
+    schedule_sleep(1000 * 1000 * 10000);
+    // cpu_wait();
   }
 }
 
@@ -32,6 +35,6 @@ void do_monitor_thread(void) {
     if (i % 4 == 0) {
       i = 0;
     }
-    cpu_wait();
+    // cpu_wait();
   }
 }
