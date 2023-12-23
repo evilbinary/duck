@@ -511,6 +511,10 @@ void fat_init(void) {
                      sd_raw_write_interval, 0);
 
   if (!partition) {
+    partition = partition_open(sd_raw_read, sd_raw_read_interval, sd_raw_write,
+                               sd_raw_write_interval, -1);
+  }
+  if (!partition) {
     log_error("open partition error\n");
     return;
   }
