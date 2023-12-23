@@ -63,7 +63,7 @@ int bcm2836_init(vga_device_t* vga) {
   u32 fb_size = mailbuffer[24];
 
   vga->frambuffer = fb_addr;
-  vga->framebuffer_length = fb_size;
+  vga->framebuffer_length = fb_size*8;
 
   return 0;
 }
@@ -116,7 +116,7 @@ int gpu_init_mode(vga_device_t* vga, int mode) {
     return;
   }
   log_debug("map fb start %x %x\n", addr, addr);
-  for (int i = 0; i < vga->framebuffer_length * 8 / PAGE_SIZE; i++) {
+  for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
     page_map(addr, addr, 0);
     addr += 0x1000;
   }

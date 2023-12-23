@@ -7,45 +7,13 @@
 #include "kernel/kernel.h"
 #include "vga/vga.h"
 
-#define USE_COPY_BUFFER 1
-
-static inline uint8_t rgb2y(uint8_t *rgb) {
-  // return(((257 * rgb[0])/1000) + ((504 * rgb[1])/1000) + ((98 * rgb[2])/1000)
-  // + 16);
-  uint32_t b = rgb[0];
-  uint32_t g = rgb[1];
-  uint32_t r = rgb[2];
-  return (306 * r + 601 * g + 117 * b) >> 10;
-}
-
-static inline void rgb2uv(uint8_t *rgb, uint8_t *uv) {
-  uint32_t b = rgb[0];
-  uint32_t g = rgb[1];
-  uint32_t r = rgb[2];
-  uv[0] = ((446 * b - 150 * r - 296 * g) / 1024) + 0x7F;
-  uv[1] = ((630 * r - 527 * g - 102 * b) / 1024) + 0x7F;
-}
-
-int rgb2nv12(uint8_t *out, uint32_t *in, int w, int h) {
-  uint8_t *y = out;
-  uint8_t *uv = y + w * h;
-  uint32_t *rgb = (in + w * h);
-
-  for (int i = 0; i < w; i++) {
-    for (int j = 0; j < h; j++) {
-      *y = rgb2y((uint8_t *)rgb);
-      y++;
-      rgb--;
-    }
-  }
-
-  return 0;
-}
+// #define USE_COPY_BUFFER 1
 
 void ssd202d_flip_screen(vga_device_t *vga, u32 index) {
   // vga->framebuffer_index = index;
   // kprintf("flip %d %d %d\n",index,vga->width,vga->height);
-  rgb2nv12(vga->pframbuffer, vga->frambuffer, vga->width, vga->height);
+  // rgb2nv12(vga->pframbuffer, vga->frambuffer, vga->width, vga->height);
+  kmemcpy(vga->pframbuffer,vga->frambuffer,vga->width*vga->height );
 }
 
 int ssd202_lcd_init(vga_device_t *vga) {
@@ -55,9 +23,9 @@ int ssd202_lcd_init(vga_device_t *vga) {
 #ifdef USE_COPY_BUFFER
   vga->bpp = 24;
   vga->flip_buffer = ssd202d_flip_screen;
-  paddr =kmalloc(vga->framebuffer_length, DEVICE_TYPE);
-  addr = vga->frambuffer ;
-  
+  paddr = kmalloc(vga->framebuffer_length, DEVICE_TYPE);
+  addr = vga->frambuffer;
+
   for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
     page_map(addr, paddr, PAGE_USR);
     addr += 0x1000;
@@ -82,6 +50,29 @@ int ssd202_lcd_init(vga_device_t *vga) {
   // }
 
   return 0;
+}
+
+
+
+void test_fb(int count) {
+  int ysta = 0;
+  int xsta = 0;
+  int yend = 480;
+  int xend = 640;
+  u32 color;
+  u8 fb=0xfb000000;
+  u8 pfb=0x27c00000;
+
+  u8 *p = fb;
+  for (int i = ysta; i < yend; i++) {
+    for (int j = xsta; j < xend; j++) {
+      *p++ = color;
+    }
+  }
+
+  // rgb2nv12(pfb, fb, xend, yend);
+
+  log_debug("fps %d\n", count);
 }
 
 int gpu_init_mode(vga_device_t *vga, int mode) {
@@ -128,7 +119,7 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
   vga->pframbuffer = 0x27c00000;
   vga->frambuffer = 0xfb000000;
 
-  vga->framebuffer_length = vga->width * vga->height * vga->bpp/2;
+  vga->framebuffer_length = vga->width * vga->height * vga->bpp / 2;
 
   ssd202_lcd_init(vga);
 

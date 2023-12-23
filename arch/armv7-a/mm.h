@@ -53,7 +53,7 @@
 
 #define PAGE_SYS   (L2_TEXT_1|L2_CB) //系统级
 #define PAGE_USR   (L2_TEXT_1|L2_CB) //用户级
-#define PAGE_DEV   (L2_TEXT_0|L2_NCNB) //设备级
+#define PAGE_DEV   (L2_TEXT_0|L2_NCB) //设备级
 
 
 

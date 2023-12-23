@@ -20,7 +20,7 @@ u32 recycle_head_thread_count = 0;
 u32 thread_ids = 0;
 lock_t thread_lock;
 
-#define log_debug
+// #define log_debug
 // #define DEBUG 1
 
 void thread_init() { lock_init(&thread_lock); }
@@ -641,6 +641,10 @@ void thread_dumps() {
   char* state_str[7] = {"create",   "running", "runnable", "stopped",
                         "waitting", "sleep",   "unkown"};
   char* str = "unkown";
+
+  int ticks=schedule_get_ticks();
+  log_debug("kernel ticks: %d\n",ticks);
+  
   kprintf(
       "id   pid  name           state     cpu  count  "
       "  vm   pm   nstack  file  sleep  level\n");

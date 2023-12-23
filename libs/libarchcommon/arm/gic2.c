@@ -14,9 +14,7 @@ void gic_init_base(void *cpu_addr, void *dist_addr) {
 
 void *gic_get_base() {
   unsigned val;
-  __asm__ volatile("mrc p15, 4, %0, c15, c0, 0;"
-      : "=r" (val)
-      );
+  asm volatile("mrc p15, 4, %0, c15, c0, 0" : "=r"(val));
   val >>= 15;
   val <<= 15;
   return (void *)val;
@@ -58,14 +56,13 @@ void gic_init(void *base) {
     dp->igroup[i] = 0;
   }
 
-  //enable
-  // dp->ctl = G0_ENABLE;
-  // cp->pm = 0xff;
-  // cp->bp = 0x7;
-  // cp->ctl = G0_ENABLE;
+  // enable
+  //  dp->ctl = G0_ENABLE;
+  //  cp->pm = 0xff;
+  //  cp->bp = 0x7;
+  //  cp->ctl = G0_ENABLE;
 
   kprintf("GIC init end\n");
-
 }
 
 void gic_irq_enable(int irq) {
@@ -98,7 +95,13 @@ void gic_enable(int cpu, int irq) {
   cp->pm = 0xff;
   cp->bp = 0x7;
   cp->ctl = G0_ENABLE;
+}
 
+void gic_irq_priority(u32 cpu,u32 irq,u32 priority){
+  gic_dist_t *gp = gic.dist;
+  
+    // 优先级别设置
+  gp->ipriority[irq] = priority;
 }
 
 void gic_unpend(int irq) {

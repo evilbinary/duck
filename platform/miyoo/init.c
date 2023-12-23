@@ -1,7 +1,7 @@
 #include "arch/arch.h"
 #include "arch/io.h"
-#include "gpio.h"
 #include "gic2.h"
+#include "gpio.h"
 
 #define IRQ_TIMER0 27
 
@@ -31,7 +31,32 @@ void uart_send(unsigned int c) {
   uart_send_char(c);
 }
 
-void platform_init() { io_add_write_channel(uart_send); }
+
+#define REGW16(a,v) 	(*(volatile unsigned short *)(a) = (v))
+#define REGR16(a) 		(*(volatile unsigned short *)(a))
+
+void init_cpu_clock(void) {
+  REGW16(MMIO_BASE + (0x1032A4 << 1), 0x78D4);  // set target freq to LPF high
+  REGW16(MMIO_BASE + (0x1032A6 << 1), 0x0029);
+  REGW16(MMIO_BASE + (0x1032B0 << 1), 0x0001);  // switch to LPF control
+  REGW16(MMIO_BASE + (0x1032AA << 1), 0x0006);  // mu[2:0]
+  REGW16(MMIO_BASE + (0x1032AE << 1), 0x0008);  // lpf_update_cnt[7:0]
+  REGW16(MMIO_BASE + (0x1032B2 << 1), 0x1000);  // from low to high
+  REGW16(MMIO_BASE + (0x1032A8 << 1), 0x0000);  // toggle LPF enable
+  REGW16(MMIO_BASE + (0x1032A8 << 1), 0x0001);
+
+  while (!(REGR16(MMIO_BASE + (0x1032BA << 1))))
+    ;  // polling done
+
+  REGW16(MMIO_BASE + (0x1032A8 << 1), 0x0000);
+  REGW16(MMIO_BASE + (0x1032A0 << 1), 0x78D4);  // store freq to LPF low
+  REGW16(MMIO_BASE + (0x1032A2 << 1), 0x0029);
+}
+
+void platform_init() {
+  io_add_write_channel(uart_send);
+  init_cpu_clock();
+}
 
 void platform_end() {}
 
@@ -47,24 +72,22 @@ void platform_map() {
 
   // mmc
   page_map(0x1f282000, 0x1f282000, L2_NCNB);
-
-
 }
 
 void ipi_enable(int cpu) {}
 
-int timer_count=0;
+int timer_count = 0;
 
 void timer_init(int hz) {
   int cpu = cpu_get_id();
-  kprintf("timer init %d\n",cpu);
+  kprintf("timer init %d\n", cpu);
 
-  int frq=read_cntfrq();
-  kprintf("timer frq %d\n",frq);
-  cntfrq[cpu] = frq/hz;
+  int frq = read_cntfrq();
+  kprintf("timer frq %d\n", frq);
+  cntfrq[cpu] = frq / hz;
 
-  if(cntfrq[cpu]<=0){
-    cntfrq[cpu]=6000000/hz;
+  if (cntfrq[cpu] <= 0) {
+    cntfrq[cpu] = 6000000 / hz;
   }
 
   // cpu_cli();
@@ -75,15 +98,12 @@ void timer_init(int hz) {
   kprintf("val %d\n", val);
   enable_cntv(1);
 
-
-
   gic_init(0);
   gic_enable(0, IRQ_TIMER0);
-
 }
 
 void timer_end() {
-  int irq= gic_irqwho();
+  int irq = gic_irqwho();
   gic_irqack(irq);
   write_cntv_tval(cntfrq[0]);
 }
