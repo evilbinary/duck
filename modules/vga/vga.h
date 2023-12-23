@@ -51,6 +51,7 @@ typedef struct vga_device {
   u32 inited;
   write_pixel_fn write;
   flip_buffer_fn flip_buffer;
+  u32 format;
   u32* priv;
   u32* pframbuffer;
 } vga_device_t;

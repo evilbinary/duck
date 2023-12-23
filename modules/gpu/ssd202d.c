@@ -119,6 +119,8 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
   vga->pframbuffer = 0x27c00000;
   vga->frambuffer = 0xfb000000;
 
+  vga->format =1; //nv12
+
   vga->framebuffer_length = vga->width * vga->height * vga->bpp / 2;
 
   ssd202_lcd_init(vga);
