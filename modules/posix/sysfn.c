@@ -14,6 +14,8 @@
 #include "kernel/thread.h"
 #include "kernel/vfs.h"
 
+static void* syscall_table[SYSCALL_NUMBER] = {0};
+
 // #define log_debug
 
 int sys_print(char* s) {
@@ -201,8 +203,8 @@ void sys_exit(int status) {
   thread_t* current = thread_current();
   thread_exit(current, status);
   // thread_dumps();
-  log_debug("sys exit tid %d %s status %d\n", current->id, current->name,
-            status);
+  // log_debug("sys exit tid %d %s status %d\n", current->id, current->name,
+  //           status);
   // while (current == thread_current()) {
   //   cpu_sti();
   // }
@@ -769,7 +771,7 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
     log_error("getdents64 not found fd %d\n", fd);
     return 0;
   }
-  u32 ret = vreaddir(findfd->data, dir,&findfd->offset, count);
+  u32 ret = vreaddir(findfd->data, dir, &findfd->offset, count);
   return ret;
 }
 
@@ -1106,14 +1108,6 @@ void* sys_thread_addr(void* vaddr) {
   return phy_addr;
 }
 
-int sys_fn_faild(interrupt_context_t* ic) {
-  int call_id = context_fn(ic);
-  log_debug("sys fn faild %x\n", call_id);
-  if (call_id == 0xf0005) {
-    return sys_fn_call(ic, &sys_set_thread_area);
-  }
-}
-
 int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
               const struct timespec* timeout, /* or: uint32_t val2 */
               uint32_t* uaddr2, uint32_t val3) {
@@ -1185,8 +1179,29 @@ int sys_statfs64(const char* filename, struct statfs* stat) {
   return ret;
 }
 
-void sys_fn_init(void** syscall_table) {
-  sys_fn_init_regist_faild(sys_fn_faild);
+int sys_fn_faild_handler(int no,interrupt_context_t* ic) {
+  int call_id = context_fn(ic);
+  log_debug("sys fn faild %x\n", call_id);
+  if (call_id == 0xf0005) {
+    return sys_fn_call(ic, &sys_set_thread_area);
+  }
+}
+
+void sys_fn_call_handler(int no, interrupt_context_t* ic) {
+  void* fn = syscall_table[context_fn(ic)];
+  if (fn != NULL) {
+    // kprintf("syscall fn:%d r0:%x r1:%x r2:%x
+    // r3:%x\n",ic->r7,ic->r0,ic->r1,ic->r2,ic->r3);
+    sys_fn_call((ic), fn);
+    // kprintf(" ret=%x\n",context_ret(ic));
+  } else {
+    log_warn("syscall %d not found\n", context_fn(ic));
+  }
+}
+
+void sys_fn_init() {
+  sys_fn_regist_faild(sys_fn_faild_handler);
+  sys_fn_regist_handler(sys_fn_call_handler);
 
   syscall_table[SYS_READ] = &sys_read;
   syscall_table[SYS_WRITE] = &sys_write;

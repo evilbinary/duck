@@ -21,11 +21,11 @@ void dccmvac(unsigned long mva) {
   asm volatile("mcr p15, 0, %0, c7, c10, 1" : : "r"(mva) : "memory");
 }
 
-void cpu_pmu_enable() {
+void cpu_pmu_enable(int enable) {
   // 使能PMU
-  asm("MCR p15, 0, %0, c9, c12, 0" ::"r"(1));
+  asm("MCR p15, 0, %0, c9, c12, 0" ::"r"(enable));
   // 使能计数器0
-  asm("MCR p15, 0, %0, c9, c12, 1" ::"r"(1));
+  asm("MCR p15, 0, %0, c9, c12, 1" ::"r"(enable));
   // 清零计数器0
   asm("MCR p15, 0, %0, c9, c12, 2" ::"r"(0));
 }
@@ -282,11 +282,11 @@ void cpu_enable_page() {
   // read mmu
   asm("mrc p15, 0, %0, c1, c0, 0" : "=r"(reg) : : "cc");  // SCTLR
   reg |= 0x1;                                             // M enable mmu
-  // reg|=(1<<29);//AFE
-  // reg |= 1 << 28; //TEX remap enable.
+  reg|=(1<<29);//AFE
+  reg |= 1 << 28; //TEX remap enable.
   reg |= 1 << 12;  // Instruction cache enable:
   reg |= 1 << 2;   // Cache enable.
-  // reg |= 1 << 1;   // Alignment check enable.
+  reg |= 1 << 1;   // Alignment check enable.
   reg |= 1 << 11;  // Branch prediction enable
   asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");  // SCTLR
 

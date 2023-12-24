@@ -13,12 +13,15 @@
 #include "config.h"
 
 
-typedef void* (*sys_fn_handler_t)(void** syscall_table);
-typedef int (*sys_fn_handler_fail_t)(void* context);
+typedef int (*sys_fn_handler_fail_t)(int no,void* context);
+typedef int (*sys_fn_handler_t)(int no,void* context);
 
 
 void syscall_init();
-void sys_fn_init_regist(sys_fn_handler_t handler);
 
+void sys_fn_regist_faild(void* fn);
+void sys_fn_regist_handler(void* fn);
+
+void* sys_fn_get_handler();
 
 #endif

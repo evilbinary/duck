@@ -32,7 +32,8 @@ enum {
   DEVICE_SB,
   DEVICE_NET,
   DEVICE_LOG,
-  DEVICE_NULL
+  DEVICE_NULL,
+  DEVICE_TRACE,
 };
 
 enum {

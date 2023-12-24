@@ -8,4 +8,13 @@
 
 #include "kernel/kernel.h"
 
+typedef struct ytrace{
+    sys_fn_handler_t origin_call;
+    int cmd[64];
+
+    int counts[SYSCALL_NUMBER];
+    int times[SYSCALL_NUMBER];
+    int total_count;//所有调用次数
+}ytrace_t;
+
 #endif

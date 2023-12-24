@@ -128,6 +128,18 @@ void cd_command(char* cmd, int count) {
   print_string(ptr);
   syscall1(SYS_CHDIR, ptr);
 }
+void trace_command(char* cmd, int count) {
+  char buf[64];
+  cmd[count] = 0;
+  char* argv[64];
+  int i = 0;
+  const char* split = " ";
+  char* ptr = kstrtok(cmd, split);
+  ptr = kstrtok(NULL, split);
+  print_string(ptr);
+  syscall1(SYS_CHDIR, ptr);
+}
+
 
 void pwd_command() {
   char buf[128];
@@ -149,6 +161,8 @@ void do_shell_cmd(char* cmd, int count, char** env) {
     ps_command();
   } else if (kstrncmp(cmd, "mem", 3) == 0) {
     mem_info_command();
+  } else if (kstrncmp(cmd, "trace", 5) == 0) {
+    trace_command(cmd, count);
   } else {
     int ret = do_exec(cmd, count, env);
     if (ret < 0) {

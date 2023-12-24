@@ -62,16 +62,16 @@ void platform_end() {}
 
 void platform_map() {
   // map base
-  page_map(MMIO_BASE, MMIO_BASE, 0);
-  page_map(MS_BASE_REG_UART0_PA, MS_BASE_REG_UART0_PA, L2_NCNB);
+  page_map(MMIO_BASE, MMIO_BASE, PAGE_DEV);
+  page_map(MS_BASE_REG_UART0_PA, MS_BASE_REG_UART0_PA, PAGE_DEV);
 
   // map gic
-  page_map(0x16000000, 0x16000000, L2_NCNB);
-  page_map(0x16002000, 0x16002000, L2_NCNB);
-  page_map(0x16001000, 0x16001000, L2_NCNB);
+  page_map(0x16000000, 0x16000000, PAGE_DEV);
+  page_map(0x16002000, 0x16002000, PAGE_DEV);
+  page_map(0x16001000, 0x16001000, PAGE_DEV);
 
   // mmc
-  page_map(0x1f282000, 0x1f282000, L2_NCNB);
+  page_map(0x1f282000, 0x1f282000, PAGE_DEV);
 }
 
 void ipi_enable(int cpu) {}

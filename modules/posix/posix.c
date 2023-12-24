@@ -6,10 +6,12 @@
 #include "kernel/kernel.h"
 #include "sysfn.h"
 
+
 int posix_init(void) {
   log_info("posix init\n");
 
-  sys_fn_init_regist(sys_fn_init);
+  sys_fn_init();
+
 
   return 0;
 }

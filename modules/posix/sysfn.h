@@ -368,6 +368,6 @@ int sys_stat(const char* path, struct stat* buf);
 int sys_fstat(int fd, struct stat* buf);
 int sys_self(void* t);
 
-void sys_fn_init(void** syscall_table);
+void sys_fn_init();
 
 #endif
