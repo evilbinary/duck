@@ -272,11 +272,7 @@ vnode_t *vfs_create_node(u8 *name, u32 flags) {
   node->name = kmalloc(kstrlen(name), KERNEL_TYPE);
   kstrcpy(node->name, name);
   node->flags = flags;
-  if (flags == V_FILE) {
-    node->op = &default_operator;
-  } else {
-    node->op = NULL;
-  }
+  node->op = &default_operator;
 
   node->child = NULL;
   node->child_number = 0;
