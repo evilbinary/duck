@@ -189,3 +189,9 @@ interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
 
   return ic;
 }
+
+void context_switch_page(context_t* context, u32 page_dir) {
+
+  write_ttbr0(page_dir);
+  dmb();
+}

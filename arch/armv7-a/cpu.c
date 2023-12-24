@@ -100,7 +100,7 @@ static inline void write_ttbcr(u32 val) {
   asm volatile("mcr p15, 0, %0, c2, c0, 2" : : "r"(val) : "memory");
 }
 
-static inline void write_ttbr0(u32 val) {
+void write_ttbr0(u32 val) {
   asm volatile("mcr p15, 0, %0, c2, c0, 0" : : "r"(val) : "memory");
 }
 

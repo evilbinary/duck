@@ -110,7 +110,7 @@ typedef struct context_t {
 
 #define interrupt_entering(VEC) interrupt_entering_code(VEC, 0, 0)
 
-#define context_switch_page(ctx,page_dir) cpu_set_page(page_dir)
+// #define context_switch_page(ctx,page_dir) cpu_set_page(page_dir)
 
 #define context_fn(context) context->r7
 #define context_ret(context) context->r0
