@@ -138,7 +138,9 @@ void* do_schedule(interrupt_context_t* ic) {
       context_switch(ic, current_thread->ctx, next_thread->ctx);
   thread_set_current(next_thread);
 #ifdef VM_ENABLE
-  context_switch_page(next_thread->ctx, next_thread->vm->upage);
+  if (current_thread != next_thread) {
+    context_switch_page(next_thread->ctx, next_thread->vm->upage);
+  }
 #endif
   timer_end();
   return next_ic;

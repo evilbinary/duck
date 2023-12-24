@@ -60,7 +60,7 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
     kprintf("not suppport level %d\n", level);
   }
 
-  interrupt_context_t* ic = (u32)ksp_top - sizeof(interrupt_context_t)*2 ;
+  interrupt_context_t* ic = (u32)ksp_top - sizeof(interrupt_context_t) * 2;
 
   kmemset(ic, 0, sizeof(interrupt_context_t));
   ic->lr = entry;  // r14
@@ -178,7 +178,7 @@ int context_clone(context_t* des, context_t* src) {
 }
 
 interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
-                    context_t* next) {
+                                    context_t* next) {
   if (ic == NULL || current == next) {
     return ic;
   }
@@ -190,8 +190,12 @@ interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
   return ic;
 }
 
-void context_switch_page(context_t* context, u32 page_dir) {
-
-  write_ttbr0(page_dir);
+void context_switch_page(context_t* context, u32 page_table) {
+  write_ttbr0(page_table);
+  cpu_invalid_tlb();
   dmb();
+
+  // cpu_set_page(page_dir);
+  // // write_ttbr0(page_dir);
+  // dmb();
 }
