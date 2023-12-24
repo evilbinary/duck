@@ -49,8 +49,10 @@ u32 ytrace_hook_call(int no, interrupt_context_t* ic) {
   int count = ytrace->cmd[1];
   int print = ytrace->cmd[2];
 
-  if (current->id == id) {
+  if (current->id == id || id<=-1) {
     u32 ticks = cpu_cyclecount();
+    log_debug("ticks =>%d\n",ticks);
+
     ytrace->origin_call(no, ic);
     u32 ticks_end = cpu_cyclecount();
 
@@ -97,7 +99,7 @@ void ytrace_hook_init(ytrace_t* t, int* buf) {
 
   sys_fn_regist_handler(&ytrace_hook_call);
 
-  cpu_pmu_enable(1);
+  cpu_pmu_enable(1,0 );
   t->status = 1;
 }
 

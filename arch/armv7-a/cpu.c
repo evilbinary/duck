@@ -21,13 +21,13 @@ void dccmvac(unsigned long mva) {
   asm volatile("mcr p15, 0, %0, c7, c10, 1" : : "r"(mva) : "memory");
 }
 
-void cpu_pmu_enable(int enable) {
+void cpu_pmu_enable(int enable,int timer) {
   // 使能PMU
   asm("MCR p15, 0, %0, c9, c12, 0" ::"r"(enable));
   // 使能计数器0
-  asm("MCR p15, 0, %0, c9, c12, 1" ::"r"(enable));
+  asm("MCR p15, 0, %0, c9, c12, 1" ::"r"(timer));
   // 清零计数器0
-  asm("MCR p15, 0, %0, c9, c12, 2" ::"r"(0));
+  asm("MCR p15, 0, %0, c9, c12, 2" ::"r"(timer));
 }
 
 unsigned int cpu_cyclecount(void) {
@@ -41,8 +41,8 @@ void cpu_icache_disable() { asm("mcr  p15, #0, r0, c7, c7, 0\n"); }
 
 void cpu_invalid_tlb() {
   asm volatile("mcr p15, 0, %0, c8, c7, 0" : : "r"(0));
-  asm volatile("mcr p15, 0, %0, c8, c6, 0" : : "r"(0));
-  asm volatile("mcr p15, 0, %0, c8, c5, 0" : : "r"(0));
+  // asm volatile("mcr p15, 0, %0, c8, c6, 0" : : "r"(0));
+  // asm volatile("mcr p15, 0, %0, c8, c5, 0" : : "r"(0));
   asm volatile(
       "isb\n"
       "dsb\n");
