@@ -15,6 +15,8 @@ typedef struct ytrace{
     int counts[SYSCALL_NUMBER];
     int times[SYSCALL_NUMBER];
     int total_count;//所有调用次数
+
+    int status;
 }ytrace_t;
 
 #endif

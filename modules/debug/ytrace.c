@@ -21,7 +21,7 @@ voperator_t trace_operator = {.ioctl = device_ioctl,
 static void print_trace(ytrace_t* t) {
   for (int i = 0; i < SYSCALL_NUMBER; i++) {
     if (t->counts[i] > 0) {
-      kprintf("sys no %d count %d times %d avg\n", t->counts[i], t->times[i],
+      kprintf("sys no %d count %d times %d avg %d\n",i, t->counts[i], t->times[i],
               t->times[i] / t->counts[i]);
     }
   }
@@ -59,10 +59,11 @@ u32 ytrace_hook_call(int no, interrupt_context_t* ic) {
       ytrace->times[no] += diff;
     }
     ytrace->counts[no]++;
+    ytrace->total_count++;
 
     if (print == 1) {
 #ifdef ARMV7_A
-      kprintf("sys %d args: %x %x %x %x %x\n", no, ic->r0, ic->r1, ic->r2,
+      kprintf("sys %3d args: %x %x %x %x %x\n", no, ic->r0, ic->r1, ic->r2,
               ic->r3, ic->r4);
 #else
       kprintf("sys %d \n", no);
@@ -70,7 +71,7 @@ u32 ytrace_hook_call(int no, interrupt_context_t* ic) {
     }
 
     if (ytrace->total_count > count) {
-      log_debug("count %d limit end", count);
+      log_debug("count limit %d end\n", count);
       ytrace_hook_end(ytrace);
     }
 
@@ -85,8 +86,11 @@ u32 ytrace_hook_call(int no, interrupt_context_t* ic) {
 
 void ytrace_hook_init(ytrace_t* t, int* buf) {
   // buf ==> 0 tid 1 count
-
-  log_debug("start ytrace for tid %d count %d\n", buf[0], buf[1]);
+  if (t->status == 1) {
+    ytrace_hook_end(t);
+  }
+  log_debug("start ytrace for tid %d count %d print %d\n", buf[0], buf[1],
+            buf[2]);
   // hook syscall
   t->origin_call = sys_fn_get_handler();
   kmemcpy(t->cmd, buf, 64);
@@ -94,6 +98,7 @@ void ytrace_hook_init(ytrace_t* t, int* buf) {
   sys_fn_regist_handler(&ytrace_hook_call);
 
   cpu_pmu_enable(1);
+  t->status = 1;
 }
 
 void ytrace_hook_end(ytrace_t* t) {
@@ -101,6 +106,13 @@ void ytrace_hook_end(ytrace_t* t) {
   cpu_pmu_enable(0);
 
   print_trace(t);
+  t->status = 0;
+  for (int i = 0; i < SYSCALL_NUMBER; i++) {
+    t->counts[i] = 0;
+    t->times[i] = 0;
+    t->total_count = 0;
+  }
+
   log_debug("end ytrace\n");
 }
 
@@ -119,7 +131,6 @@ static size_t ioctl(device_t* dev, u32 cmd, void* args) {
 }
 
 int ytrace_init(void) {
-  kprintf("ytrace init\n");
 
   device_t* dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
   dev->name = "ytrace";
