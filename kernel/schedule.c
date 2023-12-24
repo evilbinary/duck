@@ -14,7 +14,7 @@ u32 schedule_get_ticks() {
 }
 
 int schedule_state(int cpu) {
-  int count=0;
+  int count = 0;
   thread_t* v = thread_head();
   for (; v != NULL; v = v->next) {
     if (v->state == THREAD_SLEEP) {
@@ -23,7 +23,7 @@ int schedule_state(int cpu) {
       if (v->sleep_counter <= 0) {
         thread_wake(v);
       }
-    }else if(v->state==THREAD_RUNNING){
+    } else if (v->state == THREAD_RUNNING) {
       count++;
     }
   }
@@ -72,7 +72,9 @@ void schedule_switch() {
       context_switch(ic, current_thread->ctx, next_thread->ctx);
 
 #ifdef VM_ENABLE
-  context_switch_page(next_thread->ctx, next_thread->vm->upage);
+  if (current_thread != next_thread) {
+    context_switch_page(next_thread->ctx, next_thread->vm->upage);
+  }
 #endif
   interrupt_exit_context(next_ic);
 }
@@ -100,10 +102,10 @@ void* do_schedule(interrupt_context_t* ic) {
     log_debug("schedule current is null\n");
     return NULL;
   }
-  
-  int count=schedule_state(cpu);
 
-  if (timer_ticks[cpu] % (count*10) == 1) {
+  int count = schedule_state(cpu);
+
+  if (timer_ticks[cpu] % (count * 10) == 1) {
     next_thread = schedule_next(cpu);
 
     if (next_thread == NULL) {

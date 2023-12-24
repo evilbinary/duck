@@ -29,7 +29,7 @@
 #include "ssd202d_sdmmc.h"
 
 
-
+#define printf kprintf
 #define prtstring(s)	kprintf(s)
 #define prtUInt(v) 		kprintf("%u", v)
 #define prtU8(v)		kprintf("0x%02X", v)
