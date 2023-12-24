@@ -13,5 +13,6 @@ add_deps(
 
 
 add_files(
-    'trace.c'
+    'trace.c',
+    'ytrace.c',
 )

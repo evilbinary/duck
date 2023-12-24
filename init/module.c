@@ -114,6 +114,10 @@ void modules_init(void) {
   REGISTER_MODULE(gaga);
 #endif
 
+#ifdef DEBUG_MODULE
+  REGISTER_MODULE(ytrace);
+#endif
+
   log_info("module regist end\n");
 
   module_run_all();

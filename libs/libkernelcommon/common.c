@@ -5,6 +5,13 @@
  ********************************************************************/
 #include "common.h"
 
+#define is_digit(c) ((c) >= '0' && (c) <= '9')
+
+int katoi(const char **s) {
+  int i = 0;
+  while (is_digit(**s)) i = i * 10 + *((*s)++) - '0';
+  return i;
+}
 
 void kitoa(char* buf, int base, int d) {
   char* p = buf;

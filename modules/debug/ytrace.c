@@ -9,8 +9,29 @@ static void* syscall_hook_table[SYSCALL_NUMBER] = {0};
 void** syscall_origin_table = NULL;
 ytrace_t* ytrace = NULL;
 
+voperator_t trace_operator = {.ioctl = device_ioctl,
+                              .close = device_close,
+                              .open = device_open,
+                              .read = device_read,
+                              .write = device_write,
+                              .find = vfs_find,
+                              .mount = vfs_mount,
+                              .readdir = vfs_readdir};
+
+static void print_trace(ytrace_t* t) {
+  for (int i = 0; i < SYSCALL_NUMBER; i++) {
+    if (t->counts[i] > 0) {
+      kprintf("sys no %d count %d times %d avg\n", t->counts[i], t->times[i],
+              t->times[i] / t->counts[i]);
+    }
+  }
+}
+
 static size_t read(device_t* dev, void* buf, size_t len) {
   int ret = -1;
+
+  log_debug("print read\n");
+  print_trace(dev->data);
 
   return ret;
 }
@@ -35,16 +56,16 @@ u32 ytrace_hook_call(int no, interrupt_context_t* ic) {
 
     u32 diff = ticks_end - ticks;
     if (diff > 0) {
-      ytrace->times[no] += diff
+      ytrace->times[no] += diff;
     }
     ytrace->counts[no]++;
 
     if (print == 1) {
 #ifdef ARMV7_A
       kprintf("sys %d args: %x %x %x %x %x\n", no, ic->r0, ic->r1, ic->r2,
-              ic->r3, ic->rc)
+              ic->r3, ic->r4);
 #else
-      kprintf("sys %d \n", no)
+      kprintf("sys %d \n", no);
 #endif
     }
 
@@ -53,8 +74,10 @@ u32 ytrace_hook_call(int no, interrupt_context_t* ic) {
       ytrace_hook_end(ytrace);
     }
 
-  } else {
+  } else if (ytrace->origin_call != NULL) {
     ytrace->origin_call(no, ic);
+  } else {
+    log_debug("error ytrace origin call is null\n");
   }
 
   return 0;
@@ -77,20 +100,14 @@ void ytrace_hook_end(ytrace_t* t) {
   sys_fn_regist_handler(t->origin_call);
   cpu_pmu_enable(0);
 
-  for (int i = 0; i < SYSCALL_NUMBER; i++) {
-    if (t->counts[i] > 0) {
-      kprintf("sys no %d count %d times %d avg\n", t->counts[i], t->times[i],
-              t->times[i] / t->counts[i]);
-    }
-  }
-
+  print_trace(t);
   log_debug("end ytrace\n");
 }
 
 static size_t ioctl(device_t* dev, u32 cmd, void* args) {
   u32 ret = 0;
   char* buf = args;
-  ytrace_t* trace = dev;
+  ytrace_t* trace = dev->data;
 
   if (cmd == 1) {
     ytrace_hook_init(trace, args);
@@ -116,8 +133,10 @@ int ytrace_init(void) {
   dev->type = DEVICE_TYPE_CHAR;
   device_add(dev);
 
-  vnode_t* trace = vfs_create_node("trace", V_FILE);
+  vnode_t* trace = vfs_create_node("trace", V_BLOCKDEVICE);
   trace->device = dev;
+  trace->op = &trace_operator;
+
   vfs_mount(NULL, "/dev", trace);
 
   return 0;

@@ -32,7 +32,7 @@ void print_logo() {
 
 void print_promot() { print_string("yiyiya$"); }
 
-void print_help() { print_string("supports help ps cd pwd command\n"); }
+void print_help() { print_string("supports help ps cd pwd trace command\n"); }
 
 void ps_command() { syscall0(SYS_DUMPS); }
 
@@ -129,17 +129,36 @@ void cd_command(char* cmd, int count) {
   syscall1(SYS_CHDIR, ptr);
 }
 void trace_command(char* cmd, int count) {
-  char buf[64];
+  int buf[64];
   cmd[count] = 0;
   char* argv[64];
   int i = 0;
   const char* split = " ";
   char* ptr = kstrtok(cmd, split);
   ptr = kstrtok(NULL, split);
-  print_string(ptr);
-  syscall1(SYS_CHDIR, ptr);
-}
+  if (ptr != NULL) {
+    buf[0] = katoi(&ptr);
+  }
 
+  ptr = kstrtok(NULL, split);
+  if (ptr != NULL) {
+    buf[1] = katoi(&ptr);
+  } else {
+    buf[1] = 300;
+  }
+
+  ptr = kstrtok(NULL, split);
+  if (ptr != NULL) {
+    buf[2] = katoi(&ptr);
+  }
+
+  int trace = syscall2(SYS_OPEN, "/dev/trace", 0);
+  if (trace < 0) {
+    print_string("error open trace\n");
+  }
+
+  syscall3(SYS_IOCTL, trace, 1, buf);
+}
 
 void pwd_command() {
   char buf[128];
@@ -174,7 +193,7 @@ void do_shell_cmd(char* cmd, int count, char** env) {
 }
 
 void sleep() {
-  u32 tv[2] = {0, 500*1000 * 1000};
+  u32 tv[2] = {0, 500 * 1000 * 1000};
   syscall4(SYS_CLOCK_NANOSLEEP, 0, 0, &tv, &tv);
 }
 
@@ -251,7 +270,6 @@ void try_run(char* cmd, char** argv, char** env) {
     }
   }
 }
-
 
 void pre_launch() {
   // must init global for armv7-a
