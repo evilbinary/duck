@@ -51,7 +51,6 @@ u32 ytrace_hook_call(int no, interrupt_context_t* ic) {
 
   if (current->id == id || id<=-1) {
     u32 ticks = cpu_cyclecount();
-    log_debug("ticks =>%d\n",ticks);
 
     ytrace->origin_call(no, ic);
     u32 ticks_end = cpu_cyclecount();
