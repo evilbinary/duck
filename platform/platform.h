@@ -60,6 +60,8 @@
 #define IDT_NUMBER 256
 #define EXCEPTION_NUMBER 32
 
+#define MP_ENABLE 1  //多cpu
+
 
 #else
 

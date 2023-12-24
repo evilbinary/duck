@@ -108,4 +108,6 @@ void timer_end() {
   write_cntv_tval(cntfrq[0]);
 }
 
-void lcpu_send_start(u32 cpu, u32 entry) {}
+void lcpu_send_start(u32 cpu, u32 entry) {
+  gic_send_sgi(cpu,0);
+}

@@ -21,7 +21,7 @@ void dccmvac(unsigned long mva) {
   asm volatile("mcr p15, 0, %0, c7, c10, 1" : : "r"(mva) : "memory");
 }
 
-void cpu_pmu_enable(int enable,int timer) {
+void cpu_pmu_enable(int enable, int timer) {
   // 使能PMU
   asm("MCR p15, 0, %0, c9, c12, 0" ::"r"(enable));
   // 使能计数器0
@@ -40,9 +40,9 @@ unsigned int cpu_cyclecount(void) {
 void cpu_icache_disable() { asm("mcr  p15, #0, r0, c7, c7, 0\n"); }
 
 void cpu_invalid_tlb() {
-  asm volatile("mcr p15, 0, %0, c8, c7, 0" : : "r"(0));
-  // asm volatile("mcr p15, 0, %0, c8, c6, 0" : : "r"(0));
-  // asm volatile("mcr p15, 0, %0, c8, c5, 0" : : "r"(0));
+  asm volatile("mcr p15, 0, %0, c8, c7, 0" : : "r"(0));  // unified tlb
+  asm volatile("mcr p15, 0, %0, c8, c6, 0" : : "r"(0));  // data tlb
+  asm volatile("mcr p15, 0, %0, c8, c5, 0" : : "r"(0));  // instruction tlb
   asm volatile(
       "isb\n"
       "dsb\n");
@@ -51,7 +51,8 @@ void cpu_invalid_tlb() {
 void cp15_invalidate_icache(void) {
   asm volatile(
       "mov r0, #0\n"
-      "mcr p15, 0, r0, c7, c5, 0\n"
+      "mcr p15, 0, r0, c7, c5, 0\n"  // icache all
+      "mcr p15, 0, r0, c7, c5, 6\n"  // branch prediction
       "dsb\n"
       :
       :
@@ -143,6 +144,7 @@ void cpu_set_page(u32 page_table) {
   write_ttbr1(page_table);
   // isb();
   write_ttbcr(TTBCRN_16K);
+  cp15_invalidate_icache();
   cpu_invalid_tlb();
   dmb();
   isb();
@@ -265,34 +267,23 @@ void cache_inv_range(unsigned long start, unsigned long stop) {
   dsb();
 }
 
-void mmu_inv_tlb(void) {
-  __asm__ __volatile__("mcr p15, 0, %0, c8, c7, 0" : : "r"(0));
-  __asm__ __volatile__("mcr p15, 0, %0, c8, c6, 0" : : "r"(0));
-  __asm__ __volatile__("mcr p15, 0, %0, c8, c5, 0" : : "r"(0));
-  dsb();
-  isb();
-}
-
 void cpu_enable_page() {
   cpu_enable_smp_mode();
   cache_inv_range(0, ~0);
-
 
   u32 reg;
   // read mmu
   asm("mrc p15, 0, %0, c1, c0, 0" : "=r"(reg) : : "cc");  // SCTLR
   reg |= 0x1;                                             // M enable mmu
-  reg|=(1<<29);//AFE
-  reg |= 1 << 28; //TEX remap enable.
+  reg |= (1 << 29);                                       // AFE
+  reg |= 1 << 28;                                         // TEX remap enable.
   reg |= 1 << 12;  // Instruction cache enable:
   reg |= 1 << 2;   // Cache enable.
   reg |= 1 << 1;   // Alignment check enable.
   reg |= 1 << 11;  // Branch prediction enable
   asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");  // SCTLR
 
-  mmu_inv_tlb();
-  dsb();
-  isb();
+  cpu_invalid_tlb();
 }
 
 void cpu_init(int cpu) {
@@ -319,7 +310,7 @@ ulong cpu_get_cs(void) {
 
 int cpu_tas(volatile int* addr, int newval) {
   int result = newval;
-  result=__sync_bool_compare_and_swap(addr,newval,result);
+  result = __sync_bool_compare_and_swap(addr, newval, result);
   return result;
 }
 
@@ -376,7 +367,6 @@ int cpu_start_id(u32 id, u32 entry) {
   return 0;
 }
 
-
 u32 read_cntv_tval(void) {
   u32 val;
   asm volatile("mrc p15, 0, %0, c14, c3, 0" : "=r"(val));
@@ -409,39 +399,33 @@ uint64_t read_cntvct(void) {
 }
 
 /*do fast 64bit div constant
-*	because 52 bit timer can provide 23 years cycle loop
-* 	we can do 64bit divided as below：
-* 	x / 6 = x / (4096/682) = x * 682 / 4096 = (x * 682) >> 12
-*   it will save hundreds of cpu cycle
-*/
-static __inline uint64_t fast_div64_6(uint64_t x){
-	return (x*682)>>12;
-}
+ *	because 52 bit timer can provide 23 years cycle loop
+ * 	we can do 64bit divided as below：
+ * 	x / 6 = x / (4096/682) = x * 682 / 4096 = (x * 682) >> 12
+ *   it will save hundreds of cpu cycle
+ */
+static __inline uint64_t fast_div64_6(uint64_t x) { return (x * 682) >> 12; }
 
-static inline uint64_t timer_read_sys_usec(void) { //read microsec
-	return fast_div64_6(read_cntvct());
+static inline uint64_t timer_read_sys_usec(void) {  // read microsec
+  return fast_div64_6(read_cntvct());
 }
 
 void cpu_delay_usec(uint64_t count) {
-	uint64_t s = timer_read_sys_usec();
-	uint64_t t = s + count;
-	while(s < t) {
-		s = timer_read_sys_usec();
-	}
+  uint64_t s = timer_read_sys_usec();
+  uint64_t t = s + count;
+  while (s < t) {
+    s = timer_read_sys_usec();
+  }
 }
 
-void cpu_delay_msec(uint32_t count) {
-	cpu_delay_usec(count*1000);
-}
+void cpu_delay_msec(uint32_t count) { cpu_delay_usec(count * 1000); }
 
 void cpu_delay(int n) {
   // cpu_delay_msec(n);
-  while(n > 0) {
-		n--;
-	}
+  while (n > 0) {
+    n--;
+  }
 }
-
-
 
 // void* syscall0(u32 num) {
 //   int ret;

@@ -13,7 +13,7 @@ void ssd202d_flip_screen(vga_device_t *vga, u32 index) {
   // vga->framebuffer_index = index;
   // kprintf("flip %d %d %d\n",index,vga->width,vga->height);
   // rgb2nv12(vga->pframbuffer, vga->frambuffer, vga->width, vga->height);
-  kmemcpy(vga->pframbuffer,vga->frambuffer,vga->width*vga->height );
+  kmemcpy(vga->pframbuffer, vga->frambuffer, vga->width * vga->height);
 }
 
 int ssd202_lcd_init(vga_device_t *vga) {
@@ -59,11 +59,11 @@ void test_fb(int count) {
   int xsta = 0;
   int yend = 480;
   int xend = 640;
-  u32 color;
-  u8 fb=0xfb000000;
-  u8 pfb=0x27c00000;
+  u32 color=0xff0000;
+  u8 fb = 0xfb000000;
+  u8 pfb = 0x27c00000;
 
-  u8 *p = fb;
+  u8 *p = pfb;
   for (int i = ysta; i < yend; i++) {
     for (int j = xsta; j < xend; j++) {
       *p++ = color;
@@ -119,11 +119,15 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
   vga->pframbuffer = 0x27c00000;
   vga->frambuffer = 0xfb000000;
 
-  vga->format =1; //nv12
+  vga->format = 1;  // nv12
 
   vga->framebuffer_length = vga->width * vga->height * vga->bpp / 2;
 
   ssd202_lcd_init(vga);
+
+  // for(int i=0;;i++){
+  //   test_fb(i);
+  // }
 
   return 0;
 }
