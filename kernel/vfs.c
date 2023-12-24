@@ -65,7 +65,7 @@ u32 vclose(vnode_t *node) {
     return -1;
   }
 }
-u32 vreaddir(vnode_t *node, vdirent_t *dirent, u32* offset, u32 count) {
+u32 vreaddir(vnode_t *node, vdirent_t *dirent, u32 *offset, u32 count) {
   if (node->op->readdir != NULL) {
     if ((node->flags & V_DIRECTORY) == V_DIRECTORY) {
       return node->op->readdir(node, dirent, offset, count);
@@ -238,10 +238,10 @@ void vfs_mount(vnode_t *root, u8 *path, vnode_t *node) {
   }
 }
 
-u32 vfs_readdir(vnode_t *node, vdirent_t *dirent,u32 *offset, u32 count) {
+u32 vfs_readdir(vnode_t *node, vdirent_t *dirent, u32 *offset, u32 count) {
   // todo search int vfs
   if (node->super != NULL) {
-    return node->super->op->readdir(node, dirent,offset, count);
+    return node->super->op->readdir(node, dirent, offset, count);
   }
   return 0;
 }
@@ -272,7 +272,11 @@ vnode_t *vfs_create_node(u8 *name, u32 flags) {
   node->name = kmalloc(kstrlen(name), KERNEL_TYPE);
   kstrcpy(node->name, name);
   node->flags = flags;
-  node->op = &default_operator;
+  if (flags == V_FILE) {
+    node->op = &default_operator;
+  } else {
+    node->op = NULL;
+  }
 
   node->child = NULL;
   node->child_number = 0;
