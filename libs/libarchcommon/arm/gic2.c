@@ -122,5 +122,5 @@ void gic_send_sgi(int cpu, int irq) {
   // 通过 GICD_SGIR Software Generated Interrupt Register软中断
   unsigned int mask = 1 << (cpu & 0xff);
   irq &= 0xf;  // in the range 0-15
-  gic.dist->sgi = mask << 16;
+  gic.dist->sgi = mask << 16 |irq;
 }
