@@ -10,7 +10,10 @@ void exception_regist(u32 vec, interrupt_handler_t handler) {
   exception_handlers[vec] = handler;
 }
 
+u32 exception_lock;
+
 void *exception_process(interrupt_context_t *ic) {
+  acquire(&exception_lock);
   if (ic->no == EX_OTHER) {
     int cpu = cpu_get_id();
     log_debug("exception cpu %d no %d\n", cpu, ic->no);
@@ -29,9 +32,14 @@ void *exception_process(interrupt_context_t *ic) {
   if (exception_handlers[ic->no] != 0) {
     interrupt_handler_t handler = exception_handlers[ic->no];
     if (handler != NULL) {
-      return handler(ic);
+
+      void* ret= handler(ic);
+      release(&exception_lock);
+      return ret;
     }
   }
+  release(&exception_lock);
+
   return NULL;
 }
 

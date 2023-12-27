@@ -35,18 +35,20 @@ u32 read_core_timer_pending(int cpu) {
 }
 
 void timer_init(int hz) {
-  kprintf("timer init\n");
   int cpu = cpu_get_id();
+  kprintf("cpu %d timer init\n",cpu);
 
-  cntfrq[cpu] = read_cntfrq();
-  cntfrq[cpu] = cntfrq[cpu] / hz;
-  kprintf("cntfrq %d\n", cntfrq[cpu]);
-  write_cntv_tval(cntfrq[cpu]);
+  if(cpu==0){
+    cntfrq[cpu] = read_cntfrq();
+    cntfrq[cpu] = cntfrq[cpu] / hz;
+    kprintf("cntfrq %d\n", cntfrq[cpu]);
+    write_cntv_tval(cntfrq[cpu]);
 
-  u32 val = read_cntv_tval();
-  kprintf("val %d\n", val);
-  io_write32(CORE0_TIMER_IRQCNTL + 0x4 * cpu, 0x08);
-  enable_cntv(1);
+    u32 val = read_cntv_tval();
+    kprintf("val %d\n", val);
+    io_write32(CORE0_TIMER_IRQCNTL + 0x4 * cpu, 0x08);
+    enable_cntv(1);
+  }
 }
 
 void timer_end() {

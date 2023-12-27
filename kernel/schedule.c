@@ -6,7 +6,7 @@
 #include "schedule.h"
 
 u32 timer_ticks[MAX_CPU] = {0};
-lock_t schedule_lock;
+u32 schedule_lock;
 
 u32 schedule_get_ticks() {
   int cpu = cpu_get_id();
@@ -147,7 +147,8 @@ void* do_schedule(interrupt_context_t* ic) {
 }
 
 void schedule_init() {
-  // lock_init(&schedule_lock);
+  acquire(&schedule_lock);
   exception_regist(EX_TIMER, do_schedule);
   timer_init(SCHEDULE_FREQUENCY);
+  release(&schedule_lock);
 }

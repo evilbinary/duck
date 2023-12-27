@@ -32,7 +32,7 @@ void ya_alloc_init() {
     // mm_add_block(addr, len);
     u32 kernel_start = boot_info->kernel_base;
     u32 kernel_end = kernel_start + boot_info->kernel_size;
-    kprintf("kernel base %x end %x\n",kernel_start,kernel_end);
+    kprintf("kernel base %x end %x\n", kernel_start, kernel_end);
     if (is_line_intersect(addr, addr + len, kernel_start, kernel_end)) {
       int a1 = addr;
       int a2 = addr + len;
@@ -397,6 +397,7 @@ void mm_init() {
   mmt.alloc_size = 0;
   mmt.last_map_addr = 0;
   mmt.extend_phy_count = 0;
+  mmt.lock = 0;
 
   count = 0;
 
@@ -412,15 +413,21 @@ size_t mm_get_size(void* addr) { return mmt.size(addr); }
 size_t mm_get_align_size(void* addr) { return mmt.size(((void**)addr)[-1]); }
 
 void* mm_alloc(size_t size) {
+  acquire(&mmt.lock);
   void* p = mmt.alloc(size);
   if (p == 0x23e000) {
     int i = 0;
   }
   kmemset(p, 0, size);
+  release(&mmt.lock);
   return p;
 }
 
-void mm_free(void* ptr) { return mmt.free(ptr); }
+void mm_free(void* ptr) {
+  acquire(&mmt.lock);
+  mmt.free(ptr);
+  release(&mmt.lock);
+}
 
 void* mm_alloc_zero_align(size_t size, u32 alignment) {
   void* p1;   // original block
