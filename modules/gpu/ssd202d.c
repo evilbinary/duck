@@ -7,6 +7,27 @@
 #include "kernel/kernel.h"
 #include "vga/vga.h"
 
+#define DSI_REG_BASE        (0x1A2900UL)
+
+#define DSI_PSCTRL 0x1c     //DSI Pixel Stream Control Register
+#define DSI_HSTX_CKL_WC 0x64  //DSI HSTX Clock Low-power Mode Word Count Register
+#define DSI_VACT_NL 0x2C //DSI Vertical Active Register
+#define DSI_PS_WC 0x3fff
+#define DSI_START 0x00
+
+#define PACKED_PS_16BIT_RGB565 (0 << 16)
+#define LOOSELY_PS_18BIT_RGB666 (1 << 16)
+#define PACKED_PS_18BIT_RGB666 (2 << 16)
+#define PACKED_PS_24BIT_RGB888 (3 << 16)
+
+
+#define _PNLBIT(_bit_)          (1 << (_bit_))
+#define PNL_BITS(_bits_, _val_) ((_PNLBIT(((1)?_bits_)+1)-_PNLBIT(((0)?_bits_))) & (_val_<<((0)?_bits_)))
+
+#define REG_DSI_MODE_CON 0x0014                 //DSI Mode Control Register
+#define DSI_MODE_CON_CMD                   PNL_BITS(1:0,0)
+
+#define ARGB_OFFSET 0x20000000;
 // #define USE_COPY_BUFFER 1
 
 void ssd202d_flip_screen(vga_device_t *vga, u32 index) {
@@ -44,22 +65,48 @@ int ssd202_lcd_init(vga_device_t *vga) {
   log_info("fb addr:%x end:%x len:%x\n", vga->frambuffer,
            vga->frambuffer + vga->framebuffer_length, vga->framebuffer_length);
 
-  // u8 *buffer = vga->frambuffer;
-  //   for (int i = 0; i < vga->framebuffer_length / 8; i++) {
-  //     buffer[i] = 0xff;
-  // }
+  // DSI_PSCTRL
+  // u32 p = 0x1F000000 + 0x345200;
+  u32 p=0x1F000000+DSI_REG_BASE;
+  page_map(p, p, PAGE_DEV);
+
+  int vactive = 640;
+  int hactive = 480;
+
+  int ps_wc = hactive * 3/8;
+
+  // io_write32(p + DSI_START, 0);
+
+
+
+  // u32 mode = ps_wc;
+  // mode = io_read32(p + DSI_PSCTRL);
+  // mode |= PACKED_PS_24BIT_RGB888;
+
+  // io_write32(p + DSI_VACT_NL, 1);
+  // io_write32(p + DSI_PSCTRL, mode);
+  // io_write32(p + DSI_HSTX_CKL_WC, ps_wc);
+
+  // io_write32(p+REG_DSI_MODE_CON,DSI_MODE_CON_CMD );
+
+  // io_write32(p + DSI_START, 1);
+
+
+
+  u8 *buffer = vga->frambuffer;
+  for (int i = 0; i < vga->framebuffer_length / 8; i++) {
+    buffer[i] = 0xff0000;
+  }
 
   return 0;
 }
-
-
 
 void test_fb(int count) {
   int ysta = 0;
   int xsta = 0;
   int yend = 480;
   int xend = 640;
-  u32 color=0xff0000;
+  u32 color = 0xff0000;
   u8 fb = 0xfb000000;
   u8 pfb = 0x27c00000;
 
@@ -116,10 +163,12 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
 
   vga->framebuffer_index = 0;
   vga->framebuffer_count = 1;
-  vga->pframbuffer = 0x27c00000;
+  vga->pframbuffer = 0x27c00000+ ARGB_OFFSET;
+
   vga->frambuffer = 0xfb000000;
 
-  vga->format = 1;  // nv12
+  // vga->format = 1;  // nv12
+  vga->format = 0;
 
   vga->framebuffer_length = vga->width * vga->height * vga->bpp / 2;
 
