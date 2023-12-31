@@ -20,6 +20,7 @@ void page_fault_handle(interrupt_context_t *ic) {
   u32 *fault_addr = cpu_get_fault();
   thread_t *current = thread_current();
   if (current != NULL) {
+    current->faults++;
     int mode = context_get_mode(current->ctx);
 #ifdef DEBUG
     log_debug("page fault at %x\n", fault_addr);

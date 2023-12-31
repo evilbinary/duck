@@ -115,7 +115,7 @@ void* do_schedule(interrupt_context_t* ic) {
   }
 
   current_thread->counter++;
-  current_thread->ticks = timer_ticks[cpu];
+  current_thread->ticks++;
   timer_ticks[cpu]++;
 
   if (next_thread->id >= 0) {

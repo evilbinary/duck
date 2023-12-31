@@ -147,6 +147,7 @@ typedef struct thread {
   u32 lock;
   u32 code;
   u32 fault_count;
+  u32 faults;
   vfs_t* vfs;
   u32 level;
   u32 cpu_id;
