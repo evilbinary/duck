@@ -60,7 +60,7 @@ char* argv_p[64];
 void reopen(char* name) {
   int series = syscall2(SYS_OPEN, name, 0);
   if (series <= 0) {
-    print_string("error open series\n");
+    print_string("error open \n");
   }
 
   if (syscall2(SYS_DUP2, series, 1) < 0) {
@@ -80,7 +80,7 @@ int run_exec(char* cmd, char** argv, char** env) {
   int pid = syscall0(SYS_FORK);
   int p = syscall0(SYS_GETPID);
   if (pid == 0) {  // 子进程
-    // reopen( "/dev/log");
+    // reopen("/dev/log");
     syscall3(SYS_EXEC, cmd, argv, env);
     syscall1(SYS_EXIT, 0);
   }
@@ -316,6 +316,7 @@ void pre_launch() {
   //   ;
 #elif defined(ARMV7_A)
 //  try_run("/bin/shell", shell_argv, env_p);
+// try_run("infones", nes_argv, NULL);
 #elif defined(ARMV7)
   // test_lcd();
 #else defined(ARM)

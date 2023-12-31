@@ -118,6 +118,10 @@ void modules_init(void) {
   REGISTER_MODULE(ytrace);
 #endif
 
+#ifdef KEYBOARD_MODULE
+  REGISTER_MODULE(keyboard);
+#endif
+
   log_info("module regist end\n");
 
   module_run_all();

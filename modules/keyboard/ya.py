@@ -13,8 +13,54 @@ add_deps(
 )
 
 
+arch=get_arch()
+arch_type=get_arch_type()
+plat=get_plat()
+
+plat_source={
+    'x86':[
+        'keyboard.c',
+    ],
+    'raspi2':[
+        'bcm2836.c',
+    ],
+    'rk3128':[
+        'rk3128.c'
+    ],
+    'stm32':[
+        'stm32.c'
+    ],
+    'general':[
+        'general.c'
+    ],
+    'miyoo':[
+        'ssd202d.c'
+    ]
+}
+arch_source={
+    'arm':[ 
+        
+    ],
+    'x86': [
+
+    ]
+}
+common_source=[
+
+]
+
+
+source=[]
+
+if arch_source.get(arch_type):
+    source+=arch_source.get(arch_type)
+
+if plat_source.get(plat):
+    source+=plat_source.get(plat)
+
+
 add_files(
-    './*.c'
+    source+common_source
 )
 
 add_includedirs('../')

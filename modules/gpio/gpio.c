@@ -24,6 +24,8 @@ size_t gpio_write(device_t* dev, const void* buf, size_t len) {
 size_t gpio_ioctl(device_t* dev, u32 cmd, void* args) {
   u32 ret = 0;
 
+  gpio_init_device(dev);
+
   return ret;
 }
 
