@@ -1087,10 +1087,10 @@ int sys_thread_dump() {
 }
 
 int sys_kill(pid_t pid, int sig) {
-  // if (pid <= 0) {
-  //   log_error("cannot kill kernel\n");
-  //   return -1;
-  // }
+  if (pid <= 0) {
+    log_error("cannot kill kernel\n");
+    return -1;
+  }
   thread_t* t = thread_find_id(pid);
   if (t == NULL) {
     return -1;
