@@ -30,15 +30,13 @@ static ssd202_gpio_t gpio_table[] = {
 };
 
 void gpio_init_device(device_t *dev) {
-  log_debug("gpio init device ssd202d\n");
+  // log_debug("gpio init device ssd202d\n");
   for (int i = 0; i < 90; i++) {
-    log_debug("init start %d\n", i);
     int addr = ADDR_REG8(gpio_table[i].r_oen);
-
-    log_debug("gpio ssd202d map addr %x\n", addr);
+    // log_debug("gpio ssd202d map addr %x\n", addr);
     page_map(addr, addr, PAGE_DEV);
   }
-  log_debug("gpio init device ssd202d end\n");
+  // log_debug("gpio init device ssd202d end\n");
 }
 
 void gpio_config(u32 gpio, u32 pin, u32 val) {
@@ -55,7 +53,6 @@ void gpio_config(u32 gpio, u32 pin, u32 val) {
     } else {
       REG8(gpio_table[pin].r_out) &= ~gpio_table[pin].m_out;
     }
-    log_debug("4\n");
   }
 }
 
