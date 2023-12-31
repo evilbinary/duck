@@ -36,7 +36,7 @@ thread_t* schedule_next(int cpu) {
   thread_t* next = v;
   // find next priority
   for (; v != NULL; v = v->next) {
-    if (v->state != THREAD_RUNNING) {
+    if (v->state != THREAD_RUNNING || v == next) {
       continue;
     }
     if (v->counter <= next->counter) {
