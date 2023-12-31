@@ -21,13 +21,29 @@ void dccmvac(unsigned long mva) {
   asm volatile("mcr p15, 0, %0, c7, c10, 1" : : "r"(mva) : "memory");
 }
 
-void cpu_pmu_enable(int enable, int timer) {
-  // 使能PMU
-  asm("MCR p15, 0, %0, c9, c12, 0" ::"r"(enable));
-  // 使能计数器0
-  asm("MCR p15, 0, %0, c9, c12, 1" ::"r"(timer));
-  // 清零计数器0
-  asm("MCR p15, 0, %0, c9, c12, 2" ::"r"(timer));
+int cpu_pmu_version() {
+  u32 pmu_id;
+  // asm volatile("MRC p15, 0, %0, c9, c0, 0" : "=r"(pmu_id));
+  // PMU 版本信息
+  return (pmu_id >> 4) & 0xF;
+}
+
+void cpu_pmu_enable(int enable, u32 timer) {
+  if (enable == 1) {
+    // 用户态是否能访问
+    //  asm volatile("mcr p15, 0, %0, c9, c14, 0" ::"r"(1));
+    // 使能PMU
+    asm("MCR p15, 0, %0, c9, c12, 0" ::"r"(enable | 16));
+    // 使能计数器0
+    asm("MCR p15, 0, %0, c9, c12, 1" ::"r"(timer));
+
+  } else if (enable == 0) {
+    asm volatile("mcr p15, 0, %0, c9, c12, 0" ::"r"(0));
+    // 清零计数器0
+    asm("MCR p15, 0, %0, c9, c12, 2" ::"r"(timer));
+    //
+    // asm volatile("mcr p15, 0, %0, c9, c14, 0" :: "r"(0));
+  }
 }
 
 unsigned int cpu_cyclecount(void) {

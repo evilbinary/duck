@@ -89,7 +89,7 @@ void ytrace_hook_init(ytrace_t* t, int* buf) {
   // buf ==> 0 tid 1 count
   if (t->status == 1) {
     ytrace_hook_end(t);
-  }
+  }  
   log_debug("start ytrace for tid %d count %d print %d\n", buf[0], buf[1],
             buf[2]);
   // hook syscall
@@ -98,13 +98,13 @@ void ytrace_hook_init(ytrace_t* t, int* buf) {
 
   sys_fn_regist_handler(&ytrace_hook_call);
 
-  cpu_pmu_enable(1,0 );
+  cpu_pmu_enable(1,0x8000000f);
   t->status = 1;
 }
 
 void ytrace_hook_end(ytrace_t* t) {
   sys_fn_regist_handler(t->origin_call);
-  cpu_pmu_enable(0);
+  cpu_pmu_enable(0,0x8000000f);
 
   print_trace(t);
   t->status = 0;
@@ -150,6 +150,10 @@ int ytrace_init(void) {
   trace->op = &trace_operator;
 
   vfs_mount(NULL, "/dev", trace);
+
+  int version=cpu_pmu_version();
+
+  log_debug("pmu version %d\n",version);
 
   return 0;
 }
