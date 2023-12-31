@@ -134,6 +134,10 @@ vmemory_area_t* vmemory_create_default(u32 koffset) {
     }
     vmemory_area_add(vmm, vmmk);
   }
+  //add dev info
+  vmemory_area_t* vmmdev = vmemory_area_create(0xfb000000, 1024*768*4, MEMORY_DEV);
+  vmemory_area_add(vmm, vmmdev);
+
 
   return vmm;
 }

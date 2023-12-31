@@ -66,21 +66,32 @@ void page_fault_handle(interrupt_context_t *ic) {
     }
     u32 *page = current->vm->upage;
     void *phy = page_v2p(page, fault_addr);
-    if (phy == NULL) {
-      if (area->flags == MEMORY_STACK) {
-        extend_stack(fault_addr, PAGE_SIZE);
-      } else {
-        valloc(fault_addr, PAGE_SIZE);
-      }
 
+    //process
+    if (area->flags == MEMORY_DEV) {
+      if (phy == NULL) {
+        phy = page_v2p(current->vm->kpage, fault_addr);
+      }
+      if (phy != NULL) {
+        page_map_on(current->vm->upage, fault_addr, phy, PAGE_DEV);
+      }
+      return;
     } else {
-      log_error("%s remap memory fault at %x phy: %x\n", current->name,
-                fault_addr, phy);
-      // mmu_dump_page(page, page, 0);
-      context_dump_fault(ic, fault_addr);
-      thread_exit(current, -1);
-      exception_process_error(current, ic, (void *)&page_error_exit);
-      schedule(ic);
+      if (phy == NULL) {
+        if (area->flags == MEMORY_STACK) {
+          extend_stack(fault_addr, PAGE_SIZE);
+        } else {
+          valloc(fault_addr, PAGE_SIZE);
+        }
+      } else {
+        log_error("%s remap memory fault at %x phy: %x\n", current->name,
+                  fault_addr, phy);
+        // mmu_dump_page(page, page, 0);
+        context_dump_fault(ic, fault_addr);
+        thread_exit(current, -1);
+        exception_process_error(current, ic, (void *)&page_error_exit);
+        schedule(ic);
+      }
     }
   } else {
     page_map(fault_addr, fault_addr, PAGE_P | PAGE_USR | PAGE_RWX);
