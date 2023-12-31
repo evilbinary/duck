@@ -62,15 +62,15 @@ struct gpio_pins {
 };
 
 static void init_gpio(void) {
-  log_debug("keyboard pins init\n");
+  // log_debug("keyboard pins init\n");
 
   for (int i = 0; i < 16; i++) {
-    log_debug("keyboard pins config %d\n", i);
+    // log_debug("keyboard pins config %d\n", i);
     gpio_config(0, _pins[i].pin, 1);
-    log_debug("keyboard pins pull %d\n", i);
+    // log_debug("keyboard pins pull %d\n", i);
     gpio_pull(0, _pins[i].pin, !_pins[i].active);
   }
-  log_debug("keyboard pins init end\n");
+  // log_debug("keyboard pins init end\n");
 }
 
 static size_t read(device_t* dev, void* buf, size_t len) {
