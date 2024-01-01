@@ -326,7 +326,7 @@ ulong cpu_get_cs(void) {
 
 int cpu_tas(volatile int* addr, int newval) {
   int result = newval;
-  result = __sync_bool_compare_and_swap(addr, newval, result);
+  result = __sync_val_compare_and_swap(addr, newval, result);
   return result;
 }
 
