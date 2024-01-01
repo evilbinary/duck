@@ -40,20 +40,20 @@ void gpio_init_device(device_t *dev) {
 }
 
 void gpio_config(u32 gpio, u32 pin, u32 val) {
-  // if (pin >= 0 && pin < GPIO_NUMBER) {
-  //   REG8(gpio_table[pin].r_oen) |= (gpio_table[pin].m_oen);
-  // }
-
   if (pin >= 0 && pin < GPIO_NUMBER) {
-    // log_debug("1 %x\n", ADDR_REG8(gpio_table[pin].r_oen));
-
-    REG8(gpio_table[pin].r_oen) &= (~gpio_table[pin].m_oen);
-    if (val) {
-      REG8(gpio_table[pin].r_out) |= gpio_table[pin].m_out;
-    } else {
-      REG8(gpio_table[pin].r_out) &= ~gpio_table[pin].m_out;
-    }
+    REG8(gpio_table[pin].r_oen) |= (gpio_table[pin].m_oen);
   }
+
+  // if (pin >= 0 && pin < GPIO_NUMBER) {
+  //   // log_debug("1 %x\n", ADDR_REG8(gpio_table[pin].r_oen));
+
+  //   REG8(gpio_table[pin].r_oen) &= (~gpio_table[pin].m_oen);
+  //   if (val) {
+  //     REG8(gpio_table[pin].r_out) |= gpio_table[pin].m_out;
+  //   } else {
+  //     REG8(gpio_table[pin].r_out) &= ~gpio_table[pin].m_out;
+  //   }
+  // }
 }
 
 void gpio_pull(u32 gpio, u32 pin, u32 val) {

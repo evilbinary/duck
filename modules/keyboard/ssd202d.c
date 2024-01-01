@@ -13,7 +13,7 @@
 #define KEYBOARD_DATA 0x60
 #define KEYBOARD_STATUS 0x64
 
-#define MAX_CHARCODE_BUFFER 32
+#define MAX_CHARCODE_BUFFER 256
 static u8 scan_code_buffer[MAX_CHARCODE_BUFFER] = {0};
 static u32 scan_code_index = 0;
 
@@ -78,30 +78,58 @@ static size_t read(device_t* dev, void* buf, size_t len) {
 
   char* keys = (char*)buf;
   int key_cnt = 0;
+  u32 scan_code = 0;
 
-  for (int i = 0; i < sizeof(_pins) / sizeof(struct gpio_pins); i++) {
-    int val = gpio_input(_pins[i].pin);
-    // log_debug("pin %d %d\n", i, val);
+  for (int i = 0; i < 16; i++) {
+    int val = gpio_input(0, _pins[i].pin);
+
+    if (scan_code_index > MAX_CHARCODE_BUFFER) {
+      scan_code_index = 0;
+      log_warn("key buffer is full\n");
+    }
 
     if (val == _pins[i].active) {
-      *keys = _pins[i].key;
+      // log_debug("pin %d %d\n", i, val);
+      _pins[i].status = 1;  // down
+      scan_code = _pins[i].key;
       keys++;
       key_cnt++;
-      if (key_cnt >= len) break;
+
+      // if (i <= 3) {
+      //   // 按键互斥
+      //   for (int j = 0; j <= 3; j++) {
+      //     if (i != j && _pins[j].status == 1) {
+      //       _pins[j].status = 0;
+      //       // scan_code_buffer[scan_code_index++] = _pins[j].key;
+      //       scan_code_buffer[scan_code_index++] = _pins[j].key | 0x80;
+      //     }
+      //   }
+      // }
+
+      scan_code_buffer[scan_code_index++] = scan_code;
+    } else if (_pins[i].status == 1) {
+      _pins[i].status = 0;  // up
+      scan_code = _pins[i].key | 0x80;
+
+      keys++;
+      key_cnt++;
+
+      scan_code_buffer[scan_code_index++] = scan_code;
+    } else {
+      _pins[i].status = 0;
     }
   }
 
-  return key_cnt > 0 ? key_cnt : -1;
+  if (scan_code_index > 0) {
+    kstrncpy(buf, &scan_code_buffer[scan_code_index - 1], 1);
+    for (int i = 0; i < scan_code_index; i++) {
+      scan_code_buffer[i] = scan_code_buffer[i + 1];
+    }
+    scan_code_index--;
+    ret = 1;
+  }
 
-  //   if (scan_code_index > 0) {
-  //     kstrncpy(buf, &scan_code_buffer[scan_code_index - 1], 1);
-  //     for (int i = 0; i < scan_code_index; i++) {
-  //       scan_code_buffer[i] = scan_code_buffer[i + 1];
-  //     }
-  //     scan_code_index--;
-  //     ret = 1;
-  //   }
-  //   return ret;
+  return key_cnt > 0 ? key_cnt : -1;
 }
 
 int keyboard_init(void) {
@@ -121,7 +149,7 @@ int keyboard_init(void) {
     stdin->device = device_find(DEVICE_KEYBOARD);
   }
 
-  vnode_t* keyboard = vfs_create_node("keyboard", V_FILE | V_CHARDEVICE);
+  vnode_t* keyboard = vfs_create_node("joystick", V_FILE | V_CHARDEVICE);
   vfs_mount(NULL, "/dev", keyboard);
   keyboard->device = dev;
   keyboard->op = &device_operator;
