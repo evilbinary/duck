@@ -32,9 +32,9 @@ void kernel_init() {
     event_init();
     log_info("kernel init end\n");
   } else {
-    log_info("ap kernel init\n");
+    log_info("ap %d kernel init\n",cpu);
     schedule_init();
-    log_info("ap kernel init end\n");
+    log_info("ap %d kernel init end\n",cpu);
   }
 }
 
