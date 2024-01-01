@@ -105,7 +105,7 @@ int gpu_init_mode(vga_device_t* vga, int mode) {
 
   log_debug("map box %x\n", BCM2835_MAILBOX_BASE & ~0xfff);
   page_map(BCM2835_MAILBOX_BASE & ~0xfff, BCM2835_MAILBOX_BASE & ~0xfff,
-           L2_NCNB);
+           PAGE_DEV);
 
   bcm2836_init(vga);
 
