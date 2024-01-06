@@ -24,7 +24,8 @@ void interrupt_init(int cpu) {
       interrutp_set(i);
     }
   }
-  asm volatile("mcr p15, 0, %0, c12, c0, 0" ::"r"(idt));
+  kmemcpy(0,idt,IDT_NUMBER * 2);
+  kprintf("interrupt init cpu %d end\n", cpu);
 }
 
 void interrupt_regist(u32 vec, interrupt_handler_t handler) {
@@ -37,6 +38,8 @@ void interrutp_set(int i) {
            (IDT_NUMBER - 2) * 4;  // ldr	pc, [pc, #24] 0x24=36=4*8=32+4
   u32 base = (u32)interrutp_handlers[i];
   idt[i + IDT_NUMBER] = base;
+
+  kmemcpy(0+i*4,&idt[i],4);
 }
 
 INTERRUPT_SERVICE

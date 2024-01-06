@@ -6,10 +6,11 @@ STACK_SIZE = 0x200;
 SECTIONS
 {
         /* Code. */
-        __start = .;
         .text K_VIR_ADDR : AT(K_PHY_ADDR)
         {
+                 __start = .;
 		. = ALIGN(PAGE_SIZE);
+                *(.text.boot)
                 *(.text*)
         }
 
@@ -32,8 +33,8 @@ SECTIONS
                 *(.bss*)
         }
         __bss_end = .;
+        
         .stack :  ALIGN(4) {
-                . = 0x6000;
                 _estack = .;
                 . = . + STACK_SIZE;
                 _stack_abt = .;

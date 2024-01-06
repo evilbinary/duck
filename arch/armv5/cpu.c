@@ -184,10 +184,10 @@ void cpu_enable_smp_mode() {
   //   "orr r0, r0, #1 << 6 \n" // Set SMPEN.
   //   "mcr p15, 1, R0, R1, C15"); // Write CPUECTLR.
 
-  asm volatile(
-      "mrc p15, 0, r0, c1, c0, 1\n"
-      "orr r0, r0, #1 << 6\n"
-      "mcr p15, 0, r0, c1, c0, 1\n");
+  // asm volatile(
+  //     "mrc p15, 0, r0, c1, c0, 1\n"
+  //     "orr r0, r0, #1 << 6\n"
+  //     "mcr p15, 0, r0, c1, c0, 1\n");
 }
 
 static void cpu_enable_ca7_smp(void) {
