@@ -48,11 +48,12 @@ typedef u32 (*sys_call_fn)(u32 arg1, u32 arg2, u32 arg3, u32 arg4, u32 arg5,
 #define cpu_sti() asm("cpsie if" : : : "memory", "cc")
 #define cpu_cpl() (cpu_get_cs() & 0x3)
 
-#define isb() asm volatile("isb")
-#define dsb() asm volatile("dsb")
-#define dmb() asm volatile("dmb")
+#define isb()		__asm__ __volatile__ ("" : : : "memory")
+#define dsb()		__asm__ __volatile__ ("mcr p15, 0, %0, c7, c10,  4" : : "r" (0) : "memory")
+#define dmb()		__asm__ __volatile__ ("" : : : "memory")
 
-#define cpu_faa(ptr) __sync_fetch_and_add(ptr, 1)
+#define cpu_faa(ptr) 1 //__sync_fetch_and_add(ptr, 1)
+
 
 #define syscall0(syscall_num)    \
   ({                             \

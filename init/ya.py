@@ -13,9 +13,9 @@ add_deps(
     'platform',
     'archcommon',
     'kernelcommon',
-    'algorithm'
+    'algorithm',
+    'gcc'
 )
-
 add_files(
     'main.c',
     'module.c',

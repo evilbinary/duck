@@ -73,10 +73,10 @@ typedef struct interrupt_context {
   interrupt_exit_context(duck_context);
 
 
-void context_clone(context_t* context, context_t* src, u32* stack0, u32* stack3,
-                   u32* old0, u32* old3);
-void context_init(context_t* context, u32* entry, u32* stack0, u32* stack3,
-                  u32 level);
+int context_clone(context_t* des, context_t* src);
+
+int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
+                 u32 level, int cpu);
 void context_dump(context_t* c);
 
 

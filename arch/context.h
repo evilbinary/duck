@@ -32,6 +32,8 @@
 #include "general/context.h"
 #elif defined(RISCV)
 #include "riscv/context.h"
+#elif defined(DUMMY)
+#include "dummy/context.h"
 #else
     #error "no support"
 #endif
