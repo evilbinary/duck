@@ -62,6 +62,14 @@
 
 #define MP_ENABLE 1  //多cpu
 
+#elif defined(VERSATILEPB)
+#define ISR_TIMER 27
+#define ISR_KEYBOARD 0x21
+#define ISR_SYSCALL 2
+#define ISR_MOUSE 0x2c
+
+#define IDT_NUMBER 256
+#define EXCEPTION_NUMBER 32
 
 #else
 

@@ -15,6 +15,9 @@ extern boot_info_t* boot_info;
 interrupt_handler_t* interrutp_handlers[IDT_NUMBER];
 u32 idt[IDT_NUMBER * 2] __attribute__((aligned(32)));
 
+#define VIC_BASE 0
+// #define VIC_BASE 0xffff0000
+
 void interrupt_init(int cpu) {
   kprintf("interrupt init cpu %d\n", cpu);
   if (cpu == 0) {
@@ -24,7 +27,9 @@ void interrupt_init(int cpu) {
       interrutp_set(i);
     }
   }
-  kmemcpy(0,idt,IDT_NUMBER * 2);
+
+  kmemcpy((void*)VIC_BASE,idt,IDT_NUMBER * 2*4);
+  dsb();
   kprintf("interrupt init cpu %d end\n", cpu);
 }
 
@@ -39,7 +44,8 @@ void interrutp_set(int i) {
   u32 base = (u32)interrutp_handlers[i];
   idt[i + IDT_NUMBER] = base;
 
-  kmemcpy(0+i*4,&idt[i],4);
+  kmemcpy((void*)VIC_BASE,idt,IDT_NUMBER * 2*4);
+  dsb();
 }
 
 INTERRUPT_SERVICE

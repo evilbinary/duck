@@ -2,6 +2,9 @@
 #include "arch/io.h"
 #include "gpio.h"
 
+#define VIC_BASE 0
+// #define VIC_BASE 0xffff0000
+
 void io_write32(uint port, u32 data) { *(u32 *)port = data; }
 
 u32 io_read32(uint port) {
@@ -39,8 +42,14 @@ void platform_init() { io_add_write_channel(uart_send); }
 
 void platform_map() {
   // map base
+  kprintf("platform map\n");
+
   page_map(GPIO_BASE, GPIO_BASE, PAGE_DEV);
   page_map(UART0, UART0, PAGE_DEV);
+  page_map(VIC_BASE, VIC_BASE, PAGE_DEV|PAGE_RWX);
+
+  kprintf("platform map end\n");
+  
 }
 
 void platform_end() {}

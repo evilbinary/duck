@@ -22,16 +22,16 @@
 #define L2_NCB (1 << 2) // 0b01 Write-Back, Write-Allocate
 #define L2_CNB (0 << 2) // 0b10 Write-Through, no Write-Allocate
 
-#define L2_AP_ACCESS (3 << 4) //full access
-#define L2_AP_RW (0 << 9)  // read write any privilege level
-#define L2_AP_RWX (L2_AP_RW|L2_AP_ACCESS)
+#define L2_AP_RW_ALL (3 << 4) //full access
+#define L2_AP_RW_PRIV (1 << 4)  // read write  privilege level
+#define L2_AP_RWX L2_AP_RW_ALL
 
 #define L2_AP_R  0x2
 #define L2_TEXT (7 << 6)
 
 #define L2_TEXT_0 (0 << 6)
-#define L2_TEXT_1 (1 << 6)
-#define L2_TEXT_2 (2 << 6)
+#define L2_TEXT_1 (0 << 6)
+#define L2_TEXT_2 (0 << 6)
 
 
 #define L2_S (1 << 10)   // The Shareable bit
@@ -39,9 +39,9 @@
 #define L2_G (0 << 11)  // The translation is global, meaning the region is available for all processes.
 
 
-#define L1_DESC (L1_PAGE_TABLE | L1_PXN | L1_NS | L1_SBZ | L1_DOMAIN(0))
+#define L1_DESC (L1_PAGE_TABLE | L1_SBZ | L1_DOMAIN(0))
 #define L2_DESC \
-  (L2_XN | L2_SMALL_PAGE | L2_NCNB | L2_AP_ACCESS | L2_AP_RW | L2_S | L2_G)
+  ( L2_SMALL_PAGE | L2_NCNB | L2_AP_RW_ALL )
 
 #define PAGE_P   0
 #define PAGE_R  0
@@ -51,9 +51,9 @@
 #define PAGE_RW_NC   (L2_NCB)
 
 
-#define PAGE_SYS   (L2_TEXT_1|L2_CB) //系统级
-#define PAGE_USR   (L2_TEXT_1|L2_CB) //用户级
-#define PAGE_DEV   (L2_TEXT_0|L2_NCB) //设备级
+#define PAGE_SYS   (L2_TEXT_1|L2_CB|L2_AP_RW_ALL) //系统级
+#define PAGE_USR   (L2_TEXT_1|L2_CB|L2_AP_RW_ALL) //用户级
+#define PAGE_DEV   (L2_TEXT_0|L2_NCB|L2_AP_RW_ALL) //设备级
 
 
 

@@ -149,6 +149,10 @@ void tlbimva(unsigned long mva) {
 }
 
 void cpu_set_page(u32 page_table) {
+  // set all permission
+  // cpu_set_domain(~0x1);
+  // cpu_set_domain(0);
+
   // cpu_invalid_tlb();
   // cp15_invalidate_icache();
 
@@ -164,9 +168,6 @@ void cpu_set_page(u32 page_table) {
   dmb();
   isb();
   dsb();
-  // set all permission
-  // cpu_set_domain(~0);
-  // cpu_set_domain(0);
 }
 
 void cpu_disable_page() {
@@ -290,12 +291,18 @@ void cpu_enable_page() {
   // read mmu
   asm("mrc p15, 0, %0, c1, c0, 0" : "=r"(reg) : : "cc");  // SCTLR
   reg |= 0x1;                                             // M enable mmu
-  reg |= (1 << 29);                                       // AFE
-  reg |= 1 << 28;                                         // TEX remap enable.
-  reg |= 1 << 12;  // Instruction cache enable:
-  reg |= 1 << 2;   // Cache enable.
-  // reg |= 1 << 1;   // Alignment check enable.
-  reg |= 1 << 11;  // Branch prediction enable
+  // reg |= 1 << 1;  // Alignment check enable.
+  reg |= 1 << 2;  // Cache enable.
+  // reg |= 1<<3 ; //enable write buffer.
+  reg |= 1 << 8;  // System protection bit.
+  reg |= 1 << 9;  // ROM protection bit.
+  // reg|= 1<<23; //0 = VMSAv4/v5 and VMSAv6, subpages enabled 1 = VMSAv6,
+  // subpages disabled.
+
+  // reg |= 1 << 11;  // Branch prediction enable
+  // reg |= 1 << 12;  // Instruction cache enable:
+
+  // reg |= 1 << 13;  // vic low 0  vic hight 1
   asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");  // SCTLR
 
   cpu_invalid_tlb();
@@ -314,10 +321,7 @@ void cpu_halt() {
   };
 }
 
-void cpu_wait() { 
-
-
- }
+void cpu_wait() {}
 
 ulong cpu_get_cs(void) {
   ulong result;
@@ -328,7 +332,7 @@ ulong cpu_get_cs(void) {
 int cpu_tas(volatile int* addr, int newval) {
   int result = newval;
   // result = __sync_val_compare_and_swap(addr, newval, result);
-  
+
   return result;
 }
 
@@ -409,8 +413,6 @@ void enable_cntv(u32 cntv_ctl) {
 void disable_cntv(u32 cntv_ctl) {
   asm volatile("mcr p15, 0, %0, c14, c3, 1" ::"r"(cntv_ctl));  // write CNTV_CTL
 }
-
-
 
 /*do fast 64bit div constant
  *	because 52 bit timer can provide 23 years cycle loop
