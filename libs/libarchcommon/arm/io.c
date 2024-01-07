@@ -3,13 +3,8 @@
 * 作者: evilbinary on 01/01/20
 * 邮箱: rootdebug@163.com
 ********************************************************************/
-#ifndef IO_H
-#define IO_H
 
-#include "../io.h"
-
-#include "libs/include/types.h"
-
+#include "types.h"
 
 void io_write8(uint port, u8 data) {
   *(u8 *) port = data;
@@ -40,5 +35,3 @@ u32 io_read32(uint port) {
   data=*(u32 *) port;
   return data;
 }
-
-#endif

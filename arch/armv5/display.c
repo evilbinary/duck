@@ -5,7 +5,6 @@
  ********************************************************************/
 #include "../display.h"
 #include "../boot.h"
-#include "../io.h"
 #include "../lock.h"
 
 

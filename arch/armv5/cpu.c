@@ -21,8 +21,8 @@ void dccmvac(unsigned long mva) {
 }
 
 int cpu_pmu_version() {
-  u32 pmu_id;
-  // asm volatile("MRC p15, 0, %0, c9, c0, 0" : "=r"(pmu_id));
+  u32 pmu_id=0;
+  asm volatile("MRC p15, 0, %0, c9, c0, 0" : "=r"(pmu_id));
   // PMU 版本信息
   return (pmu_id >> 4) & 0xF;
 }
@@ -441,4 +441,18 @@ void cpu_delay(int n) {
   while (n > 0) {
     n--;
   }
+}
+
+void cpu_cli() {
+  u32 val;
+  asm("mrs %[v], cpsr" : [v] "=r"(val)::);
+  val |= 0x80;
+  asm("msr cpsr_cxsf, %[v]" : : [v] "r"(val) :);
+}
+
+void cpu_sti() {
+  u32 val;
+  asm("mrs %[v], cpsr" : [v] "=r"(val)::);
+  val &= ~0x80;
+  asm("msr cpsr_cxsf, %[v]" : : [v] "r"(val) :);
 }

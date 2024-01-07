@@ -73,7 +73,7 @@
 
 #else
 
-#define ISR_TIMER 50
+#define ISR_TIMER 5
 #define ISR_KEYBOARD 0x21
 #define ISR_SYSCALL 2
 #define ISR_MOUSE 0x2c
