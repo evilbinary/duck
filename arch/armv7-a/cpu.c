@@ -22,7 +22,7 @@ void dccmvac(unsigned long mva) {
 }
 
 int cpu_pmu_version() {
-  u32 pmu_id;
+  u32 pmu_id=0;
   // asm volatile("MRC p15, 0, %0, c9, c0, 0" : "=r"(pmu_id));
   // PMU 版本信息
   return (pmu_id >> 4) & 0xF;
@@ -55,13 +55,25 @@ unsigned int cpu_cyclecount(void) {
 
 void cpu_icache_disable() { asm("mcr  p15, #0, r0, c7, c7, 0\n"); }
 
+unsigned int cpu_get_cpsr() {
+  unsigned int cpsr_value;
+
+  asm volatile("mrs %0, cpsr" : "=r"(cpsr_value));
+  return cpsr_value;
+}
+
 void cpu_invalid_tlb() {
+  kprintf("cpu_invalid_tlb cpsr %x\n %x",cpu_get_cpsr() );
+
+  unsigned int lr;
+  __asm__ __volatile__("mov %0, lr \n":"=r"(lr));
+  kprintf("lr =%x\n",lr);
+
   asm volatile("mcr p15, 0, %0, c8, c7, 0" : : "r"(0));  // unified tlb
   asm volatile("mcr p15, 0, %0, c8, c6, 0" : : "r"(0));  // data tlb
   asm volatile("mcr p15, 0, %0, c8, c5, 0" : : "r"(0));  // instruction tlb
-  asm volatile(
-      "isb\n"
-      "dsb\n");
+  isb();
+  dsb();
 }
 
 void cp15_invalidate_icache(void) {

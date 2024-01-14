@@ -148,6 +148,6 @@ void* do_schedule(interrupt_context_t* ic) {
 
 void schedule_init() {
   // lock_init(&schedule_lock);
-  exception_regist(EX_TIMER, do_schedule);
+  exception_regist(EX_IRQ, do_schedule);
   timer_init(SCHEDULE_FREQUENCY);
 }
