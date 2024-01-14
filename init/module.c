@@ -28,7 +28,7 @@ void modules_init(void) {
 
 #elif ARMV5
 
-
+  REGISTER_MODULE(serial);
 
 #elif ARMV7_A
 
