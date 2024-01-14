@@ -29,6 +29,10 @@ void modules_init(void) {
 #elif ARMV5
 
   REGISTER_MODULE(serial);
+  REGISTER_MODULE(sdhci);
+  // REGISTER_MODULE(gpu);
+  // REGISTER_MODULE(mouse);
+  // REGISTER_MODULE(keyboard);
 
 #elif ARMV7_A
 
