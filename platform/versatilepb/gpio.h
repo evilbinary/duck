@@ -2,7 +2,9 @@
 #define GPIO_H
 
 #define GPIO_BASE   0x101E1000
-#define TIMER0_BASE 0x101E2000
+#define TIMER0_BASE (volatile unsigned int*)0x101E2000
+// #define TIMER0_BASE 0x13000000
+
 #define TIMER1_BASE 0x101E2020
 #define TIMER2_BASE 0x101E3000
 #define TIMER3_BASE 0x101E3020
@@ -27,9 +29,10 @@
 
 #define PIC_BASE 0x10140000
 #define PIC_STATUS     0x0
-#define PIC_INT_ENABLE 0x4
-#define PIC_TIMER01 0x10
+#define PIC_INT_ENABLE 0x10
+#define PIC_INT_CLEAR 0x14
 #define PIC_INT_TIMER0 (1 << 4)
+
 
 #define UART0 0x101f1000
 
