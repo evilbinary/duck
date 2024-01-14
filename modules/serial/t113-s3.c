@@ -4,17 +4,16 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "dev/devfs.h"
-#include "serial.h"
 #include "gpio.h"
+#include "serial.h"
 
 void serial_write(char a) { uart_send(a); }
 
 char serial_read() {
-
-  unsigned int c = 0;  
-  // if ((UART_REG8(UART_LSR) & UART_LSR_DR)){
-  //   c = (char)(UART_REG8(UART_TX) & 0xff);
-  // }
+  unsigned int c = 0;
+  if ((io_read32(UART0_BASE + UART_LSR) & UART_RECEIVE) != 0) {
+    c = (io_read32(UART0_BASE));
+  }
   return c;
 }
 
@@ -42,8 +41,12 @@ static size_t write(device_t* dev, char* buf, size_t len) {
 }
 
 int serial_init(void) {
+  kprintf("serial_init\n");
+
   device_t* dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
+  kprintf("serial_init2\n");
   dev->name = "serial";
+  kprintf("serial_init3\n");
   dev->read = read;
   dev->write = write;
   dev->id = DEVICE_SERIAL;
