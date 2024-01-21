@@ -28,6 +28,7 @@ add_files(
     'test.c'
 )
 
+add_rules("kernel-objcopy")
 
 if has_config('single-kernel'):
     add_deps('boot-init.elf')
@@ -68,5 +69,4 @@ add_defines(def_arch_type)
 add_ldflags("-T"+path.join(os.scriptdir(), "../xlinker/link-{plat}.ld"),  force = True)
 
 
-add_rules("kernel-objcopy")
 
