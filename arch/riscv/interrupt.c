@@ -61,7 +61,7 @@ void reset_handler() {
 FN_ALIGN
 INTERRUPT_SERVICE
 void timer_handler() {
-  interrupt_entering_code(EX_TIMER, 0, 0);
+  interrupt_entering_code(EX_IRQ, 0, 0);
   interrupt_process(interrupt_default_handler);
   interrupt_exit_ret();
 }
@@ -118,12 +118,12 @@ void* interrupt_handler_process(interrupt_context_t* ic) {
         // interrupt_default_handler(ic);
         break;
       case 1:  // Supervisor software interrupt
-        ic->no = EX_TIMER;
+        ic->no = EX_IRQ;
         interrupt_default_handler(ic);
         interrupt_exit_ret();
         break;
       case 5:  // Supervisor timer interrupt
-        ic->no = EX_TIMER;
+        ic->no = EX_IRQ;
         interrupt_default_handler(ic);
         interrupt_exit_ret();
         break;

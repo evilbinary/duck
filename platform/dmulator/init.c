@@ -34,8 +34,8 @@ void *timer_fun(void *arg) {
     pthread_kill(current->thread, SIGSTOP);
     
     interrupt_context_t ic;
-    ic.no = EX_TIMER;
-    // interrupt_entering_code(EX_TIMER, 0, 0);
+    ic.no = EX_IRQ;
+    // interrupt_entering_code(EX_IRQ, 0, 0);
     interrupt_default_handler(&ic);
     // interrupt_exit_ret();
     current = thread_current_context();

@@ -29,6 +29,8 @@
 #include "general/mm.h"
 #elif defined(RISCV)
 #include "riscv/mm.h"
+#elif defined(DUMMY)
+#include "dummy/mm.h"
 #else
 #error "no support"
 #endif

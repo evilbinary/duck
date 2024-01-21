@@ -7,77 +7,22 @@
 #include "mouse.h"
 #include "dev/devfs.h"
 
-mouse_device_t mouse_device;
-mouse_event_t event;
-u32 has_data = 0;
-
-static size_t read(device_t* dev, void* buf, size_t len) {
-  return 0;
-  // u32 ret = len;
-  // if(has_data<0){
-  //   return 0;
-  // }
-  // has_data--;
-  // // mouse_event_t* e = cqueue_peek(mouse_device.events);
-  // // if (e == NULL) {
-  // //   return 0;
-  // // }
-  // mouse_event_t* data = buf;
-  // *data = event;
-  // // cqueue_put(mouse_device.events,e);
-  // // kpool_put(e);
-  // return ret;
-}
-
-INTERRUPT_SERVICE
-void mouse_handler() {
-  interrupt_entering(ISR_MOUSE);
-  interrupt_process(do_mouse);
-  interrupt_exit();
-}
-
-u8 mouse_read() { return 0; }
-
-void mouse_write(u8 data) {}
-
-void mouse_wait(u8 type) {}
-
 int mouse_init(void) {
   device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "mouse";
-  dev->read = read;
+  // dev->read = read;
   dev->id = DEVICE_MOUSE;
   dev->type = DEVICE_TYPE_CHAR;
-  dev->data = &mouse_device;
+  // dev->data = &mouse_device;
 
   device_add(dev);
-  interrupt_regist(ISR_MOUSE, mouse_handler);
+  // mouse_device.events = cqueue_create(EVENT_NUMBER, CQUEUE_DROP);
 
-  mouse_device.events = cqueue_create(EVENT_NUMBER, CQUEUE_DROP);
 
-  // for(int i=0;i<EVENT_NUMBER;i++){
-  //   void* e=kpool_poll();
-  //   cqueue_put(mouse_device.events,e);
-  // }
-
-  // mouse
-  device_t* mouse_dev = device_find(DEVICE_MOUSE);
-  if (mouse_dev != NULL) {
-    vnode_t* mouse = vfs_create_node("mouse", V_FILE);
-    vfs_mount(NULL, "/dev", mouse);
-    mouse->device = mouse_dev;
-    mouse->op = &device_operator;
-  } else {
-    kprintf("dev mouse not found\n");
-  }
 
   return 0;
 }
 
-void do_mouse(interrupt_context_t* context) {
-  u32 read_count = 0;
-  u8 state = 0;
-}
 
 void mouse_exit(void) { kprintf("mouse exit\n"); }
 

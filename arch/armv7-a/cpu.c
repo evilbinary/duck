@@ -22,7 +22,7 @@ void dccmvac(unsigned long mva) {
 }
 
 int cpu_pmu_version() {
-  u32 pmu_id;
+  u32 pmu_id = 0;
   // asm volatile("MRC p15, 0, %0, c9, c0, 0" : "=r"(pmu_id));
   // PMU 版本信息
   return (pmu_id >> 4) & 0xF;
@@ -55,13 +55,28 @@ unsigned int cpu_cyclecount(void) {
 
 void cpu_icache_disable() { asm("mcr  p15, #0, r0, c7, c7, 0\n"); }
 
+unsigned int cpu_get_cpsr() {
+  unsigned int cpsr_value;
+
+  asm volatile("mrs %0, cpsr" : "=r"(cpsr_value));
+  return cpsr_value;
+}
+
 void cpu_invalid_tlb() {
+  // kprintf("cpu_invalid_tlb cpsr %x\n", 1);
+
   asm volatile("mcr p15, 0, %0, c8, c7, 0" : : "r"(0));  // unified tlb
+
+  // kprintf("cpu_invalid_tlb1 cpsr %x\n", 2);
+
   asm volatile("mcr p15, 0, %0, c8, c6, 0" : : "r"(0));  // data tlb
+  // kprintf("cpu_invalid_tlb3 cpsr %x\n", 3);
+
   asm volatile("mcr p15, 0, %0, c8, c5, 0" : : "r"(0));  // instruction tlb
-  asm volatile(
-      "isb\n"
-      "dsb\n");
+  // kprintf("cpu_invalid_tlb4 cpsr %x\n", 4);
+
+  isb();
+  dsb();
 }
 
 void cp15_invalidate_icache(void) {
@@ -149,9 +164,32 @@ void tlbimva(unsigned long mva) {
   asm volatile("mcr p15, 0, %0, c8, c7, 1" : : "r"(mva) : "memory");
 }
 
+void cpu_disable_l1_cache() {
+  u32 reg;
+  asm("mrc p15, 0, %0, c1, c0, 0" : "=r"(reg) : : "cc");  // SCTLR
+  reg |= 1 << 12;  // Instruction cache enable:
+  reg |= 1 << 2;   // Cache enable.
+  asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");  // SCTLR
+}
+
 void cpu_set_page(u32 page_table) {
-  // cpu_invalid_tlb();
-  // cp15_invalidate_icache();
+  // Disable MMU
+  // cpu_disable_page();
+
+  // Disable L1 Cache
+  cpu_disable_l1_cache();
+
+  // Invalidate L1 Caches Invalidate Instruction cache
+  cp15_invalidate_icache();
+
+  // Invalidate Data cache
+  // __builtin___clear_cache(0, ~0);
+  cache_inv_range(0, ~0);
+
+  cpu_invalid_tlb();
+  dmb();
+  isb();
+  dsb();
 
   // dccmvac(page_table);
   // set ttbcr0
@@ -160,11 +198,6 @@ void cpu_set_page(u32 page_table) {
   write_ttbr1(page_table);
   // isb();
   write_ttbcr(TTBCRN_16K);
-  cp15_invalidate_icache();
-  cpu_invalid_tlb();
-  dmb();
-  isb();
-  dsb();
   // set all permission
   // cpu_set_domain(~0);
   // cpu_set_domain(0);
@@ -285,7 +318,7 @@ void cache_inv_range(unsigned long start, unsigned long stop) {
 
 void cpu_enable_page() {
   cpu_enable_smp_mode();
-  cache_inv_range(0, ~0);
+  // cache_inv_range(0, ~0);
 
   u32 reg;
   // read mmu
@@ -295,11 +328,13 @@ void cpu_enable_page() {
   reg |= 1 << 28;                                         // TEX remap enable.
   reg |= 1 << 12;  // Instruction cache enable:
   reg |= 1 << 2;   // Cache enable.
-  reg |= 1 << 1;   // Alignment check enable.
+  // reg |= 1 << 1;   // Alignment check enable.
   reg |= 1 << 11;  // Branch prediction enable
   asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");  // SCTLR
 
-  cpu_invalid_tlb();
+  dsb();
+  isb();
+  // cpu_invalid_tlb();
 }
 
 void cpu_init(int cpu) {
@@ -326,7 +361,7 @@ ulong cpu_get_cs(void) {
 
 int cpu_tas(volatile int* addr, int newval) {
   int result = newval;
-  result = __sync_bool_compare_and_swap(addr, newval, result);
+  result = __sync_val_compare_and_swap(addr, newval, result);
   return result;
 }
 

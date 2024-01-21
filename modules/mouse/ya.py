@@ -33,7 +33,10 @@ plat_source={
     ],
     'miyoo':[
         'ssd202d.c'
-    ]
+    ],
+    't113-s3':[
+        't113-s3.c'
+    ],
 }
 arch_source={
     'arm':[ 

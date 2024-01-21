@@ -20,7 +20,7 @@ enum {
   EX_RESET = 1,
   EX_DATA_FAULT = 2,
   EX_SYS_CALL = 3,
-  EX_TIMER = 4,
+  EX_IRQ = 4,
   EX_UNDEF = 5,
   EX_OTHER = 6,
   EX_PREF_ABORT = 7,

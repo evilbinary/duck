@@ -3,9 +3,9 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
-#include "arch/mm.h"
 #include "arch/cpu.h"
 #include "arch/display.h"
+#include "arch/pmemory.h"
 #include "cpu.h"
 
 #define PAGE_DIR_NUMBER 4096 * 4
@@ -31,6 +31,10 @@ void mm_init_default() {
   kprintf("paging pae scucess\n");
 }
 
+
+void mm_page_enable(u32 page_dir) {
+
+}
 
 void* page_v2p(void* page, void* vaddr) {
   void* phyaddr = NULL;

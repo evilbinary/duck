@@ -1,10 +1,11 @@
-#include "arch/io.h"
+#include "arch/arch.h"
+#include "gpio.h"
 
-void uart_write(char a) {}
+void uart_send(char a) {}
 
-char uart_read() { return 0; }
+u32 uart_receive() { return 0; }
 
-void platform_init() { io_add_write_channel(uart_write); }
+void platform_init() { io_add_write_channel(uart_send); }
 
 void platform_map() {}
 
@@ -16,7 +17,4 @@ void timer_end() {}
 
 void ipi_enable(int cpu) {}
 
-
-void lcpu_send_start(u32 cpu, u32 entry) {
-    
-}
+void lcpu_send_start(u32 cpu, u32 entry) {}

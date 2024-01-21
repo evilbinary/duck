@@ -208,7 +208,7 @@ void syscall_handler() {
 
 INTERRUPT_SERVICE
 void timer_handler() {
-  interrupt_entering_code(EX_TIMER, 0, 0);
+  interrupt_entering_code(EX_IRQ, 0, 0);
   interrupt_process(interrupt_default_handler);
   interrupt_exit_ret();
 }

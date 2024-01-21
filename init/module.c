@@ -17,6 +17,7 @@ void modules_init(void) {
   // require
   REGISTER_MODULE(devfs);
 
+
 #ifdef ARMV7
 
   REGISTER_MODULE(gpio);
@@ -24,6 +25,14 @@ void modules_init(void) {
   REGISTER_MODULE(hello);
   REGISTER_MODULE(spi);
   REGISTER_MODULE(lcd);
+
+#elif ARMV5
+
+  REGISTER_MODULE(serial);
+  REGISTER_MODULE(sdhci);
+  // REGISTER_MODULE(gpu);
+  // REGISTER_MODULE(mouse);
+  // REGISTER_MODULE(keyboard);
 
 #elif ARMV7_A
 
@@ -47,6 +56,10 @@ void modules_init(void) {
   REGISTER_MODULE(test);
 
   REGISTER_MODULE(rtc);
+
+#ifdef KEYBOARD_MODULE
+  REGISTER_MODULE(keyboard);
+#endif
 
 #elif defined(DUMMY)
   REGISTER_MODULE(hello);
@@ -118,9 +131,6 @@ void modules_init(void) {
   REGISTER_MODULE(ytrace);
 #endif
 
-#ifdef KEYBOARD_MODULE
-  REGISTER_MODULE(keyboard);
-#endif
 
   log_info("module regist end\n");
 

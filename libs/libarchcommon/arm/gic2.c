@@ -97,10 +97,9 @@ void gic_enable(int cpu, int irq) {
   cp->ctl = G0_ENABLE;
 }
 
-void gic_irq_priority(u32 cpu,u32 irq,u32 priority){
+void gic_irq_priority(u32 cpu, u32 irq, u32 priority) {
   gic_dist_t *gp = gic.dist;
-  
-    // 优先级别设置
+  // 优先级别设置
   gp->ipriority[irq] = priority;
 }
 
@@ -122,5 +121,51 @@ void gic_send_sgi(int cpu, int irq) {
   // 通过 GICD_SGIR Software Generated Interrupt Register软中断
   unsigned int mask = 1 << (cpu & 0xff);
   irq &= 0xf;  // in the range 0-15
-  gic.dist->sgi = mask << 16 |irq;
+  gic.dist->sgi = mask << 16 | irq;
+}
+
+void gic_check(void) {
+  gic_dist_t *gp = gic.dist;
+  kprintf("check GIC pending ispend:\n");
+  for (int i = 0; i < 32; i++) {
+    kprintf(" %d=%x", i, gp->ispend[i]);
+  }
+  kprintf("\n");
+}
+
+void gic_handler(u32 irq) {
+  gic_dist_t *gp = gic.dist;
+  gic_cpu_t *cp = gic.cpu;
+
+  int irq1;
+  irq1 = cp->ia;
+  kprintf("irq=>%d\n", irq1);
+  unsigned long mask = 1 << (irq % 32);
+
+  int x = irq / 32;
+
+  if (gp->ispend[x] & mask) {
+    kprintf("GIC iack = %x\n", irq);
+
+    // timer_handler(0);
+    gic_irqack(irq);
+  }
+  // ms_delay ( 5 );
+}
+
+void gic_poll(u32 irq) {
+  gic_dist_t *gp = gic.dist;
+  gic_cpu_t *cp = gic.cpu;
+  int x = irq / 32;
+
+  for (;;) {
+    // ms_delay ( 2000 );
+    // kprintf("GIC pending: %x %x\n", gp->ispend[0], gp->ispend[1] );
+    unsigned long mask = 1 << (irq % 32);
+    if (gp->ispend[x] & mask) {
+      gic_check();
+      gic_handler(irq);
+      kprintf("+GIC pending: %x\n", gp->ispend[x]);
+    }
+  }
 }

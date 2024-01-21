@@ -54,7 +54,6 @@
 #elif defined(MIYOO)
 #define ISR_TIMER 27
 #define ISR_KEYBOARD 0x21
-#define ISR_SYSCALL 2
 #define ISR_MOUSE 0x2c
 
 #define IDT_NUMBER 256
@@ -62,16 +61,34 @@
 
 #define MP_ENABLE 1  //多cpu
 
-
-#else
-
-#define ISR_TIMER 50
+#elif defined(VERSATILEPB)
+#define ISR_TIMER 27
 #define ISR_KEYBOARD 0x21
-#define ISR_SYSCALL 2
 #define ISR_MOUSE 0x2c
 
 #define IDT_NUMBER 256
 #define EXCEPTION_NUMBER 32
+
+#elif defined(T113_S3)
+#define ISR_TIMER 91
+#define ISR_KEYBOARD 0x21
+#define ISR_MOUSE 0x2c
+
+#define IDT_NUMBER 256
+#define EXCEPTION_NUMBER 32
+
+// #define MP_ENABLE 1  //多cpu
+
+#else
+
+#define ISR_TIMER 5
+#define ISR_KEYBOARD 0x21
+#define ISR_MOUSE 0x2c
+
+#define IDT_NUMBER 256
+#define EXCEPTION_NUMBER 32
+
+#define MP_ENABLE 1  //多cpu
 
 #endif
 

@@ -937,8 +937,8 @@ int sys_thread_self() {
 
 int sys_statx(int dirfd, const char* restrict pathname, int flags,
               unsigned int mask, struct statx* restrict statxbuf) {
-  log_debug("sys statx not impl pathname %s\n", pathname);
-
+  log_debug("sys statx not impl dirfd %d pathname %s\n",dirfd, pathname);
+  
   if (statxbuf == NULL) {
     return -1;
   }
