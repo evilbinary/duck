@@ -735,8 +735,8 @@ void map_mem_block(u32* page, u32 size, u32 flags) {
   for (; p != NULL; p = p->next) {
     u32 address = p->origin_addr;
     page_map_range(page, address, address, size, flags);
-    kprintf("map mem block addr range %x - %x\n", p->origin_addr,
-            p->origin_addr + size);
+    // kprintf("map mem block addr range %x - %x\n", p->origin_addr,
+    //         p->origin_addr + size);
     mmt.last_map_addr = address + size;
   }
 }

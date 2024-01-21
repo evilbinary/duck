@@ -37,14 +37,6 @@ if has_config('single-kernel'):
             '../../boot/'+arch_type+'/boot-'+arch+'.s',
             '../../boot/'+arch_type+'/init.c',
             )
-else:
-    target('boot-config')
-    add_deps('kernel.elf')
-
-    add_files(
-        "{buildir}/kernel"
-    )
-    add_rules("kernel-gen")
 
 
 
@@ -69,4 +61,13 @@ add_defines(def_arch_type)
 add_ldflags("-T"+path.join(os.scriptdir(), "../xlinker/link-{plat}.ld"),  force = True)
 
 
+add_rules("kernel-objcopy")
 
+
+target('boot-config')
+add_deps('kernel.elf')
+
+add_files(
+    "{buildir}/kernel"
+)
+add_rules("kernel-gen")
