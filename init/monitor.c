@@ -35,7 +35,7 @@ void do_monitor_thread(void) {
     if (i % 4 == 0) {
       i = 0;
     }
-    schedule_sleep(1000 * 1000 * 10000);
+    //schedule_sleep(1000 * 1000 * 10000);
     // cpu_wait();
   }
 }

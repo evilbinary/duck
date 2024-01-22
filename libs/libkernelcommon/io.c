@@ -28,10 +28,8 @@ void print_char(u8 ch) {
 }
 
 char printf_buffer[KPRINT_BUF];
- u32 printf_buffer_lock=0;
- 
+
 int kprintf(const char* fmt, ...) {
-  acquire(&printf_buffer_lock);
   kmemset(printf_buffer,0,KPRINT_BUF);
   int i=0;
 	va_list args;
@@ -50,7 +48,5 @@ int kprintf(const char* fmt, ...) {
   for(int i=0;i<len;i++){
     print_char(printf_buffer[i]);
   }
-  release(&printf_buffer_lock);
-  
   return i;
 }
