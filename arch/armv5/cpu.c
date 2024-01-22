@@ -148,13 +148,30 @@ void tlbimva(unsigned long mva) {
   asm volatile("mcr p15, 0, %0, c8, c7, 1" : : "r"(mva) : "memory");
 }
 
-void cpu_set_page(u32 page_table) {
-  // set all permission
-  // cpu_set_domain(~0x1);
-  // cpu_set_domain(0);
+void cpu_disable_l1_cache() {
+  u32 reg;
+  asm("mrc p15, 0, %0, c1, c0, 0" : "=r"(reg) : : "cc");  // SCTLR
+  reg |= 1 << 12;  // Instruction cache enable:
+  reg |= 1 << 2;   // Cache enable.
+  asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");  // SCTLR
+}
 
-  // cpu_invalid_tlb();
-  // cp15_invalidate_icache();
+void cpu_set_page(u32 page_table) {
+  
+ // Disable L1 Cache
+  cpu_disable_l1_cache();
+
+  // Invalidate L1 Caches Invalidate Instruction cache
+  cp15_invalidate_icache();
+
+   // Invalidate Data cache
+  __builtin___clear_cache(0, ~0);
+  cache_inv_range(0, ~0);
+
+  cpu_invalid_tlb();
+  dmb();
+  isb();
+  dsb();
 
   // dccmvac(page_table);
   // set ttbcr0
@@ -163,11 +180,18 @@ void cpu_set_page(u32 page_table) {
   write_ttbr1(page_table);
   // isb();
   write_ttbcr(TTBCRN_16K);
-  cp15_invalidate_icache();
-  cpu_invalid_tlb();
-  dmb();
-  isb();
-  dsb();
+
+  // // set ttbcr0
+  // write_ttbr0(page_table);
+  // // isb();
+  // write_ttbr1(page_table);
+  // // isb();
+  // write_ttbcr(TTBCRN_16K);
+  // cp15_invalidate_icache();
+  // cpu_invalid_tlb();
+  // dmb();
+  // isb();
+  // dsb();
 }
 
 void cpu_disable_page() {

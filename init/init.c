@@ -193,7 +193,7 @@ void do_shell_cmd(char* cmd, int count, char** env) {
 }
 
 void sleep() {
-  u32 tv[2] = {0, 500 * 1000 * 1000};
+  u32 tv[2] = {0, 200 * 1000 * 1000};
   syscall4(SYS_CLOCK_NANOSLEEP, 0, 0, &tv, &tv);
 }
 
