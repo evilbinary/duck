@@ -6,7 +6,7 @@
 #include "schedule.h"
 
 u32 timer_ticks[MAX_CPU] = {0};
-u32 schedule_lock;
+lock_t schedule_lock;
 
 u32 schedule_get_ticks() {
   int cpu = cpu_get_id();

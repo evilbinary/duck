@@ -86,7 +86,6 @@ typedef struct memory_manager {
   u32 alloc_size;
   u32 last_map_addr;
   u32 extend_phy_count;
-  u32 lock;
 } memory_manager_t;
 
 u32* page_create(u32 level);
