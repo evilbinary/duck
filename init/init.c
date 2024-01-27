@@ -14,7 +14,7 @@ const char* logo =
     " \\_   _/ \\_   _/  \\/ /\n"
     "   | |     | |( ()  < \n"
     "   |_|     |_| \\__/\\_\\\n\n"
-    "2021 - 2080 Copyright by evilbinary \n";
+    "2021 - present Copyright by evilbinary \n";
 
 const char* build_str = "version " VERSION " " __DATE__ " " __TIME__
                         "\n"
@@ -96,6 +96,7 @@ int do_exec(char* cmd, int count, char** env) {
   int i = 0;
   const char* split = " ";
   char* ptr = kstrtok(cmd, split);
+  memset(argv,0,64);
   while (ptr != NULL) {
     argv_p[i] = ptr;
     argv[i++] = ptr;
@@ -109,6 +110,10 @@ int do_exec(char* cmd, int count, char** env) {
   if (ret < 0) {
     sprintf(buf, "/%s", argv[0]);
     ret = syscall2(SYS_ACESS, buf, 0);
+    if(ret<0){
+      sprintf(buf, "./%s", argv[0]);
+      ret = syscall2(SYS_ACESS, buf, 0);
+    }
   }
   int pid = 0;
   if (ret == 0) {
@@ -237,6 +242,7 @@ void do_init_thread(void) {
         print_string("\n");
         do_shell_cmd(buf, count, env);
         count = 0;
+        memset(buf,0,64);
         print_promot();
       } else if (ch == 127) {
         if (count > 0) {
