@@ -40,6 +40,9 @@ void modules_init(void) {
 #ifdef FATFS_MODULE
   REGISTER_MODULE(fatfs);
 #endif
+  REGISTER_MODULE(test);
+
+
 #elif ARMV7_A
 
   // optional module

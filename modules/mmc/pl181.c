@@ -53,38 +53,41 @@ static u32 mmc_read_blocks(sdhci_device_t *hci, u32 start, u32 blkcnt,
   int len = blkcnt * BYTE_PER_SECTOR;
   int status = -1;
 
-  // cmd18 read mutiple block
-  cmd(17, start, MMC_RSP_R1);
-
   // timeout count
-  io_write32(SD_BASE + DATATIMER, 0xFFFF0000);
-
+  io_write32(SD_BASE + DATATIMER, 0xFFFFFFFF);
   io_write32(SD_BASE + DATALENGTH, len);
+
+  // cmd18 read mutiple block
+  cmd(18, start * BYTE_PER_SECTOR, MMC_RSP_R1);
+  // cmd(16, blkcnt, MMC_RSP_R1);
+
   // 2^9=512 | Data transfer enabled |= From card to controller
   // io_write32(SD_BASE + DATACTRL, 1 << 0 | 1 << 1 | 1 << 2 | (9 << 4));
-  io_write32(SD_BASE + DATACTRL, 1 << 0 | 1 << 1 | 1 << 2 | (9 << 4));
-
-  while (len > 0) {
+  // io_write32(SD_BASE + DATACTRL, 1 << 0 | 1 << 1 | 1 << 2 | (9 << 4));
+  io_write32(SD_BASE + DATACTRL, 0x93);
+  do {
     status = io_read32(SD_BASE + STATUS);
-    if (status & (1 << 21)) {  // Data available in receive FIFO
-      *(tmp) = io_read32(SD_BASE + FIFO);
-      tmp++;
-      len -= sizeof(u32);
-    } else {
-      break;
+    if (status & (1 << 17)) {  // Receive FIFO full
+      for (int i = 0; i < 16; i++) {
+        *(tmp) = io_read32(SD_BASE + FIFO);
+        tmp++;
+        len -= sizeof(u32);
+      }
+      io_write32(SD_BASE + STATUS_CLEAR, 0xFFFFFFFF);
+
+      // int dcount = io_read32(SD_BASE + DATACOUNT);
+      // int da = io_read32(SD_BASE + DATALENGTH);
+      // log_debug("data==>%d len=%d dcount=%d status %x\n", da, len, dcount,
+      //           status);
     }
-    // int dcount = io_read32(SD_BASE + DATACOUNT);
-    // int da = io_read32(SD_BASE + DATALENGTH);
-    // log_debug("data==>%d len=%d dcount=%d status %x\n", da, len, dcount,
-    //           status);
-  };
+
+  } while (len > 0);
 
   // cmd 12 stop
   cmd(12, 0, MMC_RSP_R1);
 
   // clear
-  io_write32(SD_BASE + STATUS_CLEAR, 0x7FF);
-  
+  io_write32(SD_BASE + STATUS_CLEAR, 0xFFFFFFFF);
 
   if (status & (1 << 2)) {
     log_error(" Command response timeout\n");
