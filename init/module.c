@@ -33,7 +33,13 @@ void modules_init(void) {
   // REGISTER_MODULE(gpu);
   // REGISTER_MODULE(mouse);
   // REGISTER_MODULE(keyboard);
+#ifdef FAT_MODULE
+  REGISTER_MODULE(fat);
+#endif
 
+#ifdef FATFS_MODULE
+  REGISTER_MODULE(fatfs);
+#endif
 #elif ARMV7_A
 
   // optional module
