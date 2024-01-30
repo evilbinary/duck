@@ -134,10 +134,10 @@ vmemory_area_t* vmemory_create_default(u32 koffset) {
     }
     vmemory_area_add(vmm, vmmk);
   }
-  //add dev info
-  vmemory_area_t* vmmdev = vmemory_area_create(0xfb000000, 1024*768*4, MEMORY_DEV);
+  // add dev info
+  vmemory_area_t* vmmdev =
+      vmemory_area_create(0xfb000000, 1024 * 768 * 4, MEMORY_DEV);
   vmemory_area_add(vmm, vmmdev);
-
 
   return vmm;
 }
@@ -166,6 +166,24 @@ void vmemory_dump_area(vmemory_area_t* area) {
 }
 
 #define DEBUG
+
+void vmemory_map_type(u32* page_dir, u32 virt_addr, u32 phy_addr, u32 size,
+                      u32 type) {
+  if (page_dir == NULL) {
+    log_error("vm map faild for page_dir is null\n");
+    return;
+  }
+  u32 offset = 0;
+  u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
+  for (int i = 0; i < pages; i++) {
+    page_map_on(page_dir, virt_addr + offset, phy_addr + offset, type);
+#ifdef DEBUG
+    log_debug("-page:%x map %d vaddr: %x - paddr: %x\n", page_dir, i,
+              virt_addr + offset, phy_addr + offset);
+#endif
+    offset += PAGE_SIZE;
+  }
+}
 
 void vmemory_map(u32* page_dir, u32 virt_addr, u32 phy_addr, u32 size) {
   if (page_dir == NULL) {

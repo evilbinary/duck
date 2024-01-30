@@ -25,7 +25,7 @@ client_t* service_get_client_name(char* name) {
   for (int i = 0; i < client_number; i++) {
     if (kstrcmp(clients[i]->name, name) == 0) {
       thread_t* t = thread_find_id(clients[i]->tid);
-      if (t->state == THREAD_RUNNING) {
+      if (t->state != THREAD_STOPPED) {
         if (client == NULL) {
           client = clients[i];
           client->count = 0;
@@ -154,7 +154,6 @@ size_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
   thread_t* current = thread_current();
 
   log_debug("current thread name %s\n", current->name);
-
 
   // log_debug("ioctl cmd= %x args= %x\n", cmd, args);
 

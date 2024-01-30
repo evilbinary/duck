@@ -1151,7 +1151,7 @@ int sys_gettid() {
   return current->id;
 }
 
-int sys_thread_map(int tid, u32 virt_addr, u32 phy_addr, u32 size) {
+int sys_thread_map(int tid, u32 virt_addr, u32 phy_addr, u32 size, u32 attr) {
   thread_t* current = NULL;
   current = thread_find_id(tid);
   if (current == NULL) {
@@ -1160,7 +1160,20 @@ int sys_thread_map(int tid, u32 virt_addr, u32 phy_addr, u32 size) {
   log_debug("sys thread %s map %x %x %d\n", current->name, virt_addr, phy_addr,
             size);
 
-  return thread_map(current, virt_addr, phy_addr, size);
+  if (attr == 1) {
+    attr = PAGE_DEV;
+  } else if (attr == 2) {
+    attr = PAGE_SYS;
+  } else if (attr == 3) {
+    attr = PAGE_USR;
+  } else {
+    attr = PAGE_USR;
+  }
+
+  int ret = 0;
+  vmemory_map_type(current->vm->upage, virt_addr, phy_addr, size, attr);
+
+  return ret;
 }
 
 int sys_fstat64(int fd, struct stat* stat) { return sys_fstat(fd, stat); }
