@@ -4,7 +4,8 @@
 #define PRINT_WIDTH 24
 #define READ_BUFFER 24 * 20
 
-#ifdef FAT
+
+#ifdef FAT_MODULE
 
 void test_fat_read() {
   device_t* dev = device_find(DEVICE_SATA);
@@ -109,7 +110,7 @@ void test_fat_read_file() {
 }
 
 void test_fat() {
-  // test_fat_read();
+  test_fat_read();
   // test_fat_read_small();
   // test_fat_read_file();
 }

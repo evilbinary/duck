@@ -30,7 +30,7 @@ int test_init(void) {
 #ifdef X86
   test_ahci();
 #endif
-  test_fat();
+  // test_fat();
   
   // test_kernel_thread();
 

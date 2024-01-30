@@ -79,18 +79,26 @@ u32 sys_open(char* name, int attr, ...) {
   }
   // current pwd
   vnode_t* pwd = NULL;
+
   if (kstrlen(name) >= 2 && name[0] == '.' && name[1] == '/') {
     kstrcpy(name, &name[2]);
     pwd = current->vfs->pwd;
   } else if (kstrlen(name) == 1 && name[0] == '/') {
     pwd = current->vfs->root;
+  } else if (name[0] == '/') {
+  } else {
+    pwd = current->vfs->pwd;
   }
+  char* path_name = kmalloc(256, KERNEL_TYPE);
+  vfs_path_append(pwd, name, path_name);
 
-  int f = thread_find_fd_name(current, name);
+  log_debug("path name %s to %s\n", name, path_name);
+
+  int f = thread_find_fd_name(current, path_name);
   if (f >= 0) {
     fd_t* fd = thread_find_fd_id(current, f);
     fd->offset = 0;
-    log_debug("sys open name return : %s fd: %d\n", name, f);
+    log_debug("sys open name return : %s fd: %d\n", path_name, f);
     return f;
   }
   vnode_t* file = vfs_open_attr(pwd, name, attr);
@@ -98,7 +106,8 @@ u32 sys_open(char* name, int attr, ...) {
     log_error("sys open file %s error, attr %x \n", name, attr);
     return -1;
   }
-  fd_t* fd = fd_open(file, DEVICE_TYPE_FILE, name);
+
+  fd_t* fd = fd_open(file, DEVICE_TYPE_FILE, path_name);
   if (fd == NULL) {
     log_error(" new fd error\n");
     return -1;
@@ -111,8 +120,9 @@ u32 sys_open(char* name, int attr, ...) {
   }
   if (current->id > 0) {
     log_debug(
-        "sys open new name: %s addr:%x fd:%d fd->id:%d ptr:%x fd->name:%s\n",
-        name, name, f, fd->id, fd, fd->name);
+        "sys open new path name: %s name: %s addr:%x fd:%d fd->id:%d ptr:%x "
+        "fd->name:%s\n",
+        path_name, name, name, f, fd->id, fd, fd->name);
   }
   return f;
 }
@@ -412,8 +422,8 @@ int sys_fork() {
 int sys_pipe(int fds[2]) {
   thread_t* current = thread_current();
   vnode_t* node = pipe_make(PAGE_SIZE);
-  fd_t* fd0 = fd_open(node, DEVICE_TYPE_VIRTUAL, "pipe0");
-  fd_t* fd1 = fd_open(node, DEVICE_TYPE_VIRTUAL, "pipe1");
+  fd_t* fd0 = fd_open(node, DEVICE_TYPE_VIRTUAL, "/dev/pipe/pipe0");
+  fd_t* fd1 = fd_open(node, DEVICE_TYPE_VIRTUAL, "dev/pipe/pipe1");
   fds[0] = thread_add_fd(current, fd0);
   fds[1] = thread_add_fd(current, fd1);
   return 0;
@@ -937,8 +947,8 @@ int sys_thread_self() {
 
 int sys_statx(int dirfd, const char* restrict pathname, int flags,
               unsigned int mask, struct statx* restrict statxbuf) {
-  log_debug("sys statx not impl dirfd %d pathname %s\n",dirfd, pathname);
-  
+  log_debug("sys statx not impl dirfd %d pathname %s\n", dirfd, pathname);
+
   if (statxbuf == NULL) {
     return -1;
   }
@@ -1179,7 +1189,7 @@ int sys_statfs64(const char* filename, struct statfs* stat) {
   return ret;
 }
 
-int sys_fn_faild_handler(int no,interrupt_context_t* ic) {
+int sys_fn_faild_handler(int no, interrupt_context_t* ic) {
   int call_id = context_fn(ic);
   log_debug("sys fn faild %x\n", call_id);
   if (call_id == 0xf0005) {
