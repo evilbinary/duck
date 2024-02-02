@@ -40,7 +40,7 @@ client_t* service_get_client_name(char* name) {
 
 client_t* service_get_client(int id) {
   for (int i = 0; i < client_number; i++) {
-    if (clients[i]->id == i) {
+    if (clients[i]->id == id) {
       return clients[i];
     }
   }
@@ -183,7 +183,7 @@ size_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
     ret = no;
     // mmap
   } else if (cmd == SYS_DEL_CLIENT) {
-    int id = args;
+    int id = ctl->id;
     client_t* client = service_get_client(id);
     client->state = SYS_DINIT;
     service_remove_client(client);
@@ -193,7 +193,8 @@ size_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
       vfs_remove_child(node, node_client);
     }
   } else if (cmd == SYS_GET_CLIENT_BY_ID) {
-    int id = args;
+    int id = ctl->id;
+    log_debug("SYS_GET_CLIENT_BY_ID %d\n",id);
     client_t* client = service_get_client(id);
     if (client == NULL) {
       log_error("client get id %d is null\n", id);
