@@ -271,10 +271,12 @@ void try_run(char* cmd, char** argv, char** env) {
   }
   if (ret >= 0) {
     run_exec(buf, argv, env);
-    for (;;) {
-      sleep();
-    }
   }
+}
+
+void load_config(){
+    char* config_argv[] = {"config",NULL};
+    try_run("config", config_argv, NULL);
 }
 
 void pre_launch() {
@@ -323,6 +325,8 @@ void pre_launch() {
 #elif defined(ARMV7_A)
 //  try_run("/bin/shell", shell_argv, env_p);
 // try_run("infones", nes_argv, NULL);
+load_config();
+
 #elif defined(ARMV7)
   // test_lcd();
 #else defined(ARM)

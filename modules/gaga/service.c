@@ -194,7 +194,6 @@ size_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
     }
   } else if (cmd == SYS_GET_CLIENT_BY_ID) {
     int id = ctl->id;
-    log_debug("SYS_GET_CLIENT_BY_ID %d\n",id);
     client_t* client = service_get_client(id);
     if (client == NULL) {
       log_error("client get id %d is null\n", id);
