@@ -1,5 +1,4 @@
 #include "arch/arch.h"
-#include "arch/io.h"
 #include "gic2.h"
 #include "gpio.h"
 
