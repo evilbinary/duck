@@ -184,7 +184,7 @@ void cpu_set_page(u32 page_table) {
   // Disable L1 Cache
   cpu_disable_l1_cache();
 
-  // cpu_invalid_tlb();
+  cpu_invalid_tlb();
   // kprintf("invalid tlb end\n");
 
   // Invalidate L1 Caches Invalidate Instruction cache
@@ -192,8 +192,8 @@ void cpu_set_page(u32 page_table) {
 
   // Invalidate Data cache
   // __builtin___clear_cache(0, ~0);
-  cache_inv_range(0, ~0);
-  cpu_invalid_tlb();
+  // cache_inv_range(0, ~0);
+  // cpu_invalid_tlb();
 
   dmb();
   dsb();

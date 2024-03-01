@@ -2,12 +2,15 @@ ENTRY(_kstart)
 K_VIR_ADDR = 0x42000000;
 K_PHY_ADDR = 0x42000000;
 PAGE_SIZE    = 0x100;
+STACK_SIZE = 0x200;
 SECTIONS
 {
         /* Code. */
+        __start = .;
         .text K_VIR_ADDR : AT(K_PHY_ADDR)
         {
 		. = ALIGN(PAGE_SIZE);
+                *(.text.boot)
                 *(.text*)
         }
 
@@ -31,5 +34,33 @@ SECTIONS
                 *(.bss*)
         }
         __bss_end = .;
+        __bss_end = .;
+        .stack :  ALIGN(4) {
+                . = 0x6000;
+                _estack = .;
+                . = . + STACK_SIZE;
+                _stack_abt = .;
+
+                . = . + STACK_SIZE;
+                _stack_undf = .;
+
+                . = . + STACK_SIZE;
+                _stack_irq = .;
+
+                . = . + STACK_SIZE;
+                _stack_svc = .;
+
+                . = . + STACK_SIZE;
+                _stack_sys = .;
+
+                . = . + STACK_SIZE*4*4 ;
+                _stack_other = .;
+
+                
+                . = ALIGN(4);
+                _sstack = .;
+        }
+        
+       __end = .;
        _end = .;
 }
