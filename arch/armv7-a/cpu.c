@@ -53,41 +53,11 @@ unsigned int cpu_cyclecount(void) {
   return value;
 }
 
-void cpu_icache_disable() { asm("mcr  p15, #0, r0, c7, c7, 0\n"); }
-
 unsigned int cpu_get_cpsr() {
   unsigned int cpsr_value;
 
   asm volatile("mrs %0, cpsr" : "=r"(cpsr_value));
   return cpsr_value;
-}
-
-void cpu_invalid_tlb() {
-  // kprintf("cpu_invalid_tlb cpsr %x\n", 1);
-
-  asm volatile("mcr p15, 0, %0, c8, c7, 0" : : "r"(0));  // unified tlb
-
-  // kprintf("cpu_invalid_tlb1 cpsr %x\n", 2);
-
-  asm volatile("mcr p15, 0, %0, c8, c6, 0" : : "r"(0));  // data tlb
-  // kprintf("cpu_invalid_tlb3 cpsr %x\n", 3);
-
-  asm volatile("mcr p15, 0, %0, c8, c5, 0" : : "r"(0));  // instruction tlb
-  // kprintf("cpu_invalid_tlb4 cpsr %x\n", 4);
-
-  isb();
-  dsb();
-}
-
-void cp15_invalidate_icache(void) {
-  asm volatile(
-      "mov r0, #0\n"
-      "mcr p15, 0, r0, c7, c5, 0\n"  // icache all
-      "mcr p15, 0, r0, c7, c5, 6\n"  // branch prediction
-      "dsb\n"
-      :
-      :
-      : "r0", "memory");
 }
 
 u32 read_dfar() {
@@ -164,6 +134,32 @@ void tlbimva(unsigned long mva) {
   asm volatile("mcr p15, 0, %0, c8, c7, 1" : : "r"(mva) : "memory");
 }
 
+void cpu_icache_disable() { asm("mcr  p15, #0, r0, c7, c7, 0\n"); }
+
+void cpu_invalid_tlb() {
+  // kprintf("cpu_invalid_tlb cpsr %x\n", 1);
+  asm volatile("mcr p15, 0, %0, c8, c7, 0" : : "r"(0));  // unified tlb
+  // kprintf("cpu_invalid_tlb1 cpsr %x\n", 2);
+  asm volatile("mcr p15, 0, %0, c8, c6, 0" : : "r"(0));  // data tlb
+  // kprintf("cpu_invalid_tlb3 cpsr %x\n", 3);
+  asm volatile("mcr p15, 0, %0, c8, c5, 0" : : "r"(0));  // instruction tlb
+  // kprintf("cpu_invalid_tlb4 cpsr %x\n", 4);
+
+  dsb();
+  isb();
+}
+
+void cp15_invalidate_icache(void) {
+  asm volatile(
+      "mov r0, #0\n"
+      "mcr p15, 0, r0, c7, c5, 0\n"  // icache all
+      "mcr p15, 0, r0, c7, c5, 6\n"  // branch prediction
+      "dsb\n"
+      :
+      :
+      : "r0", "memory");
+}
+
 void cpu_disable_l1_cache() {
   u32 reg;
   asm("mrc p15, 0, %0, c1, c0, 0" : "=r"(reg) : : "cc");  // SCTLR
@@ -176,8 +172,20 @@ void cpu_set_page(u32 page_table) {
   // Disable MMU
   // cpu_disable_page();
 
+  // dccmvac(page_table);
+
+  // set ttbcr0
+  write_ttbr0(page_table);
+  isb();
+  write_ttbr1(page_table);
+  isb();
+  write_ttbcr(TTBCRN_16K);
+
   // Disable L1 Cache
   cpu_disable_l1_cache();
+
+  // cpu_invalid_tlb();
+  // kprintf("invalid tlb end\n");
 
   // Invalidate L1 Caches Invalidate Instruction cache
   cp15_invalidate_icache();
@@ -185,19 +193,12 @@ void cpu_set_page(u32 page_table) {
   // Invalidate Data cache
   // __builtin___clear_cache(0, ~0);
   cache_inv_range(0, ~0);
-
   cpu_invalid_tlb();
-  dmb();
-  isb();
-  dsb();
 
-  // dccmvac(page_table);
-  // set ttbcr0
-  write_ttbr0(page_table);
-  // isb();
-  write_ttbr1(page_table);
-  // isb();
-  write_ttbcr(TTBCRN_16K);
+  dmb();
+  dsb();
+  isb();
+
   // set all permission
   // cpu_set_domain(~0);
   // cpu_set_domain(0);
