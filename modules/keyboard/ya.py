@@ -38,6 +38,9 @@ plat_source={
     ],
     't113-s3':[
         't113-s3.c'
+    ],
+    'v3s':[
+        'v3s.c'
     ]
 }
 arch_source={
