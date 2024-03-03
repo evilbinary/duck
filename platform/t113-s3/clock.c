@@ -471,6 +471,97 @@ static void set_module(u32 addr)
 	}
 }
 
+void sunxi_clk_dump()
+{
+	uint32_t	reg32;
+	uint32_t	cpu_clk_src, plln, pllm;
+	uint8_t		p0, p1;
+	const char *clock_str;
+
+	/* PLL CPU */
+	reg32		= read32(T113_CCU_BASE + CCU_CPU_AXI_CFG_REG);
+	cpu_clk_src = (reg32 >> 24) & 0x7;
+
+	switch (cpu_clk_src) {
+		case 0x0:
+			clock_str = "OSC24M";
+			break;
+
+		case 0x1:
+			clock_str = "CLK32";
+			break;
+
+		case 0x2:
+			clock_str = "CLK16M_RC";
+			break;
+
+		case 0x3:
+			clock_str = "PLL_CPU";
+			break;
+
+		case 0x4:
+			clock_str = "PLL_PERI(1X)";
+			break;
+
+		case 0x5:
+			clock_str = "PLL_PERI(2X)";
+			break;
+
+		case 0x6:
+			clock_str = "PLL_PERI(800M)";
+			break;
+
+		default:
+			clock_str = "ERROR";
+	}
+	
+	clock_str = clock_str;
+	
+	reg32 = read32(T113_CCU_BASE + CCU_PLL_CPU_CTRL_REG);
+	p0	  = (reg32 >> 16) & 0x03;
+	if (p0 == 0) {
+		p1 = 1;
+	} else if (p0 == 1) {
+		p1 = 2;
+	} else if (p0 == 2) {
+		p1 = 4;
+	} else {
+		p1 = 1;
+	}
+
+	kprintf("CLK: PLL_CPUX = %uMHz\r\n", ((((reg32 >> 8) & 0xff) + 1) * 24 / p1));
+
+	/* PLL PERIx */
+	reg32 = read32(T113_CCU_BASE + CCU_PLL_PERI0_CTRL_REG);
+	if (reg32 & (1 << 31)) {
+		plln = ((reg32 >> 8) & 0xff) + 1;
+		pllm = (reg32 & 0x01) + 1;
+		p0	 = ((reg32 >> 16) & 0x03) + 1;
+		p1	 = ((reg32 >> 20) & 0x03) + 1;
+
+		kprintf("CLK: PLL_PERI(2X) = %uMHz\r\n", (24 * plln) / (pllm * p0));
+		kprintf("CLK: PLL_PERI(1X) = %uMHz\r\n", (24 * plln) / (pllm * p0) >> 1);
+		kprintf("CLK: PLL_PERI(800) = %uMHz\r\n", (24 * plln) / (pllm * p1));
+	} else {
+		kprintf("CLK: PLL_peri disabled\r\n");
+	}
+
+	/* PLL DDR */
+	reg32 = read32(T113_CCU_BASE + CCU_PLL_DDR_CTRL_REG);
+	if (reg32 & (1 << 31)) {
+		plln = ((reg32 >> 8) & 0xff) + 1;
+
+		pllm = (reg32 & 0x01) + 1;
+		p1	 = ((reg32 >> 1) & 0x1) + 1;
+		p0	 = (reg32 & 0x01) + 1;
+
+		kprintf("CLK: PLL_DDR = %uMHz\r\n", (24 * plln) / (p0 * p1));
+
+	} else {
+		kprintf("CLK: PLL_DDR disabled\r\n");
+	}
+}
+
 void sunxi_clk_init(void)
 {
 	set_pll_cpux_axi();
@@ -485,4 +576,6 @@ void sunxi_clk_init(void)
 	set_module(T113_CCU_BASE + CCU_PLL_VE_CTRL);
 	set_module(T113_CCU_BASE + CCU_PLL_AUDIO0_CTRL_REG);
 	set_module(T113_CCU_BASE + CCU_PLL_AUDIO1_CTRL_REG);
+
+	sunxi_clk_dump();
 }

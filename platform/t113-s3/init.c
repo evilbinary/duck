@@ -29,19 +29,6 @@ static u32 cntfrq[MAX_CPU] = {
 #define IE_T0 0x01
 #define IE_T1 0x02
 
-struct t113_s3_timer {
-  volatile unsigned int irq_ena;    /* 00 Timer IRQ Enable Register */
-  volatile unsigned int irq_status; /* 04 Timer Status Register*/
-  int __pad1[2];
-  volatile unsigned int t0_ctrl; /* 10 Timer0 Control Register*/
-  volatile unsigned int t0_ival; /* 14 Timer0 Interval Value Register*/
-  volatile unsigned int t0_cval; /* 18 Timer0 Current Value Register*/
-  int __pad2;
-  volatile unsigned int t1_ctrl; /* 20 Timer1 Control Register*/
-  volatile unsigned int t1_ival; /* 24 Timer1 Interval Value Register*/
-  volatile unsigned int t1_cval; /* 28 Timer1 Current Value Register*/
-};
-
 void uart_send_char(char c) {
   while ((io_read32(UART0_BASE + UART_USR) & UART_TRANSMIT) == 0)
     ;
@@ -115,38 +102,34 @@ void cpu_clock_init(void) {
   /* pll video - 396MHZ */
   // io_write32(CCU_BASE + CCU_PLL_VIDEO_CTRL, 0x91004107);
 
-  //
-  // io_write32(CCU_BASE + CCU_AHB_APB0_CFG, 0x00003180);
-
-  // write32(CCU_BASE + CCU_APB0_CLK_REG, (2 << 0) | (1 << 8) | (0x03 << 24));
-
-  kprintf("init clock============>\n");
-  sunxi_clk_init();
-  kprintf("init clock============>end\n");
+  // enable apb0
+  //  write32(CCU_BASE + CCU_APB0_CLK_REG, (2 << 0) | (1 << 8) | (0x03 << 24));
+  //  sdelay(1);
 
   /* Set APB2 to OSC24M/1 (24MHz). */
   // io_write32(CCU_BASE + CCU_AHB2_CFG, 1 << 24 | 0 << 16 | 0);
+
+  sunxi_clk_init();
 }
 
 void platform_init() {
   io_add_write_channel(uart_send);
-
-  // cpu_clock_init();
+  cpu_clock_init();
 }
 
 void platform_map() {
   // uart
-  page_map(UART0_BASE, UART0_BASE, PAGE_DEV);
+  page_map(UART0_BASE, UART0_BASE, 0);
 
   // map gic
-  page_map(0x03020000, 0x03020000, PAGE_DEV);
-  page_map(0x03021000, 0x03021000, PAGE_DEV);
-  page_map(0x03022000, 0x03022000, PAGE_DEV);
+  page_map(0x03020000, 0x03020000, 0);
+  page_map(0x03021000, 0x03021000, 0);
+  page_map(0x03022000, 0x03022000, 0);
   // timer
-  page_map(TIMER_BASE, TIMER_BASE, PAGE_DEV);
+  page_map(TIMER_BASE, TIMER_BASE, 0);
 
   // ccu
-  page_map(CCU_BASE, CCU_BASE, PAGE_DEV);
+  page_map(CCU_BASE, CCU_BASE, 0);
 }
 
 void platform_end() {}
@@ -181,9 +164,135 @@ void timer_watch(void) {
   }
 }
 
+
+#define __get_CP(cp, op1, Rt, CRn, CRm, op2) asm volatile("MRC p" # cp ", " # op1 ", %0, c" # CRn ", c" # CRm ", " # op2 : "=r" (Rt) : : "memory" )
+#define __set_CP(cp, op1, Rt, CRn, CRm, op2) asm volatile("MCR p" # cp ", " # op1 ", %0, c" # CRn ", c" # CRm ", " # op2 : : "r" (Rt) : "memory" )
+
+uint32_t __get_CLIDR(void)
+{
+  uint32_t result;
+//  __ASM volatile("MRC p15, 1, %0, c0, c0, 1" : "=r"(result) : : "memory");
+  __get_CP(15, 1, result, 0, 0, 1);
+  return result;
+}
+void __set_CSSELR(uint32_t value)
+{
+//  __ASM volatile("MCR p15, 2, %0, c0, c0, 0" : : "r"(value) : "memory");
+  __set_CP(15, 2, value, 0, 0, 0);
+}
+
+uint32_t __get_CCSIDR(void)
+{
+  uint32_t result;
+//  __ASM volatile("MRC p15, 1, %0, c0, c0, 0" : "=r"(result) : : "memory");
+  __get_CP(15, 1, result, 0, 0, 0);
+  return result;
+}
+
+uint8_t __log2_up(uint32_t n)
+{
+  if (n < 2U) {
+    return 0U;
+  }
+  uint8_t log = 0U;
+  uint32_t t = n;
+  while(t > 1U)
+  {
+    log++;
+    t >>= 1U;
+  }
+  if (n & 1U) { log++; }
+  return log;
+}
+
+
+/** \brief  Set DCISW
+ */
+ void __set_DCISW(uint32_t value)
+{
+//  __ASM volatile("MCR p15, 0, %0, c7, c6, 2" : : "r"(value) : "memory")
+  __set_CP(15, 0, value, 7, 6, 2);
+}
+
+/** \brief  Set DCCSW
+ */
+ void __set_DCCSW(uint32_t value)
+{
+//  __ASM volatile("MCR p15, 0, %0, c7, c10, 2" : : "r"(value) : "memory")
+  __set_CP(15, 0, value, 7, 10, 2);
+}
+
+/** \brief  Set DCCISW
+ */
+ void __set_DCCISW(uint32_t value)
+{
+//  __ASM volatile("MCR p15, 0, %0, c7, c14, 2" : : "r"(value) : "memory")
+  __set_CP(15, 0, value, 7, 14, 2);
+}
+
+
+void __L1C_MaintainDCacheSetWay(uint32_t level, uint32_t maint)
+{
+  uint32_t Dummy;
+  uint32_t ccsidr;
+  uint32_t num_sets;
+  uint32_t num_ways;
+  uint32_t shift_way;
+  uint32_t log2_linesize;
+   int32_t log2_num_ways;
+
+  Dummy = level << 1U;
+  /* set csselr, select ccsidr register */
+  __set_CSSELR(Dummy);
+  /* get current ccsidr register */
+  ccsidr = __get_CCSIDR();
+  num_sets = ((ccsidr & 0x0FFFE000U) >> 13U) + 1U;
+  num_ways = ((ccsidr & 0x00001FF8U) >> 3U) + 1U;
+  log2_linesize = (ccsidr & 0x00000007U) + 2U + 2U;
+  log2_num_ways = __log2_up(num_ways);
+  if ((log2_num_ways < 0) || (log2_num_ways > 32)) {
+    return; // FATAL ERROR
+  }
+  shift_way = 32U - (uint32_t)log2_num_ways;
+  for(int32_t way = num_ways-1; way >= 0; way--)
+  {
+    for(int32_t set = num_sets-1; set >= 0; set--)
+    {
+      Dummy = (level << 1U) | (((uint32_t)set) << log2_linesize) | (((uint32_t)way) << shift_way);
+      switch (maint)
+      {
+        case 0U: __set_DCISW(Dummy);  break;
+        case 1U: __set_DCCSW(Dummy);  break;
+        default: __set_DCCISW(Dummy); break;
+      }
+    }
+  }
+  dmb();
+}
+
+void L1C_CleanInvalidateCache(uint32_t op) {
+  uint32_t clidr;
+  uint32_t cache_type;
+  clidr =  __get_CLIDR();
+  for(uint32_t i = 0U; i<7U; i++)
+  {
+    cache_type = (clidr >> i*3U) & 0x7UL;
+    if ((cache_type >= 2U) && (cache_type <= 4U))
+    {
+      __L1C_MaintainDCacheSetWay(i, op);
+    }
+  }
+}
+
+
 void timer_init(int hz) {
+  struct t113_s3_timer *timer = (struct t113_s3_timer *)TIMER_BASE;
+
+  
+
   int cpu = cpu_get_id();
   kprintf("timer init %d\n", cpu);
+
 
   int frq = read_cntfrq();
   kprintf("timer frq %d\n", frq);
@@ -194,40 +303,40 @@ void timer_init(int hz) {
   }
 
   kprintf("cntfrq %d\n", cntfrq[cpu]);
-  write_cntv_tval(cntfrq[cpu]);
+  // write_cntv_tval(cntfrq[cpu]);
 
   u32 val = read_cntv_tval();
   kprintf("val %d\n", val);
   enable_cntv(1);
 
+  
+  kprintf("timer-1\n");
+
+  timer->t0_ctrl = 0;  // stop the timer
+
   kprintf("timer0\n");
 
-  struct t113_s3_timer *timer = TIMER_BASE;
-  kprintf("timer base %x\n",timer);
+  timer->t0_ival = frq / hz;  // Timer0 Interval Value
 
-  timer->t0_ival = CLOCK_24M / hz;  // Timer0 Interval Value
-
-  // timer->t0_ival = 1000000;
-  timer->t0_ctrl = 0;       // stop the timer
   kprintf("timer1\n");
 
-  timer->irq_ena = IE_T0;  // timer 0 irq enable
-  timer->irq_status |= 0;   //
-
-
+  timer->t0_ctrl |=  CTL_SRC_24M;  // 6:4 001: /2
 
   kprintf("timer2\n");
 
-  timer->t0_ctrl = CTL_SRC_24M;   // 3:2 01: OSC24M
-  timer->t0_ctrl |= CTL_SRC_24M;  // 6:4 001: /2
-
   timer->t0_ctrl |= CTL_RELOAD;  // 2: Reload the Interval value for timer0
-  while (timer->t0_ctrl & CTL_RELOAD)
+  kprintf("timer3\n");
+
+  while ((timer->t0_ctrl >> 1) & 1)
     ;
+
   timer->t0_ctrl |= CTL_ENABLE;  // 1: Start
 
   kprintf("  Timer I val: %x\n", timer->t0_ival);
   kprintf("  Timer C val: %x\n", timer->t0_cval);
+
+  // timer->irq_status = 1;
+  timer->irq_ena = IE_T0;  // timer 0 irq enable
 
   gic_init(0x3020000);  // 0x0302 0000---0x0302 FFFF
   gic_enable(0, IRQ_TIMER0);
@@ -235,6 +344,7 @@ void timer_init(int hz) {
   // timer_watch();
   // gic_poll(IRQ_TIMER0);
 
+  
 }
 
 void timer_end() {

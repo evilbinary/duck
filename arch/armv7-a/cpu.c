@@ -140,9 +140,9 @@ void cpu_invalid_tlb() {
   // kprintf("cpu_invalid_tlb cpsr %x\n", 1);
   asm volatile("mcr p15, 0, %0, c8, c7, 0" : : "r"(0));  // unified tlb
   // kprintf("cpu_invalid_tlb1 cpsr %x\n", 2);
-  asm volatile("mcr p15, 0, %0, c8, c6, 0" : : "r"(0));  // data tlb
-  // kprintf("cpu_invalid_tlb3 cpsr %x\n", 3);
-  asm volatile("mcr p15, 0, %0, c8, c5, 0" : : "r"(0));  // instruction tlb
+  // asm volatile("mcr p15, 0, %0, c8, c6, 0" : : "r"(0));  // data tlb
+  // // kprintf("cpu_invalid_tlb3 cpsr %x\n", 3);
+  // asm volatile("mcr p15, 0, %0, c8, c5, 0" : : "r"(0));  // instruction tlb
   // kprintf("cpu_invalid_tlb4 cpsr %x\n", 4);
 
   dsb();
@@ -180,20 +180,16 @@ void cpu_set_page(u32 page_table) {
   write_ttbr1(page_table);
   isb();
   write_ttbcr(TTBCRN_16K);
-
-  // Disable L1 Cache
+  // // Disable L1 Cache
   cpu_disable_l1_cache();
 
-  cpu_invalid_tlb();
-  // kprintf("invalid tlb end\n");
-
-  // Invalidate L1 Caches Invalidate Instruction cache
+  // // Invalidate L1 Caches Invalidate Instruction cache
   cp15_invalidate_icache();
 
   // Invalidate Data cache
   // __builtin___clear_cache(0, ~0);
   // cache_inv_range(0, ~0);
-  // cpu_invalid_tlb();
+  cpu_invalid_tlb();
 
   dmb();
   dsb();
@@ -202,6 +198,8 @@ void cpu_set_page(u32 page_table) {
   // set all permission
   // cpu_set_domain(~0);
   // cpu_set_domain(0);
+
+
 }
 
 void cpu_disable_page() {
@@ -478,89 +476,3 @@ void cpu_delay(int n) {
     n--;
   }
 }
-
-// void* syscall0(u32 num) {
-//   int ret;
-//   asm volatile(
-//       "mov r7,%1 \n\t"
-//       "svc 0x0\n\t"
-//       "mov %0,r0\n\t"
-//       : "=r"(ret)
-//       : "r"(num)
-//       : "r0", "r7");
-//   return ret;
-// }
-
-// void* syscall1(u32 num, void* arg0) {
-//   int ret;
-//   asm volatile(
-//       "mov r7,%1 \n\t"
-//       "mov r0,%2 \n\t"
-//       "svc 0x0\n\t"
-//       "mov %0,r0\n\t"
-//       : "=r"(ret)
-//       : "r"(num), "r"(arg0)
-//       : "r0", "r7");
-//   return ret;
-// }
-// void* syscall2(u32 num, void* arg0, void* arg1) {
-//   int ret;
-//   asm volatile(
-//       "mov r7,%1 \n\t"
-//       "mov r0,%2 \n\t"
-//       "mov r1,%3 \n\t"
-//       "svc 0x0\n\t"
-//       "mov %0,r0\n\t"
-//       : "=r"(ret)
-//       : "r"(num), "r"(arg0), "r"(arg1)
-//       : "r0", "r1", "r7");
-//   return ret;
-// }
-// void* syscall3(u32 num, void* arg0, void* arg1, void* arg2) {
-//   u32 ret = 0;
-//   asm volatile(
-//       "mov r7,%1 \n\t"
-//       "mov r0,%2 \n\t"
-//       "mov r1,%3 \n\t"
-//       "mov r2,%4 \n\t"
-//       "svc 0x0\n\t"
-//       "mov %0,r0\n\t"
-//       : "=r"(ret)
-//       : "r"(num), "r"(arg0), "r"(arg1), "r"(arg2)
-//       : "r0", "r1", "r2","r7");
-//   return ret;
-// }
-
-// void* syscall4(u32 num, void* arg0, void* arg1, void* arg2, void* arg3) {
-//   u32 ret = 0;
-//   asm volatile(
-//       "mov r7,%1 \n\t"
-//       "mov r0,%2 \n\t"
-//       "mov r1,%3 \n\t"
-//       "mov r2,%4 \n\t"
-//       "mov r3,%5 \n\t"
-//       "svc 0x0\n\t"
-//       "mov %0,r0\n\t"
-//       : "=r"(ret)
-//       : "r"(num), "r"(arg0), "r"(arg1), "r"(arg2), "r"(arg3)
-//       : "r0", "r1", "r2", "r3","r7");
-//   return ret;
-// }
-
-// void* syscall5(u32 num, void* arg0, void* arg1, void* arg2, void* arg3,
-//                void* arg4) {
-//   u32 ret = 0;
-//   asm volatile(
-//       "mov r7,%1 \n\t"
-//       "mov r0,%2 \n\t"
-//       "mov r1,%3 \n\t"
-//       "mov r2,%4 \n\t"
-//       "mov r3,%5 \n\t"
-//       "mov r4,%6 \n\t"
-//       "svc 0x0\n\t"
-//       "mov %0,r0\n\t"
-//       : "=r"(ret)
-//       : "r"(num), "r"(arg0), "r"(arg1), "r"(arg2), "r"(arg3), "r"(arg4)
-//       : "r0", "r1", "r2", "r3", "r4", "r7");
-//   return ret;
-// }

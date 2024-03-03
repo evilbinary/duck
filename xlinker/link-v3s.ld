@@ -6,12 +6,12 @@ STACK_SIZE = 0x200;
 SECTIONS
 {
         /* Code. */
-        __start = .;
         .text K_VIR_ADDR : AT(K_PHY_ADDR)
         {
+                __start = .;
 		. = ALIGN(PAGE_SIZE);
-                *(.text.boot)
-                *(.text*)
+                KEEP(*(.text.boot .text.boot.*)) 
+                *(.text .text.*)
         }
 
         /* Read-only data. */
@@ -27,16 +27,16 @@ SECTIONS
         }
 
         /* Read-write data (uninitialized) and stack */
-        __bss_start = .;
+        
         .bss BLOCK(4K) : ALIGN(4K)
         {
+                __bss_start = .;
                 *(COMMON)
-                *(.bss*)
+                *(.bss .bss*)
+                __bss_end = .;
         }
-        __bss_end = .;
-        __bss_end = .;
+        
         .stack :  ALIGN(4) {
-                . = 0x6000;
                 _estack = .;
                 . = . + STACK_SIZE;
                 _stack_abt = .;

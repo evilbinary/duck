@@ -735,8 +735,8 @@ void map_mem_block(u32* page, u32 size, u32 flags) {
   for (; p != NULL; p = p->next) {
     u32 address = p->origin_addr;
     page_map_range(page, address, address, size, flags);
-    // kprintf("map mem block addr range %x - %x\n", p->origin_addr,
-    //         p->origin_addr + size);
+    kprintf("map mem block addr range %x - %x\n", p->origin_addr,
+            p->origin_addr + size);
     mmt.last_map_addr = address + size;
   }
 }
@@ -764,8 +764,10 @@ void page_map_kernel(u32* page, u32 flag_x, u32 flag_rw) {
     }
     page_map_range(page, address, address, size, flag);
 
-    kprintf("map kernel %d range %x  - %x type %d\n", i,
-            boot_info->segments[i].start, address + size, type);
+    kassert(address != 0);
+    kassert(size != 0);
+    kprintf("map kernel %d range %x  - %x type %d\n", i, address,
+            address + size, type);
   }
   kprintf("map kernel end %d\n", boot_info->segments_number);
 }
@@ -775,9 +777,10 @@ void mm_parse_map(u32* kernel_page_dir) {
   // map mem block 100 page 4000k
   map_mem_block(kernel_page_dir, PAGE_SIZE * 10000, PAGE_RW_NC);
 
-  kprintf("map mem range\n");
+  int size = PAGE_SIZE * 200;
+  kprintf("map mem range %x %x\n", 0, size);
   // map 0 - 0x80000
-  page_map_range(kernel_page_dir, 0, 0, PAGE_SIZE * 200, PAGE_RW);
+  page_map_range(kernel_page_dir, 0, 0, size, PAGE_RW);
 
   kprintf("map mem kernel\n");
   // map kernel
