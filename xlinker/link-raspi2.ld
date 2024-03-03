@@ -8,8 +8,9 @@ SECTIONS
         /* Code. */
         .text K_VIR_ADDR : AT(K_PHY_ADDR)
         {
-                __start = .;
 		. = ALIGN(PAGE_SIZE);
+                __start = .;
+
                 *(.text.boot)
                 *(.text*)
         }
@@ -35,7 +36,7 @@ SECTIONS
                 __bss_end = .;
         }
         
-        .stack :  ALIGN(4) {
+        .stack :  ALIGN(4K) {
                 _estack = .;
                 . = . + STACK_SIZE;
                 _stack_abt = .;
