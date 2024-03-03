@@ -140,9 +140,9 @@ void cpu_invalid_tlb() {
   // kprintf("cpu_invalid_tlb cpsr %x\n", 1);
   asm volatile("mcr p15, 0, %0, c8, c7, 0" : : "r"(0));  // unified tlb
   // kprintf("cpu_invalid_tlb1 cpsr %x\n", 2);
-  // asm volatile("mcr p15, 0, %0, c8, c6, 0" : : "r"(0));  // data tlb
+  asm volatile("mcr p15, 0, %0, c8, c6, 0" : : "r"(0));  // data tlb
   // // kprintf("cpu_invalid_tlb3 cpsr %x\n", 3);
-  // asm volatile("mcr p15, 0, %0, c8, c5, 0" : : "r"(0));  // instruction tlb
+  asm volatile("mcr p15, 0, %0, c8, c5, 0" : : "r"(0));  // instruction tlb
   // kprintf("cpu_invalid_tlb4 cpsr %x\n", 4);
 
   dsb();
@@ -188,7 +188,7 @@ void cpu_set_page(u32 page_table) {
 
   // Invalidate Data cache
   // __builtin___clear_cache(0, ~0);
-  // cache_inv_range(0, ~0);
+  cache_inv_range(0, ~0);
   cpu_invalid_tlb();
 
   dmb();
