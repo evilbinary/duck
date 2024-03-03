@@ -8,10 +8,10 @@ SECTIONS
         /* Code. */
         .text K_VIR_ADDR : AT(K_PHY_ADDR)
         {
-                 __start = .;
+                __start = .;
 		. = ALIGN(PAGE_SIZE);
-                *(.text.boot)
-                *(.text*)
+                KEEP(*(.text.boot .text.boot.*)) 
+                *(.text .text.*)
         }
 
         /* Read-only data. */
@@ -25,14 +25,16 @@ SECTIONS
         {
                 *(.data*)
         }
-        __bss_start = .;
+
         /* Read-write data (uninitialized) and stack */
+        
         .bss BLOCK(4K) : ALIGN(4K)
         {
+                __bss_start = .;
                 *(COMMON)
-                *(.bss*)
+                *(.bss .bss*)
+                __bss_end = .;
         }
-        __bss_end = .;
         
         .stack :  ALIGN(4) {
                 _estack = .;
@@ -60,4 +62,5 @@ SECTIONS
         }
         
        __end = .;
+       _end = .;
 }
