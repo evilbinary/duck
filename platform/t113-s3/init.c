@@ -167,70 +167,57 @@ void timer_watch(void) {
 void timer_init(int hz) {
   struct t113_s3_timer *timer = (struct t113_s3_timer *)TIMER_BASE;
 
-  
-
   int cpu = cpu_get_id();
   kprintf("timer init %d\n", cpu);
 
-
   int frq = read_cntfrq();
   kprintf("timer frq %d\n", frq);
-  cntfrq[cpu] = frq / hz;
+  cntfrq[cpu] = frq/hz ;
 
   if (cntfrq[cpu] <= 0) {
     cntfrq[cpu] = 6000000 / hz;
   }
 
   kprintf("cntfrq %d\n", cntfrq[cpu]);
-  write_cntv_tval(frq / hz);
+  write_cntv_tval(cntfrq[cpu]);
 
   u32 val = read_cntv_tval();
   kprintf("val %d\n", val);
   enable_cntv(1);
 
-  
-  kprintf("timer-1\n");
-
   timer->t0_ctrl = 0;  // stop the timer
 
-  kprintf("timer0\n");
+  timer->t0_ival = cntfrq[cpu];  // Timer0 Interval Value
 
-  timer->t0_ival = frq / hz;  // Timer0 Interval Value
-
-  kprintf("timer1\n");
-
-  timer->t0_ctrl |=  CTL_SRC_24M;  // 6:4 001: /2
-
-  kprintf("timer2\n");
+  timer->t0_ctrl |= CTL_SRC_24M;  // 6:4 001: /2
 
   timer->t0_ctrl |= CTL_RELOAD;  // 2: Reload the Interval value for timer0
-  kprintf("timer3\n");
 
   while ((timer->t0_ctrl >> 1) & 1)
     ;
 
-  timer->t0_ctrl |= CTL_ENABLE;  // 1: Start
-
   kprintf("  Timer I val: %x\n", timer->t0_ival);
   kprintf("  Timer C val: %x\n", timer->t0_cval);
 
-  // timer->irq_status = 1;
-  timer->irq_ena = IE_T0;  // timer 0 irq enable
+  timer->t0_ctrl |= CTL_ENABLE;  // 1: Start
 
-  gic_init(0x3020000);  // 0x0302 0000---0x0302 FFFF
+  timer->irq_status = 1;
+  timer->irq_ena |= IE_T0;  // timer 0 irq enable
+
+  gic_init(0x03020000);  // 0x0302 0000---0x0302 FFFF
   gic_enable(0, IRQ_TIMER0);
-
-  // timer_watch();
-  // gic_poll(IRQ_TIMER0);
-
-  
 }
 
 void timer_end() {
-  kprintf("timer end\n");
   int irq = gic_irqwho();
   gic_irqack(irq);
   write_cntv_tval(cntfrq[0]);
+
+  struct t113_s3_timer *timer = (struct t113_s3_timer *)TIMER_BASE;
+
+  // kprintf("timer end %d\n",irq);
+  timer->irq_status = IE_T0;
+
 }
 
 void ipi_enable(int cpu) {}

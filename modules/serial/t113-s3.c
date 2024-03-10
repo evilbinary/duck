@@ -41,8 +41,6 @@ static size_t write(device_t* dev, char* buf, size_t len) {
 }
 
 int serial_init(void) {
-  kprintf("serial_init\n");
-
   device_t* dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
   dev->name = "serial";
   dev->read = read;
