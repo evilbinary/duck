@@ -44,9 +44,7 @@ int serial_init(void) {
   kprintf("serial_init\n");
 
   device_t* dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
-  kprintf("serial_init2\n");
   dev->name = "serial";
-  kprintf("serial_init3\n");
   dev->read = read;
   dev->write = write;
   dev->id = DEVICE_SERIAL;

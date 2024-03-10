@@ -145,5 +145,7 @@ void modules_init(void) {
 
   module_run_all();
 
+  log_info("module run all end\n");
+
   test_kernel();
 }

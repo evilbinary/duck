@@ -170,7 +170,7 @@ void cpu_disable_l1_cache() {
 
 void cpu_set_page(u32 page_table) {
   // Disable MMU
-  // cpu_disable_page();
+  cpu_disable_page();
 
   // dccmvac(page_table);
 
@@ -180,16 +180,7 @@ void cpu_set_page(u32 page_table) {
   write_ttbr1(page_table);
   isb();
   write_ttbcr(TTBCRN_16K);
-  // // Disable L1 Cache
-  cpu_disable_l1_cache();
-
-  // // Invalidate L1 Caches Invalidate Instruction cache
-  cp15_invalidate_icache();
-
-  // Invalidate Data cache
-  // __builtin___clear_cache(0, ~0);
-  cache_inv_range(0, ~0);
-  cpu_invalid_tlb();
+ 
 
   dmb();
   dsb();
@@ -326,14 +317,26 @@ void cpu_enable_page() {
   reg |= (1 << 29);                                       // AFE
   reg |= 1 << 28;                                         // TEX remap enable.
   reg |= 1 << 12;  // Instruction cache enable:
-  reg |= 1 << 2;   // Cache enable.
-  // reg |= 1 << 1;   // Alignment check enable.
+  reg &= ~(1 << 1);   // Alignment check disable.
   reg |= 1 << 11;  // Branch prediction enable
   asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");  // SCTLR
 
+ // Disable L1 Cache
+  cpu_disable_l1_cache();
+
+  // Invalidate L1 Caches Invalidate Instruction cache
+  cp15_invalidate_icache();
+
+  // Invalidate Data cache
+  // __builtin___clear_cache(0, ~0);
+  cache_inv_range(0, ~0);
+
+  cpu_invalid_tlb();
+
+  dmb();
   dsb();
   isb();
-  // cpu_invalid_tlb();
+
 }
 
 void cpu_init(int cpu) {

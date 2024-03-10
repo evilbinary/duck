@@ -182,7 +182,7 @@ void timer_init(int hz) {
   }
 
   kprintf("cntfrq %d\n", cntfrq[cpu]);
-  // write_cntv_tval(cntfrq[cpu]);
+  write_cntv_tval(frq / hz);
 
   u32 val = read_cntv_tval();
   kprintf("val %d\n", val);

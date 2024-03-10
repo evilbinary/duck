@@ -728,8 +728,6 @@ u32 mm_get_block_size(void* addr) {
 }
 #endif
 
-void mm_enable(u32 page_dir) { mm_page_enable(page_dir); }
-
 void map_mem_block(u32* page, u32 size, u32 flags) {
   mem_block_t* p = mmt.blocks;
   for (; p != NULL; p = p->next) {
@@ -780,7 +778,7 @@ void mm_parse_map(u32* kernel_page_dir) {
   int size = PAGE_SIZE * 200;
   kprintf("map mem range %x %x\n", 0, size);
   // map 0 - 0x80000
-  page_map_range(kernel_page_dir, 0, 0, size, PAGE_RW);
+  // page_map_range(kernel_page_dir, 0, 0, size, PAGE_RW);
 
   kprintf("map mem kernel\n");
   // map kernel

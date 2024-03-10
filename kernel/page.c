@@ -122,7 +122,7 @@ void page_init() {
 
   // enable page
   log_info("page enable page: %x\n", kernel_page_dir);
-  mm_enable(kernel_page_dir);
+  mm_page_enable(kernel_page_dir);
   log_info("page enable end\n");
 #endif
 }

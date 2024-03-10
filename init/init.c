@@ -206,7 +206,8 @@ void do_init_thread(void) {
   char buf[64];
   int count = 0;
   int ret = 0;
-
+  print_string("init\n");
+  
   // wait module ready
   while (module_ready <= 0) {
     // sleep();
