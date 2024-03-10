@@ -23,12 +23,14 @@ void *gic_get_base() {
 void gic_init(void *base) {
   if (base == 0) {
     base = gic_get_base();
-    gic_init_base(base + GICC_OFFSET, base + GICD_OFFSET);
   }
-  kprintf("GIC base  = %x\n", base);
+  gic_init_base(base + GICC_OFFSET, base + GICD_OFFSET);
 
   gic_dist_t *dp = gic.dist;
   gic_cpu_t *cp = gic.cpu;
+
+  kprintf("GIC base  = %x dp =%x cp =%x\n", base, dp, cp);
+
   unsigned long *p;
   int i;
 
@@ -57,10 +59,10 @@ void gic_init(void *base) {
   }
 
   // enable
-  //  dp->ctl = G0_ENABLE;
-  //  cp->pm = 0xff;
-  //  cp->bp = 0x7;
-  //  cp->ctl = G0_ENABLE;
+  dp->ctl = G0_ENABLE;
+  cp->pm = 0xff;
+  cp->bp = 0x7;
+  cp->ctl = G0_ENABLE;
 
   kprintf("GIC init end\n");
 }
