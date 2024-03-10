@@ -131,7 +131,11 @@ void platform_map() {
   // ccu
   page_map(CCU_BASE, CCU_BASE, 0);
 
+  //mmc
   page_map(0x04020000, 0x04020000, 0);
+
+  //gpio
+  page_map(0x01C20800,0x01C20800,0);
 }
 
 void platform_end() {}
