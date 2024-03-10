@@ -166,7 +166,7 @@ static int sunxi_transfer_command(sdhci_sunxi_pdata_t *pdat, sdhci_cmd_t *cmd,
                                                               // register
       io_write32(pdat->virt + SD_RISR, 0xffffffff);  // Raw interrupt status
                                                      // regi
-      kprintf("sunxi_transfer_command 2 failed %d addr=%x\n", status,pdat->virt + SD_RISR);
+      kprintf("sunxi_transfer_command 2 failed %d %d\n", status,timeout);
       return FALSE;
     }
   } while (!(status & SDXC_COMMAND_DONE));

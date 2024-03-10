@@ -130,6 +130,8 @@ void platform_map() {
 
   // ccu
   page_map(CCU_BASE, CCU_BASE, 0);
+
+  page_map(0x04020000, 0x04020000, 0);
 }
 
 void platform_end() {}

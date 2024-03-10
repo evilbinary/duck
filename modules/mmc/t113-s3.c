@@ -25,7 +25,7 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   pdat->port= 0;
 
   pdat->voltage = MMC_VDD_27_36;
-  pdat->clock = 400 * 1000;
+  pdat->clock = 200 * 1000;
   pdat->width = MMC_BUS_WIDTH_4;
 
   pdat->reset = 8;
@@ -53,7 +53,7 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   pdat->cdcfg = 0;
 
   // sd mmc0
-  page_map(0x04020000, 0x04020000, 0);
+  // page_map(0x04020000, 0x04020000, 0);
 
   sdhci_sunxi_probe(sdhci_dev);
 
