@@ -125,7 +125,7 @@ size_t fat_write_bytes(vnode_t *node, u32 offset, size_t nbytes, u8 *buf) {
 uint8_t sd_raw_read(offset_t offset, uint8_t *buffer, uintptr_t length) {
   // kprintf("sd_raw_read %x buffer %x len %d\n", offset, buffer, length);
   // fat_read_bytes(default_node, offset, length, buffer);
-  int ret=fat_device_read(default_node, offset, length, buffer);
+  int ret = fat_device_read(default_node, offset, length, buffer);
   return 1;
 }
 
@@ -204,7 +204,8 @@ u32 find_file_in_dir(struct fat_fs_struct *fs, struct fat_dir_struct *dd,
                      const char *name, struct fat_dir_entry_struct *dir_entry) {
   while (fat_read_dir(dd, dir_entry)) {
     if (kstrcmp(dir_entry->long_name, name) == 0) {
-      // kprintf("find_file_in_dir %s==%s attr:%x\n",dir_entry->long_name,name,dir_entry->attributes);
+      // kprintf("find_file_in_dir %s==%s
+      // attr:%x\n",dir_entry->long_name,name,dir_entry->attributes);
       fat_reset_dir(dd);
       return 1;
     }
@@ -244,7 +245,16 @@ u32 fat_op_open(vnode_t *node, u32 mode) {
     file_info = node->super->data;
     node->data = file_info;
   }
+  if (file_info == NULL) {
+    log_error("fat may init faild\n");
+    return -1;
+  }
   struct fat_fs_struct *fs = file_info->fs;
+  if (fs == NULL) {
+    log_error("fat fs init faild\n");
+    return -1;
+  }
+
   file_info->offset = 0;
   if (((mode & O_CREAT) == O_CREAT) && (file_info->fd == NULL)) {
     log_debug("create new file %s\n", name);
@@ -287,6 +297,11 @@ u32 fat_op_open(vnode_t *node, u32 mode) {
 
 vnode_t *fat_op_find(vnode_t *node, char *name) {
   file_info_t *file_info = node->data;
+  if (file_info == NULL) {
+    log_error("fat file_info init faild\n");
+    return NULL;
+  }
+
   struct fat_fs_struct *fs = file_info->fs;
   struct fat_dir_entry_struct directory;
   uint8_t res;
