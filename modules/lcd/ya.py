@@ -19,9 +19,11 @@ plat=get_plat()
 plat_source={
  
     'stm32':[
-        'lcd.c',
         'st7735.c'
     ],
+    't113-s3':[
+        'ili9488.c'
+    ]
 }
 arch_source={
     'arm': [
@@ -32,7 +34,7 @@ arch_source={
     ]
 }
 common_source=[
-
+    'lcd.c',
 ]
 
 

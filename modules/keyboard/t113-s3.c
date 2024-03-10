@@ -21,7 +21,6 @@ static u32 scan_code_index = 0;
 static size_t read(device_t* dev, void* buf, size_t len) {
   u32 ret = 0;
 
-  
   return ret;
 }
 
