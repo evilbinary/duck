@@ -49,6 +49,8 @@ size_t lcd_ioctl(device_t* dev, u32 cmd, void* args) {
       vga->flip_buffer(vga, offset % vga->framebuffer_count);
     }
   } else if (cmd == IOC_READ_FRAMBUFFER_INFO) {
+    kprintf("lcd read framebuffer info\n");
+    lcd_init_device(dev);
     vga_device_t* buffer_info = (u32*)args;
     u32 size = (u32*)args;
     *buffer_info = *vga;
@@ -93,4 +95,4 @@ int lcd_init(void) {
 
 void lcd_exit(void) { kprintf("lcd exit\n"); }
 
-module_t lcd_module = {.name = "lcd", .init = lcd_init, .exit = lcd_exit};
+module_t lcd_module = {.name = "vga", .init = lcd_init, .exit = lcd_exit};

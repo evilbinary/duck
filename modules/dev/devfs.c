@@ -54,6 +54,9 @@ int devfs_init(void) {
     stdout->device = device_find(DEVICE_VGA_QEMU);
   }
   if (stdout->device == NULL) {
+    stdout->device = device_find(DEVICE_LCD);
+  }
+  if (stdout->device == NULL) {
     stdout->device = device_find(DEVICE_SERIAL);
   }
   stderr->device = stdout->device;

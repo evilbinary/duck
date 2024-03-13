@@ -209,7 +209,7 @@ int lcd_init_mode(vga_device_t* vga, int mode) {
   vga->frambuffer = NULL;
   vga->pframbuffer = vga->frambuffer;
 
-  lcd_init_sub(vga, mode);
+  // lcd_init_sub(vga, mode);
 
   // ili9488_init();
 

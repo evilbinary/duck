@@ -1,5 +1,5 @@
 #include "arch/arch.h"
-#include "ccu.h"
+#include "t113-ccu.h"
 
 volatile ccu_reg_t *const ccu = (ccu_reg_t *)CCU_BASE;
 

@@ -135,7 +135,7 @@ void platform_map() {
   page_map(0x04020000, 0x04020000, 0);
 
   //gpio
-  page_map(0x01C20800,0x01C20800,0);
+  page_map(GPIO_BASE,GPIO_BASE,0);
 }
 
 void platform_end() {}

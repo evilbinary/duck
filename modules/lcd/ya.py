@@ -23,7 +23,6 @@ plat_source={
     ],
     't113-s3':[
         'ili9488.c',
-        't113-s3.c'
     ]
 }
 arch_source={
