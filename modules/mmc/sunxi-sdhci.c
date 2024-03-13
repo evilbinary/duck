@@ -2,7 +2,7 @@
 #ifdef V3S
 #include "v3s-ccu.h"
 #elif T113_S3
-#include "ccu.h"
+#include "t113-ccu.h"
 
 #endif
 

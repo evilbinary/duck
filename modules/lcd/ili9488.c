@@ -4,8 +4,8 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 
-#include "lcd.h"
 #include "gpio.h"
+#include "lcd.h"
 
 #define USE_BUFF 1
 
@@ -19,9 +19,9 @@
 #define MAGENTA 0xF81F
 #define CYAN 0xFFE0
 
-#define DRVNAME		"fb_ili9486"
-#define WIDTH		320
-#define HEIGHT		480
+#define DRVNAME "fb_ili9486"
+#define WIDTH 320
+#define HEIGHT 480
 
 device_t* spi_dev = NULL;
 
@@ -55,7 +55,7 @@ void delay(int n) {
 
 void ili9488_fill(u16 xsta, u16 ysta, u16 xend, u16 yend, u16 color) {
   u16 i, j;
-  ili9488_address_set(xsta, ysta, xend - 1, yend - 1);  //设置显示范围
+  ili9488_address_set(xsta, ysta, xend - 1, yend - 1);  // 设置显示范围
   // gpio_output(ST7735_DC_GPIO_Port, ST7735_DC_Pin, GPIO_PIN_SET);
   for (i = ysta; i < yend; i++) {
     for (j = xsta; j < xend; j++) {
@@ -128,13 +128,15 @@ void ili9488_write_data(u8 cmd) {
 }
 
 void ili9488_test() {
-    ili9488_fill(0, 0, 128, 128, BLUE);
-    ili9488_fill(0, 0, 128, 128, GREEN);
-    ili9488_fill(0, 0, 128, 128, RED);
-    kprintf("ili9488 test lcd end\n");
+  ili9488_fill(0, 0, 128, 128, BLUE);
+  ili9488_fill(0, 0, 128, 128, GREEN);
+  ili9488_fill(0, 0, 128, 128, RED);
+  kprintf("ili9488 test lcd end\n");
 }
 
 void ili9488_init() {
+  kprintf("ili9488 init\n");
+
   // gpio_config(ST7735_DC_GPIO_Port, ST7735_DC_Pin, GPIO_MODE_OUTPUT_PP);
   // gpio_config(ST7735_RES_GPIO_Port, ST7735_RES_Pin, GPIO_MODE_OUTPUT_PP);
   // gpio_config(ST7735_CS_GPIO_Port, ST7735_CS_Pin, GPIO_MODE_OUTPUT_PP);
@@ -146,42 +148,42 @@ void ili9488_init() {
   // init lcd
   ili9488_reset();
 
-  ili9488_write_cmd(0x11);  // Sleep exit
-  delay(40);
+  // ili9488_write_cmd(0x11);  // Sleep exit
+  // delay(40);
 
-  ili9488_write_cmd(0xB1);  //帧率
-  ili9488_write_data(0x05);
-  ili9488_write_data(0x3C);
-  ili9488_write_data(0x3C);
+  // ili9488_write_cmd(0xB1);  //帧率
+  // ili9488_write_data(0x05);
+  // ili9488_write_data(0x3C);
+  // ili9488_write_data(0x3C);
 
-  ili9488_write_cmd(0xB2);  //帧率
-  ili9488_write_data(0x05);
-  ili9488_write_data(0x3C);
-  ili9488_write_data(0x3C);
+  // ili9488_write_cmd(0xB2);  //帧率
+  // ili9488_write_data(0x05);
+  // ili9488_write_data(0x3C);
+  // ili9488_write_data(0x3C);
 
-  ili9488_write_cmd(0xB3);  //帧率
-  ili9488_write_data(0x05);
-  ili9488_write_data(0x3C);
-  ili9488_write_data(0x3C);
-  ili9488_write_data(0x05);
-  ili9488_write_data(0x3C);
-  ili9488_write_data(0x3C);
+  // ili9488_write_cmd(0xB3);  //帧率
+  // ili9488_write_data(0x05);
+  // ili9488_write_data(0x3C);
+  // ili9488_write_data(0x3C);
+  // ili9488_write_data(0x05);
+  // ili9488_write_data(0x3C);
+  // ili9488_write_data(0x3C);
 
-  ili9488_write_cmd(0xB4);  // Column inversion
-  ili9488_write_data(0x07);
+  // ili9488_write_cmd(0xB4);  // Column inversion
+  // ili9488_write_data(0x07);
 
-  ili9488_write_cmd(0x36);  // MX, MY, RGB mode
-  ili9488_write_data(0xC8);
+  // ili9488_write_cmd(0x36);  // MX, MY, RGB mode
+  // ili9488_write_data(0xC8);
 
-  ili9488_write_cmd(0x3A);   // 65k mode
-  ili9488_write_data(0x05);  // RGB 5-6-5-bit Input
+  // ili9488_write_cmd(0x3A);   // 65k mode
+  // ili9488_write_data(0x05);  // RGB 5-6-5-bit Input
 
-  ili9488_write_cmd(0x29);  // turn display on
+  // ili9488_write_cmd(0x29);  // turn display on
+
+  // ili9488_fill(0, 0, 128, 128, BLACK);
+  // ili9488_test();
 
   kprintf("ili9488 lcd end\n");
-
-  ili9488_fill(0, 0, 128, 128, BLACK);
-  // ili9488_test();
 }
 
 int ili9488_write_pixel(vga_device_t* vga, const void* buf, size_t len) {
@@ -194,10 +196,9 @@ int ili9488_write_pixel(vga_device_t* vga, const void* buf, size_t len) {
 }
 
 int lcd_init_mode(vga_device_t* vga, int mode) {
-
   vga->width = WIDTH;
   vga->height = HEIGHT;
-  vga->bpp=16;
+  vga->bpp = 16;
 
   vga->mode = mode;
   vga->write = ili9488_write_pixel;
@@ -208,7 +209,9 @@ int lcd_init_mode(vga_device_t* vga, int mode) {
   vga->frambuffer = NULL;
   vga->pframbuffer = vga->frambuffer;
 
-  ili9488_init();
+  lcd_init_sub(vga, mode);
+
+  // ili9488_init();
 
   return 0;
 }

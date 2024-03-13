@@ -5,7 +5,7 @@
  ********************************************************************/
 #include "kernel/kernel.h"
 #include "spi.h"
-#include "sunxi_spi.h"
+#include "sunxi-spi.h"
 
 #define SPI0_BASE 0x04025000
 

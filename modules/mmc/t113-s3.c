@@ -4,7 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "sdhci.h"
-#include "sunxi_sdhci.h"
+#include "sunxi-sdhci.h"
 
 #define CACHE_COUNT 1
 #define SECTOR_SIZE (512 * CACHE_COUNT)
@@ -25,7 +25,7 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   pdat->port= 0;
 
   pdat->voltage = MMC_VDD_27_36;
-  pdat->clock = 200 * 1000;
+  pdat->clock = 24000000;
   pdat->width = MMC_BUS_WIDTH_4;
 
   pdat->reset = 8;

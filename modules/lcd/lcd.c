@@ -4,6 +4,8 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "lcd.h"
+
+#include "dev/devfs.h"
 #include "vga/vga.h"
 
 size_t lcd_read(device_t* dev, void* buf, size_t len) {
@@ -18,10 +20,10 @@ size_t lcd_write(device_t* dev, const void* buf, size_t len) {
     kprintf("not found lcd\n");
     return ret;
   }
-  if(vga->frambuffer!=NULL){
+  if (vga->frambuffer != NULL) {
     kstrncpy(vga->frambuffer, (const char*)buf, len);
-  }else{
-    vga->write(vga,buf,len);
+  } else {
+    vga->write(vga, buf, len);
   }
   return ret;
 }
@@ -48,14 +50,14 @@ size_t lcd_ioctl(device_t* dev, u32 cmd, void* args) {
     }
   } else if (cmd == IOC_READ_FRAMBUFFER_INFO) {
     vga_device_t* buffer_info = (u32*)args;
-    u32 size =(u32*)args;
+    u32 size = (u32*)args;
     *buffer_info = *vga;
   }
   return ret;
 }
 
 void lcd_init_device(device_t* dev) {
-  vga_device_t* vga = kmalloc(sizeof(vga_device_t),DEFAULT_TYPE);
+  vga_device_t* vga = kmalloc(sizeof(vga_device_t), DEFAULT_TYPE);
   vga->frambuffer = 0;
   dev->data = vga;
   lcd_init_mode(vga, VGA_MODE_128x128x16);
@@ -63,14 +65,27 @@ void lcd_init_device(device_t* dev) {
 }
 
 int lcd_init(void) {
-  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
-  dev->name = "vga";
+  kprintf("lcd_init\n");
+  device_t* dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
+  dev->name = "lcd";
   dev->read = lcd_read;
   dev->write = lcd_write;
   dev->ioctl = lcd_ioctl;
-  dev->id = DEVICE_VGA;
+  dev->id = DEVICE_LCD;
   dev->type = DEVICE_TYPE_VGA;
   device_add(dev);
+
+  // frambuffer
+  device_t* fb_dev = device_find(DEVICE_LCD);
+
+  if (fb_dev != NULL) {
+    vnode_t* frambuffer = vfs_create_node("fb", V_FILE);
+    vfs_mount(NULL, "/dev", frambuffer);
+    frambuffer->device = fb_dev;
+    frambuffer->op = &device_operator;
+  } else {
+    log_error("dev fb not found\n");
+  }
 
   lcd_init_device(dev);
   return 0;
@@ -78,4 +93,4 @@ int lcd_init(void) {
 
 void lcd_exit(void) { kprintf("lcd exit\n"); }
 
-module_t lcd_module = {.name = "vga", .init = lcd_init, .exit = lcd_exit};
+module_t lcd_module = {.name = "lcd", .init = lcd_init, .exit = lcd_exit};

@@ -22,7 +22,8 @@ plat_source={
         'st7735.c'
     ],
     't113-s3':[
-        'ili9488.c'
+        'ili9488.c',
+        't113-s3.c'
     ]
 }
 arch_source={

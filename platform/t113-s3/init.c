@@ -1,5 +1,5 @@
 #include "arch/arch.h"
-#include "ccu.h"
+#include "t113-ccu.h"
 #include "gpio.h"
 
 static u32 cntfrq[MAX_CPU] = {
