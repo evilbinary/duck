@@ -1,4 +1,4 @@
-#include "sunxi_spi.h"
+#include "sunxi-spi.h"
 
 sunxi_spi_t* sunxi_spi_base = 0;
 

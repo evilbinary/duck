@@ -19,7 +19,7 @@ plat=get_plat()
 plat_source={
     'v3s':[
         'v3s.c',
-        'sunxi_sdhci.c',
+        'sunxi-sdhci.c',
     ],
     'raspi2':[
         'bcm2836.c',
@@ -39,7 +39,7 @@ plat_source={
         'ssd202d_sdmmc.c'
     ],
     't113-s3':[
-        'sunxi_sdhci.c',
+        'sunxi-sdhci.c',
         't113-s3.c'
     ],
     'versatilepb':[

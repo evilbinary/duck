@@ -1,6 +1,7 @@
 #ifndef _V3S_GPIO_H__
 #define _V3S_GPIO_H__
 
+#include "sunxi-gpio.h"
 
 
 #define GPIO_A 0

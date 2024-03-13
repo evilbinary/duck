@@ -2,6 +2,7 @@
 #define __V3S_REG_CCU_H__
 
 #define CCU_BASE			(0x01c20000)
+#define V3S_CCU_BASE CCU_BASE
 
 #define CCU_PLL_CPU_CTRL		(0x000)
 #define CCU_PLL_AUDIO_CTRL		(0x008)

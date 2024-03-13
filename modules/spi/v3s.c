@@ -8,9 +8,12 @@
 #include "kernel/kernel.h"
 #include "spi.h"
 #include "v3s-ccu.h"
-#include "sunxi_spi.h"
+#include "sunxi-spi.h"
+#include "gpio/sunxi-gpio.h"
 
 #define SPI0_BASE 0x01C68000
+
+extern sunxi_spi_t* sunxi_spi_base;
 
 // #define kdbg
 
@@ -40,33 +43,33 @@ spi_t* gspi = NULL;
 void lcd_write_data(u8 data) {
   // cs -> dc
   // gpio_pull(GPIO_C, 2, GPIO_PULL_UP);
-  // v3s_spi_cs(gspi, 1);
+  // sunxi_spi_cs(gspi, 1);
   lcd_set_dc(1);
   spi_msg_t msg;
   msg.tx_buf = &data;
   msg.tx_len = 1;
-  v3s_spi_read_write(gspi, &msg, 1);
+  sunxi_spi_read_write(gspi, &msg, 1);
 }
 
 void lcd_write_data_word(u16 data) {
   // cs -> dc
   // gpio_pull(GPIO_C, 2, GPIO_PULL_UP);
-  // v3s_spi_cs(gspi, 1);
+  // sunxi_spi_cs(gspi, 1);
   lcd_set_dc(1);
   spi_msg_t msg = {0};
   msg.tx_buf = &data;
   msg.tx_len = 2;
-  v3s_spi_read_write(gspi, &msg, 1);
+  sunxi_spi_read_write(gspi, &msg, 1);
 }
 
 void lcd_write_cmd(u8 cmd) {
   // gpio_pull(GPIO_C, 2, GPIO_PULL_DOWN);
-  // v3s_spi_cs(gspi, 0);
+  // sunxi_spi_cs(gspi, 0);
   lcd_set_dc(0);
   spi_msg_t msg = {0};
   msg.tx_buf = &cmd;
   msg.tx_len = 1;
-  v3s_spi_read_write(gspi, &msg, 1);
+  sunxi_spi_read_write(gspi, &msg, 1);
 }
 
 void delay(void) {
@@ -185,6 +188,7 @@ void v3s_test_lcd(spi_t* spi) {
   lcd_fill(0, 0, 240, 240, RED);
 }
 
+
 int spi_init_device(device_t* dev) {
   spi_t* spi = kmalloc(sizeof(spi_t),DEFAULT_TYPE);
   dev->data = spi;
@@ -229,26 +233,28 @@ int spi_init_device(device_t* dev) {
   gpio_config(GPIO_C, 3, 3);  // 011: SPI0_MOSI
   gpio_pull(GPIO_C, 3, GPIO_PULL_DISABLE);
 
+  sunxi_spi_t* sunxi_spi_base = sunxi_spi_base;
+
   // set master mode  stop transmit data when RXFIFO full
-  v3s_spi_base->gcr = v3s_spi_base->gcr | 1 << 31 | 1 << 7 | 1 << 1 | 1;
+  sunxi_spi_base->gcr = sunxi_spi_base->gcr | 1 << 31 | 1 << 7 | 1 << 1 | 1;
 
   // wait
-  while (v3s_spi_base->gcr & (1 << 31))
+  while (sunxi_spi_base->gcr & (1 << 31))
     ;
-  kprintf("gcr %x\n", v3s_spi_base->gcr);
+  kprintf("gcr %x\n", sunxi_spi_base->gcr);
 
   // set SS Output Owner Select  1: Active low polarity (1 = Idle)
-  v3s_spi_base->tcr = v3s_spi_base->tcr | 1 << 6 | 1 << 2;
+  sunxi_spi_base->tcr = sunxi_spi_base->tcr | 1 << 6 | 1 << 2;
 
   // clear intterrupt
-  v3s_spi_base->isr = ~0;
+  sunxi_spi_base->isr = ~0;
 
   // set fcr TX FIFO Reset RX FIFO Reset
-  v3s_spi_base->fcr = v3s_spi_base->fcr | 1 << 31 | 1 << 15;
+  sunxi_spi_base->fcr = sunxi_spi_base->fcr | 1 << 31 | 1 << 15;
 
   // set sclk clock  Select Clock Divide Rate 2 SPI_CLK = Source_CLK / (2*(n +
   // 1)).
-  v3s_spi_base->ccr = 1 << 12 | 14;
+  sunxi_spi_base->ccr = 1 << 12 | 14;
 
   sunxi_spi_cs(spi, 1);
 

@@ -1,6 +1,6 @@
 #include "gpio.h"
 #include "v3s.h"
-#include "sunxi_gpio.h"
+#include "sunxi-gpio.h"
 
 
 static sunxi_gpio_t *gpio_base[] = {

@@ -1,4 +1,4 @@
-#include "sunxi_sdhci.h"
+#include "sunxi-sdhci.h"
 #ifdef V3S
 #include "v3s-ccu.h"
 #elif T113_S3

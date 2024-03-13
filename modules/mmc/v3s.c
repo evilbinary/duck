@@ -2,7 +2,7 @@
 #include "v3s.h"
 
 #include "gpio/v3s.h"
-#include "sunxi_sdhci.h"
+#include "sunxi-sdhci.h"
 #include "v3s-ccu.h"
 
 #define CACHE_COUNT 1

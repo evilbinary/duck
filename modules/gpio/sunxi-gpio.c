@@ -1,4 +1,4 @@
-#include "sunxi_gpio.h"
+#include "sunxi-gpio.h"
 
 static sunxi_gpio_t **gpio_base=NULL;
 
