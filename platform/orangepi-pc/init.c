@@ -2,7 +2,7 @@
 #include "arch/pmemory.h"
 #include "archcommon/gic2.h"
 #include "gpio.h"
-#include "v3s-reg-ccu.h"
+#include "v3s-ccu.h"
 
 #define TIMER_MASK 0x40000
 #define IRQ_UART0 32

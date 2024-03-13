@@ -7,7 +7,7 @@
 
 #include "i2c.h"
 #include "kernel/kernel.h"
-#include "v3s-reg-ccu.h"
+#include "v3s-ccu.h"
 
 #define TWI0_BASE 0x01C2AC00
 #define TWI1_BASE 0x01C2B000

@@ -14,6 +14,19 @@
 #define GPIO_OUTPUT (1)   // 001: Output
 #define GPIO_DISABLE (7)  // 111: IO Disable
 
+
+#define GPIO_A 0
+#define GPIO_B 1  // Port B(PB): 10 input/output port
+#define GPIO_C 2  // 4 input/output port
+#define GPIO_D 3
+#define GPIO_E 4  // 25 input/output port
+#define GPIO_F 5  // 7 input/output port
+#define GPIO_G 6  // 6 input/output port
+#define GPIO_H 7
+#define GPIO_I 8
+#define GPIO_L 9
+
+
 typedef struct sunxi_gpio {
   volatile unsigned long config[4];//config 0-3 n*0x24+0x00  n*0x24+0x04 n*0x24+0x08 n*0x24+0x0C
   volatile unsigned long data;  //data n*0x24+0x10

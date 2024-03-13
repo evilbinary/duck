@@ -2,7 +2,7 @@
 
 #include "archcommon/gic2.h"
 #include "gpio.h"
-#include "v3s-reg-ccu.h"
+#include "v3s-ccu.h"
 #include "arch/pmemory.h"
 
 #define TIMER_MASK 0x40000

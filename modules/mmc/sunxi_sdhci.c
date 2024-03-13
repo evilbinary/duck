@@ -1,6 +1,6 @@
 #include "sunxi_sdhci.h"
 #ifdef V3S
-#include "v3s-reg-ccu.h"
+#include "v3s-ccu.h"
 #elif T113_S3
 #include "ccu.h"
 
@@ -166,7 +166,7 @@ static int sunxi_transfer_command(sdhci_sunxi_pdata_t *pdat, sdhci_cmd_t *cmd,
                                                               // register
       io_write32(pdat->virt + SD_RISR, 0xffffffff);  // Raw interrupt status
                                                      // regi
-      kprintf("sunxi_transfer_command 2 failed %d %d\n", status,timeout);
+      kprintf("sunxi_transfer_command 2 failed %d %d\n", status, timeout);
       return FALSE;
     }
   } while (!(status & SDXC_COMMAND_DONE));
@@ -403,7 +403,7 @@ static int sdhci_sunxi_setclock(sdhci_device_t *sdhci, u32 clock) {
   if ((ratio & 0xff) != ratio) return FALSE;
   io_write32(pdat->virt + SD_CKCR,
              io_read32(pdat->virt + SD_CKCR) & ~(1 << 16));
-  // io_write32(pdat->virt + SD_CKCR, ratio);
+  io_write32(pdat->virt + SD_CKCR, ratio);
 
   if (!sdhci_sunxi_update_clk(pdat)) return FALSE;
   io_write32(pdat->virt + SD_CKCR, io_read32(pdat->virt + SD_CKCR) | (3 << 16));
@@ -419,7 +419,6 @@ static int sdhci_sunxi_transfer(sdhci_device_t *sdhci, sdhci_cmd_t *cmd,
   }
   return sunxi_transfer_data(pdat, cmd, dat);
 }
-
 
 static int sd_send_op_cond(sdhci_device_t *hci) {
   sdhci_sunxi_pdata_t *pdat = (sdhci_sunxi_pdata_t *)hci->data;
@@ -560,7 +559,7 @@ u32 mmc_read_blocks(sdhci_device_t *hci, u32 start, u32 blkcnt, u8 *buf) {
   sdhci_data_t dat = {0};
   int status;
 
-  if (blkcnt >= 1)
+  if (blkcnt > 1)
     cmd.cmdidx = MMC_READ_MULTIPLE_BLOCK;
   else
     cmd.cmdidx = MMC_READ_SINGLE_BLOCK;

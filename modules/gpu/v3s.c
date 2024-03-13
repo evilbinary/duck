@@ -1,9 +1,9 @@
 #include "v3s.h"
 
 #include "vga/vga.h"
-#include "v3s-reg-ccu.h"
-#include "v3s-reg-de.h"
-#include "v3s-reg-tcon.h"
+#include "v3s-ccu.h"
+#include "v3s-de.h"
+#include "v3s-tcon.h"
 
 #define RGB24_2_RGB565(r, g, b) \
   (u16)((((r) << 8) & 0xF800) | (((g) << 3) & 0x7E0) | (((b) >> 3)))

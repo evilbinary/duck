@@ -7,7 +7,7 @@
 
 #include "kernel/kernel.h"
 #include "spi.h"
-#include "v3s-reg-ccu.h"
+#include "v3s-ccu.h"
 #include "sunxi_spi.h"
 
 #define SPI0_BASE 0x01C68000
