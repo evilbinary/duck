@@ -5,11 +5,11 @@
  ********************************************************************/
 #include "t113-s3.h"
 
+#include "gpio/sunxi-gpio.h"
 #include "t113-ccu.h"
 #include "t113-de.h"
 #include "t113-tcon.h"
 #include "vga/vga.h"
-#include "gpio/sunxi-gpio.h"
 
 static void inline t113_de_enable(t113_s3_lcd_t *pdat) {
   struct de_glb_t *glb = (struct de_glb_t *)(pdat->de + T113_DE_MUX_GLB);
@@ -85,12 +85,13 @@ static inline void t113_de_set_mode(t113_s3_lcd_t *pdat) {
   io_write32(pdat->de + T113_DE_MUX_FCC, 0);
   io_write32(pdat->de + T113_DE_MUX_DCSC, 0);
 
-  io_write32((u32)&ui->cfg[0].attr, (1 << 0) | (4 << 8) | (1 << 1) | (0xff << 24));
+  io_write32((u32)&ui->cfg[0].attr,
+             (1 << 0) | (4 << 8) | (1 << 1) | (0xff << 24));
   io_write32((u32)&ui->cfg[0].size, size);
   io_write32((u32)&ui->cfg[0].coord, 0);
   io_write32((u32)&ui->cfg[0].pitch, 4 * pdat->width);
   io_write32((u32)&ui->cfg[0].top_laddr,
-          (u32)(unsigned long)pdat->vram[pdat->index]);
+             (u32)(unsigned long)pdat->vram[pdat->index]);
   io_write32((u32)&ui->ovl_size, size);
 }
 
@@ -123,12 +124,12 @@ static void t113_tconlcd_set_timing(t113_s3_lcd_t *pdat) {
   val = (pdat->timing.v_front_porch + pdat->timing.v_back_porch +
          pdat->timing.v_sync_len) /
         2;
-  io_write32((u32)&tcon->ctrl,
-          (1 << 31) | (0 << 24) | (0 << 23) | ((val & 0x1f) << 4) | (0 << 0));
+  io_write32((u32)&tcon->ctrl, (1 << 31) | (0 << 24) | (0 << 23) |
+                                   ((val & 0x1f) << 4) | (0 << 0));
   val = clk_get_rate(pdat->clk_tconlcd) / pdat->timing.pixel_clock_hz;
   io_write32((u32)&tcon->dclk, (0xf << 28) | (val << 0));
   io_write32((u32)&tcon->timing0,
-          ((pdat->width - 1) << 16) | ((pdat->height - 1) << 0));
+             ((pdat->width - 1) << 16) | ((pdat->height - 1) << 0));
   bp = pdat->timing.h_sync_len + pdat->timing.h_back_porch;
   total = pdat->width + pdat->timing.h_front_porch + bp;
   io_write32((u32)&tcon->timing1, ((total - 1) << 16) | ((bp - 1) << 0));
@@ -136,7 +137,7 @@ static void t113_tconlcd_set_timing(t113_s3_lcd_t *pdat) {
   total = pdat->height + pdat->timing.v_front_porch + bp;
   io_write32((u32)&tcon->timing2, ((total * 2) << 16) | ((bp - 1) << 0));
   io_write32((u32)&tcon->timing3, ((pdat->timing.h_sync_len - 1) << 16) |
-                                   ((pdat->timing.v_sync_len - 1) << 0));
+                                      ((pdat->timing.v_sync_len - 1) << 0));
 
   val = (0 << 31) | (1 << 28);
   if (!pdat->timing.h_sync_active) val |= (1 << 25);
@@ -163,9 +164,11 @@ static void t113_tconlcd_set_dither(t113_s3_lcd_t *pdat) {
     io_write32((u32)&tcon->frm_table[3], 0x7f7f7777);
 
     if (pdat->bits_per_pixel == 16)
-      io_write32((u32)&tcon->frm_ctrl, (1 << 31) | (1 << 6) | (0 << 5) | (1 << 4));
+      io_write32((u32)&tcon->frm_ctrl,
+                 (1 << 31) | (1 << 6) | (0 << 5) | (1 << 4));
     else if (pdat->bits_per_pixel == 18)
-      io_write32((u32)&tcon->frm_ctrl, (1 << 31) | (0 << 6) | (0 << 5) | (0 << 4));
+      io_write32((u32)&tcon->frm_ctrl,
+                 (1 << 31) | (0 << 6) | (0 << 5) | (0 << 4));
   }
 }
 
@@ -209,6 +212,52 @@ static void fb_present(vga_device_t *fb, struct surface_t *s,
 }
 
 int gpu_init_mode(vga_device_t *vga, int mode) {
+  
+  if (mode == VGA_MODE_80x25) {
+    vga->width = 80;
+    vga->height = 25;
+  } else if (mode == VGA_MODE_320x200x256) {
+    vga->width = 320;
+    vga->height = 256;
+  } else if (mode == VGA_MODE_640x480x24) {
+    vga->width = 640;
+    vga->height = 480;
+    vga->bpp = 24;
+  } else if (mode == VGA_MODE_480x272x24) {
+    vga->width = 480;
+    vga->height = 272;
+    vga->bpp = 24;
+  } else if (mode == VGA_MODE_480x272x32) {
+    vga->width = 480;
+    vga->height = 272;
+    vga->bpp = 32;
+  } else if (mode == VGA_MODE_480x272x18) {
+    vga->width = 480;
+    vga->height = 272;
+    vga->bpp = 18;
+  } else if (mode == VGA_MODE_1024x768x32) {
+    vga->width = 1024;
+    vga->height = 768;
+    vga->bpp = 32;
+  } else {
+    log_error("no support mode %x\n");
+  }
+
+  vga->mode = mode;
+  vga->write = NULL;
+
+  vga->framebuffer_index = 0;
+  vga->framebuffer_count = 1;
+  vga->pframbuffer = 0x73e00000;
+  vga->frambuffer = 0xfb000000;
+
+  t113_lcd_init(vga);
+
+  log_info("fb addr:%x end:%x len:%x\n", vga->frambuffer,
+           vga->frambuffer + vga->framebuffer_length, vga->framebuffer_length);
+}
+
+int t113_lcd_init(vga_device_t *vga) {
   log_info("t113_lcd_init\n");
   t113_s3_lcd_t *lcd = kmalloc(sizeof(t113_s3_lcd_t), DEFAULT_TYPE);
   vga->priv = lcd;
