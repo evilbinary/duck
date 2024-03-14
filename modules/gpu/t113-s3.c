@@ -124,15 +124,20 @@ static void t113_tconlcd_set_timing(t113_s3_lcd_t *pdat) {
   val = (pdat->timing.v_front_porch + pdat->timing.v_back_porch +
          pdat->timing.v_sync_len) /
         2;
+
+  // LCD_EN HV(Sync+DE)
   io_write32((u32)&tcon->ctrl, (1 << 31) | (0 << 24) | (0 << 23) |
                                    ((val & 0x1f) << 4) | (0 << 0));
-  val = clk_get_rate(pdat->clk_tconlcd) / pdat->timing.pixel_clock_hz;
+  val = pdat->clk_tconlcd / pdat->timing.pixel_clock_hz;
+
+  // LCD_DCLK_EN 0xf LCD_DCLK_DIV  <6
   io_write32((u32)&tcon->dclk, (0xf << 28) | (val << 0));
   io_write32((u32)&tcon->timing0,
              ((pdat->width - 1) << 16) | ((pdat->height - 1) << 0));
   bp = pdat->timing.h_sync_len + pdat->timing.h_back_porch;
   total = pdat->width + pdat->timing.h_front_porch + bp;
   io_write32((u32)&tcon->timing1, ((total - 1) << 16) | ((bp - 1) << 0));
+
   bp = pdat->timing.v_sync_len + pdat->timing.v_back_porch;
   total = pdat->height + pdat->timing.v_front_porch + bp;
   io_write32((u32)&tcon->timing2, ((total * 2) << 16) | ((bp - 1) << 0));
@@ -145,6 +150,8 @@ static void t113_tconlcd_set_timing(t113_s3_lcd_t *pdat) {
   if (!pdat->timing.den_active) val |= (1 << 27);
   if (!pdat->timing.clk_active) val |= (1 << 26);
   io_write32((u32)&tcon->io_polarity, val);
+
+  // LCD_IO_TRI_REG 0 start
   io_write32((u32)&tcon->io_tristate, 0);
 }
 
@@ -174,20 +181,12 @@ static void t113_tconlcd_set_dither(t113_s3_lcd_t *pdat) {
 
 static void fb_t113_cfg_gpios(int gpio, int pin, int n, int cfg, int pull,
                               int drv) {
-  for (; n > 0; n--, gpio++) {
+  for (int i = 0; i < n; i++) {
     // todo
-    gpio_config(gpio, pin + n, cfg);
-    gpio_pull(gpio, pin + n, pull);
-    // gpio_output()
-    //  gpio_set_drv(base, drv);
+    gpio_config(gpio, pin + i, cfg);
+    gpio_pull(gpio, pin + i, pull);
+    gpio_output(gpio, pin + i, drv);
   }
-}
-
-int clk_get_rate(const char *name) {
-  int val = 0;
-  // todo
-
-  return val;
 }
 
 // static void fb_setbl(vga_device_t *fb, int brightness) {
@@ -212,7 +211,6 @@ static void fb_present(vga_device_t *fb, struct surface_t *s,
 }
 
 int gpu_init_mode(vga_device_t *vga, int mode) {
-  
   if (mode == VGA_MODE_80x25) {
     vga->width = 80;
     vga->height = 25;
@@ -246,6 +244,9 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
   vga->mode = mode;
   vga->write = NULL;
 
+  vga->width = 480;
+  vga->height = 320;
+
   vga->framebuffer_index = 0;
   vga->framebuffer_count = 1;
   vga->pframbuffer = 0x73e00000;
@@ -255,6 +256,11 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
 
   log_info("fb addr:%x end:%x len:%x\n", vga->frambuffer,
            vga->frambuffer + vga->framebuffer_length, vga->framebuffer_length);
+
+  u8 *buffer = vga->frambuffer;
+  for (int i = 0; i < vga->framebuffer_length / 8; i++) {
+    buffer[i] = 0xffff00;
+  }
 }
 
 int t113_lcd_init(vga_device_t *vga) {
@@ -265,8 +271,6 @@ int t113_lcd_init(vga_device_t *vga) {
   lcd->de = T113_DE_BASE;
   lcd->tcon = T113_TCON_BASE;
 
-  // lcd->rstde = 44;
-  // lcd->rsttcon = 36;
   lcd->width = vga->width;
   lcd->height = vga->height;
   lcd->bits_per_pixel = 18;
@@ -287,6 +291,8 @@ int t113_lcd_init(vga_device_t *vga) {
   lcd->timing.v_sync_active = 0;
   lcd->timing.den_active = 1;
   lcd->timing.clk_active = 1;
+
+  lcd->clk_tconlcd = 33000000 * 1;
 
   // map tcon 4k
   page_map(T113_TCON_BASE, T113_TCON_BASE, 0);
@@ -311,24 +317,33 @@ int t113_lcd_init(vga_device_t *vga) {
   }
 
   // init
-  // todo clk video enable
-  // clk_enable(pdat->clk_de);
-  // clk_enable(pdat->clk_tconlcd);
+  // clk video enable
+  // PLL_VIDEO0 -> sunxi_clk_init
+
+  // TCON LCD0 Clock register
+  io_write32(T113_CCU_BASE + 0xB60, 1 << 31);
 
   // todo gpio set
-
   if (lcd->bits_per_pixel == 16) {
     //   fb_t113_cfg_gpios(T113_GPIOD1, 5, 0x2, GPIO_PULL_NONE,
-    //   GPIO_DRV_STRONG); fb_t113_cfg_gpios(T113_GPIOD6, 6, 0x2,
-    //   GPIO_PULL_NONE, GPIO_DRV_STRONG); fb_t113_cfg_gpios(T113_GPIOD13, 5,
+    //   GPIO_DRV_STRONG);
+    // fb_t113_cfg_gpios(T113_GPIOD6, 6, 0x2, GPIO_PULL_NONE, GPIO_DRV_STRONG);
+    // fb_t113_cfg_gpios(T113_GPIOD13, 5,
     //   0x2, GPIO_PULL_NONE, GPIO_DRV_STRONG); fb_t113_cfg_gpios(T113_GPIOD18,
     //   4, 0x2, GPIO_PULL_NONE, GPIO_DRV_STRONG);
   } else if (lcd->bits_per_pixel == 18) {
-    fb_t113_cfg_gpios(GPIO_D, 0, 6, 0x2, GPIO_PULL_UP, 0);
-    fb_t113_cfg_gpios(GPIO_D, 6, 6, 0x2, GPIO_PULL_UP, 0);
-    fb_t113_cfg_gpios(GPIO_D, 12, 6, 0x2, GPIO_PULL_UP, 0);
-    fb_t113_cfg_gpios(GPIO_D, 18, 4, 0x2, GPIO_PULL_UP, 0);
+    // pd0-pd21
+    log_info("bits_per_pixel %d\n",lcd->bits_per_pixel);
+
+    fb_t113_cfg_gpios(GPIO_D, 0, 6, 0x2, GPIO_PULL_DOWN, 3);
+    fb_t113_cfg_gpios(GPIO_D, 6, 6, 0x2, GPIO_PULL_DOWN, 3);
+    fb_t113_cfg_gpios(GPIO_D, 12, 6, 0x2, GPIO_PULL_DOWN, 3);
+    fb_t113_cfg_gpios(GPIO_D, 18, 4, 0x2, GPIO_PULL_DOWN, 3);
   }
+
+  //reset de 16
+
+  //reset tconlcd 912
 
   // tcon init
   t113_tconlcd_disable(lcd);

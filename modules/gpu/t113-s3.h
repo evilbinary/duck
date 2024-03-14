@@ -9,8 +9,7 @@ typedef struct t113_s3_lcd {
   u32 de;
   u32 tcon;
 
-  char *clk_de;
-  char *clk_tconlcd;
+  u32 clk_tconlcd;
   int rst_de;
   int rst_tconlcd;
   int width;
