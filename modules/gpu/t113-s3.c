@@ -185,7 +185,7 @@ static void fb_t113_cfg_gpios(int gpio, int pin, int n, int cfg, int pull,
     // todo
     gpio_config(gpio, pin + i, cfg);
     gpio_pull(gpio, pin + i, pull);
-    gpio_output(gpio, pin + i, drv);
+    gpio_drive(gpio, pin + i, drv);
   }
 }
 
