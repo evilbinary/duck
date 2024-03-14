@@ -27,8 +27,8 @@ void gpio_pull(u32 gpio, u32 pin, u32 val) {
 
 void gpio_drive(u32 gpio, u32 pin, u32 val) {
   sunxi_gpio_t *gp = gpio_base[gpio];
-  int reg = pin / 16;
-  int shift = (pin & 0xf) <<2;
+  int reg = pin / 8;
+  int shift = (pin & 0x7) <<2;
   int tmp;
 
   tmp = gp->drive[reg] & ~(0x3 << shift);
