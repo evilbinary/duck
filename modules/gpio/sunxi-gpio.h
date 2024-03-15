@@ -28,10 +28,10 @@
 
 
 typedef struct sunxi_gpio {
-  volatile unsigned long config[4];//config 0-3 n*0x24+0x00  n*0x24+0x04 n*0x24+0x08 n*0x24+0x0C
-  volatile unsigned long data;  //data n*0x24+0x10
-  volatile unsigned long drive[3]; //driv 0-1
-  volatile unsigned long pull[2];  //pul 0-1
+  volatile u32 config[4];//config 0-3 n*0x24+0x00  n*0x24+0x04 n*0x24+0x08 n*0x24+0x0C
+  volatile u32 data;  //data n*0x24+0x10
+  volatile u32 drive[3]; //driv 0-1
+  volatile u32 pull[2];  //pul 0-1
 }sunxi_gpio_t;
 
 void gpio_set_base(u32 * base);

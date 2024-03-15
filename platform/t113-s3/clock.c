@@ -108,14 +108,12 @@ static void set_pll_periph0(void) {
 }
 
 static void set_ahb(void) {
-  io_write32(CCU_BASE + CCU_PSI_CLK_REG,
-             (2 << 0) | (0 << 8) | (0x03 << 24));
+  io_write32(CCU_BASE + CCU_PSI_CLK_REG, (2 << 0) | (0 << 8) | (0x03 << 24));
   sdelay(1);
 }
 
 static void set_apb(void) {
-  io_write32(CCU_BASE + CCU_APB0_CLK_REG,
-             (2 << 0) | (1 << 8) | (0x03 << 24));
+  io_write32(CCU_BASE + CCU_APB0_CLK_REG, (2 << 0) | (1 << 8) | (0x03 << 24));
   sdelay(1);
 }
 
@@ -173,7 +171,7 @@ void sunxi_clk_dump() {
   const char *clock_str;
 
   /* PLL CPU */
-  reg32 = read32(CCU_BASE + CCU_CPU_AXI_CFG_REG);
+  reg32 = io_read32(CCU_BASE + CCU_CPU_AXI_CFG_REG);
   cpu_clk_src = (reg32 >> 24) & 0x7;
 
   switch (cpu_clk_src) {
@@ -211,7 +209,7 @@ void sunxi_clk_dump() {
 
   clock_str = clock_str;
 
-  reg32 = read32(CCU_BASE + CCU_PLL_CPU_CTRL_REG);
+  reg32 = io_read32(CCU_BASE + CCU_PLL_CPU_CTRL_REG);
   p0 = (reg32 >> 16) & 0x03;
   if (p0 == 0) {
     p1 = 1;
@@ -226,7 +224,7 @@ void sunxi_clk_dump() {
   kprintf("CLK: PLL_CPUX = %uMHz\r\n", ((((reg32 >> 8) & 0xff) + 1) * 24 / p1));
 
   /* PLL PERIx */
-  reg32 = read32(CCU_BASE + CCU_PLL_PERI0_CTRL_REG);
+  reg32 = io_read32(CCU_BASE + CCU_PLL_PERI0_CTRL_REG);
   if (reg32 & (1 << 31)) {
     plln = ((reg32 >> 8) & 0xff) + 1;
     pllm = (reg32 & 0x01) + 1;
@@ -241,7 +239,7 @@ void sunxi_clk_dump() {
   }
 
   /* PLL DDR */
-  reg32 = read32(CCU_BASE + CCU_PLL_DDR_CTRL_REG);
+  reg32 = io_read32(CCU_BASE + CCU_PLL_DDR_CTRL_REG);
   if (reg32 & (1 << 31)) {
     plln = ((reg32 >> 8) & 0xff) + 1;
 
@@ -256,23 +254,36 @@ void sunxi_clk_dump() {
   }
 }
 
+long sunxi_clk_get_rate() {
+  long rate = 0;
+  uint32_t r, n, k, m, p;
 
-uint32_t sunxi_clk_get_peri1x_rate()
-{
-	uint32_t reg32;
-	uint8_t	 plln, pllm, p0;
+  /* PLL PERIx */
+  r = io_read32(CCU_BASE + CCU_PLL_CPU_CTRL_REG);
+  n = ((r >> 8) & 0x1f) + 1;
+  k = ((r >> 4) & 0x3) + 1;
+  m = ((r >> 0) & 0x3) + 1;
+  p = (r >> 16) & 0x3;
+  rate = (long)(((24000000 * n * k) >> p) / m);
 
-	/* PLL PERIx */
-	reg32 = read32(CCU_BASE + CCU_PLL_PERI0_CTRL_REG);
-	if (reg32 & (1U << 31)) {
-		plln = ((reg32 >> 8) & 0xff) + 1;
-		pllm = (reg32 & 0x01) + 1;
-		p0	 = ((reg32 >> 16) & 0x03) + 1;
+  return rate;
+}
 
-		return ((((24 * plln) / (pllm * p0)) >> 1) * 1000 * 1000);
-	}
+uint32_t sunxi_clk_get_peri1x_rate() {
+  uint32_t reg32;
+  uint8_t plln, pllm, p0;
 
-	return 0;
+  /* PLL PERIx */
+  reg32 = io_read32(CCU_BASE + CCU_PLL_PERI0_CTRL_REG);
+  if (reg32 & (1U << 31)) {
+    plln = ((reg32 >> 8) & 0xff) + 1;
+    pllm = (reg32 & 0x01) + 1;
+    p0 = ((reg32 >> 16) & 0x03) + 1;
+
+    return ((((24 * plln) / (pllm * p0)) >> 1) * 1000 * 1000);
+  }
+
+  return 0;
 }
 
 void sunxi_clk_init(void) {
