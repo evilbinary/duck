@@ -7,35 +7,25 @@
 #include "gpio/sunxi-gpio.h"
 #include "lcd.h"
 
-#define USE_BUFF 1
-
-#define BLACK 0x0000
-#define WHITE 0xFFFF
-
-#define RED 0xf800
-#define BLUE 0x001f
-#define GREEN 0x07e0
-#define YELLOW 0xffe0
-#define MAGENTA 0xF81F
-#define CYAN 0xFFE0
-
 #define DRVNAME "fb_ili9486"
 #define WIDTH 320
 #define HEIGHT 480
 
 #define LCD_CS_CLR gpio_output(GPIO_E, 11, 0);
+#define LCD_CS_SET gpio_output(GPIO_E, 11, 1);
+
 #define LCD_SCLK_CLR gpio_output(GPIO_E, 8, 0);
+#define LCD_SCLK_SET gpio_output(GPIO_E, 8, 1);
+
 #define LCD_SDA_SET gpio_output(GPIO_E, 10, 1);
 #define LCD_SDA_CLR gpio_output(GPIO_E, 10, 0);
-#define LCD_SCLK_SET gpio_output(GPIO_E, 8, 1);
-#define LCD_CS_SET gpio_output(GPIO_E, 11, 1);
 
 void delay(int n) {
   for (int i = 0; i < 1000 * n; i++) {
   }
 }
 
-void ili9488_reset() { delay(200); }
+void ili9488_reset() { delay(20); }
 
 void ili9488_write_cmd(u8 cmd) {
   u8 i = 0;
@@ -90,6 +80,11 @@ void ili9488_test() {
   // ili9488_fill(0, 0, 128, 128, GREEN);
   // ili9488_fill(0, 0, 128, 128, RED);
   kprintf("ili9488 test lcd end\n");
+  u32* p = 0xfb000000;
+  for (int i = 0; i < 400 * 300; i++) {
+    *p = 0x0ff00;
+    p++;
+  }
 }
 
 void ili9488_init() {
@@ -110,12 +105,16 @@ void ili9488_init() {
   gpio_drive(GPIO_E, (8), 3);
   gpio_drive(GPIO_D, (22), 3);
 
-  // gpio_config(GPIO_B, (7), GPIO_OUTPUT);
+  gpio_config(GPIO_B, (7), GPIO_OUTPUT);
   // gpio_pull(GPIO_B(7), GPIO_PULL_UP);
   // gpio_drive(GPIO_B(7), 3);
-  // gpio_config(GPIO_B, (7), 1);
+  gpio_config(GPIO_B, (7), 1);
+
+  kprintf("ili9488 3line spi init end\n");
 
   delay(20);
+
+
 
   // init lcd
   ili9488_reset();
@@ -172,6 +171,20 @@ void ili9488_init() {
   ili9488_write_data(0x25);  // Vcom
   ili9488_write_data(0x80);
 
+
+  ili9488_write_cmd(0x2A);
+  ili9488_write_data(0x00);
+  ili9488_write_data(0x00);
+  ili9488_write_data(0x01);
+  ili9488_write_data(0xDF);  // 479
+
+  ili9488_write_cmd(0x2B);
+  ili9488_write_data(0x00);
+  ili9488_write_data(0x00);
+  ili9488_write_data(0x01);
+  ili9488_write_data(0x3F);  // 319
+
+
   ili9488_write_cmd(0x36);  // Memory Access
   ili9488_write_data(0x48);
 
@@ -180,6 +193,7 @@ void ili9488_init() {
 
   ili9488_write_cmd(0xB0);  // Interface Mode Control
   ili9488_write_data(0x00);
+
 
   kprintf("ili9488 Frame rate\n");
 
@@ -196,7 +210,7 @@ void ili9488_init() {
   ili9488_write_cmd(0xE9);   // Set Image Function
   ili9488_write_data(0x00);  // disable 24 bit data input
 
-  kprintf("ili9488 Frame rate\n");
+  kprintf("ili9488 ajust control\n");
 
   ili9488_write_cmd(0xF7);  // A d j u s t C o n t r o l
   ili9488_write_data(0xA9);
@@ -212,8 +226,7 @@ void ili9488_init() {
   delay(120);
   ili9488_write_cmd(0x29);  // Display on
 
-  // ili9488_fill(0, 0, 128, 128, BLACK);
-  // ili9488_test();
+  ili9488_test();
 
   kprintf("ili9488 lcd end\n");
 }
