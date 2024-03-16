@@ -7,7 +7,6 @@
 #include "arch/display.h"
 #include "arch/pmemory.h"
 #include "cpu.h"
-#include "gpio.h"
 
 #define PAGE_DIR_NUMBER 4096
 

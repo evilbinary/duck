@@ -4,7 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "dev/devfs.h"
-#include "gpio.h"
+#include "t113-gpio.h"
 #include "serial.h"
 
 void serial_write(char a) { uart_send(a); }

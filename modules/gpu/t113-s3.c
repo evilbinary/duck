@@ -199,26 +199,6 @@ static void fb_t113_cfg_gpios(int gpio, int pin, int n, int cfg, int pull,
   }
 }
 
-// static void fb_setbl(vga_device_t *fb, int brightness) {
-//   t113_s3_lcd_t *pdat = (t113_s3_lcd_t *)fb->priv;
-//   led_set_brightness(pdat->backlight, brightness);
-// }
-
-// static int fb_getbl(vga_device_t *fb) {
-//   t113_s3_lcd_t *pdat = (t113_s3_lcd_t *)fb->priv;
-//   return led_get_brightness(pdat->backlight);
-// }
-
-static void fb_present(vga_device_t *fb, struct surface_t *s,
-                       struct region_list_t *rl) {
-  t113_s3_lcd_t *pdat = (t113_s3_lcd_t *)fb->priv;
-
-  // todo
-  //  memcpy(pdat->vram[pdat->index], s->pixels, s->pixlen);
-  //  dma_cache_sync(pdat->vram[pdat->index], pdat->pixlen, DMA_TO_DEVICE);
-  t113_de_set_address(pdat, pdat->vram[pdat->index]);
-  t113_de_enable(pdat);
-}
 
 int gpu_init_mode(vga_device_t *vga, int mode) {
   if (mode == VGA_MODE_80x25) {
@@ -381,7 +361,7 @@ int t113_lcd_init(vga_device_t *vga) {
   t113_tconlcd_enable(lcd);
 
   t113_de_set_mode(lcd);
-  t113_de_enable(lcd);
+  // t113_de_enable(lcd);
   t113_de_set_address(lcd, lcd->vram[0]);
   t113_de_enable(lcd);
 
