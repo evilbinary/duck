@@ -10,18 +10,10 @@
 #define IRQ_TIMER0 50
 #define IRQ_ETHER 114
 
-static void io_write32(uint port, u32 data) { *(u32 *)port = data; }
-
-static u32 io_read32(uint port) {
-  u32 data;
-  data = *(u32 *)port;
-  return data;
-}
-
-void uart_send_char(unsigned int c) {
-  while ((io_read32(UART0_DR) & 0x20) == 0)
+void uart_send_char(char c) {
+  while ((io_read32(UART0_BASE + UART_USR) & UART_TRANSMIT) == 0)
     ;
-  io_write32(SUNXI_UART0_BASE, c);
+  io_write32(UART0_BASE, c);
 }
 
 void uart_send(unsigned int c) {
@@ -32,10 +24,10 @@ void uart_send(unsigned int c) {
   uart_send_char(c);
 }
 
-unsigned int uart_receive() {
-  while ((io_read32(UART0_DR) & 0x01) == 0)
+u32 uart_receive() {
+  while ((io_read32(UART0_BASE + UART_LSR) & UART_RECEIVE) == 0)
     ;
-  return (io_read32(SUNXI_UART0_BASE));
+  return (io_read32(UART0_BASE));
 }
 
 extern int timer_count;
@@ -47,7 +39,7 @@ void timer_init(int hz) {
   ccnt_reset();
   timer0_init(hz);
 
-  gic_init(0x03020000);
+  gic_init(0);
   // timer_watch();
   // gic_watch();
   // gic_poll();

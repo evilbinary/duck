@@ -5,6 +5,7 @@
 
 #define SUNXI_PIO_BASE		0x01C20800
 #define SUNXI_UART0_BASE	0x01C28000
+#define UART0_BASE SUNXI_UART0_BASE
 
 #define GPFSEL0         ((volatile unsigned int*)(MMIO_BASE+0x00200000))
 #define GPFSEL1         ((volatile unsigned int*)(MMIO_BASE+0x00200004))
@@ -36,6 +37,15 @@
 #define UART0_LCRH      ((volatile unsigned int*)(MMIO_BASE+0x0020102C))
 #define UART0_IMSC      ((volatile unsigned int*)(MMIO_BASE+0x00201038))
 #define UART0_ICR       ((volatile unsigned int*)(MMIO_BASE+0x00201044))
+
+
+#define UART_USR 0x7c  // UART Status Register
+#define UART_LSR 0x14  // UART Line Status Register
+
+#define UART_RECEIVE (1 << 0)
+#define UART_TRANSMIT (1 << 6)
+
+
 
 /** timer*/
 #define TIMER_BASE 0x01C20C00
