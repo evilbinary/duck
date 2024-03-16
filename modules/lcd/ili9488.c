@@ -4,7 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 
-#include "gpio/gpio.h"
+#include "gpio/sunxi-gpio.h"
 #include "lcd.h"
 
 #define USE_BUFF 1
@@ -23,133 +23,102 @@
 #define WIDTH 320
 #define HEIGHT 480
 
-#define ILI9488_CS_GPIO_Port GPIO_D
-#define ILI9488_CS_Pin 11
-
-#define ILI9488_DC_GPIO_Port GPIO_D
-#define ILI9488_DC_Pin 12
-
-#define SPI1 1
-
-device_t* spi_dev = NULL;
-
-#ifdef USE_BUFF
-#define ST77XX_BUF_SIZE 512
-static uint8_t ili9488_buf[ST77XX_BUF_SIZE];
-static uint16_t ili9488_buf_index = 0;
-
-static void st77xx_write_buffer(u8* buff, size_t buff_size) {
-  while (buff_size--) {
-    ili9488_buf[ili9488_buf_index++] = *buff++;
-    if (ili9488_buf_index == ST77XX_BUF_SIZE) {
-      spi_dev->write(spi_dev, ili9488_buf, ili9488_buf_index);
-      ili9488_buf_index = 0;
-    }
-  }
-}
-
-static void st77xx_flush_buffer(void) {
-  if (ili9488_buf_index > 0) {
-    spi_dev->write(spi_dev, ili9488_buf, ili9488_buf_index);
-    ili9488_buf_index = 0;
-  }
-}
-#endif
+#define LCD_CS_CLR gpio_output(GPIO_E, 11, 0);
+#define LCD_SCLK_CLR gpio_output(GPIO_E, 8, 0);
+#define LCD_SDA_SET gpio_output(GPIO_E, 10, 1);
+#define LCD_SDA_CLR gpio_output(GPIO_E, 10, 0);
+#define LCD_SCLK_SET gpio_output(GPIO_E, 8, 1);
+#define LCD_CS_SET gpio_output(GPIO_E, 11, 1);
 
 void delay(int n) {
-  for (int i = 0; i < 10000 * n; i++) {
+  for (int i = 0; i < 1000 * n; i++) {
   }
 }
 
-void ili9488_fill(u16 xsta, u16 ysta, u16 xend, u16 yend, u16 color) {
-  u16 i, j;
-  ili9488_address_set(xsta, ysta, xend - 1, yend - 1);  // 设置显示范围
-  // gpio_output(ILI9488_DC_GPIO_Port, ILI9488_DC_Pin, GPIO_PIN_SET);
-  for (i = ysta; i < yend; i++) {
-    for (j = xsta; j < xend; j++) {
-// ili9488_write_data_size(color, 2);
-#ifdef USE_BUFF
-      st77xx_write_buffer((uint8_t*)&color, 2);
-#else
-      spi_dev->write(spi_dev, &color, 2);
-#endif
-    }
-  }
-#ifdef USE_BUFF
-  st77xx_flush_buffer();
-#endif
-}
-
-void ili9488_set_pixel(u16 x, u16 y, u16 color) {
-  ili9488_address_set(x, y, x + 1, y + 1);
-  ili9488_write_data_size(color, 2);
-}
-
-void ili9488_address_set(u16 x1, u16 y1, u16 x2, u16 y2) {
-  ili9488_write_cmd(0x2a);
-  ili9488_write_data(0x00);
-  ili9488_write_data(x1 + 2);
-  ili9488_write_data(0x00);
-  ili9488_write_data(x2 + 2);
-
-  ili9488_write_cmd(0x2b);
-  ili9488_write_data(0x00);
-  ili9488_write_data(y1 + 3);
-  ili9488_write_data(0x00);
-  ili9488_write_data(y2 + 3);
-
-  ili9488_write_cmd(0x2C);
-}
-
-void ili9488_select() {
-  // gpio_output(ILI9488_CS_GPIO_Port, ILI9488_CS_Pin, GPIO_PIN_RESET);
-}
-
-void ili9488_unselect() {
-  // gpio_output(ILI9488_CS_GPIO_Port, ILI9488_CS_Pin, GPIO_PIN_SET);
-}
-
-void ili9488_reset() {
-  // gpio_output(ILI9488_RES_GPIO_Port, ILI9488_RES_Pin, GPIO_PIN_RESET);
-  ili9488_select();
-  delay(200);
-  // gpio_output(ILI9488_RES_GPIO_Port, ILI9488_RES_Pin, GPIO_PIN_SET);
-  delay(200);
-}
+void ili9488_reset() { delay(200); }
 
 void ili9488_write_cmd(u8 cmd) {
-  // gpio_output(ILI9488_DC_GPIO_Port, ILI9488_DC_Pin, 0);
-  sunxi_spi_write(SPI1, &cmd, sizeof(cmd));
+  u8 i = 0;
+  u16 command = 0;
+
+  LCD_CS_CLR;
+  delay(30);
+  command |= cmd;
+
+  for (i = 0; i < 9; i++) {
+    LCD_SCLK_CLR;
+    if (command & 0x0100) {
+      LCD_SDA_SET;
+    } else {
+      LCD_SDA_CLR;
+    }
+    delay(30);
+    LCD_SCLK_SET;
+    delay(30);
+    command <<= 1;
+  }
+  LCD_CS_SET;
+  delay(30);
 }
 
-void ili9488_write_data_size(u8 cmd, int size) {
-  // gpio_output(ILI9488_DC_GPIO_Port, ILI9488_DC_Pin, 1);
+void ili9488_write_data(u8 data) {
+  u8 i = 0;
+  u16 my_data = 0x0100;
 
-  sunxi_spi_write(SPI1, &cmd, size);
-}
+  LCD_CS_CLR;
+  delay(30);
+  my_data |= data;
 
-void ili9488_write_data(u8 cmd) {
-  // gpio_output(ILI9488_DC_GPIO_Port, ILI9488_DC_Pin, 1);
-  sunxi_spi_write(SPI1, &cmd, sizeof(cmd));
+  for (i = 0; i < 9; i++) {
+    LCD_SCLK_CLR;
+    if (my_data & 0x0100) {
+      LCD_SDA_SET;
+    } else {
+      LCD_SDA_CLR;
+    }
+    delay(30);
+    LCD_SCLK_SET;
+    delay(30);
+    my_data <<= 1;
+  }
+  LCD_CS_SET;
+  delay(30);
 }
 
 void ili9488_test() {
-  ili9488_fill(0, 0, 128, 128, BLUE);
-  ili9488_fill(0, 0, 128, 128, GREEN);
-  ili9488_fill(0, 0, 128, 128, RED);
+  // ili9488_fill(0, 0, 128, 128, BLUE);
+  // ili9488_fill(0, 0, 128, 128, GREEN);
+  // ili9488_fill(0, 0, 128, 128, RED);
   kprintf("ili9488 test lcd end\n");
 }
 
 void ili9488_init() {
   kprintf("ili9488 init\n");
 
+  gpio_config(GPIO_E, 11, GPIO_OUTPUT);  // cs    pe11
+  gpio_config(GPIO_E, 10, GPIO_OUTPUT);  // sda    pe10
+  gpio_config(GPIO_E, 8, GPIO_OUTPUT);   // sclk    pe8
+  gpio_config(GPIO_D, 22, GPIO_OUTPUT);  // blk    pd22
+
+  gpio_pull(GPIO_E, (11), GPIO_PULL_UP);
+  gpio_pull(GPIO_E, (10), GPIO_PULL_UP);
+  gpio_pull(GPIO_E, (8), GPIO_PULL_UP);
+  gpio_pull(GPIO_D, (22), GPIO_PULL_UP);
+
+  gpio_drive(GPIO_E, (11), 3);
+  gpio_drive(GPIO_E, (10), 3);
+  gpio_drive(GPIO_E, (8), 3);
+  gpio_drive(GPIO_D, (22), 3);
+
+  // gpio_config(GPIO_B, (7), GPIO_OUTPUT);
+  // gpio_pull(GPIO_B(7), GPIO_PULL_UP);
+  // gpio_drive(GPIO_B(7), 3);
+  // gpio_config(GPIO_B, (7), 1);
+
   delay(20);
 
-  // use SPI0_BASE
-  sunxi_spi_init(SPI1);
-
   // init lcd
-  // ili9488_reset();
+  ili9488_reset();
 
   kprintf("ili9488 p gamma\n");
 
@@ -172,8 +141,7 @@ void ili9488_init() {
 
   kprintf("ili9488 n gamma\n");
 
-
-  ili9488_write_cmd(0XE1);  // N-Gamma
+  ili9488_write_cmd(0xE1);  // N-Gamma
   ili9488_write_data(0x00);
   ili9488_write_data(0x12);
   ili9488_write_data(0x18);
@@ -190,7 +158,9 @@ void ili9488_init() {
   ili9488_write_data(0x3F);
   ili9488_write_data(0x0F);
 
-  ili9488_write_cmd(0XC0);   // Power Control 1
+  kprintf("ili9488 power\n");
+
+  ili9488_write_cmd(0xC0);   // Power Control 1
   ili9488_write_data(0x0F);  // Vreg1out
   ili9488_write_data(0x0C);  // Verg2out
 
@@ -208,8 +178,10 @@ void ili9488_init() {
   ili9488_write_cmd(0x3A);   // Interface Pixel Format
   ili9488_write_data(0x66);  // 18bit
 
-  ili9488_write_cmd(0XB0);  // Interface Mode Control
+  ili9488_write_cmd(0xB0);  // Interface Mode Control
   ili9488_write_data(0x00);
+
+  kprintf("ili9488 Frame rate\n");
 
   ili9488_write_cmd(0xB1);   // Frame rate
   ili9488_write_data(0xA0);  // 60Hz
@@ -217,12 +189,14 @@ void ili9488_init() {
   ili9488_write_cmd(0xB4);   // Display Inversion Control
   ili9488_write_data(0x02);  // 2-dot
 
-  ili9488_write_cmd(0XB6);   // RGB/MCU Interface Control
+  ili9488_write_cmd(0xB6);   // RGB/MCU Interface Control
   ili9488_write_data(0x32);  // MCU:02; RGB:32/22
   ili9488_write_data(0x02);  // Source,Gate scan dieection
 
-  ili9488_write_cmd(0XE9);   // Set Image Function
+  ili9488_write_cmd(0xE9);   // Set Image Function
   ili9488_write_data(0x00);  // disable 24 bit data input
+
+  kprintf("ili9488 Frame rate\n");
 
   ili9488_write_cmd(0xF7);  // A d j u s t C o n t r o l
   ili9488_write_data(0xA9);
@@ -231,6 +205,8 @@ void ili9488_init() {
   ili9488_write_data(0x82);  // D 7 s t r e a m, l o o s e
 
   ili9488_write_cmd(0x21);  // Normal Black
+
+  kprintf("ili9488 Sleep out\n");
 
   ili9488_write_cmd(0x11);  // Sleep out
   delay(120);
@@ -246,7 +222,7 @@ int ili9488_write_pixel(vga_device_t* vga, const void* buf, size_t len) {
   u16* color = buf;
   int i = 0;
   for (i = 0; i < len / 6; i += 3) {
-    ili9488_set_pixel(color[i], color[i + 1], color[i + 2]);
+    // ili9488_set_pixel(color[i], color[i + 1], color[i + 2]);
   }
   return i;
 }
