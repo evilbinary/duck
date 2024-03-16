@@ -1,6 +1,8 @@
 #include "arch/arch.h"
 #include "t113-ccu.h"
-#include "gpio.h"
+#include "t113-gpio.h"
+#include "t113-tcon.h"
+#include "t113-de.h"
 
 static u32 cntfrq[MAX_CPU] = {
     0,
@@ -49,65 +51,8 @@ u32 uart_receive() {
   return (io_read32(UART0_BASE));
 }
 
-static inline void sdelay(int loops) {
-  __asm__ __volatile__(
-      "1:\n"
-      "subs %0, %1, #1\n"
-      "bne 1b"
-      : "=r"(loops)
-      : "0"(loops));
-}
-
-static void cpu_clock_set_pll_cpu(u32 clk) {
-  int p = 0;
-  int k = 1;
-  int m = 1;
-  int n = 32;
-  u32 val;
-  if (clk > 1152000000) {
-    k = 2;
-  } else if (clk > 768000000) {
-    k = 3;
-    m = 2;
-  }
-  // k = 3;
-  // m = 2;
-  // n = 28;
-  /* Switch to 24MHz clock while changing cpu pll */
-  val = (2 << 0) | (1 << 8) | (1 << 16);
-  io_write32(CCU_BASE + CCU_CPU_AXI_CFG, val);
-
-  /* cpu pll rate = ((24000000 * n * k) >> p) / m */
-  val = (0x1 << 31);
-  val |= ((p & 0x3) << 16);
-  val |= ((((clk / (24000000 * k / m)) - 1) & 0x1f) << 8);
-  val |= (((k - 1) & 0x3) << 4);
-  val |= (((m - 1) & 0x3) << 0);
-
-  // val |= ((((clk / (24000000 * k / m)) - 1) & 0x1f) << 8);
-  // val |= ((n - 1) & 0x1f) << 8;
-  // val |= (((k - 1) & 0x3) << 4);
-  // val |= (((m - 1) & 0x3) << 0);
-  io_write32(CCU_BASE + CCU_PLL_CPU_CTRL, val);
-  sdelay(200);
-
-  /* Switch clock source */
-  val = (2 << 0) | (1 << 8) | (2 << 16);
-  io_write32(CCU_BASE + CCU_CPU_AXI_CFG, val);
-}
 
 void cpu_clock_init(void) {
-  // cpu_clock_set_pll_cpu(1008000000);
-
-  /* pll video - 396MHZ */
-  // io_write32(CCU_BASE + CCU_PLL_VIDEO_CTRL, 0x91004107);
-
-  // enable apb0
-  //  write32(CCU_BASE + CCU_APB0_CLK_REG, (2 << 0) | (1 << 8) | (0x03 << 24));
-  //  sdelay(1);
-
-  /* Set APB2 to OSC24M/1 (24MHz). */
-  // io_write32(CCU_BASE + CCU_AHB2_CFG, 1 << 24 | 0 << 16 | 0);
 
   sunxi_clk_init();
 }
@@ -136,6 +81,8 @@ void platform_map() {
 
   //gpio
   page_map(GPIO_BASE,GPIO_BASE,0);
+
+
 }
 
 void platform_end() {}
@@ -145,30 +92,6 @@ void timer_ack(void) {
   hp->irq_status = IE_T0;
 }
 
-void timer_watch(void) {
-  struct t113_s3_timer *hp = TIMER_BASE;
-  int val;
-  int last;
-  int del;
-
-  val = hp->t0_cval;
-
-  for (;;) {
-    last = val;
-    val = hp->t0_cval;
-    /*
-    del = last - val;
-    printf ("  Timer: 0x%08x %d = %d\n", val, val, del );
-    */
-    kprintf("  Timer: 0x%x %d = %x\n", val, val, hp->irq_status);
-
-    if (hp->irq_status) timer_ack();
-    kprintf(" =Timer: 0x%x %d = %x\n", val, val, hp->irq_status);
-
-    // gig_delay ( 2 );
-    sdelay(2000);
-  }
-}
 
 void timer_init(int hz) {
   struct t113_s3_timer *timer = (struct t113_s3_timer *)TIMER_BASE;

@@ -1,5 +1,5 @@
-#ifndef GPIO_H
-#define GPIO_H
+#ifndef T113_GPIO_H
+#define T113_GPIO_H
 
 #define GPIO_BASE 0x02000000
 

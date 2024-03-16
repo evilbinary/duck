@@ -164,6 +164,50 @@ static void set_module(u32 addr) {
   }
 }
 
+long sunxi_clk_get_rate() {
+  long rate = 0;
+  uint32_t r, n, k, m, p;
+
+  /* PLL PERIx */
+  r = io_read32(CCU_BASE + CCU_PLL_CPU_CTRL_REG);
+  n = ((r >> 8) & 0x1f) + 1;
+  k = ((r >> 4) & 0x3) + 1;
+  m = ((r >> 0) & 0x3) + 1;
+  p = (r >> 16) & 0x3;
+  rate = (long)(((24000000 * n * k) >> p) / m);
+
+  return rate;
+}
+
+long sunxi_clk_get_video_rate() {
+  long rate = 0;
+  uint32_t r, n, k, m, p;
+  r = io_read32(CCU_BASE + CCU_PLL_VIDEO0_CTRL_REG);
+  if (r & (1 << 31)) {
+    n = ((r >> 8) & 0xff) + 1;
+    m = ((r >> 0) & 0x1) + 1;
+    rate = (long)((24000000 * n) / m) >> 2;
+  }
+  return rate;
+}
+
+uint32_t sunxi_clk_get_peri1x_rate() {
+  uint32_t reg32;
+  uint8_t plln, pllm, p0;
+
+  /* PLL PERIx */
+  reg32 = io_read32(CCU_BASE + CCU_PLL_PERI0_CTRL_REG);
+  if (reg32 & (1U << 31)) {
+    plln = ((reg32 >> 8) & 0xff) + 1;
+    pllm = (reg32 & 0x01) + 1;
+    p0 = ((reg32 >> 16) & 0x03) + 1;
+
+    return ((((24 * plln) / (pllm * p0)) >> 1) * 1000 * 1000);
+  }
+
+  return 0;
+}
+
 void sunxi_clk_dump() {
   uint32_t reg32;
   uint32_t cpu_clk_src, plln, pllm;
@@ -252,38 +296,15 @@ void sunxi_clk_dump() {
   } else {
     kprintf("CLK: PLL_DDR disabled\r\n");
   }
-}
 
-long sunxi_clk_get_rate() {
-  long rate = 0;
-  uint32_t r, n, k, m, p;
+  // PLL VIDEO0
+  reg32 = io_read32(CCU_BASE + CCU_PLL_VIDEO0_CTRL_REG);
+  if (reg32 & (1 << 31)) {
+    kprintf("CLK: PLL_VIDEO0 = %u Hz\r\n", sunxi_clk_get_video_rate() );
 
-  /* PLL PERIx */
-  r = io_read32(CCU_BASE + CCU_PLL_CPU_CTRL_REG);
-  n = ((r >> 8) & 0x1f) + 1;
-  k = ((r >> 4) & 0x3) + 1;
-  m = ((r >> 0) & 0x3) + 1;
-  p = (r >> 16) & 0x3;
-  rate = (long)(((24000000 * n * k) >> p) / m);
-
-  return rate;
-}
-
-uint32_t sunxi_clk_get_peri1x_rate() {
-  uint32_t reg32;
-  uint8_t plln, pllm, p0;
-
-  /* PLL PERIx */
-  reg32 = io_read32(CCU_BASE + CCU_PLL_PERI0_CTRL_REG);
-  if (reg32 & (1U << 31)) {
-    plln = ((reg32 >> 8) & 0xff) + 1;
-    pllm = (reg32 & 0x01) + 1;
-    p0 = ((reg32 >> 16) & 0x03) + 1;
-
-    return ((((24 * plln) / (pllm * p0)) >> 1) * 1000 * 1000);
+  } else {
+    kprintf("CLK: PLL_VIDEO0 disabled\r\n");
   }
-
-  return 0;
 }
 
 void sunxi_clk_init(void) {
