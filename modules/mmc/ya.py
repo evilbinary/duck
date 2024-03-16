@@ -44,7 +44,12 @@ plat_source={
     ],
     'versatilepb':[
         'pl181.c'
+    ],
+    'orangepi-pc':[
+        'h3.c',
+        'sunxi-sdhci.c',
     ]
+    
 }
 arch_source={
     'arm': [

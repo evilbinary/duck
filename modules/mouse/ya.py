@@ -37,6 +37,9 @@ plat_source={
     't113-s3':[
         't113-s3.c'
     ],
+    'orangepi-pc':[
+        'h3.c',
+    ]
 }
 arch_source={
     'arm':[ 

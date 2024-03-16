@@ -43,6 +43,9 @@ plat_source={
     ],
     'versatilepb':[
         'pl011.c'
+    ],
+    'orangepi-pc':[
+        'h3.c',
     ]
 }
 arch_source={

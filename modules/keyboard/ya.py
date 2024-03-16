@@ -41,6 +41,9 @@ plat_source={
     ],
     'v3s':[
         'v3s.c'
+    ],
+    'orangepi-pc':[
+        'h3.c'
     ]
 }
 arch_source={

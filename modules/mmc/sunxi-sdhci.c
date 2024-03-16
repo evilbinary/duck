@@ -3,6 +3,8 @@
 #include "v3s-ccu.h"
 #elif T113_S3
 #include "t113-ccu.h"
+#elif ORANGEPI_PC
+#include "h3-ccu.h"
 
 #endif
 

@@ -38,6 +38,9 @@ plat_source={
     't113-s3':[
         't113-s3.c',
         'sunxi-spi.c'
+    ],
+    'orangepi-pc':[
+        'h3.c'
     ]
 }
 arch_source={
