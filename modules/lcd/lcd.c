@@ -77,17 +77,6 @@ int lcd_init(void) {
   dev->type = DEVICE_TYPE_VGA;
   device_add(dev);
 
-  // frambuffer
-  device_t* fb_dev = device_find(DEVICE_LCD);
-
-  if (fb_dev != NULL) {
-    vnode_t* frambuffer = vfs_create_node("fb", V_FILE);
-    vfs_mount(NULL, "/dev", frambuffer);
-    frambuffer->device = fb_dev;
-    frambuffer->op = &device_operator;
-  } else {
-    log_error("dev fb not found\n");
-  }
 
   lcd_init_device(dev);
   return 0;

@@ -25,7 +25,7 @@ typedef struct sunxi_spi {
   u32 rxd;  // SPI RX Data register
 } sunxi_spi_t;
 
-u32 sunxi_spi_read_write(spi_t* spi, u32* data, u32 count);
-void sunxi_spi_cs(spi_t* spi, u32 val);
+u32 sunxi_spi_read_write(int spi, u32* data, u32 count);
+void sunxi_spi_cs(int spi, u32 val);
 
 #endif

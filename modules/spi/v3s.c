@@ -5,18 +5,80 @@
  ********************************************************************/
 #include "gpio/v3s.h"
 
+#include "gpio/sunxi-gpio.h"
 #include "kernel/kernel.h"
 #include "spi.h"
-#include "v3s-ccu.h"
 #include "sunxi-spi.h"
-#include "gpio/sunxi-gpio.h"
+#include "v3s-ccu.h"
 
 #define SPI0_BASE 0x01C68000
+#define SPI1_BASE 0x01C68000
 
-extern sunxi_spi_t* sunxi_spi_base;
+static sunxi_spi_t* spio_base[] = {
+    (sunxi_spi_t*)SPI0_BASE,  // spi 0
+    (sunxi_spi_t*)SPI1_BASE,  // spi 1
+};
+
+void sunxi_spi_init(int spi) {
+  if (spi == 0) {
+    // map io spi0
+    page_map(SPI0_BASE, SPI0_BASE, 0);
+
+    u32 reg = 0;
+    // set ahb clock gating
+    reg = io_read32(V3S_CCU_BASE + CCU_BUS_CLK_GATE0);
+    io_write32(V3S_CCU_BASE + CCU_BUS_CLK_GATE0, reg | 1 << 20);  // spi 0 gate
+
+    // set spi0 sclk
+    reg = io_read32(V3S_CCU_BASE + CCU_SPI0_CLK);
+    io_write32(V3S_CCU_BASE + CCU_SPI0_CLK, reg | 1 << 31);
+
+    // de assert spi
+    reg = io_read32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0);
+    io_write32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0, reg | 1 << 20);
+
+    // gpio set miso pc0 SPI_MISO
+    gpio_config(GPIO_C, 0, 3);  // 011: SPI0_MISO
+    gpio_pull(GPIO_C, 0, GPIO_PULL_DISABLE);
+
+    // gpio set sck pc1 SPI_SCK
+    gpio_config(GPIO_C, 1, 3);  // 011: SPI0_CLK
+    gpio_pull(GPIO_C, 1, GPIO_PULL_DISABLE);
+
+    // gpio set cs pc2 SPI_CS
+    gpio_config(GPIO_C, 2, 3);  // 011: SPI0_CS
+    gpio_pull(GPIO_C, 2, GPIO_PULL_DISABLE);
+
+    // gpio set mosi pc3 SPI_MOSI
+    gpio_config(GPIO_C, 3, 3);  // 011: SPI0_MOSI
+    gpio_pull(GPIO_C, 3, GPIO_PULL_DISABLE);
+
+    // set master mode  stop transmit data when RXFIFO full
+    spio_base[spi]->gcr = spio_base[spi]->gcr | 1 << 31 | 1 << 7 | 1 << 1 | 1;
+
+    // wait
+    while (spio_base[spi]->gcr & (1 << 31))
+      ;
+    kprintf("gcr %x\n", spio_base[spi]->gcr);
+
+    // set SS Output Owner Select  1: Active low polarity (1 = Idle)
+    spio_base[spi]->tcr = spio_base[spi]->tcr | 1 << 6 | 1 << 2;
+
+    // clear intterrupt
+    spio_base[spi]->isr = ~0;
+
+    // set fcr TX FIFO Reset RX FIFO Reset
+    spio_base[spi]->fcr = spio_base[spi]->fcr | 1 << 31 | 1 << 15;
+
+    // set sclk clock  Select Clock Divide Rate 2 SPI_CLK = Source_CLK / (2*(n +
+    // 1)).
+    spio_base[spi]->ccr = 1 << 12 | 14;
+
+  } else if (spi == 1) {
+  }
+}
 
 // #define kdbg
-
 
 // POINT_COLOR
 #define WHITE 0xFFFF
@@ -91,7 +153,7 @@ void lcd_address_set(u16 x1, u16 y1, u16 x2, u16 y2) {
 
 void lcd_fill(u16 xsta, u16 ysta, u16 xend, u16 yend, u16 color) {
   u16 i, j;
-  lcd_address_set(xsta, ysta, xend - 1, yend - 1);  //设置显示范围
+  lcd_address_set(xsta, ysta, xend - 1, yend - 1);  // 设置显示范围
   for (i = ysta; i < yend; i++) {
     for (j = xsta; j < xend; j++) {
       lcd_write_data(color);
@@ -188,9 +250,8 @@ void v3s_test_lcd(spi_t* spi) {
   lcd_fill(0, 0, 240, 240, RED);
 }
 
-
 int spi_init_device(device_t* dev) {
-  spi_t* spi = kmalloc(sizeof(spi_t),DEFAULT_TYPE);
+  spi_t* spi = kmalloc(sizeof(spi_t), DEFAULT_TYPE);
   dev->data = spi;
 
   spi->inited = 0;
@@ -199,64 +260,11 @@ int spi_init_device(device_t* dev) {
   spi->cs = sunxi_spi_cs;
 
   // use SPI0_BASE
-  sunxi_spi_set_base(SPI0_BASE);
+  sunxi_spi_set_base(spio_base);
 
-  // map io spi0
-  page_map(SPI0_BASE, SPI0_BASE, 0);
+  sunxi_spi_init(0);
 
-  u32 reg = 0;
-  // set ahb clock gating
-  reg = io_read32(V3S_CCU_BASE + CCU_BUS_CLK_GATE0);
-  io_write32(V3S_CCU_BASE + CCU_BUS_CLK_GATE0, reg | 1 << 20);  // spi 0 gate
-
-  // set spi0 sclk
-  reg = io_read32(V3S_CCU_BASE + CCU_SPI0_CLK);
-  io_write32(V3S_CCU_BASE + CCU_SPI0_CLK, reg | 1 << 31);
-
-  // de assert spi
-  reg = io_read32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0);
-  io_write32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0, reg | 1 << 20);
-
-  // gpio set miso pc0 SPI_MISO
-  gpio_config(GPIO_C, 0, 3);  // 011: SPI0_MISO
-  gpio_pull(GPIO_C, 0, GPIO_PULL_DISABLE);
-
-  // gpio set sck pc1 SPI_SCK
-  gpio_config(GPIO_C, 1, 3);  // 011: SPI0_CLK
-  gpio_pull(GPIO_C, 1, GPIO_PULL_DISABLE);
-
-  // gpio set cs pc2 SPI_CS
-  gpio_config(GPIO_C, 2, 3);  // 011: SPI0_CS
-  gpio_pull(GPIO_C, 2, GPIO_PULL_DISABLE);
-
-  // gpio set mosi pc3 SPI_MOSI
-  gpio_config(GPIO_C, 3, 3);  // 011: SPI0_MOSI
-  gpio_pull(GPIO_C, 3, GPIO_PULL_DISABLE);
-
-  sunxi_spi_t* sunxi_spi_base = sunxi_spi_base;
-
-  // set master mode  stop transmit data when RXFIFO full
-  sunxi_spi_base->gcr = sunxi_spi_base->gcr | 1 << 31 | 1 << 7 | 1 << 1 | 1;
-
-  // wait
-  while (sunxi_spi_base->gcr & (1 << 31))
-    ;
-  kprintf("gcr %x\n", sunxi_spi_base->gcr);
-
-  // set SS Output Owner Select  1: Active low polarity (1 = Idle)
-  sunxi_spi_base->tcr = sunxi_spi_base->tcr | 1 << 6 | 1 << 2;
-
-  // clear intterrupt
-  sunxi_spi_base->isr = ~0;
-
-  // set fcr TX FIFO Reset RX FIFO Reset
-  sunxi_spi_base->fcr = sunxi_spi_base->fcr | 1 << 31 | 1 << 15;
-
-  // set sclk clock  Select Clock Divide Rate 2 SPI_CLK = Source_CLK / (2*(n +
-  // 1)).
-  sunxi_spi_base->ccr = 1 << 12 | 14;
-
-  sunxi_spi_cs(spi, 1);
+  sunxi_spi_cs(0, 1);
 
   // v3s_test_lcd(spi);
 
