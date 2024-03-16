@@ -4,7 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 
-#include "gpio.h"
+#include "gpio/gpio.h"
 #include "lcd.h"
 
 #define USE_BUFF 1
