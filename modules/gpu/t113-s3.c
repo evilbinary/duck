@@ -5,10 +5,10 @@
  ********************************************************************/
 #include "t113-s3.h"
 
+#include "gpio.h"
 #include "gpio/sunxi-gpio.h"
 #include "t113-ccu.h"
 #include "t113-de.h"
-#include "gpio.h"
 #include "t113-tcon.h"
 #include "vga/vga.h"
 
@@ -131,7 +131,8 @@ static void t113_tconlcd_set_timing(t113_s3_lcd_t *pdat) {
                                    ((val & 0x1f) << 4) | (0 << 0));
 
   // 0000: 24-bit/1-cycle parallel mode
-  io_write32((u32)&tcon->hv_intf, 0 << 28);
+  // io_write32((u32)&tcon->hv_intf, 1 << 28);
+
   if (pdat->clk_tconlcd > 0) {
     val = pdat->clk_tconlcd / pdat->timing.pixel_clock_hz;
 
@@ -193,7 +194,6 @@ static void t113_tconlcd_set_dither(t113_s3_lcd_t *pdat) {
 static void fb_t113_cfg_gpios(int gpio, int pin, int n, int cfg, int pull,
                               int drv) {
   for (int i = 0; i < n; i++) {
-    // todo
     gpio_config(gpio, pin + i, cfg);
     gpio_pull(gpio, pin + i, pull);
     gpio_drive(gpio, pin + i, drv);
@@ -268,7 +268,7 @@ int t113_lcd_init(vga_device_t *vga) {
   lcd->index = 0;
   vga->framebuffer_length = lcd->width * lcd->height * lcd->bytes_per_pixel * 8;
 
-  lcd->timing.pixel_clock_hz = 30000000;
+  lcd->timing.pixel_clock_hz = 33000000;
   lcd->timing.h_front_porch = 40;
   lcd->timing.h_back_porch = 87;
   lcd->timing.h_sync_len = 1;
@@ -294,8 +294,10 @@ int t113_lcd_init(vga_device_t *vga) {
   page_map(T113_CCU_BASE, T113_CCU_BASE, 0);
 
   // map de 2m
-  u32 addr = T113_DE_BASE;
-  for (int i = 0; i < 1024 * 1024 * 2 / PAGE_SIZE; i++) {
+  page_map(T113_DE_BASE, T113_DE_BASE, 0);
+
+  u32 addr = T113_DE_BASE + T113_DE_MUX_GLB;
+  for (int i = 0; i < 1024 * 1024 * 2 * 2 / PAGE_SIZE; i++) {
     page_map(addr, addr, 0);
     addr += 0x1000;
   }
@@ -327,8 +329,13 @@ int t113_lcd_init(vga_device_t *vga) {
   // reset de 16 DE Bus Gating Reset Register
   io_write32(T113_CCU_BASE + 0x060C, 1 << 16);
 
+  // u32 val = io_read32(T113_CCU_BASE + 0x060C);
+  // io_write32(T113_CCU_BASE + 0x060C, val | 1 << 0);
+
   // reset tconlcd 912 TCONLCD Bus Gating Reset Register
   io_write32(T113_CCU_BASE + 0x0B7C, 1 << 16);
+  // val = io_read32(T113_CCU_BASE + 0x0B7C);
+  // io_write32(T113_CCU_BASE + 0x0B7C, 1 << 0 | val);
 
   // todo gpio set
   if (lcd->bits_per_pixel == 16) {
@@ -347,6 +354,8 @@ int t113_lcd_init(vga_device_t *vga) {
     fb_t113_cfg_gpios(GPIO_D, 12, 6, 0x2, GPIO_PULL_DISABLE, 3);
     fb_t113_cfg_gpios(GPIO_D, 18, 4, 0x2, GPIO_PULL_DISABLE, 3);
 
+    // gpio_config(GPIO_D,19,GPIO_DISABLE);
+
     // test gpio
     //  gpio_config(GPIO_E,3,GPIO_OUTPUT);
     //  gpio_output(GPIO_E,3,0);
@@ -363,7 +372,21 @@ int t113_lcd_init(vga_device_t *vga) {
   t113_de_set_address(lcd, lcd->vram[0]);
   t113_de_enable(lcd);
 
+  u32 *buffer = vga->frambuffer;
+  for (int i = 0; i < vga->framebuffer_length / 4; i++) {
+    buffer[i] = 0x00ffff;
+  }
+  
+  dsb();
+  // u32 start=vga->frambuffer;
+  // u32 stop= ((u32)vga->frambuffer)+ vga->framebuffer_length/4;
+  // cache_flush_range(start, stop);
+
+  // t113_de_set_address(lcd, lcd->vram[0]);
+  // t113_de_enable(lcd);
+
   log_info("t113_lcd_init end\n");
 
   return 0;
 }
+

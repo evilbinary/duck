@@ -150,6 +150,7 @@ static void set_module(u32 addr) {
     /* Lock enable */
     val = io_read32(addr);
     val |= (1 << 29);
+    val |= (1 << 27);
     io_write32(addr, val);
 
     /* Wait pll stable */

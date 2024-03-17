@@ -194,6 +194,9 @@ void ili9488_init() {
   ili9488_write_cmd(0x36);  // Memory Access
   ili9488_write_data(0x48);
 
+  // ili9488_write_cmd(0x36);  // Memory Access
+  // ili9488_write_data(0x08);
+
   ili9488_write_cmd(0x3A);   // Interface Pixel Format
   ili9488_write_data(0x66);  // 18bit
 
@@ -204,9 +207,10 @@ void ili9488_init() {
 
   ili9488_write_cmd(0xB1);   // Frame rate
   ili9488_write_data(0xA0);  // 60Hz
+  // ili9488_write_data(0x0);  // 28Hz
 
-  ili9488_write_cmd(0xB4);   // Display Inversion Control
-  ili9488_write_data(0x02);  // 2-dot
+  // ili9488_write_cmd(0xB4);   // Display Inversion Control
+  // ili9488_write_data(0x02);  // 2-dot
 
   ili9488_write_cmd(0xB6);   // RGB/MCU Interface Control
   ili9488_write_data(0x32);  // MCU:02; RGB:32/22
@@ -232,6 +236,7 @@ void ili9488_init() {
   ili9488_write_cmd(0x29);  // Display on
 
   // ili9488_test();
+
 
   kprintf("ili9488 lcd end\n");
 }
