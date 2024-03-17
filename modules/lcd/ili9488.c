@@ -21,9 +21,18 @@
 #define LCD_SDA_CLR gpio_output(GPIO_E, 10, 0);
 
 void delay(int n) {
-  for (int i = 0; i < 1000 * n; i++) {
+  for (int i = 0; i < 100 * n; i++) {
   }
 }
+
+// static inline void delay(int loops) {
+//   __asm__ __volatile__(
+//       "1:\n"
+//       "subs %0, %1, #1\n"
+//       "bne 1b"
+//       : "=r"(loops)
+//       : "0"(loops));
+// }
 
 void ili9488_reset() { delay(20); }
 
@@ -81,10 +90,11 @@ void ili9488_test() {
   // ili9488_fill(0, 0, 128, 128, RED);
   kprintf("ili9488 test lcd end\n");
   u32* p = 0xfb000000;
-  for (int i = 0; i < 400 * 300; i++) {
-    *p = 0x0ff00;
+  for (int i = 0; i < 300/4; i++) {
+    *p = 0xffffff;
     p++;
   }
+  kprintf("ili9488 test lcd end2\n");
 }
 
 void ili9488_init() {
@@ -108,13 +118,11 @@ void ili9488_init() {
   gpio_config(GPIO_B, (7), GPIO_OUTPUT);
   // gpio_pull(GPIO_B(7), GPIO_PULL_UP);
   // gpio_drive(GPIO_B(7), 3);
-  gpio_config(GPIO_B, (7), 1);
+  gpio_output(GPIO_B, (7), 1);
 
   kprintf("ili9488 3line spi init end\n");
 
   delay(20);
-
-
 
   // init lcd
   ili9488_reset();
@@ -171,7 +179,6 @@ void ili9488_init() {
   ili9488_write_data(0x25);  // Vcom
   ili9488_write_data(0x80);
 
-
   ili9488_write_cmd(0x2A);
   ili9488_write_data(0x00);
   ili9488_write_data(0x00);
@@ -184,7 +191,6 @@ void ili9488_init() {
   ili9488_write_data(0x01);
   ili9488_write_data(0x3F);  // 319
 
-
   ili9488_write_cmd(0x36);  // Memory Access
   ili9488_write_data(0x48);
 
@@ -193,7 +199,6 @@ void ili9488_init() {
 
   ili9488_write_cmd(0xB0);  // Interface Mode Control
   ili9488_write_data(0x00);
-
 
   kprintf("ili9488 Frame rate\n");
 
@@ -226,7 +231,7 @@ void ili9488_init() {
   delay(120);
   ili9488_write_cmd(0x29);  // Display on
 
-  ili9488_test();
+  // ili9488_test();
 
   kprintf("ili9488 lcd end\n");
 }

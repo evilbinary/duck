@@ -1,6 +1,6 @@
 #include "arch/arch.h"
 #include "t113-ccu.h"
-#include "t113-gpio.h"
+#include "gpio.h"
 #include "t113-tcon.h"
 #include "t113-de.h"
 
