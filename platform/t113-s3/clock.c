@@ -151,6 +151,7 @@ static void set_module(u32 addr) {
     val = io_read32(addr);
     val |= (1 << 29);
     val |= (1 << 27);
+    val |= (1 << 24);
     io_write32(addr, val);
 
     /* Wait pll stable */

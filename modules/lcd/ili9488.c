@@ -34,7 +34,10 @@ void delay(int n) {
 //       : "0"(loops));
 // }
 
-void ili9488_reset() { delay(20); }
+void ili9488_reset() {
+  ili9488_write_cmd(01);
+  delay(20);
+}
 
 void ili9488_write_cmd(u8 cmd) {
   u8 i = 0;
@@ -90,7 +93,7 @@ void ili9488_test() {
   // ili9488_fill(0, 0, 128, 128, RED);
   kprintf("ili9488 test lcd end\n");
   u32* p = 0xfb000000;
-  for (int i = 0; i < 300/4; i++) {
+  for (int i = 0; i < 300 / 4; i++) {
     *p = 0xffffff;
     p++;
   }
@@ -236,7 +239,6 @@ void ili9488_init() {
   ili9488_write_cmd(0x29);  // Display on
 
   // ili9488_test();
-
 
   kprintf("ili9488 lcd end\n");
 }

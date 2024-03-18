@@ -126,15 +126,16 @@ static void t113_tconlcd_set_timing(t113_s3_lcd_t *pdat) {
          pdat->timing.v_sync_len) /
         2;
 
-  //  HV(Sync+DE)  | Default
+  //  LCD_EN | HV(Sync+DE)  | Default
   io_write32((u32)&tcon->ctrl, (1 << 31) | (0 << 24) | (0 << 23) |
-                                   ((val & 0x1f) << 4) | (0 << 0));
+                                   ((val & 0x1f) << 4) | 1<<20| (3 << 0));
 
   // 0000: 24-bit/1-cycle parallel mode
-  // io_write32((u32)&tcon->hv_intf, 1 << 28);
+  io_write32((u32)&tcon->hv_intf, 1 << 28);
 
   if (pdat->clk_tconlcd > 0) {
     val = pdat->clk_tconlcd / pdat->timing.pixel_clock_hz;
+    log_debug("val =>%d\n",val);
 
     // LCD_DCLK_EN 0xf LCD_DCLK_DIV  <6
     io_write32((u32)&tcon->dclk, (0xf << 28) | (val << 0));
@@ -234,8 +235,8 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
   vga->mode = mode;
   vga->write = NULL;
 
-  vga->width = 480;
-  vga->height = 320;
+  vga->width = 320;
+  vga->height = 480;
 
   vga->framebuffer_index = 0;
   vga->framebuffer_count = 1;
@@ -303,6 +304,7 @@ int t113_lcd_init(vga_device_t *vga) {
   }
 
   lcd->clk_tconlcd = sunxi_clk_get_video_rate();
+  // lcd->clk_tconlcd = sunxi_clk_get_peri1x_rate();
 
   log_debug("rate %d\n", lcd->clk_tconlcd);
 
@@ -355,6 +357,11 @@ int t113_lcd_init(vga_device_t *vga) {
     fb_t113_cfg_gpios(GPIO_D, 18, 4, 0x2, GPIO_PULL_DISABLE, 3);
 
     // gpio_config(GPIO_D,19,GPIO_DISABLE);
+
+    // gpio_config(GPIO_D,21,GPIO_OUTPUT);
+    // gpio_config(GPIO_D,20,GPIO_OUTPUT);
+    // gpio_pull(GPIO_D,21,GPIO_PULL_UP);
+    // gpio_pull(GPIO_D,20,GPIO_PULL_UP);
 
     // test gpio
     //  gpio_config(GPIO_E,3,GPIO_OUTPUT);
