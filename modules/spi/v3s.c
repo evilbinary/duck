@@ -100,7 +100,7 @@ void sunxi_spi_init(int spi) {
 #define GRAY187 0XBDD7
 #define GRAY240 0XF79E
 
-spi_t* gspi = NULL;
+#define SPI0 0
 
 void lcd_write_data(u8 data) {
   // cs -> dc
@@ -110,7 +110,7 @@ void lcd_write_data(u8 data) {
   spi_msg_t msg;
   msg.tx_buf = &data;
   msg.tx_len = 1;
-  sunxi_spi_read_write(gspi, &msg, 1);
+  sunxi_spi_write(SPI0, &msg, 1);
 }
 
 void lcd_write_data_word(u16 data) {
@@ -121,17 +121,17 @@ void lcd_write_data_word(u16 data) {
   spi_msg_t msg = {0};
   msg.tx_buf = &data;
   msg.tx_len = 2;
-  sunxi_spi_read_write(gspi, &msg, 1);
+  sunxi_spi_write(SPI0, &msg, 1);
 }
 
 void lcd_write_cmd(u8 cmd) {
   // gpio_pull(GPIO_C, 2, GPIO_PULL_DOWN);
-  // sunxi_spi_cs(gspi, 0);
+  // sunxi_spi_cs(SPI0, 0);
   lcd_set_dc(0);
   spi_msg_t msg = {0};
   msg.tx_buf = &cmd;
   msg.tx_len = 1;
-  sunxi_spi_read_write(gspi, &msg, 1);
+  sunxi_spi_write(SPI0, &msg, 1);
 }
 
 void delay(void) {
@@ -164,8 +164,7 @@ void lcd_fill(u16 xsta, u16 ysta, u16 xend, u16 yend, u16 color) {
 void lcd_set_dc(u32 val) { gpio_output(GPIO_G, 0, val); }
 
 void v3s_test_lcd(spi_t* spi) {
-  gspi = spi;
-
+  
   gpio_config(GPIO_G, 0, GPIO_OUTPUT);
 
   lcd_write_cmd(0x11);
@@ -255,8 +254,8 @@ int spi_init_device(device_t* dev) {
   dev->data = spi;
 
   spi->inited = 0;
-  spi->read = sunxi_spi_read_write;
-  spi->write = sunxi_spi_read_write;
+  // spi->read = sunxi_spi_read;
+  // spi->write = sunxi_spi_write;
   spi->cs = sunxi_spi_cs;
 
   // use SPI0_BASE
