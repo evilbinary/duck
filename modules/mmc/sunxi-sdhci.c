@@ -1,3 +1,8 @@
+/*******************************************************************
+ * Copyright 2021-present evilbinary
+ * 作者: evilbinary on 09/03/23
+ * 邮箱: rootdebug@163.com
+ ********************************************************************/
 #include "sunxi-sdhci.h"
 #ifdef V3S
 #include "v3s-ccu.h"

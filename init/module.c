@@ -75,6 +75,10 @@ void modules_init(void) {
   REGISTER_MODULE(keyboard);
 #endif
 
+#ifdef SOUND_MODULE
+  REGISTER_MODULE(sound);
+#endif
+
 #elif defined(DUMMY)
   REGISTER_MODULE(hello);
 
