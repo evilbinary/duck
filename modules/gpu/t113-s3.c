@@ -102,6 +102,7 @@ static void t113_tconlcd_enable(t113_s3_lcd_t *pdat) {
 
   val = io_read32((u32)&tcon->gctrl);
   val |= (1 << 31);
+  // LCD_GCTL_REG
   io_write32((u32)&tcon->gctrl, val);
 }
 
@@ -126,29 +127,38 @@ static void t113_tconlcd_set_timing(t113_s3_lcd_t *pdat) {
          pdat->timing.v_sync_len) /
         2;
 
-  //  LCD_EN | HV(Sync+DE)  | Default
+  // LCD_CTL_REG LCD_EN | HV(Sync+DE)  | Default
   io_write32((u32)&tcon->ctrl, (1 << 31) | (0 << 24) | (0 << 23) |
-                                   ((val & 0x1f) << 4) | 1<<20| (3 << 0));
+                                   ((val & 0x1f) << 4) | 1 << 20 | (0 << 0));
 
-  // 0000: 24-bit/1-cycle parallel mode
-  io_write32((u32)&tcon->hv_intf, 1 << 28);
+  // LCD_HV_IF_REG  HV_MODE 0000: 24-bit/1-cycle parallel 1000: 8-bit/3-cycle
+  // RGB serial mode (RGB888)
+  // io_write32((u32)&tcon->hv_intf, 8 << 28);
 
   if (pdat->clk_tconlcd > 0) {
     val = pdat->clk_tconlcd / pdat->timing.pixel_clock_hz;
-    log_debug("val =>%d\n",val);
+    log_debug("val =>%d\n", val);
 
-    // LCD_DCLK_EN 0xf LCD_DCLK_DIV  <6
+    // LCD_DCLK_REG LCD_DCLK_EN 0xf LCD_DCLK_DIV  <6
     io_write32((u32)&tcon->dclk, (0xf << 28) | (val << 0));
   }
+
+  // LCD_BASIC0_REG
   io_write32((u32)&tcon->timing0,
              ((pdat->width - 1) << 16) | ((pdat->height - 1) << 0));
+
   bp = pdat->timing.h_sync_len + pdat->timing.h_back_porch;
   total = pdat->width + pdat->timing.h_front_porch + bp;
+  // LCD_BASIC1_REG
   io_write32((u32)&tcon->timing1, ((total - 1) << 16) | ((bp - 1) << 0));
 
   bp = pdat->timing.v_sync_len + pdat->timing.v_back_porch;
   total = pdat->height + pdat->timing.v_front_porch + bp;
+
+  // LCD_BASIC2_REG
   io_write32((u32)&tcon->timing2, ((total * 2) << 16) | ((bp - 1) << 0));
+
+  // LCD_BASIC3_REG
   io_write32((u32)&tcon->timing3, ((pdat->timing.h_sync_len - 1) << 16) |
                                       ((pdat->timing.v_sync_len - 1) << 0));
 
@@ -162,10 +172,13 @@ static void t113_tconlcd_set_timing(t113_s3_lcd_t *pdat) {
   // LCD_IO_TRI_REG 0 start
   io_write32((u32)&tcon->io_tristate, 0);
 
-  // LCD_EN  enable
-  val = io_read32((u32)&tcon->ctrl);
-  val |= (1 << 31);
-  io_write32((u32)&tcon->ctrl, val);
+  // // LCD_IO_POL_REG  IO_OUTPUT_SEL
+  // io_write32((u32)&tcon->io_tristate, 1 << 31);
+
+  // // io_tristate
+  // // io_write32((u32)&tcon->cpu_intf, 1 << 0);
+
+  // io_write32((u32)&tcon->cpu_intf, 8 << 28);
 }
 
 static void t113_tconlcd_set_dither(t113_s3_lcd_t *pdat) {
@@ -264,10 +277,14 @@ int t113_lcd_init(vga_device_t *vga) {
 
   lcd->width = vga->width;
   lcd->height = vga->height;
-  lcd->bits_per_pixel = 18;
+  lcd->bits_per_pixel = 16;
   lcd->bytes_per_pixel = 4;
   lcd->index = 0;
+
   vga->framebuffer_length = lcd->width * lcd->height * lcd->bytes_per_pixel * 8;
+
+  log_debug("lcd %dx%d len= %d\n", lcd->width, lcd->height,
+            vga->framebuffer_length);
 
   lcd->timing.pixel_clock_hz = 33000000;
   lcd->timing.h_front_porch = 40;
@@ -286,18 +303,25 @@ int t113_lcd_init(vga_device_t *vga) {
   lcd->vram[0] = vga->frambuffer;
   lcd->vram[1] = vga->pframbuffer;
 
-  // gpio
-  page_map(GPIO_BASE, GPIO_BASE, 0);
+  // map fb
+  u32 addr = vga->frambuffer;
+  u32 paddr = vga->pframbuffer;
+  for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
+    page_map(addr, paddr, 0);
+    addr += 0x1000;
+    paddr += 0x1000;
+  }
 
   // map tcon 4k
   page_map(T113_TCON_BASE, T113_TCON_BASE, 0);
+
   // map ccu 1k
   page_map(T113_CCU_BASE, T113_CCU_BASE, 0);
 
   // map de 2m
   page_map(T113_DE_BASE, T113_DE_BASE, 0);
 
-  u32 addr = T113_DE_BASE + T113_DE_MUX_GLB;
+  addr = T113_DE_BASE + T113_DE_MUX_GLB;
   for (int i = 0; i < 1024 * 1024 * 2 * 2 / PAGE_SIZE; i++) {
     page_map(addr, addr, 0);
     addr += 0x1000;
@@ -308,45 +332,39 @@ int t113_lcd_init(vga_device_t *vga) {
 
   log_debug("rate %d\n", lcd->clk_tconlcd);
 
-  // map fb
-  addr = vga->frambuffer;
-  u32 paddr = vga->pframbuffer;
-  for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    page_map(addr, paddr, PAGE_DEV);
-    addr += 0x1000;
-    paddr += 0x1000;
-  }
-
   // init
   // clk video enable
   // PLL_VIDEO0  gate enable
-  io_write32(T113_CCU_BASE + CCU_PLL_VIDEO0_CTRL_REG, 1 << 27);
+  // io_write32(T113_CCU_BASE + CCU_PLL_VIDEO0_CTRL_REG, 1 << 24);
 
   // enable de clk   000: PLL_PERI(2X) 001: PLL_VIDEO0(4X)
-  io_write32(T113_CCU_BASE + 0x0600, 1 << 31 | 1 << 24);
+  io_write32(T113_CCU_BASE + 0x0600, 1 << 31 | 1 << 24 | 3);
+
+  // reset de 16 DE Bus Gating Reset Register
+  io_write32(T113_CCU_BASE + 0x060C, 0);
+  io_write32(T113_CCU_BASE + 0x060C, 1 << 16);
+
+  u32 val = io_read32(T113_CCU_BASE + 0x060C);
+
+  io_write32(T113_CCU_BASE + 0x060C, val | 1 << 0);
 
   // TCON LCD0 Clock register 000: PLL_VIDEO0(1X) 100: PLL_PERI(2X)
   io_write32(T113_CCU_BASE + 0xB60, 1 << 31 | 0 << 24);
 
-  // reset de 16 DE Bus Gating Reset Register
-  io_write32(T113_CCU_BASE + 0x060C, 1 << 16);
-
-  // u32 val = io_read32(T113_CCU_BASE + 0x060C);
-  // io_write32(T113_CCU_BASE + 0x060C, val | 1 << 0);
-
   // reset tconlcd 912 TCONLCD Bus Gating Reset Register
-  io_write32(T113_CCU_BASE + 0x0B7C, 1 << 16);
-  // val = io_read32(T113_CCU_BASE + 0x0B7C);
-  // io_write32(T113_CCU_BASE + 0x0B7C, 1 << 0 | val);
+  // io_write32(T113_CCU_BASE + 0x0B7C, 0);
 
-  // todo gpio set
+  io_write32(T113_CCU_BASE + 0x0B7C, 1 << 16);
+  val = io_read32(T113_CCU_BASE + 0x0B7C);
+  io_write32(T113_CCU_BASE + 0x0B7C, 1 << 0 | val);
+
+  // gpio set
   if (lcd->bits_per_pixel == 16) {
-    //   fb_t113_cfg_gpios(T113_GPIOD1, 5, 0x2, GPIO_PULL_NONE,
-    //   GPIO_DRV_STRONG);
-    // fb_t113_cfg_gpios(T113_GPIOD6, 6, 0x2, GPIO_PULL_NONE, GPIO_DRV_STRONG);
-    // fb_t113_cfg_gpios(T113_GPIOD13, 5,
-    //   0x2, GPIO_PULL_NONE, GPIO_DRV_STRONG); fb_t113_cfg_gpios(T113_GPIOD18,
-    //   4, 0x2, GPIO_PULL_NONE, GPIO_DRV_STRONG);
+    fb_t113_cfg_gpios(GPIO_D, 1, 5, 0x2, GPIO_PULL_DISABLE, 3);
+    fb_t113_cfg_gpios(GPIO_D, 6, 6, 0x2, GPIO_PULL_DISABLE, 3);
+    fb_t113_cfg_gpios(GPIO_D, 13, 5, 0x2, GPIO_PULL_DISABLE, 3);
+    fb_t113_cfg_gpios(GPIO_D, 18, 4, 0x2, GPIO_PULL_DISABLE, 3);
+
   } else if (lcd->bits_per_pixel == 18) {
     // pd0-pd21
     log_info("bits_per_pixel %d\n", lcd->bits_per_pixel);
@@ -372,28 +390,22 @@ int t113_lcd_init(vga_device_t *vga) {
   t113_tconlcd_disable(lcd);
   t113_tconlcd_set_timing(lcd);
   t113_tconlcd_set_dither(lcd);
+
   t113_tconlcd_enable(lcd);
 
   t113_de_set_mode(lcd);
   t113_de_enable(lcd);
+
   t113_de_set_address(lcd, lcd->vram[0]);
+
   t113_de_enable(lcd);
 
   u32 *buffer = vga->frambuffer;
   for (int i = 0; i < vga->framebuffer_length / 4; i++) {
-    buffer[i] = 0x00ffff;
+    buffer[i] = 0x00ff00;
   }
-  
-  dsb();
-  // u32 start=vga->frambuffer;
-  // u32 stop= ((u32)vga->frambuffer)+ vga->framebuffer_length/4;
-  // cache_flush_range(start, stop);
-
-  // t113_de_set_address(lcd, lcd->vram[0]);
-  // t113_de_enable(lcd);
 
   log_info("t113_lcd_init end\n");
 
   return 0;
 }
-
