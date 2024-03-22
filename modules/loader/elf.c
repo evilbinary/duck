@@ -21,6 +21,16 @@
 #endif
 #define log_error kprintf
 
+static void print_hex(u8 *addr, u32 size) {
+  for (int x = 0; x < size; x++) {
+    kprintf("%02x ", addr[x]);
+    if (x != 0 && (x % 32) == 0) {
+      kprintf("\n");
+    }
+  }
+  kprintf("\n\r");
+}
+
 int load_elf(Elf32_Ehdr* elf_header, u32 fd, void* arg, u32 base) {
 #ifdef LOAD_ELF_DEBUG
   int p = syscall0(SYS_GETPID);
@@ -242,6 +252,7 @@ void go_start(entry_fn entry, long* args) {
   if (entry != NULL) {
 #ifdef LOAD_ELF_DEBUG
     log_debug("entry %x\n", entry);
+    print_hex(entry,0x1000);
 #endif
     ret = entry(args);
   } else {

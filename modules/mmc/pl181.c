@@ -25,8 +25,9 @@ static inline void cmd(u32 cmd, u32 arg, u32 resp) {
   // 7 CmdSent Read Command sent (no response required)
   // 0 CmdCrcFail Read Command response received (CRC check failed)
   // 2 CmdTimeOut Read Command response timeout
-  while (!(io_read32(SD_BASE + STATUS) & (1 << 7 | 1 << 6 | 1 << 0 | 1 << 2)))
-    ;
+  // while (!(io_read32(SD_BASE + STATUS) & (1 << 7 | 1 << 6 | 1 << 0 | 1 <<
+  // 2)))
+  //   ;
 }
 
 int sd_init(void) {
@@ -54,8 +55,8 @@ static u32 mmc_read_blocks(sdhci_device_t *hci, u32 start, u32 blkcnt,
   int status = -1;
 
   // timeout count
-  io_write32(SD_BASE + DATATIMER, 0xFFFFFFFF);
-  io_write32(SD_BASE + DATALENGTH, len);
+  io_write32(SD_BASE + DATATIMER, 0xFFFF0000);
+  io_write32(SD_BASE + DATALENGTH, BYTE_PER_SECTOR * blkcnt);
 
   // cmd18 read mutiple block
   cmd(18, start * BYTE_PER_SECTOR, MMC_RSP_R1);
@@ -67,19 +68,23 @@ static u32 mmc_read_blocks(sdhci_device_t *hci, u32 start, u32 blkcnt,
   io_write32(SD_BASE + DATACTRL, 0x93);
   do {
     status = io_read32(SD_BASE + STATUS);
-    if (status & (1 << 17)) {  // Receive FIFO full
-      for (int i = 0; i < 16; i++) {
-        *(tmp) = io_read32(SD_BASE + FIFO);
-        tmp++;
-        len -= sizeof(u32);
-      }
-      io_write32(SD_BASE + STATUS_CLEAR, 0xFFFFFFFF);
+    if (status & (1 << 17)) {
+      u32 status_err =
+          status & (SDI_STA_DCRCFAIL | SDI_STA_DTIMEOUT | SDI_STA_RXOVERR);
+      if (!status_err) {  // Receive FIFO full
+        for (int i = 0; i < 16; i++) {
+          *(tmp) = io_read32(SD_BASE + FIFO);
+          tmp++;
+          len -= sizeof(u32);
+        }
 
-      // int dcount = io_read32(SD_BASE + DATACOUNT);
-      // int da = io_read32(SD_BASE + DATALENGTH);
-      // log_debug("data==>%d len=%d dcount=%d status %x\n", da, len, dcount,
-      //           status);
+        // int dcount = io_read32(SD_BASE + DATACOUNT);
+        // int da = io_read32(SD_BASE + DATALENGTH);
+        // log_debug("data==>%d len=%d dcount=%d status %x\n", da, len, dcount,
+        //           status);
+      }
     }
+    io_write32(SD_BASE + STATUS_CLEAR, 0xFFFFFFFF);
 
   } while (len > 0);
 

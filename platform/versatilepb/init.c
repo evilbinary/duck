@@ -47,6 +47,7 @@ void platform_map() {
   page_map(TIMER3_BASE, TIMER3_BASE, PAGE_DEV);
 
   page_map(PIC_BASE, PIC_BASE, PAGE_DEV);
+  page_map(SD_BASE, SD_BASE, PAGE_DEV);
 
   kprintf("platform map end\n");
 }

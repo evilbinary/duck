@@ -9,6 +9,7 @@
 #define TIMER2_BASE 0x101E3000
 #define TIMER3_BASE 0x101E3020
 
+#define SD_BASE  0x10005000
 
 #define TIMER_LOAD    0x00
 #define TIMER_VALUE   0x01
