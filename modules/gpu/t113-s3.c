@@ -207,8 +207,9 @@ static void t113_tconlcd_set_timing(t113_s3_lcd_t *pdat) {
   val = pdat->clk_tconlcd / pdat->timing.pixel_clock_hz;
   // LCD_DCLK_REG LCD_DCLK_EN 0xf LCD_DCLK_DIV  <6
   kprintf("dclk %x\n", val);
-
-  io_write32((u32)&tcon->dclk, (0xf << 28) | (val << 0));
+  if (val > 0) {
+    io_write32((u32)&tcon->dclk, (0xf << 28) | (val << 0));
+  }
 
   // LCD_BASIC0_REG
   io_write32((u32)&tcon->timing0,
@@ -216,7 +217,7 @@ static void t113_tconlcd_set_timing(t113_s3_lcd_t *pdat) {
 
   // LCD_BASIC1_REG
   io_write32((u32)&tcon->timing1,
-             (pdat->timing.ht << 16) | (pdat->timing.hbp - 1) << 0);
+             ((pdat->timing.ht - 1) << 16) | (pdat->timing.hbp - 1) << 0);
 
   // // LCD_BASIC2_REG
   io_write32((u32)&tcon->timing2,
@@ -279,6 +280,15 @@ static void fb_t113_cfg_gpios(int gpio, int pin, int n, int cfg, int pull,
   }
 }
 
+void t113_flush_screen(vga_device_t *vga, u32 index) {
+  // vga->framebuffer_index = index;
+  // kprintf("flip %d %d %d\n",index,vga->width,vga->height);
+  // rgb2nv12(vga->pframbuffer, vga->frambuffer, vga->width, vga->height);
+  // kmemcpy(vga->pframbuffer, vga->frambuffer, vga->width * vga->height);
+  cpu_invalid_tlb();
+  cpu_cache_flush_range(vga->pframbuffer, vga->width * vga->height);
+}
+
 int gpu_init_mode(vga_device_t *vga, int mode) {
   if (mode == VGA_MODE_80x25) {
     vga->width = 80;
@@ -324,6 +334,7 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
   vga->pframbuffer = 0x73e00000;
   vga->frambuffer = 0xfb000000;
 
+  vga->flip_buffer = t113_flush_screen;
   t113_lcd_init(vga);
 
   log_info("fb addr:%x end:%x len:%x\n", vga->frambuffer,
@@ -369,14 +380,14 @@ int t113_lcd_init(vga_device_t *vga) {
   lcd->timing.y = vga->height;
 
   // lcd->timing.ht = 486;
-  // lcd->timing.hbp = 40;
+  // lcd->timing.hbp = 2;
   // lcd->timing.hfp = 10;
-  // lcd->timing.hspw = 1;
+  // lcd->timing.hspw = 2;
 
   // lcd->timing.vt = 342;
   // lcd->timing.vbp = 20;
   // lcd->timing.vfp = 10;
-  // lcd->timing.vspw = 10;
+  // lcd->timing.vspw = 2;
 
   lcd->timing.vt = 342;
   lcd->timing.vbp = 20;
@@ -391,7 +402,8 @@ int t113_lcd_init(vga_device_t *vga) {
   int h = lcd->timing.x + lcd->timing.hfp + lcd->timing.hbp + lcd->timing.hspw;
   int w = lcd->timing.y + lcd->timing.vfp + lcd->timing.vbp + lcd->timing.vspw;
 
-  lcd->timing.pixel_clock_hz = h * w * 60;
+  lcd->timing.pixel_clock_hz = h * w * 42;
+  // lcd->timing.pixel_clock_hz = 15000000;
   log_debug("pixel_clock_hz %d\n", lcd->timing.pixel_clock_hz);
 
   // vga->pframbuffer=kmalloc(vga->framebuffer_length*2,DEFAULT_TYPE);
@@ -403,7 +415,7 @@ int t113_lcd_init(vga_device_t *vga) {
   u32 addr = vga->frambuffer;
   u32 paddr = vga->pframbuffer;
   for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    page_map(addr, paddr, 0);
+    page_map(addr, paddr, PAGE_DEV);
     addr += 0x1000;
     paddr += 0x1000;
   }
@@ -423,29 +435,49 @@ int t113_lcd_init(vga_device_t *vga) {
     addr += 0x1000;
   }
 
-  lcd->clk_tconlcd = sunxi_clk_get_video_rate();
-  // lcd->clk_tconlcd = sunxi_clk_get_peri1x_rate();
-
-  log_debug("rate %d\n", lcd->clk_tconlcd);
-
   // init
   // clk video enable
   // PLL_VIDEO0  gate enable
-  // io_write32(T113_CCU_BASE + CCU_PLL_VIDEO0_CTRL_REG, 1 << 24);
+  u32 val = io_read32(T113_CCU_BASE + CCU_PLL_VIDEO0_CTRL_REG);
+  // val |= 1 << 24;  // PLL_SDM_EN
+  val |= 1 << 27;  // PLL_OUTPUT_GATE
+  // val |= 1 << 30;  // PLL_LDO_EN
+  val |= 1 << 31;  // PLL_EN
 
-  // enable de clk   000: PLL_PERI(2X) 001: PLL_VIDEO0(4X)
-  io_write32(T113_CCU_BASE + 0x0600, 1 << 31 | 1 << 24 | 3);
+  // // 24*9/ 1/4 = PLL_VIDEO0(1X)=24MHz*N/M/4
+  val &= ~(0xff << 8);
+  val |= 20 << 8;  // PLL_N
+
+  val &= ~(2 << 0);
+  val |= 0 << 0;  // PLL_M
+
+  io_write32(T113_CCU_BASE + CCU_PLL_VIDEO0_CTRL_REG, val);
+
+  u32 video_rate = sunxi_clk_get_video_rate();
+  lcd->clk_tconlcd = video_rate;
+
+  // lcd->clk_tconlcd = sunxi_clk_get_peri1x_rate();
+  // lcd->clk_tconlcd= 297 000 000;
+  log_debug("video0 rate %d lcd clk %d\n", video_rate, lcd->clk_tconlcd);
+
+  // enable de clk   000: PLL_PERI(2X) 001: PLL_VIDEO0(4X) DE_CLK = Clock
+  // Source/M.
+  io_write32(T113_CCU_BASE + 0x0600, 1 << 31 | 1 << 24 | 4);
 
   // reset de 16 DE Bus Gating Reset Register
   io_write32(T113_CCU_BASE + 0x060C, 0);
   io_write32(T113_CCU_BASE + 0x060C, 1 << 16);
 
-  u32 val = io_read32(T113_CCU_BASE + 0x060C);
-
+  val = io_read32(T113_CCU_BASE + 0x060C);
   io_write32(T113_CCU_BASE + 0x060C, val | 1 << 0);
 
-  // TCON LCD0 Clock register 000: PLL_VIDEO0(1X) 100: PLL_PERI(2X)
-  io_write32(T113_CCU_BASE + 0xB60, 1 << 31 | 0 << 24);
+  // TCON LCD0 Clock register 000: PLL_VIDEO0(1X) 297/4/7
+  val = 0;
+  val |= 1 << 31;
+  val |= 0 << 24;  // 000: PLL_VIDEO0(1X)
+  val |= 0 << 8;   // FACTOR_N 00: 1 01: 2 10: 4
+  val |= 0 << 0;   // M= FACTOR_M +1.
+  io_write32(T113_CCU_BASE + 0xB60, val);
 
   // reset tconlcd 912 TCONLCD Bus Gating Reset Register
   // io_write32(T113_CCU_BASE + 0x0B7C, 0);
