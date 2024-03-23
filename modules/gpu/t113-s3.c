@@ -128,17 +128,27 @@ static void t113_tconlcd_set_timing2(t113_s3_lcd_t *pdat) {
         2;
   io_write32((u32)&tcon->ctrl, (1 << 31) | (0 << 24) | (0 << 23) |
                                    ((val & 0x1f) << 4) | (0 << 0));
+
   val = pdat->clk_tconlcd / pdat->timing.pixel_clock_hz;
+  kprintf("22dclk %x\n", val);
 
   io_write32((u32)&tcon->dclk, (0xf << 28) | (val << 0));
+
   io_write32((u32)&tcon->timing0,
              ((pdat->width - 1) << 16) | ((pdat->height - 1) << 0));
+
   bp = pdat->timing.h_sync_len + pdat->timing.h_back_porch;
   total = pdat->width + pdat->timing.h_front_porch + bp;
+
+  kprintf("ht %d bp=> %d\n", total, bp);
+
   io_write32((u32)&tcon->timing1, ((total - 1) << 16) | ((bp - 1) << 0));
+
   bp = pdat->timing.v_sync_len + pdat->timing.v_back_porch;
   total = pdat->height + pdat->timing.v_front_porch + bp;
+
   io_write32((u32)&tcon->timing2, ((total * 2) << 16) | ((bp - 1) << 0));
+
   io_write32((u32)&tcon->timing3, ((pdat->timing.h_sync_len - 1) << 16) |
                                       ((pdat->timing.v_sync_len - 1) << 0));
 
@@ -216,12 +226,15 @@ static void t113_tconlcd_set_timing(t113_s3_lcd_t *pdat) {
              ((pdat->timing.x - 1) << 16) | ((pdat->timing.y - 1) << 0));
 
   // LCD_BASIC1_REG
-  io_write32((u32)&tcon->timing1,
-             ((pdat->timing.ht - 1) << 16) | (pdat->timing.hbp - 1) << 0);
+  u32 ht =
+      pdat->timing.ht + pdat->timing.hfp + pdat->timing.hspw + pdat->timing.hbp;
+  io_write32((u32)&tcon->timing1, ((ht - 1) << 16) | (pdat->timing.hbp - 1)
+                                                         << 0);
 
   // // LCD_BASIC2_REG
-  io_write32((u32)&tcon->timing2,
-             (pdat->timing.vt << 16) | (pdat->timing.vbp - 1) << 0);
+  u32 vt =
+      pdat->timing.vt + pdat->timing.vfp + pdat->timing.vspw + pdat->timing.vbp;
+  io_write32((u32)&tcon->timing2, (vt * 2 << 16) | (pdat->timing.vbp - 1) << 0);
 
   // // LCD_BASIC3_REG
   io_write32((u32)&tcon->timing3,
@@ -371,6 +384,7 @@ int t113_lcd_init(vga_device_t *vga) {
   lcd->timing.h_sync_len = 1;
   lcd->timing.v_front_porch = 13;
   lcd->timing.v_back_porch = 31;
+
   lcd->timing.h_sync_active = 0;
   lcd->timing.v_sync_active = 0;
   lcd->timing.den_active = 1;
