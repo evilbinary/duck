@@ -34,6 +34,20 @@ typedef struct t113_s3_lcd {
     int v_sync_active;
     int den_active;
     int clk_active;
+
+    int ht; //Horizontal Total time
+    int x; //显示屏的水平像素数量
+    int y; //显示屏的垂直行数
+    int hbp; //Horizontal Back Porch
+    int hfp;
+
+    int hspw; //Horizontal Sync Pulse Width
+    int vt; //Vertical Total time
+    int vbp; //Vertical Back Porch
+    int vfp;
+    int vspw; //Vertical Sync Pulse Width
+    int dclk_freq; //Dot Clock Frequency
+
   } timing;
 
   struct led_t *backlight;

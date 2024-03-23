@@ -182,17 +182,17 @@ void ili9488_init() {
   ili9488_write_data(0x25);  // Vcom
   ili9488_write_data(0x80);
 
-  ili9488_write_cmd(0x2A);
-  ili9488_write_data(0x00);
-  ili9488_write_data(0x00);
-  ili9488_write_data(0x01);
-  ili9488_write_data(0xDF);  // 479
+  // ili9488_write_cmd(0x2A);
+  // ili9488_write_data(0x00);
+  // ili9488_write_data(0x00);
+  // ili9488_write_data(0x01);
+  // ili9488_write_data(0xDF);  // 479
 
-  ili9488_write_cmd(0x2B);
-  ili9488_write_data(0x00);
-  ili9488_write_data(0x00);
-  ili9488_write_data(0x01);
-  ili9488_write_data(0x3F);  // 319
+  // ili9488_write_cmd(0x2B);
+  // ili9488_write_data(0x00);
+  // ili9488_write_data(0x00);
+  // ili9488_write_data(0x01);
+  // ili9488_write_data(0x3F);  // 319
 
   ili9488_write_cmd(0x36);  // Memory Access
   ili9488_write_data(0x48);
@@ -210,15 +210,15 @@ void ili9488_init() {
   ili9488_write_data(0xA0);  // 60Hz
   // ili9488_write_data(0x0);  // 28Hz
 
-  // ili9488_write_cmd(0xB4);   // Display Inversion Control
-  // ili9488_write_data(0x02);  // 2-dot
+  ili9488_write_cmd(0xB4);   // Display Inversion Control
+  ili9488_write_data(0x02);  // 2-dot
 
   ili9488_write_cmd(0xB6);   // RGB/MCU Interface Control
   ili9488_write_data(0x32);  // MCU:02; RGB:32/22
   ili9488_write_data(0x02);  // Source,Gate scan dieection
 
   ili9488_write_cmd(0xE9);   // Set Image Function
-  ili9488_write_data(0x01);  // disable 24 bit data input
+  ili9488_write_data(0x00);  // disable 24 bit data input
 
   kprintf("ili9488 ajust control\n");
 
