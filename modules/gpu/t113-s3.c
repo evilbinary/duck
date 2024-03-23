@@ -133,7 +133,7 @@ static void t113_tconlcd_set_timing(t113_s3_lcd_t *pdat) {
 
   // LCD_HV_IF_REG  HV_MODE 0000: 24-bit/1-cycle parallel 1000: 8-bit/3-cycle
   // RGB serial mode (RGB888)
-  // io_write32((u32)&tcon->hv_intf, 8 << 28);
+  // io_write32((u32)&tcon->hv_intf, 0 << 28);
 
   if (pdat->clk_tconlcd > 0) {
     val = pdat->clk_tconlcd / pdat->timing.pixel_clock_hz;
@@ -175,10 +175,8 @@ static void t113_tconlcd_set_timing(t113_s3_lcd_t *pdat) {
   // // LCD_IO_POL_REG  IO_OUTPUT_SEL
   // io_write32((u32)&tcon->io_tristate, 1 << 31);
 
-  // // io_tristate
-  // // io_write32((u32)&tcon->cpu_intf, 1 << 0);
-
-  // io_write32((u32)&tcon->cpu_intf, 8 << 28);
+  // LCD_HV_IF_REG  1000: 8-bit/3-cycle RGB serial mode (RGB888)
+  //  io_write32((u32)&tcon->cpu_intf, 8 << 28);
 }
 
 static void t113_tconlcd_set_dither(t113_s3_lcd_t *pdat) {
@@ -197,9 +195,11 @@ static void t113_tconlcd_set_dither(t113_s3_lcd_t *pdat) {
     io_write32((u32)&tcon->frm_table[3], 0x7f7f7777);
 
     if (pdat->bits_per_pixel == 16)
+      // 5-6-6
       io_write32((u32)&tcon->frm_ctrl,
                  (1 << 31) | (1 << 6) | (0 << 5) | (1 << 4));
     else if (pdat->bits_per_pixel == 18)
+      // 6-6-6
       io_write32((u32)&tcon->frm_ctrl,
                  (1 << 31) | (0 << 6) | (0 << 5) | (0 << 4));
   }
@@ -286,17 +286,23 @@ int t113_lcd_init(vga_device_t *vga) {
   log_debug("lcd %dx%d len= %d\n", lcd->width, lcd->height,
             vga->framebuffer_length);
 
-  lcd->timing.pixel_clock_hz = 33000000;
+  lcd->timing.pixel_clock_hz = 19000000;
   lcd->timing.h_front_porch = 40;
   lcd->timing.h_back_porch = 87;
   lcd->timing.h_sync_len = 1;
   lcd->timing.v_front_porch = 13;
   lcd->timing.v_back_porch = 31;
-  lcd->timing.v_sync_len = 1;
   lcd->timing.h_sync_active = 0;
   lcd->timing.v_sync_active = 0;
   lcd->timing.den_active = 1;
   lcd->timing.clk_active = 1;
+
+  lcd->timing.pixel_clock_hz = 9408960;
+  lcd->timing.h_front_porch = 3;
+  lcd->timing.h_back_porch = 3;
+  lcd->timing.v_front_porch = 2;
+  lcd->timing.v_back_porch = 2;
+  lcd->timing.h_sync_len = 1;
 
   // vga->pframbuffer=kmalloc(vga->framebuffer_length*2,DEFAULT_TYPE);
 
@@ -374,12 +380,18 @@ int t113_lcd_init(vga_device_t *vga) {
     fb_t113_cfg_gpios(GPIO_D, 12, 6, 0x2, GPIO_PULL_DISABLE, 3);
     fb_t113_cfg_gpios(GPIO_D, 18, 4, 0x2, GPIO_PULL_DISABLE, 3);
 
-    // gpio_config(GPIO_D,19,GPIO_DISABLE);
 
-    // gpio_config(GPIO_D,21,GPIO_OUTPUT);
-    // gpio_config(GPIO_D,20,GPIO_OUTPUT);
     // gpio_pull(GPIO_D,21,GPIO_PULL_UP);
     // gpio_pull(GPIO_D,20,GPIO_PULL_UP);
+
+    // gpio_pull(GPIO_D,21,GPIO_PULL_DOWN);
+    // gpio_pull(GPIO_D,20,GPIO_PULL_DOWN);
+
+    // gpio_config(GPIO_D,19,GPIO_OUTPUT);
+    // gpio_output(GPIO_D,19,0);
+
+    // gpio_config(GPIO_D,18,GPIO_OUTPUT);
+    // gpio_output(GPIO_D,18,1);
 
     // test gpio
     //  gpio_config(GPIO_E,3,GPIO_OUTPUT);
@@ -396,13 +408,13 @@ int t113_lcd_init(vga_device_t *vga) {
   t113_de_set_mode(lcd);
   t113_de_enable(lcd);
 
-  t113_de_set_address(lcd, lcd->vram[0]);
+  t113_de_set_address(lcd, lcd->vram[1]);
 
   t113_de_enable(lcd);
 
   u32 *buffer = vga->frambuffer;
-  for (int i = 0; i < vga->framebuffer_length / 4; i++) {
-    buffer[i] = 0x00ff00;
+  for (int i = 0; i < vga->framebuffer_length / 8; i++) {
+    buffer[i] = 0;
   }
 
   log_info("t113_lcd_init end\n");

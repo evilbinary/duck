@@ -196,9 +196,7 @@ void ili9488_init() {
 
   ili9488_write_cmd(0x36);  // Memory Access
   ili9488_write_data(0x48);
-
-  // ili9488_write_cmd(0x36);  // Memory Access
-  // ili9488_write_data(0x08);
+  // ili9488_write_data((1 << 3) | (0 << 7) | (1 << 6) | (1 << 5));
 
   ili9488_write_cmd(0x3A);   // Interface Pixel Format
   ili9488_write_data(0x66);  // 18bit
@@ -220,7 +218,7 @@ void ili9488_init() {
   ili9488_write_data(0x02);  // Source,Gate scan dieection
 
   ili9488_write_cmd(0xE9);   // Set Image Function
-  ili9488_write_data(0x00);  // disable 24 bit data input
+  ili9488_write_data(0x01);  // disable 24 bit data input
 
   kprintf("ili9488 ajust control\n");
 
@@ -238,7 +236,14 @@ void ili9488_init() {
   delay(120);
   ili9488_write_cmd(0x29);  // Display on
 
+
   // ili9488_test();
+
+  gpio_output(GPIO_E, (11), 1);
+  gpio_config(GPIO_E, 11, GPIO_DISABLE);  // cs    pe11
+  gpio_config(GPIO_E, 10, GPIO_DISABLE);  // sda    pe10
+  gpio_config(GPIO_E, 8, GPIO_DISABLE);   // sclk    pe8
+  gpio_config(GPIO_D, 22, GPIO_DISABLE);  // blk    pd22
 
   kprintf("ili9488 lcd end\n");
 }
