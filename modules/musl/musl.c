@@ -32,12 +32,12 @@ int musl_init(void) {
   void* ptr=kmalloc(PAGE_SIZE,KERNEL_TYPE);
 
   u32 addr = __a_barrier_kuser & ~0xfff;
-  page_map(addr, ptr, 0);
+  page_map(addr, ptr, PAGE_SYS);
 
   *((int *)__a_ver) = 2;
   *(int *)__a_barrier_kuser = 0;
   *(int *)__a_cas_kuser = 0;
-  *(int *)__a_gettp_kuser = musl_gettp;
+  *(int *)__a_gettp_kuser = &musl_gettp;
 
 #endif
 
