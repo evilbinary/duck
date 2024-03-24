@@ -18,28 +18,30 @@ int musl_gettp() {
 int musl_init(void) {
   log_info("musl init\n");
 
-  // make musl happy ^_^!!
-  //  u32 addr = __a_barrier_kuser & ~0xfff;
-  //  page_map(addr, addr, 0);
-
-  // *((int *)__a_ver) = 2;
-  // *(int *)__a_barrier_kuser = 0;
-  // *(int *)__a_cas_kuser = 0;
-  // *(int *)__a_gettp_kuser = musl_gettp;
-
 #ifdef ARMV7_A
   log_info("enable float\n");
-  //enable float
+  // enable float
   asm("mrc p15, 0, r0, c1, c0, 2\n"
       "orr r0,r0,#0x300000\n"
       "orr r0,r0,#0xC00000\n"
       "mcr p15, 0, r0, c1, c0, 2\n"
       "mov r0,#0x40000000\n"
       "fmxr fpexc,r0");
+#else defined(ARMV5)
+  // make musl happy ^_^!!
+  void* ptr=kmalloc(PAGE_SIZE,KERNEL_TYPE);
+
+  u32 addr = __a_barrier_kuser & ~0xfff;
+  page_map(addr, ptr, 0);
+
+  *((int *)__a_ver) = 2;
+  *(int *)__a_barrier_kuser = 0;
+  *(int *)__a_cas_kuser = 0;
+  *(int *)__a_gettp_kuser = musl_gettp;
+
 #endif
 
-
-      return 0;
+  return 0;
 }
 
 void musl_exit(void) { log_info("musl exit\n"); }
