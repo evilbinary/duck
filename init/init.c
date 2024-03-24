@@ -96,7 +96,7 @@ int do_exec(char* cmd, int count, char** env) {
   int i = 0;
   const char* split = " ";
   char* ptr = kstrtok(cmd, split);
-  memset(argv,0,64);
+  memset(argv, 0, 64);
   while (ptr != NULL) {
     argv_p[i] = ptr;
     argv[i++] = ptr;
@@ -110,7 +110,7 @@ int do_exec(char* cmd, int count, char** env) {
   if (ret < 0) {
     sprintf(buf, "/%s", argv[0]);
     ret = syscall2(SYS_ACESS, buf, 0);
-    if(ret<0){
+    if (ret < 0) {
       sprintf(buf, "./%s", argv[0]);
       ret = syscall2(SYS_ACESS, buf, 0);
     }
@@ -207,7 +207,7 @@ void do_init_thread(void) {
   int count = 0;
   int ret = 0;
   print_string("init\n");
-  
+
   // wait module ready
   while (module_ready <= 0) {
     // sleep();
@@ -243,7 +243,7 @@ void do_init_thread(void) {
         print_string("\n");
         do_shell_cmd(buf, count, env);
         count = 0;
-        memset(buf,0,64);
+        memset(buf, 0, 64);
         print_promot();
       } else if (ch == 127) {
         if (count > 0) {
@@ -275,9 +275,14 @@ void try_run(char* cmd, char** argv, char** env) {
   }
 }
 
-void load_config(){
-    char* config_argv[] = {"config",NULL};
-    try_run("config", config_argv, NULL);
+void load_config() {
+  // char* config_argv[] = {"config", NULL};
+  // try_run("config", config_argv, NULL);
+
+  // char* config_argv[] = {"lvgl", NULL};
+  // try_run("lvgl", config_argv, NULL);
+  char* config_argv[] = {"infones","/mario.nes", NULL};
+  try_run("infones", config_argv, NULL);
 }
 
 void pre_launch() {
@@ -324,9 +329,9 @@ void pre_launch() {
   // for (;;)
   //   ;
 #elif defined(ARMV7_A)
-//  try_run("/bin/shell", shell_argv, env_p);
-// try_run("infones", nes_argv, NULL);
-load_config();
+  //  try_run("/bin/shell", shell_argv, env_p);
+  // try_run("infones", nes_argv, NULL);
+  load_config();
 
 #elif defined(ARMV7)
   // test_lcd();

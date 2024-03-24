@@ -28,7 +28,7 @@ void interrupt_init(int cpu) {
     }
   }
 
-  kmemcpy((void*)VIC_BASE,idt,IDT_NUMBER * 2*4);
+  kmemcpy((void*)VIC_BASE, idt, IDT_NUMBER * 2 * 4);
   dsb();
   kprintf("interrupt init cpu %d end\n", cpu);
 }
@@ -44,7 +44,7 @@ void interrutp_set(int i) {
   u32 base = (u32)interrutp_handlers[i];
   idt[i + IDT_NUMBER] = base;
 
-  kmemcpy((void*)VIC_BASE,idt,IDT_NUMBER * 2*4);
+  kmemcpy((void*)VIC_BASE, idt, IDT_NUMBER * 2 * 4);
   dsb();
 }
 
@@ -109,11 +109,11 @@ void fiq_handler() {
 
 void exception_info(interrupt_context_t* ic) {
   // static const char* exception_msg[] = {"RESET",      "UNDEFINED",  "SVC",
-  //                                       "PREF ABORT", "DATA ABORT", "NOT USE",
-  //                                       "IRQ",        "FIQ"};
-  static const char* exception_msg[] = {"","RESET",      "DATA FAULT",  "SYS CALL",
-                                        "TIMER", "UNDEF", "OTHER",
-                                        "PREF ABORT",        "PERMISSION"};
+  //                                       "PREF ABORT", "DATA ABORT", "NOT
+  //                                       USE", "IRQ",        "FIQ"};
+  static const char* exception_msg[] = {"",         "RESET",      "DATA FAULT",
+                                        "SYS CALL", "TIMER",      "UNDEF",
+                                        "OTHER",    "PREF ABORT", "PERMISSION"};
   int cpu = cpu_get_id();
   if (ic->no < sizeof exception_msg) {
     kprintf("exception cpu %d no %d: %s\n", cpu, ic->no, exception_msg[ic->no]);

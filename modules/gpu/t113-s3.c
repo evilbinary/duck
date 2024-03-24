@@ -319,7 +319,7 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
 
   u32 *buffer = vga->frambuffer;
   for (int i = 0; i < vga->framebuffer_length / 4; i++) {
-    buffer[i] = 0x00ff00;
+    buffer[i] = 0x000000;
   }
 }
 

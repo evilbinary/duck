@@ -63,8 +63,8 @@
 
 #elif defined(VERSATILEPB)
 #define ISR_TIMER 27
-#define ISR_KEYBOARD 0x21
-#define ISR_MOUSE 0x2c
+#define ISR_KEYBOARD (3)
+#define ISR_MOUSE (4)
 
 #define IDT_NUMBER 256
 #define EXCEPTION_NUMBER 32

@@ -17,6 +17,8 @@
 #define LCD_UPBASE 0x10
 #define LCD_IMSC 0x18
 
+#define LCD_CTL 0x1C
+
 typedef struct pl110_lcd {
   int width;
   int height;

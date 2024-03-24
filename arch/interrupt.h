@@ -25,8 +25,9 @@ enum {
   EX_OTHER = 6,
   EX_PREF_ABORT = 7,
   EX_PERMISSION = 8,
-  EX_KEYBOARD=9,
-  EX_MOUSE=10,
+  EX_TIMER = 9,
+  EX_KEYBOARD = 10,
+  EX_MOUSE = 11,
 };
 
 void interrupt_regist(u32 vec, interrupt_handler_t handler);

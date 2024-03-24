@@ -23,6 +23,15 @@ typedef struct mouse_event{
 typedef struct mouse_device {
   queue_pool_t* events;
   void* data;
+  u32 event_index;
+  u8 packet[4];
+  u32 packet_index;
+  u32 btn_old;
+
+  u32 x;
+  u32 y;
+ mouse_event_t event_data[4];
+
 } mouse_device_t;
 
 #endif

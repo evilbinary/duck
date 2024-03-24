@@ -22,15 +22,26 @@ void *exception_process(interrupt_context_t *ic) {
   } else if (ic->no == EX_SYS_CALL) {
     thread_t *current = thread_current();
     if (current != NULL) {
-      current->ctx->ic = ic; 
+      current->ctx->ic = ic;
       kmemcpy(current->ctx->ksp, ic, sizeof(interrupt_context_t));
     }
+  } else if (ic->no == EX_IRQ) {
+    u32 source = interrupt_get_source(ic->no);
+    ic->no = source;
   }
   if (exception_handlers[ic->no] != 0) {
     interrupt_handler_t handler = exception_handlers[ic->no];
     if (handler != NULL) {
-      return handler(ic);
+      void *ret = handler(ic);
+      if (ret != NULL) {
+        return ret;
+      } else {
+        return ic;
+      }
     }
+  } else {
+    int cpu = cpu_get_id();
+    log_debug("exception hanlder not found on cpu %d no %d\n", cpu, ic->no);
   }
   return NULL;
 }
@@ -42,7 +53,7 @@ void exception_process_error(thread_t *current, interrupt_context_t *ic,
   kprintf("--dump interrupt context--\n");
   context_dump_interrupt(ic);
   kprintf("--dump thread--\n");
-  thread_dump(current, DUMP_DEFAULT|DUMP_CONTEXT|DUMP_STACK);
+  thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT | DUMP_STACK);
 
   // set exit handl
   context_set_entry(ic, entry);
@@ -88,7 +99,7 @@ void exception_on_undef(interrupt_context_t *ic) {
   log_debug("exception undef on cpu %d no %d code %x\n", cpu, ic->no, ic->code);
   exception_info(ic);
   kprintf("--dump thread--\n");
-  thread_dump(current, DUMP_DEFAULT|DUMP_CONTEXT);
+  thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
   exception_process_error(current, ic, (void *)&exception_error_exit);
 }
 

@@ -70,6 +70,9 @@ int pl110_lcd_init(vga_device_t *vga) {
     log_error("not support %d %d\n", lcd->width, lcd->height);
   }
 
+  
+  *(volatile u32 *)(VERSATILEPB_PL110_LCD_BASE + LCD_CTL) &= ~(1<<8);
+
   *(volatile u32 *)(VERSATILEPB_PL110_LCD_BASE + LCD_UPBASE) = vga->frambuffer;
   *(volatile u32 *)(VERSATILEPB_PL110_LCD_BASE + LCD_IMSC) = 0x82B;
 

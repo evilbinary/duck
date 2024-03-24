@@ -34,6 +34,14 @@
 #define PIC_INT_CLEAR 0x14
 #define PIC_INT_TIMER0 (1 << 4)
 
+#define SIC_IRQ_VIC_BIT (1<<31)
+
+#define SIC_BASE 0x10003000
+
+#define SIC_STATUS     0x0
+#define SIC_INT_ENABLE     0x08
+#define SIC_INT_ENCLR 0x0C
+
 
 #define UART0 0x101f1000
 
@@ -48,5 +56,32 @@
 /* serial port bitmasks */
 #define UART_RECEIVE  0x10
 #define UART_TRANSMIT 0x20
+
+typedef struct {
+	uint32_t status;	
+	uint32_t r1;
+	uint32_t r2;
+	uint32_t r3;
+	uint32_t enable;
+	uint32_t r5;
+	uint32_t r6;
+	uint32_t r7;
+	uint32_t r8;
+	uint32_t r9;
+} pic_regs_t;
+
+typedef struct {
+	uint32_t status;	
+	uint32_t r1;
+	uint32_t enable;
+	uint32_t r3;
+	uint32_t r4;
+	uint32_t r5;
+	uint32_t r6;
+	uint32_t r7;
+	uint32_t r8;
+	uint32_t r9;
+} sic_regs_t;
+
 
 #endif
