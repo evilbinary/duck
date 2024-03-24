@@ -102,6 +102,7 @@ void* mouse_handler(interrupt_context_t* ic) {
   u8 state = 0;
   u32 rx, ry, rz;
   u8 btndown, btnup, btn;
+  u8 btn_state = 0;
 
   state = io_read8(MOUSE_BASE + MOUSE_IIR);
 
@@ -113,6 +114,7 @@ void* mouse_handler(interrupt_context_t* ic) {
 
     if (mouse_device.packet_index == 0) {
       btn = mouse_device.packet[0] & 0x7;
+
       btndown = (btn ^ mouse_device.btn_old) & btn;
       btnup = (btn ^ mouse_device.btn_old) & mouse_device.btn_old;
       mouse_device.btn_old = btn;
@@ -137,6 +139,11 @@ void* mouse_handler(interrupt_context_t* ic) {
 
       btndown = (btndown << 1 | btnup);
 
+      btn_state = btn;
+
+      // kprintf("mouse %d,%d btn= %x %x\n", mouse_device.x, mouse_device.y,
+      //         btndown, btnup);
+
       if (btndown == 0 && rz != 0) {
         btndown = 8;  // scroll wheel
         rx = rz;
@@ -145,11 +152,9 @@ void* mouse_handler(interrupt_context_t* ic) {
       mouse_device.x += rx;
       mouse_device.y -= ry;
 
-      // kprintf("mouse %d,%d btn= %x\n", mouse_device.x, mouse_device.y, btndown);
-
       mouse_device.event_data[mouse_device.event_index].x = mouse_device.x;
       mouse_device.event_data[mouse_device.event_index].y = mouse_device.y;
-      mouse_device.event_data[mouse_device.event_index].sate = btndown;
+      mouse_device.event_data[mouse_device.event_index].sate = btn_state;
 
       mouse_device.event_index = (mouse_device.event_index + 1) & 0x3;
     }
@@ -170,6 +175,7 @@ int mouse_init(void) {
   mouse_device.event_index = 0;
   mouse_device.x = 0;
   mouse_device.y = 0;
+  mouse_device.btn_old = 0;
 
   device_add(dev);
 
