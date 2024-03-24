@@ -83,6 +83,10 @@ void platform_map(){
   page_map(CORE0_TIMER_IRQCNTL & ~0xfff, CORE0_TIMER_IRQCNTL & ~0xfff, 0);
 }
 
+int interrupt_get_source(u32 no) {
+  no=EX_TIMER;
+  return no;
+}
 
 void ipi_enable(int cpu) {
   if (cpu < 0 || cpu > 4) return;

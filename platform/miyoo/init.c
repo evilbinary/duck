@@ -107,6 +107,11 @@ void timer_end() {
   write_cntv_tval(cntfrq[0]);
 }
 
+int interrupt_get_source(u32 no) {
+  no=EX_TIMER;
+  return no;
+}
+
 void lcpu_send_start(u32 cpu, u32 entry) {
   gic_send_sgi(cpu,0);
 }
