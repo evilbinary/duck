@@ -87,19 +87,6 @@ void ili9488_write_data(u8 data) {
   delay(30);
 }
 
-void ili9488_test() {
-  // ili9488_fill(0, 0, 128, 128, BLUE);
-  // ili9488_fill(0, 0, 128, 128, GREEN);
-  // ili9488_fill(0, 0, 128, 128, RED);
-  kprintf("ili9488 test lcd end\n");
-  u32* p = 0xfb000000;
-  for (int i = 0; i < 300 / 4; i++) {
-    *p = 0xffffff;
-    p++;
-  }
-  kprintf("ili9488 test lcd end2\n");
-}
-
 void ili9488_init() {
   kprintf("ili9488 init\n");
 
@@ -182,21 +169,33 @@ void ili9488_init() {
   ili9488_write_data(0x25);  // Vcom
   ili9488_write_data(0x80);
 
-  // ili9488_write_cmd(0x2A);
-  // ili9488_write_data(0x00);
-  // ili9488_write_data(0x00);
-  // ili9488_write_data(0x01);
-  // ili9488_write_data(0xDF);  // 479
-
-  // ili9488_write_cmd(0x2B);
-  // ili9488_write_data(0x00);
-  // ili9488_write_data(0x00);
-  // ili9488_write_data(0x01);
-  // ili9488_write_data(0x3F);  // 319
-
   ili9488_write_cmd(0x36);  // Memory Access
   ili9488_write_data(0x48);
   // ili9488_write_data((1 << 3) | (0 << 7) | (1 << 6) | (1 << 5));
+
+  // ili9488_write_cmd(0x2B);  // Page Address Set (2Bh)写入SP EP
+  // ili9488_write_data(0x00);
+  // ili9488_write_data(0x00);
+  // ili9488_write_data(0x01);  // EP 默认列的EC为479 修改为319
+  // ili9488_write_data(0x3F);
+
+  // ili9488_write_cmd(0x2A);  // Column Address Set (2Ah) 写入SC EC
+  // ili9488_write_data(0x00);
+  // ili9488_write_data(0x00);
+  // ili9488_write_data(0x01);  // EC 默认列的EC为319(0X013F) 修改为479(0X01DF)
+  // ili9488_write_data(0xdf);
+
+  ili9488_write_cmd(0x2A);
+  ili9488_write_data(0x00);
+  ili9488_write_data(0x00);
+  ili9488_write_data(0x01);
+  ili9488_write_data(0xDF);  // 479
+
+  ili9488_write_cmd(0x2B);
+  ili9488_write_data(0x00);
+  ili9488_write_data(0x00);
+  ili9488_write_data(0x01);
+  ili9488_write_data(0x3F);  // 319
 
   ili9488_write_cmd(0x3A);   // Interface Pixel Format
   ili9488_write_data(0x66);  // 18bit
@@ -236,7 +235,6 @@ void ili9488_init() {
   delay(120);
   ili9488_write_cmd(0x29);  // Display on
 
-
   // ili9488_test();
 
   gpio_output(GPIO_E, (11), 1);
@@ -248,13 +246,57 @@ void ili9488_init() {
   kprintf("ili9488 lcd end\n");
 }
 
+void ili9488_set_cursor(u16 xpos, u16 ypos) {
+
+  u32 w=480;
+  u32 h=480;
+
+  ili9488_write_cmd(0X2A);
+  ili9488_write_data(xpos >> 8);
+  ili9488_write_data(xpos & 0XFF);
+  ili9488_write_data((w - 1) >> 8);
+  ili9488_write_data((w - 1) & 0XFF);
+
+  ili9488_write_cmd(0X2B);
+  ili9488_write_data(ypos >> 8);
+  ili9488_write_data(ypos & 0XFF);
+  ili9488_write_data((h - 1) >> 8);
+  ili9488_write_data((h - 1) & 0XFF);
+}
+
+void ili9488_set_pixel(u32 x, u32 y, u32 color) {
+  ili9488_set_cursor(x, y);  // 设置光标位置
+  ili9488_write_cmd(0X2C);   // 开始写入GRAM
+  ili9488_write_data(color);
+}
+
 int ili9488_write_pixel(vga_device_t* vga, const void* buf, size_t len) {
   u16* color = buf;
   int i = 0;
   for (i = 0; i < len / 6; i += 3) {
-    // ili9488_set_pixel(color[i], color[i + 1], color[i + 2]);
+    ili9488_set_pixel(color[i], color[i + 1], color[i + 2]);
   }
   return i;
+}
+
+void ili9488_test() {
+  for (int i = 0; i < 256; i++) {
+    for (int j = 0; j < 200; j++) {
+      ili9488_set_pixel(i, j, 0xffff00);
+    }
+  }
+  for (;;);
+  // ili9488_fill(0, 0, 128, 128, BLUE);
+  // ili9488_fill(0, 0, 128, 128, GREEN);
+  // ili9488_fill(0, 0, 128, 128, RED);
+  kprintf("ili9488 test lcd end\n");
+  // u32* p = 0xfb000000;
+  // for (int i = 0; i < 300 / 4; i++) {
+  //   *p = 0xffffff;
+
+  //   p++;
+  // }
+  kprintf("ili9488 test lcd end2\n");
 }
 
 int lcd_init_mode(vga_device_t* vga, int mode) {
