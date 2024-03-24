@@ -10,9 +10,19 @@
 #define __a_gettp_kuser 0xffff0fe0
 #define __a_ver 0xffff0ffc
 
-int musl_gettp() {
+int musl_gettp(int a,int b,int c) {
   log_debug("musl gettp\n");
   return sys_thread_self();
+}
+
+int musl_cas_kuser() {
+  log_debug("musl cas_kuser\n");
+  return 0xbabecafe;
+}
+
+int musl_barrier_kuser() {
+  log_debug("barrier_kuser\n");
+  return 0xbabecafe;
 }
 
 int musl_init(void) {
@@ -29,14 +39,14 @@ int musl_init(void) {
       "fmxr fpexc,r0");
 #else defined(ARMV5)
   // make musl happy ^_^!!
-  void* ptr=kmalloc(PAGE_SIZE,KERNEL_TYPE);
+  void *ptr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
 
   u32 addr = __a_barrier_kuser & ~0xfff;
   page_map(addr, ptr, PAGE_SYS);
 
   *((int *)__a_ver) = 2;
-  *(int *)__a_barrier_kuser = 0;
-  *(int *)__a_cas_kuser = 0;
+  *(int *)__a_barrier_kuser = &musl_barrier_kuser;
+  *(int *)__a_cas_kuser = &musl_cas_kuser;
   *(int *)__a_gettp_kuser = &musl_gettp;
 
 #endif

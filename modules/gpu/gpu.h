@@ -9,6 +9,9 @@
 #include "kernel/kernel.h"
 
 
+#define FB_RGB  0
+#define FB_NV12 1
+#define FB_BGR  2
 
 
 #endif

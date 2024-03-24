@@ -4,7 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "pl110.h"
-
+#include "gpu.h"
 #include "vga/vga.h"
 
 int gpu_init_mode(vga_device_t *vga, int mode) {
@@ -24,6 +24,8 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
   vga->framebuffer_count = 1;
   vga->pframbuffer = 0xfb0000;
   vga->frambuffer = vga->pframbuffer;
+
+  vga->format =FB_BGR;
 
   vga->framebuffer_length = vga->width * vga->height;
 
@@ -71,7 +73,7 @@ int pl110_lcd_init(vga_device_t *vga) {
   }
 
   
-  *(volatile u32 *)(VERSATILEPB_PL110_LCD_BASE + LCD_CTL) &= ~(1<<8);
+  *(volatile u32 *)(VERSATILEPB_PL110_LCD_BASE + LCD_CTL) |= (1<<8);
 
   *(volatile u32 *)(VERSATILEPB_PL110_LCD_BASE + LCD_UPBASE) = vga->frambuffer;
   *(volatile u32 *)(VERSATILEPB_PL110_LCD_BASE + LCD_IMSC) = 0x82B;
