@@ -35,7 +35,7 @@ if has_config('single-kernel'):
     add_defines('SINGLE_KERNEL')
     add_files(
             '../../boot/'+arch_type+'/boot-'+arch+'.s',
-            '../../boot/'+arch_type+'/init.c',
+            '../../boot/'+arch_type+'/init-'+arch+'.c',
             )
 
 

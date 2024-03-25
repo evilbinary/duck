@@ -39,6 +39,9 @@ plat_source={
     'orangepi-pc':[
         'h3.c',
         'sunxi-gpio.c'
+    ],
+    'stm32f4xx':[
+        'stm32.c'
     ]
 }
 arch_source={

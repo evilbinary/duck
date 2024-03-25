@@ -1,8 +1,9 @@
 #include "gpio.h"
+#include "arch/arch.h"
 
 UART_HandleTypeDef huart1;
 
-void uart_init() {
+static void uart_init() {
   __HAL_RCC_USART1_CLK_ENABLE();
   GPIO_InitTypeDef GPIO_InitStruct;
   GPIO_InitStruct.Pin = GPIO_PIN_9 | GPIO_PIN_10;
@@ -177,4 +178,9 @@ void platform_end() { MX_DMA_Init(); }
 
 void platform_map(){
 
+}
+
+int interrupt_get_source(u32 no) {
+  no=EX_TIMER;
+  return no;
 }

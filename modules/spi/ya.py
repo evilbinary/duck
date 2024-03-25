@@ -26,7 +26,7 @@ plat_source={
     'rk3128':[
         'rk3128.c'
     ],
-    'stm32':[
+    'stm32f4xx':[
         'stm32.c'
     ],
     'general':[

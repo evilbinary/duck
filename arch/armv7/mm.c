@@ -59,6 +59,17 @@ void* page_v2p(void* page, void* vaddr) {
   return phyaddr;
 }
 
+void page_unmap_on(page_dir_t* page, u32 virtualaddr) {
+  u32* l1 = page;
+  u32 l1_index = virtualaddr >> 20;
+  u32 l2_index = virtualaddr >> 12 & 0xFF;
+  u32* l2 = ((u32)l1[l1_index]) & 0xFFFFFC00;
+  if (l2 != NULL) {
+    // l1[l1_index] = 0;
+    l2[l2_index] = 0;
+  }
+}
+
 void mm_page_enable(u32 page_dir) {
   // cpu_disable_page();
   // cpu_icache_disable();

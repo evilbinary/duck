@@ -97,6 +97,8 @@ interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
  return next_context->usp;
 }
 
+
+
 void context_dump(context_t* c) {
   kprintf("tid: %8x\n", c->tid);
   kprintf("eip: %8x\n", c->eip);

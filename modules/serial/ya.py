@@ -46,6 +46,9 @@ plat_source={
     ],
     'orangepi-pc':[
         'h3.c',
+    ],
+    'stm32f4xx':[
+        'general.c'
     ]
 }
 arch_source={
