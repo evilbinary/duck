@@ -7,7 +7,7 @@
 target("kernel")
 set_kind("static")
 
-add_deps("archcommon")
+add_deps("archcommon","arch")
 
 add_files(
     'kernel.c',
