@@ -39,28 +39,57 @@ void interrutp_set(int i) {
 
 INTERRUPT_SERVICE
 void reset_handler() {
-  interrupt_entering_code(0, 0);
+  interrupt_entering_code(EX_RESET, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void svc_handler() {
-  interrupt_entering_code(2, 0);
+  interrupt_entering_code(EX_SYS_CALL, 0);
+  interrupt_process(interrupt_default_handler);
+  interrupt_exit();
+}
+
+INTERRUPT_SERVICE
+void irq_handler() {
+  interrupt_entering_code(EX_IRQ, 0);
   interrupt_process(interrupt_default_handler);
   interrupt_exit();
 }
 
 INTERRUPT_SERVICE
 void sys_tick_handler() {
-  interrupt_entering_code(2, 0);
+  interrupt_entering_code(EX_TIMER, 0);
   interrupt_process(interrupt_default_handler);
   interrupt_exit_ret();
 }
 
 INTERRUPT_SERVICE
 void sys_pendsv_handler() {
-  interrupt_entering_code(2, 0);
+  interrupt_entering_code(EX_SYS_CALL, 0);
+  interrupt_process(interrupt_default_handler);
+  interrupt_exit();
+}
+
+
+INTERRUPT_SERVICE
+void hard_fault_handler() {
+  interrupt_entering_code(EX_UNDEF, 0);
+  interrupt_process(interrupt_default_handler);
+  interrupt_exit();
+}
+
+INTERRUPT_SERVICE
+void bus_handler() {
+  interrupt_entering_code(EX_DATA_FAULT, 0);
+  interrupt_process(interrupt_default_handler);
+  interrupt_exit();
+}
+
+INTERRUPT_SERVICE
+void usage_fault_handler() {
+  interrupt_entering_code(EX_UNDEF, 0);
   interrupt_process(interrupt_default_handler);
   interrupt_exit();
 }
@@ -81,7 +110,14 @@ void exception_info(interrupt_context_t* ic) {
 }
 
 void interrupt_regist_all() {
-  interrupt_regist(1, reset_handler);        // reset
+  interrupt_regist(1, reset_handler);  // reset
+  interrupt_regist(2, irq_handler);
+  interrupt_regist(3, hard_fault_handler);
+
+  interrupt_regist(4, bus_handler);
+  interrupt_regist(5, bus_handler);  //
+  interrupt_regist(6, usage_fault_handler);
+
   interrupt_regist(11, svc_handler);         // svc_handler
   interrupt_regist(14, sys_pendsv_handler);  // sys_pendsv_handler
   interrupt_regist(15, sys_tick_handler);    // sys_tick_handler
