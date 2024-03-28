@@ -86,11 +86,11 @@ int interrupt_get_source(u32 no) {
   if ((pic->status & PIC_INT_TIMER0) != 0) {
     no = EX_TIMER;
   } else {
-    // kprintf("get source %d\n", sic->status & 1 << ISR_MOUSE);
+    // kprintf("get source %x\n", sic->status );
     if (sic->status & (1 << ISR_MOUSE)) {
       no = EX_MOUSE;
     } else if (sic->status & (1 << ISR_KEYBOARD)) {
-      kprintf("get source keyboard \n");
+      // kprintf("get source keyboard \n");
       no = EX_KEYBOARD;
     }
   }

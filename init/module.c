@@ -32,7 +32,7 @@ void modules_init(void) {
   REGISTER_MODULE(sdhci);
   REGISTER_MODULE(gpu);
   REGISTER_MODULE(mouse);
-  // REGISTER_MODULE(keyboard);
+  REGISTER_MODULE(keyboard);
 #ifdef FAT_MODULE
   REGISTER_MODULE(fat);
 #endif

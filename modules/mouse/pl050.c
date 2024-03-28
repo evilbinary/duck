@@ -8,20 +8,6 @@
 #include "kernel/kernel.h"
 #include "mouse.h"
 
-#define VERSATILEPB_PL050_KBD 0x10006000
-#define SIC_IRQ_VIC_BIT (1 << 31)
-#define KMI0_IRQ_SIC_BIT (1 << 3)
-#define KMI1_IRQ_SIC_BIT (1 << 4)
-
-#define KCNTL 0x00  // 7-6- 5(0=AT)4=RxIntEn 3=TxIntEn
-#define KSTAT 0x04  // 7-6=TxE 5=TxBusy 4=RXFull 3=RxBusy
-#define KDATA 0x08  // data register;
-#define KCLK 0x0C   // clock divisor register; (not used)
-#define KISTA 0x10  // interrupt status register;(not used)
-
-// *(volatile u32*)(VERSATILEPB_PL050_KBD + KCNTL) = 0x14;
-// *(volatile u32*)(VERSATILEPB_PL050_KBD + KCLK) = 8;
-// u8 scode = *(VERSATILEPB_PL050_KBD + KDATA);
 
 #define VERSATILEPB_PL050_MOUSE 0x10007000
 
