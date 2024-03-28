@@ -10,19 +10,21 @@
 #define __a_gettp_kuser 0xffff0fe0
 #define __a_ver 0xffff0ffc
 
-int musl_gettp(int a,int b,int c) {
+void* musl_vector = NULL;
+
+void musl_barrier_kuser() {
+  log_debug("barrier_kuser\n");
+  dmb();
+}
+
+int musl_cas_kuser(int* ptr, int oldval, int newval) {
+  log_debug("musl cas_kuser\n");
+  return cpu_cmpxchg(ptr, oldval, newval);
+}
+
+int musl_gettp(int a, int b, int c) {
   log_debug("musl gettp\n");
   return sys_thread_self();
-}
-
-int musl_cas_kuser() {
-  log_debug("musl cas_kuser\n");
-  return 0xbabecafe;
-}
-
-int musl_barrier_kuser() {
-  log_debug("barrier_kuser\n");
-  return 0xbabecafe;
 }
 
 int musl_init(void) {
@@ -38,16 +40,18 @@ int musl_init(void) {
       "mov r0,#0x40000000\n"
       "fmxr fpexc,r0");
 #else defined(ARMV5)
-  // make musl happy ^_^!!
-  void *ptr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
+  // make musl happy ^_^!! User space atomic ops on ARMv5 and earlier
+  // if (musl_vector == NULL) {
+  //   musl_vector = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
+  // }
 
-  u32 addr = __a_barrier_kuser & ~0xfff;
-  page_map(addr, ptr, PAGE_SYS);
+  // u32 addr = __a_barrier_kuser & ~0xfff;
+  // page_map(addr, addr, PAGE_RWX);
 
-  *((int *)__a_ver) = 2;
-  *(int *)__a_barrier_kuser = &musl_barrier_kuser;
-  *(int *)__a_cas_kuser = &musl_cas_kuser;
-  *(int *)__a_gettp_kuser = &musl_gettp;
+  // *((u32 *)__a_ver) = 2;
+  // *((u32 *)__a_barrier_kuser) = &musl_barrier_kuser;
+  // *((u32 *)__a_cas_kuser) = &musl_cas_kuser;
+  // *((u32 *)__a_gettp_kuser) = &musl_gettp;
 
 #endif
 

@@ -21,7 +21,7 @@ void dccmvac(unsigned long mva) {
 }
 
 int cpu_pmu_version() {
-  u32 pmu_id=0;
+  u32 pmu_id = 0;
   asm volatile("MRC p15, 0, %0, c9, c0, 0" : "=r"(pmu_id));
   // PMU 版本信息
   return (pmu_id >> 4) & 0xF;
@@ -29,16 +29,13 @@ int cpu_pmu_version() {
 
 void cpu_pmu_enable(int enable, u32 timer) {
   if (enable == 1) {
-    
-
   } else if (enable == 0) {
-   
   }
 }
 
 unsigned int cpu_cyclecount(void) {
-  unsigned int value=0;
-  
+  unsigned int value = 0;
+
   return value;
 }
 
@@ -147,14 +144,13 @@ void cpu_disable_l1_cache() {
 }
 
 void cpu_set_page(u32 page_table) {
-  
- // Disable L1 Cache
+  // Disable L1 Cache
   cpu_disable_l1_cache();
 
   // Invalidate L1 Caches Invalidate Instruction cache
   cp15_invalidate_icache();
 
-   // Invalidate Data cache
+  // Invalidate Data cache
   __builtin___clear_cache(0, ~0);
   cache_inv_range(0, ~0);
 
@@ -346,7 +342,6 @@ ulong cpu_get_cs(void) {
 int cpu_tas(volatile int* addr, int newval) {
   int result = newval;
   // result = __sync_val_compare_and_swap(addr, newval, result);
-
   return result;
 }
 
@@ -469,4 +464,15 @@ void cpu_sti() {
   asm("mrs %[v], cpsr" : [v] "=r"(val)::);
   val &= ~0x80;
   asm("msr cpsr_cxsf, %[v]" : : [v] "r"(val) :);
+}
+
+void cpu_cmpxchg(void* ptr, u32 old_value, u32 new_value) {
+  asm(
+	".word 0xf57ff05f\n"	/* dmb sy                */
+	".word 0xe1923f9f\n"	/* ldrex r3, [r2]        */
+	".word 0xe0530000\n"	/* subs r0, r3, r0       */
+	".word 0x01820f91\n"	/* strexeq r0, r1, [r2]  */
+	".word 0xf57ff05f\n"	/* dmb sy                */
+	".word 0xe12fff1e\n"	/* bx lr                 */
+  );
 }
