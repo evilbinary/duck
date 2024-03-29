@@ -5,27 +5,27 @@
  ********************************************************************/
 #include "kernel/kernel.h"
 
-#define __a_barrier_kuser 0xffff0fa0
-#define __a_cas_kuser 0xffff0fc0
-#define __a_gettp_kuser 0xffff0fe0
-#define __a_ver 0xffff0ffc
+// #define __a_barrier_kuser 0xffff0fa0
+// #define __a_cas_kuser 0xffff0fc0
+// #define __a_gettp_kuser 0xffff0fe0
+// #define __a_ver 0xffff0ffc
 
-void* musl_vector = NULL;
+// void* musl_vector = NULL;
 
-void musl_barrier_kuser() {
-  log_debug("barrier_kuser\n");
-  dmb();
-}
+// void musl_barrier_kuser() {
+//   log_debug("barrier_kuser\n");
+//   dmb();
+// }
 
-int musl_cas_kuser(int* ptr, int oldval, int newval) {
-  log_debug("musl cas_kuser\n");
-  return cpu_cmpxchg(ptr, oldval, newval);
-}
+// int musl_cas_kuser(int* ptr, int oldval, int newval) {
+//   log_debug("musl cas_kuser\n");
+//   return cpu_cmpxchg(ptr, oldval, newval);
+// }
 
-int musl_gettp(int a, int b, int c) {
-  log_debug("musl gettp\n");
-  return sys_thread_self();
-}
+// int musl_gettp(int a, int b, int c) {
+//   log_debug("musl gettp\n");
+//   return sys_thread_self();
+// }
 
 int musl_init(void) {
   log_info("musl init\n");

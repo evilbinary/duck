@@ -8,6 +8,7 @@
 #include "context.h"
 
 extern boot_info_t* boot_info;
+u32 cpus_id[MAX_CPU];
 
 void cpu_init() {}
 
@@ -29,6 +30,53 @@ int cpu_tas(volatile int* addr, int newval) {
   int result = newval;
 
   return result;
+}
+
+int cpu_pmu_version() {
+  u32 pmu_id = 0;
+  // PMU 版本信息
+  return (pmu_id >> 4) & 0xF;
+}
+
+void cpu_pmu_enable(int enable, u32 timer) {
+
+}
+
+unsigned int cpu_cyclecount(void) {
+  unsigned int value;
+
+  return value;
+}
+
+int cpu_get_number() { return boot_info->tss_number; }
+
+u32 cpu_get_index(int idx) {
+  if (idx < 0 || idx > cpu_get_number()) {
+    kprintf("out of bound get cpu idx\n");
+    return 0;
+  }
+  return cpus_id[idx];
+}
+
+int cpu_init_id(u32 id) {
+  // kprintf("cpu init id %d\n", id);
+  ipi_enable(id);
+  return 0;
+}
+
+int cpu_start_id(u32 id, u32 entry) {
+  // start at  at entry-point on boot init.c
+  // kprintf("cpu start id %d entry: %x\n", id,entry);
+  lcpu_send_start(id, entry);
+  return 0;
+}
+
+
+void cpu_delay(int n) {
+  // cpu_delay_msec(n);
+  while (n > 0) {
+    n--;
+  }
 }
 
 void cpu_backtrace(void) {}

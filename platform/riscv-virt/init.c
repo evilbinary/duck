@@ -161,6 +161,12 @@ void platform_end() {}
 
 void platform_map() {}
 
+
+int interrupt_get_source(u32 no) {
+  no=EX_TIMER;
+  return no;
+}
+
 void ipi_enable(int cpu) {}
 
 void lcpu_send_start(u32 cpu, u32 entry) {}

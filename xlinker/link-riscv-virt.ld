@@ -2,6 +2,8 @@ ENTRY(kstart)
 K_VIR_ADDR = 0x82000000;
 K_PHY_ADDR = 0x82000000;
 PAGE_SIZE    = 0x100;
+__heap_size  = 0x200;
+__stack_size = 0x200;
 SECTIONS
 {
         . = K_VIR_ADDR;
@@ -31,6 +33,11 @@ SECTIONS
         {
                 *(.bss)
         }
+        . = . + __stack_size;
+        _stack_irq = .;
+
+        . = . + __stack_size;
+        _stack_svc = .;
         __bss_end = .;
        __end = .;
 }

@@ -17,6 +17,30 @@ void* memset(void* ptr, int value, size_t num) {
   return ptr;
 }
 
+void* memcpy(void* /* restrict */ s1, const void* /* restrict */ s2,
+              size_t n) {
+  char* cdest;
+  char* csrc;
+  uint32_t* ldest = (uint32_t*)s1;
+  uint32_t* lsrc = (uint32_t*)s2;
+
+  while (n >= 4) {
+    *ldest++ = *lsrc++;
+    n -= 4;
+  }
+
+  cdest = (char*)ldest;
+  csrc = (char*)lsrc;
+
+  while (n > 0) {
+    *cdest++ = *csrc++;
+    n -= 1;
+  }
+
+  return s1;
+}
+
+
 void* kmemcpy(void* /* restrict */ s1, const void* /* restrict */ s2,
               size_t n) {
   char* cdest;

@@ -84,6 +84,11 @@ typedef u32 (*sys_call_fn)(u32 arg1, u32 arg2, u32 arg3, u32 arg4, u32 arg5,
 #define cpu_cli() asm("csrsi   sstatus,2\n")
 #define cpu_sti() asm("csrci   sstatus,2\n")
 #define cpu_cpl() (cpu_get_cs() & 0x3)
+#define cpu_faa(ptr) __sync_fetch_and_add(ptr, 1)
+
+#define isb() 
+#define dsb() 
+#define dmb()  
 
 #define syscall0(syscall_num)    \
   ({                             \

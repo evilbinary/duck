@@ -50,7 +50,7 @@ typedef struct framebuffer_info {
   u32* flip_buffer;
 } my_framebuffer_info_t;
 
-void test_lcd() {
+void static test_lcd() {
   my_framebuffer_info_t fb;
   u16 buf[] = {12, 12, BLUE};
 
