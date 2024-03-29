@@ -25,6 +25,9 @@
 #define PAGE_USR (PTE_R | PTE_W | PTE_X |PTE_U )  // 用户级
 #define PAGE_DEV (PTE_R | PTE_W | PTE_X)  // 设备级
 
+
+#define PAGE_RW_NC PAGE_DEV
+
 typedef u32 page_dir_t;
 
 #endif
