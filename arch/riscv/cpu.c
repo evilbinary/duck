@@ -102,7 +102,7 @@ void cpu_enable_page() {
 u32 cpu_get_id() {
   int cpu = 0;
 #if MP_ENABLE
-  asm volatile("csrr %[cpu], mhartid" : [cpu] "=r"(cpu) : :);
+  // asm volatile ("csrr %0, mhartid" : "=r" (cpu));  
 #endif
   return cpu & 0xf;
 }
