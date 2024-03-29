@@ -1,16 +1,20 @@
 ENTRY(kstart)
-K_VIR_ADDR = 0x82000000;
-K_PHY_ADDR = 0x82000000;
+K_VIR_ADDR = 0x80200000;
+K_PHY_ADDR = 0x80200000;
 PAGE_SIZE    = 0x100;
+
 __heap_size  = 0x200;
 __stack_size = 0x200;
+
 SECTIONS
 {
-        . = K_VIR_ADDR;
-        /* Code. */
-        .text K_VIR_ADDR : AT(K_PHY_ADDR)
+         . = K_VIR_ADDR ;
+        __start = .;
+        /* Code. */     
+        .text  K_VIR_ADDR : AT(K_PHY_ADDR)
         {
 		. = ALIGN(PAGE_SIZE);
+                 *(.text.boot)
                 *(.text)
         }
 
@@ -33,6 +37,7 @@ SECTIONS
         {
                 *(.bss)
         }
+        
         . = . + __stack_size;
         _stack_irq = .;
 
