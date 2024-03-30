@@ -21,7 +21,7 @@ plat_source={
         'v3s.c',
     ],
     'raspi2':[
-        
+        'bcm2836.c'
     ],
     'rk3128':[
         
@@ -36,6 +36,7 @@ plat_source={
        
     ],
     't113-s3':[
+        'v3s.c'
     ],
     'versatilepb':[
         
