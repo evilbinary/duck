@@ -11,6 +11,11 @@ void sunxi_spi_cs(int spi, u32 val) {
   sunxi_spi_base[spi]->tcr = r;
 }
 
+void sunxi_spi_rate(int spi, u32 rate) {
+  u32 div = 24000000 / rate / 2 - 1;
+  sunxi_spi_base[spi]->ccr = 1 << 12 | div;
+}
+
 static void sunxi_spi_write_txbuf(int spi, u8* buf, int len) {
   int i;
   sunxi_spi_base[spi]->mtc = len & 0xffffff;
@@ -38,9 +43,7 @@ u32 sunxi_spi_xfer(int spi, spi_msg_t* msg, u32 cnt) {
 
     sunxi_spi_base[spi]->tcr |= (1 << 31);
 
-  
-    while ((sunxi_spi_base[spi]->fsr & 0xff) < n)
-      ;
+    while ((sunxi_spi_base[spi]->fsr & 0xff) < n);
     for (i = 0; i < n; i++) {
       val = sunxi_spi_base[spi]->rxd;
       if (rx) *rx++ = val;
@@ -100,8 +103,7 @@ u32 sunxi_spi_rw_data(int spi, spi_msg_t* msg) {
     // kprintf("trans %x\n", sunxi_spi_base[spi]->isr);
     // wait finish Transfer Completed
     // while ((sunxi_spi_base[spi]->isr & (1 << 12)) == 0);
-    while ((sunxi_spi_base[spi]->fsr & 0xff) < fifo_byte)
-      ;
+    while ((sunxi_spi_base[spi]->fsr & 0xff) < fifo_byte);
     // kprintf("trans end %d %d\n", rx_len, tx_len);
 
     // clear flag

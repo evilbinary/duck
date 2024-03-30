@@ -26,6 +26,9 @@ plat_source={
     ],
     'stm32f4xx':[
         'st7735.c'
+    ],
+    'v3s':[
+        'ili9431.c'
     ]
 }
 arch_source={
