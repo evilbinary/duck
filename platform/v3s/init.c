@@ -1,5 +1,5 @@
 #include "init.h"
-
+#include "arch/interrupt.h"
 #include "arch/pmemory.h"
 #include "gpio.h"
 #include "v3s-ccu.h"

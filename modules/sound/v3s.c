@@ -1,8 +1,11 @@
 /*******************************************************************
  * Copyright 2021-present evilbinary
- * 作者: evilbinary on 19/03/23
+ * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
+#include "dev/devfs.h"
+#include "dma/dma.h"
+#include "kernel/kernel.h"
 
 static size_t read(device_t* dev, void* buf, size_t len) {
   u32 ret = 0;
@@ -13,7 +16,7 @@ static size_t read(device_t* dev, void* buf, size_t len) {
 static size_t write(device_t* dev, void* buf, size_t len) {
   u32 ret = len;
 
-  sound_play(buf, len);
+  // sound_play(buf, len);
   return ret;
 }
 
