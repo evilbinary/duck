@@ -244,15 +244,19 @@ int ili9431_write_pixel(vga_device_t* vga, const void* buf, size_t len) {
 }
 
 void ili9431_test() {
-  for (int i = 0; i < 256; i++) {
-    for (int j = 0; j < 200; j++) {
-      ili9431_set_pixel(i, j, 0xffff00);
-    }
-  }
-  for (;;);
+  kprintf("ili9431 test start\n");
+
+  // for (int i = 0; i < 256; i++) {
+  //   for (int j = 0; j < 200; j++) {
+  //     ili9431_set_pixel(i, j, 0xffff00);
+  //   }
+  // }
+  kprintf("ili9431 test 1\n");
+
   ili9431_fill(0, 0, 128, 128, BLUE);
   ili9431_fill(0, 0, 128, 128, GREEN);
   ili9431_fill(0, 0, 128, 128, RED);
+
   kprintf("ili9431 test lcd end\n");
   // u32* p = 0xfb000000;
   // for (int i = 0; i < 300 / 4; i++) {
