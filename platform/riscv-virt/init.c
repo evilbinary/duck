@@ -159,7 +159,11 @@ void platform_init() { io_add_write_channel(uart_send); }
 
 void platform_end() {}
 
-void platform_map() {}
+void platform_map() {
+
+  page_map(UART_BASE,UART_BASE,0);
+
+}
 
 
 int interrupt_get_source(u32 no) {

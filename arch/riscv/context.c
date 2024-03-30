@@ -77,6 +77,7 @@ void context_dump_interrupt(interrupt_context_t* ic) {
   kprintf("ra:  %x\n", ic->ra);
   kprintf("sstatus:  %x\n", ic->sstatus);
   kprintf("sepc:  %x\n", ic->sepc);
+  kprintf("taval:  %x\n", cpu_read_stval());
 
   kprintf("sp:  %x\n", ic->sp);
   kprintf("gp:  %x\n", ic->gp);
@@ -150,6 +151,7 @@ interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
   log_debug("==>current tid %d level %d sstatus %x\n",current->tid,current->level,current->ksp->sstatus);
   log_debug("==>next    tid %d level %d sstatus %x\n",next->tid,next->level,next->ksp->sstatus);
 #endif
+  cpu_invalid_tlb();
 
   return next->ksp;
 }

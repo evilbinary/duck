@@ -81,22 +81,65 @@ void cpu_delay(int n) {
 
 void cpu_backtrace(void) {}
 
+
+void cpu_invalid_tlb() {
+  // Flush the TLB (Translation Lookaside Buffer)
+  asm volatile("sfence.vma");
+}
+
+void disable_pmp() {
+
+
+    // Clear all PMP configuration registers
+//     asm volatile (
+//         "li t0, 0\n"         // Load 0 to clear the PMP configuration
+//         "csrw pmpcfg0, t0\n" // Clear PMP configuration register 0
+//         "csrw pmpcfg1, t0\n" // Clear PMP configuration register 1
+//         "csrw pmpcfg2, t0\n" // Clear PMP configuration register 2
+//         "csrw pmpcfg3, t0\n" // Clear PMP configuration register 3
+//         // Repeat for any additional PMP configuration registers (up to pmpcfg15)
+//         :
+//         :
+//         : "t0"               // Clobber list specifying that t0 is modified
+//     );
+}
+
+// void cpu_flash_dcache(){
+//     asm volatile("sfence.i");
+// }
+
+void cpu_flush_dcache(void *start_addr, size_t size) {
+    // Flush data cache (assuming RV32I)
+    asm volatile (
+        "mv a0, %0\n"    // Move start_addr to a0
+        "mv a1, %1\n"    // Move size to a1
+        "li a7, 0x19\n"  // syscall number for flush_dcache_range (example)
+        "ecall\n"        // Execute syscall
+        :
+        : "r" (start_addr), "r" (size)
+        : "a0", "a1", "a7"
+    );
+
+    
+}
+
 void cpu_set_page(u32 page_table) {
   // Sv32 方式 10+10+12 PPN =22  mode 1
   u32 page = page_table >> 12 | (1 << 30);
 
   // Set the value of satp register
   asm volatile("csrw satp, %0" : : "r"(page));
-  // Flush the TLB (Translation Lookaside Buffer)
-  asm volatile("sfence.vma");
 }
 
 void cpu_enable_page() {
-  // 使用 MMU 映射虚拟页面到物理页面
-  asm volatile("sfence.vma");
+  disable_pmp();
+
   // 启用 MMU
   asm volatile("li t0, 0x80000000");
   asm volatile("csrs sstatus, t0");
+
+  cpu_flush_dcache(0, ~0);
+  cpu_invalid_tlb();
 }
 
 u32 cpu_get_id() {
@@ -172,6 +215,12 @@ void cpu_write_mideleg(u32 x) { asm volatile("csrw mideleg, %0" : : "r"(x)); }
 u32 cpu_read_scause() {
   u32 x;
   asm volatile("csrr %0, scause" : "=r"(x));
+  return x;
+}
+
+u32 cpu_read_stval() {
+  u32 x;
+  asm volatile("csrr %0, stval" : "=r"(x));
   return x;
 }
 
