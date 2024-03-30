@@ -38,6 +38,10 @@ if has_config('single-kernel'):
                 '../../boot/'+arch_type+'/boot.s',
                 '../../boot/'+arch_type+'/init.c',
                 )
+    elif arch_type in['x86']:
+        add_files(
+                '../../boot/'+arch_type+'/init.c',
+                )
     else:
         add_files(
                 '../../boot/'+arch_type+'/boot-'+arch+'.s',
@@ -71,7 +75,7 @@ add_rules("kernel-objcopy")
 
 
 target('boot-config')
-add_deps('kernel.elf')
+# add_deps('kernel.elf')
 
 add_files(
     "{buildir}/kernel"

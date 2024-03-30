@@ -165,7 +165,7 @@ void page_map_on(page_dir_t* page, u32 virtualaddr, u32 physaddr, u32 flags) {
   // kprintf("map page:%x on vaddr:%x paddr:%x\n",page,virtualaddr,physaddr);
 }
 
-void unpage_map_on(page_dir_t* page, u32 virtualaddr) {
+void page_unmap_on(page_dir_t* page, u32 virtualaddr) {
   u32 pdpte_index = (u32)virtualaddr >> 30 & 0x03;
   u32 pde_index = (u32)virtualaddr >> 21 & 0x01FF;
   u32 pte_index = (u32)virtualaddr >> 12 & 0x01FF;

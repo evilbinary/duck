@@ -15,7 +15,8 @@
 #define PAGE_USR   4 //用户级
 typedef u64* page_dir_t;
 
-
+#define PAGE_RW_NC PAGE_RW
+#define PAGE_DEV PAGE_RW
 
 void* page_v2p(u64* page_dir_ptr_tab, void* vaddr);
 

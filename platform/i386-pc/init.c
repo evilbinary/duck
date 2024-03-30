@@ -1,4 +1,7 @@
 #include "../platform.h"
+#include "libs/include/types.h"
+#include "arch/interrupt.h"
+
 
 #define PORT_COM1 0x3f8
 #define PORT_COM2 0x2F8
@@ -61,4 +64,10 @@ void platform_end(){
 
  void platform_map(){
   page_map(PORT_COM1, PORT_COM1, 0);
+}
+
+
+int interrupt_get_source(u32 no) {
+  no=EX_TIMER;
+  return no;
 }

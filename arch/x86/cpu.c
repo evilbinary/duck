@@ -4,11 +4,28 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "arch/cpu.h"
+
 #include "cpu.h"
 #include "platform/platform.h"
 
-
 extern boot_info_t* boot_info;
+
+int cpu_pmu_version() {
+  u32 pmu_id = 0;
+  // PMU 版本信息
+  return (pmu_id >> 4) & 0xF;
+}
+
+void cpu_pmu_enable(int enable, u32 timer) {
+  if (enable == 1) {
+  } else if (enable == 0) {
+  }
+}
+
+unsigned int cpu_cyclecount(void) {
+  unsigned int value;
+  return value;
+}
 
 static inline unsigned long read_cr0(void) {
   unsigned long val;
@@ -142,10 +159,10 @@ void cpu_init(int cpu) {
 void cpu_halt() { asm("hlt\n"); }
 
 void cpu_wait() {
-  if(cpu_get_id()==0){
+  if (cpu_get_id() == 0) {
     asm("hlt\n");
-  }else{
-    //cause ap cpu error so not use
+  } else {
+    // cause ap cpu error so not use
   }
 }
 
@@ -192,26 +209,21 @@ void cpu_delay_sleep() {
   }
 }
 
-void cpu_delay(int n) {
-  for (int i = 0; i < 10000 * n; i++)
-    ;
-}
+void cpu_delay(int n) { for (int i = 0; i < 10000 * n; i++); }
 
 void cpu_backtrace(stack_frame_t* fp, void** buf, int size) {
   int i;
   for (i = 0; i < size && fp != NULL; fp = fp->prev, i++) {
-    if(fp->return_addr<=0){
+    if (fp->return_addr <= 0) {
       break;
     }
     buf[i] = fp->return_addr;
   }
 }
 
-
-void cpu_set_page(u32 page_dir){
+void cpu_set_page(u32 page_dir) {
   asm volatile("mov %0, %%cr3" : : "r"(page_dir));
 }
-
 
 void* syscall0(u32 num) {
   int ret;

@@ -4,7 +4,7 @@
 # * 作者: evilbinary on 01/01/20
 # * 邮箱: rootdebug@163.com
 # ********************************************************************
-target("mod-sb16")
+target("mod-sound")
 set_kind("static")
 
 add_deps(
@@ -48,7 +48,10 @@ plat_source={
 arch_source={
     'arm': [
         
-    ]
+    ],
+    'x86':[
+        'sb16.c',
+    ],
 }
 common_source=[
     

@@ -33,7 +33,7 @@ void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
   // Sv32 方式 10+10+12
   u32 l1_index = (virtualaddr >> 22) & 0x3ff;
   u32 l2_index = (virtualaddr >> 12) & 0x3ff;
-  u32 l3_index = virtualaddr & 0x3ff;
+  u32 l3_index = virtualaddr & 0xfff;
 
   u32* l2 = ((u32)l1[l1_index]) & ~0xfff;
   if (l2 == NULL) {

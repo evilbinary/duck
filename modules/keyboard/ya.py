@@ -18,9 +18,7 @@ arch_type=get_arch_type()
 plat=get_plat()
 
 plat_source={
-    'x86':[
-        'keyboard.c',
-    ],
+ 
     'raspi2':[
         'bcm2836.c',
     ],
@@ -53,9 +51,9 @@ arch_source={
     'arm':[ 
         
     ],
-    'x86': [
-
-    ]
+    'x86':[
+        'keyboard.c',
+    ],
 }
 common_source=[
 

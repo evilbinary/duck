@@ -147,6 +147,11 @@ void* interrupt_handler_process(interrupt_context_t* ic) {
         ic->sepc += 4;
         interrupt_default_handler(ic);
         break;
+      case 9:  // supervisor_ecall
+        // ic->no = EX_SYS_CALL;
+        // ic->sepc += 4;
+        // interrupt_default_handler(ic);
+        break;
       case 15:  // data abort
         ic->no = EX_DATA_FAULT;
         interrupt_default_handler(ic);

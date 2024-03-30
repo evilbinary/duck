@@ -2,7 +2,6 @@
 #include "platform/platform.h"
 
 #include "../interrupt.h"
-#include "../io.h"
 #include "cpu.h"
 #include "mm.h"
 

@@ -11,28 +11,13 @@
 #include "sbi.h"
 #endif
 
-static void io_write32(uint port, u32 data) { *(u32 *)port = data; }
-
-static u32 io_read32(uint port) {
-  u32 data;
-  data = *(u32 *)port;
-  return data;
-}
-
-static void io_write8(uint port, u8 data) { *(u8 *)port = data; }
-
-static u8 io_read8(uint port) {
-  u8 data;
-  data = *(u8 *)port;
-  return data;
-}
+int timer_val = 0;
 
 void uart_send_char(unsigned int c) {
 #ifdef SBI
   sbi_console_putchar(c);
 #else
-  while ((io_read8(UART_BASE + REG_LSR) & (1 << 5)) == 0)
-    ;
+  while ((io_read8(UART_BASE + REG_LSR) & (1 << 5)) == 0);
   io_write32(UART_BASE + REG_THR, c);
 #endif
 }
@@ -49,7 +34,7 @@ unsigned int uart_receive() {
   char c = 0;
 #ifdef SBI
   c = sbi_console_getchar();
-  if ((u8) c == 255 ) return 0;
+  if ((u8)c == 255) return 0;
 #else
   c = io_read8(UART_BASE + REG_LSR);
 
@@ -60,7 +45,8 @@ unsigned int uart_receive() {
   return c;
 }
 
-int timer_val = 0;
+
+#ifdef USE_MMODE_TIMER
 
 void mtimer_end() {
   int id = cpu_get_id();
@@ -94,22 +80,28 @@ void mtimer_handler() {
   asm("mret\n");
 }
 
+#endif
+
+
 void timer_init(int hz) {
   log_debug("timer init %d\n", hz);
   int id = cpu_get_id();
   timer_val = hz;
 
-#ifdef SBI
+#ifdef USE_SBI_TIMER
 
-  sbi_set_timer(cpu_csr_read(CSR_TIME) + timer_val);
+  sbi_set_timer(timer_val);//cpu_csr_read(CSR_TIME) + 
   cpu_write_sie(cpu_read_sie() | SIE_SEIE | SIE_STIE | SIE_SSIE);
   // cpu_write_sstatus(cpu_read_sstatus() | SSTATUS_SIE);
 
-#else
+#endif
+
+
+#ifdef USE_MMODE_TIMER
+
   cpu_write_medeleg(0xffff);
   cpu_write_mideleg(0xffff);
 
-#ifdef USE_MMODE_TIMER
   *(u32 *)CLINT_MTIMECMP(id) = *(u32 *)CLINT_MTIME + timer_val;  //
   *(u32 *)CLINT_MSIP(id) = 1;
 
@@ -127,20 +119,22 @@ void timer_init(int hz) {
   // cpu_write_sstatus(cpu_read_sstatus() | SSTATUS_SIE);
 #endif
 
-#endif
+
 }
 
 void timer_end() {
-  int id = cpu_get_id();
 
-#ifdef SBI
+#ifdef USE_SBI_TIMER
   sbi_set_timer(cpu_csr_read(CSR_TIME) + timer_val);
-#else
+#endif
+
+
 #ifdef USE_MMODE_TIMER
   cpu_write_sip(cpu_read_sip() & ~2);
 #endif
 
 #ifdef USE_SMODE_TIMER
+  u32 id=cpu_get_id();
   // cpu_csr_write(CSR_TIME, cpu_csr_read(CSR_TIME) +timer_val);
   // cpu_write_sip(*(u32 *)CLINT_MTIME + timer_val);
   // cpu_write_sip(cpu_read_sip() & ~2);
@@ -151,7 +145,6 @@ void timer_end() {
 
 #endif
 
-#endif
   // log_debug("timer end\n");
 }
 
@@ -159,15 +152,10 @@ void platform_init() { io_add_write_channel(uart_send); }
 
 void platform_end() {}
 
-void platform_map() {
-
-  page_map(UART_BASE,UART_BASE,0);
-
-}
-
+void platform_map() { page_map(UART_BASE, UART_BASE, PAGE_DEV); }
 
 int interrupt_get_source(u32 no) {
-  no=EX_TIMER;
+  no = EX_TIMER;
   return no;
 }
 

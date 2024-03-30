@@ -6,7 +6,6 @@
 #include "../display.h"
 
 #include "../boot.h"
-#include "../io.h"
 #include "../lock.h"
 
 extern boot_info_t* boot_info;
@@ -63,7 +62,7 @@ void set_color(u8 forecolor, u8 backcolor) {
   attrib = (backcolor << 4) | (forecolor & 0x0F);
 }
 
-void cls() {
+static void cls() {
   unsigned blank;
   int i;
   blank = 0x20 | (attrib << 8);
@@ -128,6 +127,5 @@ void display_init() {
     screen_width = boot_info->disply.width;
     screen_height = boot_info->disply.height;
   }
-  io_add_write_channel(putch);
   test_display();
 }
