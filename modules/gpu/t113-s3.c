@@ -118,60 +118,24 @@ static void t113_tconlcd_disable(t113_s3_lcd_t *pdat) {
   io_write32((u32)&tcon->gint0, 0);
 }
 
-static void t113_tconlcd_set_timing2(t113_s3_lcd_t *pdat) {
-  struct t113_tconlcd_reg_t *tcon = (struct t113_tconlcd_reg_t *)pdat->tcon;
-  int bp, total;
-  u32 val;
-
-  val = (pdat->timing.v_front_porch + pdat->timing.v_back_porch +
-         pdat->timing.v_sync_len) /
-        2;
-  io_write32((u32)&tcon->ctrl, (1 << 31) | (0 << 24) | (0 << 23) |
-                                   ((val & 0x1f) << 4) | (0 << 0));
-
-  val = pdat->clk_tconlcd / pdat->timing.pixel_clock_hz;
-  kprintf("dclk %x\n", val);
-
-  io_write32((u32)&tcon->dclk, (0xf << 28) | (val << 0));
-
-  io_write32((u32)&tcon->timing0,
-             ((pdat->width - 1) << 16) | ((pdat->height - 1) << 0));
-
-  bp = pdat->timing.h_sync_len + pdat->timing.h_back_porch;
-  total = pdat->width + pdat->timing.h_front_porch + bp;
-
-  io_write32((u32)&tcon->timing1, ((total - 1) << 16) | ((bp - 1) << 0));
-
-  bp = pdat->timing.v_sync_len + pdat->timing.v_back_porch;
-  total = pdat->height + pdat->timing.v_front_porch + bp;
-
-  io_write32((u32)&tcon->timing2, ((total * 2) << 16) | ((bp - 1) << 0));
-
-  io_write32((u32)&tcon->timing3, ((pdat->timing.h_sync_len - 1) << 16) |
-                                      ((pdat->timing.v_sync_len - 1) << 0));
-
-  val = (0 << 31) | (1 << 28);
-  if (!pdat->timing.h_sync_active) val |= (1 << 25);
-  if (!pdat->timing.v_sync_active) val |= (1 << 24);
-  if (!pdat->timing.den_active) val |= (1 << 27);
-  if (!pdat->timing.clk_active) val |= (1 << 26);
-  io_write32((u32)&tcon->io_polarity, val);
-  io_write32((u32)&tcon->io_tristate, 0);
-}
-
 static void t113_tconlcd_set_timing(t113_s3_lcd_t *pdat) {
   struct t113_tconlcd_reg_t *tcon = (struct t113_tconlcd_reg_t *)pdat->tcon;
   int bp, total;
   u32 val;
 
-  val = (pdat->timing.vbp + pdat->timing.vbp + pdat->timing.vspw) / 2;
+  u32 start_delay = pdat->timing.vt - pdat->timing.y - 10;
 
-  kprintf("LCD_START_DLY %d\n", val);
+  if (start_delay < 10)
+    start_delay = 10;
+  else if (start_delay > 31)
+    start_delay = 31;
+
+  kprintf("start_delay %d\n", start_delay);
 
   // LCD_CTL_REG LCD_EN | HV(Sync+DE)  | Default ｜001: Color Check   111:
   // Gridding Check
   io_write32((u32)&tcon->ctrl, (1 << 31) | (0 << 24) | (0 << 23) | 1 << 20 |
-                                   ((val & 0x1f) << 4) | (0 << 0));
+                                   ((start_delay & 0x1f) << 4) | (0 << 0));
 
   val = pdat->clk_tconlcd / pdat->timing.pixel_clock_hz;
   // LCD_DCLK_REG LCD_DCLK_EN 0xf LCD_DCLK_DIV  <6
@@ -184,23 +148,38 @@ static void t113_tconlcd_set_timing(t113_s3_lcd_t *pdat) {
   io_write32((u32)&tcon->timing0,
              ((pdat->timing.x - 1) << 16) | ((pdat->timing.y - 1) << 0));
 
-  u32 vt =
-      pdat->timing.vt + pdat->timing.vfp + pdat->timing.vspw + pdat->timing.vbp;
+  u32 vt = pdat->timing.vt * 2;
 
-  u32 ht =
-      pdat->timing.ht + pdat->timing.hfp + pdat->timing.hspw + pdat->timing.hbp;
+  u32 ht = pdat->timing.ht - 1;
+
+  u32 hbp = 0;
+  if (pdat->timing.hbp > 1) {
+    hbp = pdat->timing.hbp - 1;
+  }
+
+  u32 vbp = 0;
+  if (pdat->timing.vbp > 1) {
+    vbp = pdat->timing.vbp - 1;
+  }
+  u32 hspw = 0;
+  if (pdat->timing.hspw > 1) {
+    hspw = pdat->timing.hspw - 1;
+  }
+
+  u32 vspw = 0;
+  if (pdat->timing.vspw > 1) {
+    vspw = pdat->timing.vspw - 1;
+  }
 
   // LCD_BASIC1_REG
-  io_write32((u32)&tcon->timing1, ((ht-1) << 16) | (pdat->timing.hbp - 1) << 0);
+  io_write32((u32)&tcon->timing1, (ht << 16) | hbp << 0);
 
   // LCD_BASIC2_REG
 
-  io_write32((u32)&tcon->timing2, (((vt * 2)) << 16) | (pdat->timing.vbp - 1)
-                                                           << 0);
+  io_write32((u32)&tcon->timing2, (vt << 16) | vbp << 0);
 
   // LCD_BASIC3_REG
-  io_write32((u32)&tcon->timing3,
-             ((pdat->timing.hspw - 1) << 16) | (pdat->timing.vspw - 1) << 0);
+  io_write32((u32)&tcon->timing3, (hspw << 16) | vspw << 0);
 
   kprintf("ht %d vt %d\n", ht, vt);
 
@@ -343,11 +322,6 @@ int t113_lcd_init(vga_device_t *vga) {
             vga->framebuffer_length);
 
   lcd->timing.pixel_clock_hz = 19000000;
-  lcd->timing.h_front_porch = 40;
-  lcd->timing.h_back_porch = 87;
-  lcd->timing.h_sync_len = 1;
-  lcd->timing.v_front_porch = 13;
-  lcd->timing.v_back_porch = 31;
 
   lcd->timing.h_sync_active = 0;
   lcd->timing.v_sync_active = 0;
@@ -367,21 +341,21 @@ int t113_lcd_init(vga_device_t *vga) {
   // lcd->timing.hfp = 10;
   // lcd->timing.hspw = 2;
 
-  lcd->timing.ht = 480;
+  lcd->timing.ht = 490 + 8;
   lcd->timing.hbp = 2;
-  lcd->timing.hfp = 10;
+  lcd->timing.hfp = 0;
   lcd->timing.hspw = 2;
 
   lcd->timing.vt = 342;
   lcd->timing.vbp = 20;
-  lcd->timing.vfp = 10;
+  lcd->timing.vfp = 0;
   lcd->timing.vspw = 2;
 
   int h = lcd->timing.x + lcd->timing.hfp + lcd->timing.hbp + lcd->timing.hspw;
   int w = lcd->timing.y + lcd->timing.vfp + lcd->timing.vbp + lcd->timing.vspw;
 
   lcd->timing.pixel_clock_hz = h * w * 60;
-  // lcd->timing.pixel_clock_hz = 15000000;
+  // lcd->timing.pixel_clock_hz = 10000000;
   log_debug("pixel_clock_hz %d\n", lcd->timing.pixel_clock_hz);
 
   // vga->pframbuffer=kmalloc(vga->framebuffer_length*2,DEFAULT_TYPE);

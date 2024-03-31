@@ -25,15 +25,6 @@ void delay(int n) {
   }
 }
 
-// static inline void delay(int loops) {
-//   __asm__ __volatile__(
-//       "1:\n"
-//       "subs %0, %1, #1\n"
-//       "bne 1b"
-//       : "=r"(loops)
-//       : "0"(loops));
-// }
-
 void ili9488_reset() {
   ili9488_write_cmd(01);
   delay(20);
@@ -199,9 +190,11 @@ void ili9488_init() {
 
   ili9488_write_cmd(0x3A);   // Interface Pixel Format
   ili9488_write_data(0x66);  // 18bit
+  // ili9488_write_data(0x77);  // 24bit
 
   ili9488_write_cmd(0xB0);  // Interface Mode Control
-  ili9488_write_data(0x00);
+  // ili9488_write_data(0x00  );
+  ili9488_write_data(0x00 |1<<3|1<<2 );
 
   kprintf("ili9488 Frame rate\n");
 
