@@ -112,7 +112,7 @@ void mm_page_enable(u32 page_dir) {
   cpu_enable_page();
   kprintf("paging success\n");
 
-  mm_test();
+  // mm_test();
 }
 
 void mm_test() {

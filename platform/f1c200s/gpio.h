@@ -13,7 +13,6 @@
 #define UART_RECEIVE 0x1
 #define UART_TRANSMIT 0x1 << 1
 
-
 /** timer*/
 struct f1c200s_timer {
   volatile unsigned int irq_ena;    /* 00 */
@@ -54,6 +53,23 @@ struct f1c200s_timer {
 #define IE_T1 0x02
 
 #define IRQ_TIMER0 13
+
+
+typedef struct f1c200s_vic {
+  volatile unsigned int vector;    /* 00 */
+  volatile unsigned int base_addr; /* 04 */
+  volatile unsigned int rscv;      /* 08 */
+  volatile unsigned int nmi_ctrl;  /* 0c */
+  volatile unsigned int pend[4];   /* 10 */
+  volatile unsigned int en[4];     /* 20 */
+  volatile unsigned int mask[4];   /* 30 */
+  volatile unsigned int resp[4];   /* 40 */
+  volatile unsigned int ff[4];     /* 50 */
+  volatile unsigned int prio[4];   /* 50 */
+} f1c200s_vic_t;
+
+
+#define VIC_BASE ((struct f1c200s_vic *)0x01C20400)
 
 
 #endif

@@ -1,8 +1,8 @@
 #include "arch/arch.h"
 #include "gpio.h"
 
-#define VIC_BASE 0
-// #define VIC_BASE 0xffff0000
+#define VIC_BASE_ADDR 0
+// #define VIC_BASE_ADDR 0xffff0000
 
 // UART0 PL011 PrimeCell on Versatile/PB
 void uart_send_char(unsigned int c) {
@@ -40,7 +40,7 @@ void platform_map() {
 
   page_map(GPIO_BASE, GPIO_BASE, PAGE_DEV);
   page_map(UART0, UART0, PAGE_DEV);
-  page_map(VIC_BASE, VIC_BASE, PAGE_DEV | PAGE_RWX);
+  page_map(VIC_BASE_ADDR, VIC_BASE_ADDR, PAGE_DEV | PAGE_RWX);
   page_map(TIMER2_BASE, TIMER2_BASE, PAGE_DEV);
   page_map(TIMER0_BASE, TIMER0_BASE, PAGE_DEV);
   page_map(TIMER3_BASE, TIMER3_BASE, PAGE_DEV);
