@@ -28,6 +28,8 @@ void kstart(int argc, char* argv[], char** envp) {
 int kmain(int argc, char* argv[]) {
   kernel_init();
 
+  log_info("kernel thread init\n");
+
   thread_t* t1 = thread_create_name_level("kernel", (u32*)&do_kernel_thread,
                                           NULL, LEVEL_KERNEL_SHARE);
   thread_t* t2 = thread_create_name("init", (u32*)&do_init_thread, NULL);
@@ -35,7 +37,7 @@ int kmain(int argc, char* argv[]) {
   thread_run(t2);
 
   log_info("kernel run start\n");
-  
+
   kernel_run();
 
   return 0;

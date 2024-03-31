@@ -32,7 +32,6 @@ unsigned int uart_receive() {
 void platform_init() {
   io_add_write_channel(uart_send);
 
-  timer_init(1000);
 }
 
 void platform_map() {

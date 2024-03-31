@@ -23,7 +23,7 @@ lock_t thread_lock;
 // #define log_debug
 // #define DEBUG 1
 
-void thread_init() { lock_init(&thread_lock); }
+void thread_init() {  }
 
 thread_t* thread_create_level(void* entry, void* data, u32 level) {
   thread_t* thread =

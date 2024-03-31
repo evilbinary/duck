@@ -253,16 +253,32 @@ inline void cpu_invalidate_tlbs(void) {
       : "r0", "memory");
 }
 
-static inline uint32_t get_ccsidr(void) {
-  uint32_t ccsidr;
+static inline u32 get_ccsidr(void) {
+  u32 ccsidr;
 
   __asm__ __volatile__("mrc p15, 1, %0, c0, c0, 0" : "=r"(ccsidr));
   return ccsidr;
 }
 
-static inline void __v7_cache_flush_range(uint32_t start, uint32_t stop,
-                                          uint32_t line) {
-  uint32_t mva;
+static inline u32 get_cache(void) {
+  u32 cache;
+
+  __asm__ __volatile__("mrc p15, 0, %0, c0, c0, 1" : "=r"(cache));
+  return cache;
+}
+
+static inline void __v5_cache_inv_range(u32 start, u32 stop, u32 line) {
+  u32 mva;
+
+  start &= ~(line - 1);
+  if (stop & (line - 1)) stop = (stop + line) & ~(line - 1);
+  for (mva = start; mva < stop; mva = mva + line) {
+    __asm__ __volatile__("mcr p15, 0, %0, c7, c6, 1" : : "r"(mva));
+  }
+}
+
+static inline void __v5_cache_flush_range(u32 start, u32 stop, u32 line) {
+  u32 mva;
 
   start &= ~(line - 1);
   if (stop & (line - 1)) stop = (stop + line) & ~(line - 1);
@@ -275,39 +291,35 @@ static inline void __v7_cache_flush_range(uint32_t start, uint32_t stop,
  * Flush range(clean & invalidate), affects the range [start, stop - 1]
  */
 void cpu_cache_flush_range(unsigned long start, unsigned long stop) {
-  uint32_t ccsidr;
-  uint32_t line;
+  u32 cache;
+  u32 line;
 
-  // ccsidr = get_ccsidr();
-  // line = ((ccsidr & 0x7) >> 0) + 2;
-  // line += 2;
-  // line = 1 << line;
-  // __v7_cache_flush_range(start, stop, line);
+  cache = get_cache();
+  line = 1 << ((cache & 0x3) + 3);
+  __v5_cache_flush_range(start, stop, line);
   dsb();
 }
 
-static inline void __v7_cache_inv_range(uint32_t start, uint32_t stop,
-                                        uint32_t line) {
-  uint32_t mva;
-
-  start &= ~(line - 1);
-  if (stop & (line - 1)) stop = (stop + line) & ~(line - 1);
-  for (mva = start; mva < stop; mva = mva + line) {
-    __asm__ __volatile__("mcr p15, 0, %0, c7, c6, 1" : : "r"(mva));
-  }
-}
 /*
  * Invalidate range, affects the range [start, stop - 1]
  */
 void cache_inv_range(unsigned long start, unsigned long stop) {
-  uint32_t ccsidr;
-  uint32_t line;
+  u32 cache;
+  u32 line;
 
-  // ccsidr = get_ccsidr();
-  // line = ((ccsidr & 0x7) >> 0) + 2;
-  // line += 2;
-  // line = 1 << line;
-  // __v7_cache_inv_range(start, stop, line);
+  cache = get_cache();
+  line = 1 << ((cache & 0x3) + 3);
+  __v5_cache_inv_range(start, stop, line);
+  dsb();
+}
+
+void cache_flush_range(unsigned long start, unsigned long stop) {
+  u32 cache;
+  u32 line;
+
+  cache = get_cache();
+  line = 1 << ((cache & 0x3) + 3);
+  __v5_cache_flush_range(start, stop, line);
   dsb();
 }
 
@@ -315,7 +327,7 @@ void cpu_enable_page() {
   kprintf("cpu_enable_page\n");
 
   cpu_enable_smp_mode();
-  // cache_inv_range(0, ~0);
+  cache_inv_range(0, ~0);
   kprintf("cpu_enable_page1\n");
 
   u32 reg;
@@ -465,7 +477,7 @@ void cpu_delay_usec(uint64_t count) {
   // }
 }
 
-void cpu_delay_msec(uint32_t count) { cpu_delay_usec(count * 1000); }
+void cpu_delay_msec(u32 count) { cpu_delay_usec(count * 1000); }
 
 void cpu_delay(int n) {
   // cpu_delay_msec(n);

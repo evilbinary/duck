@@ -17,7 +17,6 @@ lock_t memory_lock;
 memory_t memory_summary;
 
 void memory_init() {
-  lock_init(&memory_lock);
   memory_summary.total = mm_get_total();
   memory_summary.free = mm_get_free();
   memory_summary.kernel_used = 0;
