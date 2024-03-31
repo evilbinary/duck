@@ -181,31 +181,6 @@ void cpu_enable_smp_mode() {
   //     "mcr p15, 0, r0, c1, c0, 1\n");
 }
 
-static void cpu_enable_ca7_smp(void) {
-  u32 val;
-
-  /* Read MIDR */
-  asm volatile("mrc p15, 0, %0, c0, c0, 0\n\t" : "=r"(val));
-  val = (val >> 4);
-  val &= 0xf;
-
-  /* Only set the SMP for Cortex A7 */
-  if (val == 0x7) {
-    /* Read auxiliary control register */
-    asm volatile("mrc p15, 0, %0, c1, c0, 1\n\t" : "=r"(val));
-
-    if (val & (1 << 6)) return;
-
-    /* Enable SMP */
-    val |= (1 << 6);
-
-    /* Write auxiliary control register */
-    asm volatile("mcr p15, 0, %0, c1, c0, 1\n\t" : : "r"(val));
-
-    dsb();
-    isb();
-  }
-}
 
 inline void cpu_invalidate_tlbs(void) {
   asm("mcr p15, 0, r0, c8, c7, 0\n"

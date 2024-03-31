@@ -7,7 +7,7 @@
 #define ARM_MM_H
 
 
-#define L1_PAGE_TABLE (1 << 0)
+#define L1_PAGE_TABLE (1 << 0)|(1<<4)
 #define L2_SMALL_PAGE (2 << 0)
 
 #define L1_PXN (0 << 2)  // The Privileged execute-never bit

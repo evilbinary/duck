@@ -2,6 +2,8 @@
 #include "gpio.h"
 #include "f1c200s-ccu.h"
 
+#define VIC_BASE 0
+
 void uart_send_char(char c) {
   while ((io_read32(UART1_BASE + UART_USR) & UART_TRANSMIT) == 0)
     ;
@@ -42,6 +44,9 @@ void platform_map() {
 
   // ccu
   page_map(CCU_BASE, CCU_BASE, 0);
+
+   page_map(VIC_BASE, VIC_BASE, PAGE_DEV | PAGE_RWX);
+
 
   kprintf("platform map end\n");
 }

@@ -116,10 +116,10 @@ void mm_page_enable(u32 page_dir) {
 }
 
 void mm_test() {
-  u32* p = 0x90004000;
-  u32* addr = mm_alloc(256);
+  u32* p = 0x9000f000;
+  u32* addr = mm_alloc_zero_align(PAGE_SIZE,PAGE_SIZE);
   page_map(p, addr, 0);
-  kprintf("test page_map\n");
+  kprintf("test page_map %x %x\n",p,addr);
 
   *addr = 0x123456;
   if (*p != *addr) {
