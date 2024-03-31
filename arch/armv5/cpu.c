@@ -297,13 +297,11 @@ void cpu_enable_page() {
   reg |= 0x1;                                             // M enable mmu
   // reg |= 1 << 1;  // Alignment check enable.
   reg |= 1 << 2;  // Cache enable.
-  // reg |= 1<<3 ; //enable write buffer.
   reg |= 1 << 8;  // System protection bit.
   reg |= 1 << 9;  // ROM protection bit.
   // reg|= 1<<23; //0 = VMSAv4/v5 and VMSAv6, subpages enabled 1 = VMSAv6,
   // subpages disabled.
 
-  // reg |= 1 << 11;  // Branch prediction enable
   reg |= 1 << 12;  // Instruction cache enable:
 
   // reg |= 1 << 13;  // vic low 0  vic hight 1
@@ -476,11 +474,11 @@ void cpu_sti() {
 }
 
 void cpu_cmpxchg(void* ptr, u32 old_value, u32 new_value) {
-  asm(".word 0xf57ff05f\n" /* dmb sy                */
-      ".word 0xe1923f9f\n" /* ldrex r3, [r2]        */
-      ".word 0xe0530000\n" /* subs r0, r3, r0       */
-      ".word 0x01820f91\n" /* strexeq r0, r1, [r2]  */
-      ".word 0xf57ff05f\n" /* dmb sy                */
-      ".word 0xe12fff1e\n" /* bx lr                 */
-  );
+  // asm(".word 0xf57ff05f\n" /* dmb sy                */
+  //     ".word 0xe1923f9f\n" /* ldrex r3, [r2]        */
+  //     ".word 0xe0530000\n" /* subs r0, r3, r0       */
+  //     ".word 0x01820f91\n" /* strexeq r0, r1, [r2]  */
+  //     ".word 0xf57ff05f\n" /* dmb sy                */
+  //     ".word 0xe12fff1e\n" /* bx lr                 */
+  // );
 }

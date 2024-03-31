@@ -8,7 +8,6 @@
 #include "arch/pmemory.h"
 #include "cpu.h"
 
-
 #define PAGE_DIR_NUMBER 4096
 
 extern boot_info_t* boot_info;
@@ -112,9 +111,22 @@ void mm_page_enable(u32 page_dir) {
   kprintf("enable page\n");
   cpu_enable_page();
   kprintf("paging success\n");
+
+  mm_test();
 }
 
 void mm_test() {
+  u32* p = 0x90004000;
+  u32* addr = mm_alloc(256);
+  page_map(p, addr, 0);
+  kprintf("test page_map\n");
+
+  *addr = 0x123456;
+  if (*p != *addr) {
+    kprintf("mmap test error\n");
+    kprintf("===============> %x %x\n", *addr, *p);
+  }
+
   // page_map(0x90000,0x600000,3);
   // u32* addr=mm_alloc(256);
   // *addr=0x123456;
@@ -124,6 +136,4 @@ void mm_test() {
   // kprintf("p=%x\n", *p);
 }
 
-void mm_init_default(u32 kernel_page_dir){
-  
-}
+void mm_init_default(u32 kernel_page_dir) {}
