@@ -39,13 +39,16 @@ plat_source={
         'ssd202d.c'
     ],
     't113-s3':[
-        't113-s3.c'
+        '16450.c'
+    ],
+    'f1c200s':[
+        '16450.c'
     ],
     'versatilepb':[
         'pl011.c'
     ],
     'orangepi-pc':[
-        'h3.c',
+        '16450.c',
     ],
     'stm32f4xx':[
         'general.c'

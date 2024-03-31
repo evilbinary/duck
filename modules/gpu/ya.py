@@ -44,6 +44,9 @@ plat_source={
     ],
     'versatilepb':[
         'pl110.c'
+    ],
+    'f1c200s':[
+        'f1c200s.c'
     ]
 }
 arch_source={

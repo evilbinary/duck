@@ -10,7 +10,8 @@
 #include "t113-ccu.h"
 #elif ORANGEPI_PC
 #include "h3-ccu.h"
-
+#elif F1C200S
+#include "f1c200s-ccu.h"
 #endif
 
 #define UNSTUFF_BITS(resp, start, size)                     \

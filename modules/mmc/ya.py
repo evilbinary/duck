@@ -48,6 +48,10 @@ plat_source={
     'orangepi-pc':[
         'h3.c',
         'sunxi-sdhci.c',
+    ],
+    'f1c200s':[
+        'f1c200s.c',
+         'sunxi-sdhci.c',
     ]
     
 }
