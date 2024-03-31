@@ -99,7 +99,7 @@ void* page_v2p(void* page, void* vaddr) {
 
 void mm_page_enable(u32 page_dir) {
   kprintf("mm enable page start\n");
-  // cpu_disable_page();
+  cpu_disable_page();
   // cpu_icache_disable();
   cp15_invalidate_icache();
   cpu_invalid_tlb();

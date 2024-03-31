@@ -51,14 +51,13 @@ void cpu_invalid_tlb() {
 }
 
 void cp15_invalidate_icache(void) {
-  // asm volatile(
-  //     "mov r0, #0\n"
-  //     "mcr p15, 0, r0, c7, c5, 0\n"  // icache all
-  //     "mcr p15, 0, r0, c7, c5, 6\n"  // branch prediction
-  //     :
-  //     :
-  //     : "r0", "memory");
-  // dsb();
+  asm volatile(
+      "mov r0, #0\n"
+      "mcr p15, 0, r0, c7, c7, 0\n"  // Invalidate ICache and DCache
+      :
+      :
+      : "r0", "memory");
+  dsb();
 }
 
 u32 read_dfar() {
@@ -146,64 +145,27 @@ void cpu_disable_l1_cache() {
 void cpu_set_page(u32 page_table) {
   kprintf("cpu_set_page\n");
 
-  // Disable L1 Cache
-  cpu_disable_l1_cache();
-  kprintf("cpu_set_page1\n");
-
-  // Invalidate L1 Caches Invalidate Instruction cache
-  cp15_invalidate_icache();
-  kprintf("cpu_set_page2\n");
-
-  // Invalidate Data cache
-  __builtin___clear_cache(0, ~0);
-
-  kprintf("cpu_set_page3\n");
-
-  cache_inv_range(0, ~0);
-  kprintf("cpu_set_page4\n");
-
-  cpu_invalid_tlb();
-  kprintf("cpu_set_page5\n");
-
-  dmb();
-  isb();
-  dsb();
-
-  kprintf("cpu_set_page6\n");
-
   // dccmvac(page_table);
   // set ttbcr0
   write_ttbr0(page_table);
-
+  isb();
   kprintf("cpu_set_page61\n");
-  // isb();
+
   // write_ttbr1(page_table);
 
   kprintf("cpu_set_page62\n");
-  // isb();
+  isb();
   // write_ttbcr(TTBCRN_16K);
 
   kprintf("cpu_set_page7\n");
-
-  // // set ttbcr0
-  // write_ttbr0(page_table);
-  // // isb();
-  // write_ttbr1(page_table);
-  // // isb();
-  // write_ttbcr(TTBCRN_16K);
-  // cp15_invalidate_icache();
-  // cpu_invalid_tlb();
-  // dmb();
-  // isb();
-  // dsb();
 }
 
 void cpu_disable_page() {
-  u32 reg;
-  // read mmu
-  asm("mrc p15, 0, %0, c1, c0, 0" : "=r"(reg) : : "cc");
-  reg &= ~0x1;
-  asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");
+  // u32 reg;
+  // asm("mcr     p15, #0, r0, c8, c7, #0\n");   // @ invalidate tlb
+  // asm("mrc p15, 0, %0, c1, c0, 0" : "=r"(reg) : : "cc");
+  // reg &= ~(1 << 0);
+  // asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");
 }
 
 void cpu_enable_smp_mode() {
@@ -327,7 +289,6 @@ void cpu_enable_page() {
   kprintf("cpu_enable_page\n");
 
   cpu_enable_smp_mode();
-  cache_inv_range(0, ~0);
   kprintf("cpu_enable_page1\n");
 
   u32 reg;
@@ -343,14 +304,28 @@ void cpu_enable_page() {
   // subpages disabled.
 
   // reg |= 1 << 11;  // Branch prediction enable
-  // reg |= 1 << 12;  // Instruction cache enable:
+  reg |= 1 << 12;  // Instruction cache enable:
 
   // reg |= 1 << 13;  // vic low 0  vic hight 1
   asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");  // SCTLR
 
   kprintf("cpu_enable_page2\n");
 
-  // cpu_invalid_tlb();
+  // Disable L1 Cache
+  cpu_disable_l1_cache();
+
+  kprintf("cpu_enable_page3\n");
+
+  // Invalidate L1 Caches Invalidate Instruction cache
+  cp15_invalidate_icache();
+
+  // Invalidate Data cache
+  // __builtin___clear_cache(0, ~0);
+  cache_inv_range(0, ~0);
+
+  kprintf("cpu_enable_page4\n");
+
+  cpu_invalid_tlb();
 
   kprintf("cpu_enable_page3\n");
 }
