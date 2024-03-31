@@ -1,6 +1,8 @@
 #ifndef GPIO_H
 #define GPIO_H
 
+#include "arch/arch.h"
+
 #define GPIO_BASE   0x101E1000
 #define TIMER0_BASE (volatile unsigned int*)0x101E2000
 // #define TIMER0_BASE 0x13000000
@@ -58,29 +60,29 @@
 #define UART_TRANSMIT 0x20
 
 typedef struct {
-	uint32_t status;	
-	uint32_t r1;
-	uint32_t r2;
-	uint32_t r3;
-	uint32_t enable;
-	uint32_t r5;
-	uint32_t r6;
-	uint32_t r7;
-	uint32_t r8;
-	uint32_t r9;
+	u32 status;	
+	u32 r1;
+	u32 r2;
+	u32 r3;
+	u32 enable;
+	u32 r5;
+	u32 r6;
+	u32 r7;
+	u32 r8;
+	u32 r9;
 } pic_regs_t;
 
 typedef struct {
-	uint32_t status;	
-	uint32_t r1;
-	uint32_t enable;
-	uint32_t r3;
-	uint32_t r4;
-	uint32_t r5;
-	uint32_t r6;
-	uint32_t r7;
-	uint32_t r8;
-	uint32_t r9;
+	u32 status;	
+	u32 r1;
+	u32 enable;
+	u32 r3;
+	u32 r4;
+	u32 r5;
+	u32 r6;
+	u32 r7;
+	u32 r8;
+	u32 r9;
 } sic_regs_t;
 
 

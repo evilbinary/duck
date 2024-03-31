@@ -3,8 +3,9 @@
 
 #define GPIO_BASE 0x01C20800
 
-#define UART0_BASE 0x01C20800
-
+#define UART0_BASE 0x01C25000
+#define UART1_BASE 0x01C25400
+#define UART2_BASE 0x01C25800
 
 #define UART_USR 0x7c  // UART Status Register
 #define UART_LSR 0x14  // UART Line Status Register

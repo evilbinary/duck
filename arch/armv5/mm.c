@@ -98,11 +98,11 @@ void* page_v2p(void* page, void* vaddr) {
 }
 
 void mm_page_enable(u32 page_dir) {
+  kprintf("mm enable page start\n");
   // cpu_disable_page();
   // cpu_icache_disable();
   cp15_invalidate_icache();
   cpu_invalid_tlb();
-
   cpu_set_domain(0x07070707);
   // cpu_set_domain(0xffffffff);
   // cpu_set_domain(0x55555555);

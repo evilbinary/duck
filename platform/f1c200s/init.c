@@ -2,9 +2,9 @@
 #include "gpio.h"
 
 void uart_send_char(char c) {
-  while ((io_read32(UART0_BASE + UART_USR) & UART_TRANSMIT) == 0)
+  while ((io_read32(UART1_BASE + UART_USR) & UART_TRANSMIT) == 0)
     ;
-  io_write32(UART0_BASE, c);
+  io_write32(UART1_BASE, c);
 }
 
 void uart_send(unsigned int c) {
@@ -16,9 +16,9 @@ void uart_send(unsigned int c) {
 }
 
 u32 uart_receive() {
-  while ((io_read32(UART0_BASE + UART_LSR) & UART_RECEIVE) == 0)
+  while ((io_read32(UART1_BASE + UART_LSR) & UART_RECEIVE) == 0)
     ;
-  return (io_read32(UART0_BASE));
+  return (io_read32(UART1_BASE));
 }
 
 

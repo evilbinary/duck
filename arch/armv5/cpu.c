@@ -51,14 +51,14 @@ void cpu_invalid_tlb() {
 }
 
 void cp15_invalidate_icache(void) {
-  asm volatile(
-      "mov r0, #0\n"
-      "mcr p15, 0, r0, c7, c5, 0\n"  // icache all
-      "mcr p15, 0, r0, c7, c5, 6\n"  // branch prediction
-      :
-      :
-      : "r0", "memory");
-  dsb();
+  // asm volatile(
+  //     "mov r0, #0\n"
+  //     "mcr p15, 0, r0, c7, c5, 0\n"  // icache all
+  //     "mcr p15, 0, r0, c7, c5, 6\n"  // branch prediction
+  //     :
+  //     :
+  //     : "r0", "memory");
+  // dsb();
 }
 
 u32 read_dfar() {
@@ -144,28 +144,46 @@ void cpu_disable_l1_cache() {
 }
 
 void cpu_set_page(u32 page_table) {
+  kprintf("cpu_set_page\n");
+
   // Disable L1 Cache
   cpu_disable_l1_cache();
+  kprintf("cpu_set_page1\n");
 
   // Invalidate L1 Caches Invalidate Instruction cache
   cp15_invalidate_icache();
+  kprintf("cpu_set_page2\n");
 
   // Invalidate Data cache
   __builtin___clear_cache(0, ~0);
+
+  kprintf("cpu_set_page3\n");
+
   cache_inv_range(0, ~0);
+  kprintf("cpu_set_page4\n");
 
   cpu_invalid_tlb();
+  kprintf("cpu_set_page5\n");
+
   dmb();
   isb();
   dsb();
 
+  kprintf("cpu_set_page6\n");
+
   // dccmvac(page_table);
   // set ttbcr0
   write_ttbr0(page_table);
+
+  kprintf("cpu_set_page61\n");
   // isb();
-  write_ttbr1(page_table);
+  // write_ttbr1(page_table);
+
+  kprintf("cpu_set_page62\n");
   // isb();
-  write_ttbcr(TTBCRN_16K);
+  // write_ttbcr(TTBCRN_16K);
+
+  kprintf("cpu_set_page7\n");
 
   // // set ttbcr0
   // write_ttbr0(page_table);
@@ -260,11 +278,11 @@ void cpu_cache_flush_range(unsigned long start, unsigned long stop) {
   uint32_t ccsidr;
   uint32_t line;
 
-  ccsidr = get_ccsidr();
-  line = ((ccsidr & 0x7) >> 0) + 2;
-  line += 2;
-  line = 1 << line;
-  __v7_cache_flush_range(start, stop, line);
+  // ccsidr = get_ccsidr();
+  // line = ((ccsidr & 0x7) >> 0) + 2;
+  // line += 2;
+  // line = 1 << line;
+  // __v7_cache_flush_range(start, stop, line);
   dsb();
 }
 
@@ -285,17 +303,20 @@ void cache_inv_range(unsigned long start, unsigned long stop) {
   uint32_t ccsidr;
   uint32_t line;
 
-  ccsidr = get_ccsidr();
-  line = ((ccsidr & 0x7) >> 0) + 2;
-  line += 2;
-  line = 1 << line;
-  __v7_cache_inv_range(start, stop, line);
+  // ccsidr = get_ccsidr();
+  // line = ((ccsidr & 0x7) >> 0) + 2;
+  // line += 2;
+  // line = 1 << line;
+  // __v7_cache_inv_range(start, stop, line);
   dsb();
 }
 
 void cpu_enable_page() {
+  kprintf("cpu_enable_page\n");
+
   cpu_enable_smp_mode();
-  cache_inv_range(0, ~0);
+  // cache_inv_range(0, ~0);
+  kprintf("cpu_enable_page1\n");
 
   u32 reg;
   // read mmu
@@ -315,7 +336,11 @@ void cpu_enable_page() {
   // reg |= 1 << 13;  // vic low 0  vic hight 1
   asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");  // SCTLR
 
-  cpu_invalid_tlb();
+  kprintf("cpu_enable_page2\n");
+
+  // cpu_invalid_tlb();
+
+  kprintf("cpu_enable_page3\n");
 }
 
 void cpu_init(int cpu) {
@@ -371,9 +396,6 @@ int cpu_get_number() { return boot_info->tss_number; }
 
 u32 cpu_get_id() {
   int cpu = 0;
-#if MP_ENABLE
-  __asm__ volatile("mrc p15, #0, %0, c0, c0, #5\n" : "=r"(cpu));
-#endif
   return cpu & 0xf;
 }
 
@@ -467,12 +489,11 @@ void cpu_sti() {
 }
 
 void cpu_cmpxchg(void* ptr, u32 old_value, u32 new_value) {
-  asm(
-	".word 0xf57ff05f\n"	/* dmb sy                */
-	".word 0xe1923f9f\n"	/* ldrex r3, [r2]        */
-	".word 0xe0530000\n"	/* subs r0, r3, r0       */
-	".word 0x01820f91\n"	/* strexeq r0, r1, [r2]  */
-	".word 0xf57ff05f\n"	/* dmb sy                */
-	".word 0xe12fff1e\n"	/* bx lr                 */
+  asm(".word 0xf57ff05f\n" /* dmb sy                */
+      ".word 0xe1923f9f\n" /* ldrex r3, [r2]        */
+      ".word 0xe0530000\n" /* subs r0, r3, r0       */
+      ".word 0x01820f91\n" /* strexeq r0, r1, [r2]  */
+      ".word 0xf57ff05f\n" /* dmb sy                */
+      ".word 0xe12fff1e\n" /* bx lr                 */
   );
 }
