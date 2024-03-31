@@ -2,10 +2,10 @@
 #define __T113_S3_REG_CCU_H__
 
 #define CCU_APB0_CLK_REG			 (0x520)
-#define CCU_SDMMC0_CLK			(0x088)
-#define CCU_SDMMC1_CLK			(0x08c)
-#define CCU_SDMMC2_CLK			(0x090)
-#define CCU_PLL_PERIPH0_CTRL	(0x028)
+#define CCU_SDMMC0_CLK			(0x0830)
+#define CCU_SDMMC1_CLK			(0x0834)
+#define CCU_SDMMC2_CLK			(0x0838)
+#define CCU_PLL_PERIPH0_CTRL	(0x020)
 
 
 #define CCU_BASE (0x02001000)
