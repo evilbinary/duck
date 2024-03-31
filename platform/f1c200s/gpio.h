@@ -72,4 +72,6 @@ typedef struct f1c200s_vic {
 #define VIC_BASE ((struct f1c200s_vic *)0x01C20400)
 
 
+#define SD_BASE 0x01c0f000
+
 #endif

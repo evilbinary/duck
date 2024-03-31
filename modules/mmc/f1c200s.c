@@ -6,6 +6,7 @@
  ********************************************************************/
 #include "sdhci.h"
 #include "sunxi-sdhci.h"
+#include "gpio.h"
 
 #define CACHE_COUNT 1
 #define SECTOR_SIZE (512 * CACHE_COUNT)
@@ -94,7 +95,7 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   pdat->rca = 0;
   pdat->isspi = 0;
   pdat->write_bl_len = BYTE_PER_SECTOR;
-  pdat->virt = 0x01c0f000;
+  pdat->virt = SD_BASE;
   pdat->port = 0;
 
   pdat->voltage = MMC_VDD_27_36;
@@ -126,7 +127,7 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   pdat->cdcfg = 0;
 
   // sd mmc0
-  page_map(0x01c0f000, 0x01c0f000, 0);
+  page_map(SD_BASE, SD_BASE, 0);
 
   sdhci_sunxi_probe(sdhci_dev);
 

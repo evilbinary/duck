@@ -45,6 +45,7 @@ void platform_map() {
 
   page_map(VIC_BASE_ADDR, VIC_BASE_ADDR, PAGE_DEV | PAGE_RWX);
   page_map(VIC_BASE, VIC_BASE, 0);
+  page_map(SD_BASE, SD_BASE, 0);
 
   kprintf("platform map end\n");
 }
