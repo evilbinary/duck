@@ -4,6 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "io.h"
+
 #include "stdarg.h"
 
 write_channel_fn write_channels[10];
@@ -30,22 +31,31 @@ void print_char(u8 ch) {
 char printf_buffer[KPRINT_BUF];
 
 int kprintf(const char* fmt, ...) {
-  kmemset(printf_buffer,0,KPRINT_BUF);
-  int i=0;
-	va_list args;
-	va_start(args, fmt);
-	i = vsprintf(printf_buffer, fmt, args);
-  if(i>KPRINT_BUF){
-    for(;;){
-      print_char('O');
-      print_char('V');
-      print_char('E');
-      print_char('R');
-    }
+  kmemset(printf_buffer, 0, KPRINT_BUF);
+  int i = 0;
+  va_list args;
+  va_start(args, fmt);
+  i = vsprintf(printf_buffer, fmt, args);
+  va_end(args);
+
+  int len = kstrlen(printf_buffer);
+  if (i > KPRINT_BUF) {
+    len = KPRINT_BUF;
+    // OVER
+    print_char('O');
+    print_char('V');
+    print_char('E');
+    print_char('R');
+    print_char(' ');
+    print_char('P');
+    print_char('R');
+    print_char('I');
+    print_char('N');
+    print_char('T');
+    print_char('\n');
   }
-	va_end(args);
-  int len=kstrlen(printf_buffer);
-  for(int i=0;i<len;i++){
+
+  for (int i = 0; i < len; i++) {
     print_char(printf_buffer[i]);
   }
   return i;
