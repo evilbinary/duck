@@ -7,12 +7,22 @@
 #include "gpio.h"
 #include "serial.h"
 
+#ifdef F1C200S
+
+#define UART_BASE UART1_BASE
+
+#else
+
+#define UART_BASE UART0_BASE
+
+#endif
+
 void serial_write(char a) { uart_send(a); }
 
 char serial_read() {
   unsigned int c = 0;
-  if ((io_read32(UART0_BASE + UART_LSR) & UART_RECEIVE) != 0) {
-    c = (io_read32(UART0_BASE));
+  if ((io_read32(UART_BASE + UART_LSR) & UART_RECEIVE) != 0) {
+    c = (io_read32(UART_BASE));
   }
   return c;
 }
