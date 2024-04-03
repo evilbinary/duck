@@ -241,7 +241,7 @@ void t113_flush_screen(vga_device_t *vga, u32 index) {
   // kprintf("flip %d %d %d\n",index,vga->width,vga->height);
   // rgb2nv12(vga->pframbuffer, vga->frambuffer, vga->width, vga->height);
   // kmemcpy(vga->pframbuffer, vga->frambuffer, vga->width * vga->height);
-  cpu_invalid_tlb();
+  // cpu_invalid_tlb();
   cpu_cache_flush_range(vga->pframbuffer, vga->width * vga->height);
 }
 
@@ -354,7 +354,7 @@ int t113_lcd_init(vga_device_t *vga) {
   int h = lcd->timing.x + lcd->timing.hfp + lcd->timing.hbp + lcd->timing.hspw;
   int w = lcd->timing.y + lcd->timing.vfp + lcd->timing.vbp + lcd->timing.vspw;
 
-  lcd->timing.pixel_clock_hz = h * w * 60;
+  lcd->timing.pixel_clock_hz = h * w * 61;
   // lcd->timing.pixel_clock_hz = 10000000;
   log_debug("pixel_clock_hz %d\n", lcd->timing.pixel_clock_hz);
 

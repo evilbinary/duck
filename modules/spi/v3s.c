@@ -59,7 +59,7 @@ void sunxi_spi_init(int spi) {
     // wait
     while (spio_base[spi]->gcr & (1 << 31))
       ;
-    kprintf("gcr %x\n", spio_base[spi]->gcr);
+    kprintf("spi0 gcr %x\n", spio_base[spi]->gcr);
 
     // set SS Output Owner Select  1: Active low polarity (1 = Idle)
     spio_base[spi]->tcr = spio_base[spi]->tcr | 1 << 6 | 1 << 2;

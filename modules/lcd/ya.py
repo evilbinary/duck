@@ -28,7 +28,8 @@ plat_source={
         'st7735.c'
     ],
     'v3s':[
-        'ili9431.c'
+        # 'ili9431.c'
+        'st7789.c'
     ]
 }
 arch_source={

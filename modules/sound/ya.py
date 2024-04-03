@@ -33,10 +33,10 @@ plat_source={
         
     ],
     'miyoo':[
-       
+       'miyoo.c'
     ],
     't113-s3':[
-        'v3s.c'
+        't113-s3.c'
     ],
     'versatilepb':[
         
