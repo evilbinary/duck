@@ -27,6 +27,8 @@ typedef struct spi_msg {
 	u32 tx_len;
 	u8* tx_buf;
 	u8* rx_buf;
+  int bits;
+  u32 size;
 }spi_msg_t;
 
 

@@ -14,7 +14,8 @@ add_files(
 'vsprintf.c',
 'common.c',
 'io.c',
-'stack_guard.c'
+'stack_guard.c',
+'math.c'
 )
 
 add_includedirs(

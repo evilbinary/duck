@@ -35,7 +35,9 @@ void sunxi_spi_init(int spi) {
 
     // de assert spi
     reg = io_read32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0);
-    io_write32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0, reg | 1 << 20);
+    // reg &= ~(0 << 20);
+    reg |= 1 << 20;
+    io_write32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0, reg);
 
     // gpio set miso pc0 SPI_MISO
     gpio_config(GPIO_C, 0, 3);  // 011: SPI0_MISO
@@ -57,12 +59,14 @@ void sunxi_spi_init(int spi) {
     spio_base[spi]->gcr = spio_base[spi]->gcr | 1 << 31 | 1 << 7 | 1 << 1 | 1;
 
     // wait
-    while (spio_base[spi]->gcr & (1 << 31))
-      ;
+    while (spio_base[spi]->gcr & (1 << 31));
     kprintf("spi0 gcr %x\n", spio_base[spi]->gcr);
 
     // set SS Output Owner Select  1: Active low polarity (1 = Idle)
-    spio_base[spi]->tcr = spio_base[spi]->tcr | 1 << 6 | 1 << 2;
+    // spio_base[spi]->tcr = spio_base[spi]->tcr | 1 << 6 | 1 << 2;
+    // spio_base[spi]->tcr = spio_base[spi]->tcr | 1 << 6 | 0 << 2;
+    spio_base[spi]->tcr = spio_base[spi]->tcr | 0 << 6 | 1 << 2;
+    // spio_base[spi]->tcr = spio_base[spi]->tcr | 0 << 6 | 0 << 2;
 
     // clear intterrupt
     spio_base[spi]->isr = ~0;
@@ -164,7 +168,6 @@ void lcd_fill(u16 xsta, u16 ysta, u16 xend, u16 yend, u16 color) {
 void lcd_set_dc(u32 val) { gpio_output(GPIO_G, 0, val); }
 
 void v3s_test_lcd(spi_t* spi) {
-  
   gpio_config(GPIO_G, 0, GPIO_OUTPUT);
 
   lcd_write_cmd(0x11);
