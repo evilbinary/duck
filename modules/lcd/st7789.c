@@ -46,7 +46,7 @@ static sunxi_spi_t* spio_base[] = {
 #define LCD_RSET_CLR gpio_output(GPIO_B, 2, 0);
 
 static void delay(int n) {
-  for (int i = 0; i < 100 * n; i++) {
+  for (int i = 0; i < 10000 * n; i++) {
   }
 }
 
@@ -72,6 +72,13 @@ void st7789_write_data_word(u16 data) {
   sunxi_spi_write(SPI0, &data, 2);
 }
 
+u16 st7789_read_data() {
+  LCD_RS_SET;
+  u16 data;
+  sunxi_spi_read(SPI0, &data, 2);
+  return data;
+}
+
 void st7789_address_set(u16 x1, u16 y1, u16 x2, u16 y2) {
   st7789_write_cmd(0x2a);
   st7789_write_data_word(x1);
@@ -94,6 +101,17 @@ void st7789_fill(u16 xsta, u16 ysta, u16 xend, u16 yend, u16 color) {
   }
 }
 
+u16 st7789_read_id() {
+  u16 id = 0;
+  st7789_write_cmd(0x04);
+  st7789_read_data();
+  id = st7789_read_data();
+  st7789_read_data();
+  st7789_read_data();
+
+  return id;
+}
+
 void st7789_init() {
   kprintf("st7789 init\n");
 
@@ -113,24 +131,24 @@ void st7789_init() {
   // use SPI0_BASE
   sunxi_spi_set_base(spio_base);
   sunxi_spi_init(SPI0);
-  sunxi_spi_cs(SPI0, 1);
+  sunxi_spi_cs(SPI0, 0);
 
   int rate = 240 * 320 * 60;
   rate = 240 * 240 * 60;
+  // rate = 1000000;
 
   // rate = 24000000 4608000;
   kprintf("st7789 spi rate %d\n", rate);
 
   sunxi_spi_rate(SPI0, rate);  // 240x320x60
 
-  kprintf("st7789 spi init end\n");
+  u16 id = st7789_read_id();
+  kprintf("st7789 spi init id %x end\n", id);
 
   kprintf("st7789 lcd reset\n");
 
   // delay(120);
-
   // st7789_write_cmd(0x11);  // sleep out
-
   // delay(120);
 
   // st7789_write_cmd(0xB2);  // 帧率
@@ -215,15 +233,27 @@ void st7789_init() {
 
   // st7789_write_cmd(0x2C);
 
+  // for (;;) {
+  //   kprintf("st7789 lcd off\n");
+  //   // st7789_write_cmd(0x11);
+  //   st7789_write_cmd(0x28);
+  //   delay(10000);
+  //   kprintf("st7789 lcd on\n");
+  //   // st7789_write_cmd(0x10);
 
+  //   st7789_write_cmd(0x21);
 
+  //   st7789_write_cmd(0x29);  // turn display on
+
+  //   st7789_write_cmd(0x2C);
+  //   delay(10000);
+  // }
 
   //************* Start Initial Sequence **********//
   st7789_write_cmd(0x11);  // Sleep out
   delay(120);              // Delay 120ms
   //************* Start Initial Sequence **********//
   st7789_write_cmd(0x36);
-
 
   kprintf("st7789 lcd 1\n");
 

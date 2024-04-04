@@ -24,21 +24,6 @@ void sunxi_spi_init(int spi) {
     // map io spi0
     page_map(SPI0_BASE, SPI0_BASE, 0);
 
-    u32 reg = 0;
-    // set ahb clock gating
-    reg = io_read32(V3S_CCU_BASE + CCU_BUS_CLK_GATE0);
-    io_write32(V3S_CCU_BASE + CCU_BUS_CLK_GATE0, reg | 1 << 20);  // spi 0 gate
-
-    // set spi0 sclk
-    reg = io_read32(V3S_CCU_BASE + CCU_SPI0_CLK);
-    io_write32(V3S_CCU_BASE + CCU_SPI0_CLK, reg | 1 << 31);
-
-    // de assert spi
-    reg = io_read32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0);
-    // reg &= ~(0 << 20);
-    reg |= 1 << 20;
-    io_write32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0, reg);
-
     // gpio set miso pc0 SPI_MISO
     gpio_config(GPIO_C, 0, 3);  // 011: SPI0_MISO
     gpio_pull(GPIO_C, 0, GPIO_PULL_DISABLE);
@@ -55,28 +40,46 @@ void sunxi_spi_init(int spi) {
     gpio_config(GPIO_C, 3, 3);  // 011: SPI0_MOSI
     gpio_pull(GPIO_C, 3, GPIO_PULL_DISABLE);
 
+    
+
+    u32 reg = 0;
+
+    //spi0 bus gate, deassert spi
+    reg = io_read32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0);
+    io_write32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0, reg | 1 << 20);
+
+    // set spi0 clock bus gating
+    reg = io_read32(V3S_CCU_BASE + CCU_BUS_CLK_GATE0);
+    io_write32(V3S_CCU_BASE + CCU_BUS_CLK_GATE0, reg | 1 << 20);  // spi 0 gate
+
+    // set spi0 sclk enable
+    reg = io_read32(V3S_CCU_BASE + CCU_SPI0_CLK);
+    io_write32(V3S_CCU_BASE + CCU_SPI0_CLK, reg | 1 << 31);
+
+  
+
     // set master mode  stop transmit data when RXFIFO full
-    spio_base[spi]->gcr = spio_base[spi]->gcr | 1 << 31 | 1 << 7 | 1 << 1 | 1;
+    spio_base[spi]->gcr |= 1 << 31 | 1 << 7 | 1 << 1 | 1;
 
     // wait
     while (spio_base[spi]->gcr & (1 << 31));
     kprintf("spi0 gcr %x\n", spio_base[spi]->gcr);
 
     // set SS Output Owner Select  1: Active low polarity (1 = Idle)
-    // spio_base[spi]->tcr = spio_base[spi]->tcr | 1 << 6 | 1 << 2;
-    // spio_base[spi]->tcr = spio_base[spi]->tcr | 1 << 6 | 0 << 2;
-    spio_base[spi]->tcr = spio_base[spi]->tcr | 0 << 6 | 1 << 2;
-    // spio_base[spi]->tcr = spio_base[spi]->tcr | 0 << 6 | 0 << 2;
+    // spio_base[spi]->tcr |=  1 << 6 | 1 << 2;
+    // spio_base[spi]->tcr |=  1 << 6 | 0 << 2;
+    // spio_base[spi]->tcr |= 0 << 6 | 1 << 2;
+    spio_base[spi]->tcr |=  0 << 6 | 0 << 2;
 
     // clear intterrupt
     spio_base[spi]->isr = ~0;
 
     // set fcr TX FIFO Reset RX FIFO Reset
-    spio_base[spi]->fcr = spio_base[spi]->fcr | 1 << 31 | 1 << 15;
+    spio_base[spi]->fcr |= 1 << 31 | 1 << 15;
 
     // set sclk clock  Select Clock Divide Rate 2 SPI_CLK = Source_CLK / (2*(n +
     // 1)).
-    spio_base[spi]->ccr = 1 << 12 | 14;
+    spio_base[spi]->ccr |= 1 << 12 | 14;
 
   } else if (spi == 1) {
   }

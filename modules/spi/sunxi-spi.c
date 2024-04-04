@@ -43,22 +43,6 @@ void sunxi_spi_set_mode(int spi, u32 mode) {
   sunxi_spi_base[spi]->tcr = reg;
 }
 
-enum {
-  SPI_GCR = 0x04,
-  SPI_TCR = 0x08,
-  SPI_IER = 0x10,
-  SPI_ISR = 0x14,
-  SPI_FCR = 0x18,
-  SPI_FSR = 0x1c,
-  SPI_WCR = 0x20,
-  SPI_CCR = 0x24,
-  SPI_MBC = 0x30,
-  SPI_MTC = 0x34,
-  SPI_BCC = 0x38,
-  SPI_TXD = 0x200,
-  SPI_RXD = 0x300,
-};
-
 static void sunxi_spi_write_txbuf(int spi, u8* buf, int len) {
   int i;
 
@@ -67,11 +51,14 @@ static void sunxi_spi_write_txbuf(int spi, u8* buf, int len) {
   sunxi_spi_base[spi]->mbc = len & 0xffffff;
   if (buf) {
     for (i = 0; i < len; i++) {
-      sunxi_spi_base[spi]->txd = *buf++;
+      io_write8(&sunxi_spi_base[spi]->txd, *buf);
+      // kprintf("trans txd=%x d=%x\n",io_read8(&sunxi_spi_base[spi]->txd),
+      // *buf);
+      buf++;
     }
   } else {
     for (i = 0; i < len; i++) {
-      sunxi_spi_base[spi]->txd = 0xff;
+      io_write8(&sunxi_spi_base[spi]->txd, 0xff);
     }
   }
 }
@@ -82,7 +69,7 @@ u32 sunxi_spi_xfer(int spi, spi_msg_t* msg) {
     return -1;
   }
 
-  int count = msg->rx_len * msg->bits / 8;
+  int count = msg->tx_len * msg->bits / 8;
   u8* tx = msg->tx_buf;
   u8* rx = msg->rx_buf;
   u8 val;
@@ -95,15 +82,14 @@ u32 sunxi_spi_xfer(int spi, spi_msg_t* msg) {
 
     sunxi_spi_base[spi]->tcr |= (1 << 31);
 
-    while (sunxi_spi_base[spi]->tcr & (1 << 31))
-
-      while ((sunxi_spi_base[spi]->fsr & 0xff) < n);
+    // while (sunxi_spi_base[spi]->tcr & (1 << 31));
+    while ((sunxi_spi_base[spi]->fsr & 0xff) < n);
 
     for (i = 0; i < n; i++) {
       val = sunxi_spi_base[spi]->rxd;
       if (rx) *rx++ = val;
     }
-
+    // sunxi_spi_base[spi]->isr = 1 << 12;
     if (tx) tx += n;
     count -= n;
   }
@@ -137,10 +123,10 @@ u32 sunxi_spi_rw_data(int spi, spi_msg_t* msg) {
       u32 len = fifo_byte;
       // fill data
       for (; len > 0; len--) {
-        u8 d = *tx_buf;
+        // u8 d = *tx_buf;
         sunxi_spi_base[spi]->txd = *tx_buf++;
 
-        kprintf("trans txd=%x d=%x\n", sunxi_spi_base[spi]->txd, d);
+        // kprintf("trans txd=%x d=%x\n", sunxi_spi_base[spi]->txd, d);
       }
       tx_len -= fifo_byte;
     }
