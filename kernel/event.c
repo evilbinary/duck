@@ -56,6 +56,13 @@ source_t* event_source_io_create(vnode_t* node, fd_t* f, int nbytes,
   return source;
 }
 
+void do_event_thread() {
+  for (;;) {
+    event_poll();
+  }
+}
+
+
 void event_wait(thread_t* t, source_t* source) {
   if (t == NULL) {
     return;
@@ -113,8 +120,3 @@ void event_wakeup_io(event_t* e) {
 }
 
 
-void do_event_thread() {
-  for (;;) {
-    event_poll();
-  }
-}

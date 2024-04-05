@@ -19,4 +19,7 @@ typedef struct ytrace{
     int status;
 }ytrace_t;
 
+
+void ytrace_hook_end(ytrace_t* t);
+
 #endif

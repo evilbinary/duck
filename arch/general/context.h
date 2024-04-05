@@ -6,12 +6,9 @@
 #ifndef X86_DUCK_CONTEXT_H
 #define X86_DUCK_CONTEXT_H
 
-
 #include "arch/boot.h"
 #include "libs/include/types.h"
 #include "platform/platform.h"
-
-
 
 #define GDT_SIZE 8
 
@@ -19,8 +16,6 @@
 #define GDT_ENTRY_32BIT_CS 1
 #define GDT_ENTRY_32BIT_DS 2
 #define GDT_ENTRY_32BIT_FS 3
-
-
 
 typedef struct interrupt_context {
   // ds
@@ -34,7 +29,6 @@ typedef struct interrupt_context {
   u32 code;
   u32 eip;
 } __attribute__((packed)) interrupt_context_t;
-
 
 typedef struct context_t {
   interrupt_context_t* ic;
@@ -70,7 +64,7 @@ typedef struct context_t {
 #define interrupt_process(X) \
   asm volatile(              \
       "push %esp\n"          \
-      "call  _" #X            \
+      "call  _" #X           \
       " \n"                  \
       "add $4,%esp\n")
 
@@ -97,7 +91,7 @@ typedef struct context_t {
   asm volatile(          \
       "popal\n"          \
       "add $8,%%esp\n"   \
-      "ret\n"           \
+      "ret\n"            \
       :                  \
       :)
 
@@ -106,18 +100,18 @@ typedef struct context_t {
       "mov %%eax,%%esp\n"    \
       "popal\n"              \
       "add $8,%%esp\n"       \
-      "ret\n"               \
+      "ret\n"                \
       :                      \
       :)
 
-#define interrupt_exit_context(context) \
-  asm volatile(                         \
-      "mov %0,%%esp\n"                  \
-      "popal\n"                         \
-      "add $8,%%esp\n"                  \
-      "ret\n"                          \
-      :                                 \
-      : "m"(context->ksp))
+#define interrupt_exit_context(ksp) \
+  asm volatile(                     \
+      "mov %0,%%esp\n"              \
+      "popal\n"                     \
+      "add $8,%%esp\n"              \
+      "ret\n"                       \
+      :                             \
+      : "m"(ksp))
 
 #define context_fn(context) context->eax
 #define context_ret(context) context->eax
@@ -126,16 +120,15 @@ typedef struct context_t {
 
 // #define context_restore(duck_context) interrupt_exit_context(duck_context)
 
-#define context_switch_page(ctx,page_dir)  cpu_set_page(page_dir)
+#define context_switch_page(ctx, page_dir) cpu_set_page(page_dir)
 
 int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
                  u32 level, int cpu);
-                 
+
 int context_clone(context_t* des, context_t* src);
-interrupt_context_t* context_switch(interrupt_context_t* ic,context_t* current,context_t* next);
+interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
+                                    context_t* next);
 
 void context_dump(context_t* c);
-
-
 
 #endif

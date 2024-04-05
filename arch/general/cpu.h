@@ -36,24 +36,14 @@ typedef struct cpsr {
   };
 } __attribute__((packed)) cpsr_t;
 
-typedef u32 (*sys_call_fn)(u32 arg1, u32 arg2, u32 arg3, u32 arg4, u32 arg5,
-                           u32 arg6);
+typedef u32 (*sys_call_fn)(u32 arg1, u32 arg2, u32 arg3, u32 arg4, u32 arg5);
 
-#define sys_fn_call(duck_interrupt_context, fn)                             \
-  asm volatile(                                                             \
-      " \
-      push %1; \
-      push %2; \
-      push %3; \
-      push %4; \
-      push %5; \
-      call *%6; \
-      add $20,%%esp; \
-    "                                                                   \
-      : "=a"(duck_interrupt_context->eax)                                   \
-      : "r"(duck_interrupt_context->edi), "r"(duck_interrupt_context->esi), \
-        "r"(duck_interrupt_context->edx), "r"(duck_interrupt_context->ecx), \
-        "r"(duck_interrupt_context->ebx), "r"(fn))
+#define sys_fn_call(duck_interrupt_context, fn)               \
+  duck_interrupt_context->eax = ((sys_call_fn)fn)(             \
+      duck_interrupt_context->edi, duck_interrupt_context->esi, \
+      duck_interrupt_context->edx, duck_interrupt_context->ecx, \
+      duck_interrupt_context->ebx)
+
 
 #define cpu_cli() 
 #define cpu_sti() 
