@@ -279,10 +279,13 @@ void load_config() {
   // char* config_argv[] = {"config", NULL};
   // try_run("config", config_argv, NULL);
 
+  char* config_argv[] = {"etk", NULL};
+  try_run("etk", config_argv, NULL);
+
   // char* config_argv[] = {"lvgl", NULL};
   // try_run("lvgl", config_argv, NULL);
-  char* config_argv[] = {"infones","/mario.nes", NULL};
-  try_run("infones", config_argv, NULL);
+  // char* config_argv[] = {"infones","/mario.nes", NULL};
+  // try_run("infones", config_argv, NULL);
 }
 
 void pre_launch() {
@@ -331,6 +334,10 @@ void pre_launch() {
 #elif defined(ARMV7_A)
   //  try_run("/bin/shell", shell_argv, env_p);
   // try_run("infones", nes_argv, NULL);
+  load_config();
+
+#elif defined(ARMV5)
+
   load_config();
 
 #elif defined(ARMV7)

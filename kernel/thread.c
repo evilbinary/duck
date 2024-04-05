@@ -614,7 +614,7 @@ void thread_dump(thread_t* thread, u32 flags) {
   if (flags & DUMP_STACK == DUMP_STACK) {
     kprintf("--kstack--\n");
     // thread_dump_stack(thread->ctx->ksp_start, thread->ctx->ksp_size);
-    int dump_size = 0x100;
+    int dump_size = 0x10;
     thread_dump_stack(thread->ctx->ksp_end - dump_size, dump_size);
     kprintf("--ustack--\n");
     thread_dump_stack(vm->vend - dump_size, dump_size);

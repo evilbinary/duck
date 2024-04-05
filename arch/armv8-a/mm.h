@@ -39,6 +39,7 @@
 #define PAGE_USR   (L2_TEXT_1|L2_CB) //用户级
 #define PAGE_DEV   (L2_TEXT_0|L2_NCNB) //设备级
 
+
 typedef u32 page_dir_t;
 
 #endif

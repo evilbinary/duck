@@ -3,8 +3,9 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
-#include "context.h"
 #include "cpu.h"
+
+#include "context.h"
 
 extern boot_info_t* boot_info;
 u32 cpus_id[MAX_CPU];
@@ -14,47 +15,43 @@ u32 cpus_id[MAX_CPU];
 #define TTBCR_LPAE 1 << 31
 
 static inline void write_ttbcr(u32 val) {
-  asm volatile("mcr p15, 0, %0, c2, c0, 2" : : "r"(val) : "memory");
+  asm volatile("msr tcr_el1, %0" : : "r"(val) : "memory");
 }
 
 static inline void write_ttbr0(u32 val) {
-  asm volatile("mcr p15, 0, %0, c2, c0, 0" : : "r"(val) : "memory");
+  asm volatile("msr ttbr0_el1, %0" : : "r"(val) : "memory");
 }
 
 static inline void write_ttbr1(u32 val) {
-  asm volatile("mcr p15, 0, %0, c2, c0, 1" : : "r"(val) : "memory");
+  asm volatile("msr ttbr1_el1, %0" : : "r"(val) : "memory");
 }
 
 void cp15_invalidate_icache(void) {
   asm volatile(
-      "mov r0, #0\n"
-      "mcr p15, 0, r0, c7, c5, 0\n"
-      "dsb\n"
-      :
-      :
-      : "r0", "memory");
+      "ic iallu\n"  // 清除指令缓存中的所有条目
+      "dsb ish\n"   // 等待指令流水线中的操作完成
+      "isb\n"       // 同步处理器流水线
+  );
 }
 
 void cpu_invalid_tlb() {
-  asm volatile("mcr p15, 0, %0, c8, c7, 0" : : "r"(0));
-  asm volatile("mcr p15, 0, %0, c8, c6, 0" : : "r"(0));
-  asm volatile("mcr p15, 0, %0, c8, c5, 0" : : "r"(0));
   asm volatile(
-      "isb\n"
-      "dsb\n");
+      "tlbi vmalle1is\n"  // 使当前 EL1 和更低特权级别的所有内存区域的 TLB 失效
+      "dsb ish\n"  // 等待指令流水线中的操作完成
+      "isb\n"      // 同步处理器流水线
+  );
 }
 
 u32 cpu_set_domain(u32 val) {
   u32 old;
-  asm volatile("mrc p15, 0, %0, c3, c0,0\n" : "=r"(old));
-  asm volatile("mcr p15, 0, %0, c3, c0,0\n" : : "r"(val) : "memory");
+  // asm volatile("mrc p15, 0, %0, c3, c0,0\n" : "=r"(old));
+  // asm volatile("mcr p15, 0, %0, c3, c0,0\n" : : "r"(val) : "memory");
   return old;
 }
 
-
 u32 read_dfar() {
   u32 val = 0;
-  asm volatile("mrc p15, 0, %0, c6, c0, 0" : "=r"(val));
+  // asm volatile("mrc p15, 0, %0, c6, c0, 0" : "=r"(val));
   return val;
 }
 
@@ -62,19 +59,19 @@ u32 cpu_get_fault() { return read_dfar(); }
 
 u32 read_dfsr() {
   u32 val = 0;
-  asm volatile("mrc p15, 0, %0, c5, c0, 0" : "=r"(val));
+  // asm volatile("mrc p15, 0, %0, c5, c0, 0" : "=r"(val));
   return val;
 }
 
 u32 read_pc() {
   u32 val = 0;
-  asm volatile("ldr %0,[r15]" : "=r"(val));
+  // asm volatile("ldr %0,[r15]" : "=r"(val));
   return val;
 }
 
 u32 read_ifsr() {
   u32 val = 0;
-  asm volatile("mrc p15, 0, %0, c5, c0, 1" : "=r"(val));
+  // asm volatile("mrc p15, 0, %0, c5, c0, 1" : "=r"(val));
   return val;
 }
 
@@ -111,38 +108,36 @@ void cpu_enable_smp_mode() {
   //   "orr r0, r0, #1 << 6 \n" // Set SMPEN.
   //   "mcr p15, 1, R0, R1, C15"); // Write CPUECTLR.
 
-  asm volatile(
-      "mrc p15, 0, r0, c1, c0, 1\n"
-      "orr r0, r0, #1 << 6\n"
-      "mcr p15, 0, r0, c1, c0, 1\n");
+  // asm volatile(
+  //     "mrc p15, 0, r0, c1, c0, 1\n"
+  //     "orr r0, r0, #1 << 6\n"
+  //     "mcr p15, 0, r0, c1, c0, 1\n");
 }
-
 
 void cpu_enable_page() {
   cpu_enable_smp_mode();
   cache_inv_range(0, ~0);
   // mmu_inv_tlb();
 
-  u32 reg;
-  // read mmu
-  asm("mrc p15, 0, %0, c1, c0, 0" : "=r"(reg) : : "cc");  // SCTLR
-  reg |= 0x1;                                             // M enable mmu
-  // reg|=(1<<29);//AFE
-  // reg |= 1 << 28; //TEX remap enable.
-  reg |= 1 << 12;  // Instruction cache enable:
-  reg |= 1 << 2;   // Cache enable.
-  // reg |= 1 << 1;   // Alignment check enable.
-  reg |= 1 << 11;  // Branch prediction enable
-  asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");  // SCTLR
-  dsb();
-  isb();
+  // u32 reg;
+  // // read mmu
+  // asm("mrc p15, 0, %0, c1, c0, 0" : "=r"(reg) : : "cc");  // SCTLR
+  // reg |= 0x1;                                             // M enable mmu
+  // // reg|=(1<<29);//AFE
+  // // reg |= 1 << 28; //TEX remap enable.
+  // reg |= 1 << 12;  // Instruction cache enable:
+  // reg |= 1 << 2;   // Cache enable.
+  // // reg |= 1 << 1;   // Alignment check enable.
+  // reg |= 1 << 11;  // Branch prediction enable
+  // asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");  // SCTLR
+  // dsb();
+  // isb();
 }
-
 
 static inline uint32_t get_ccsidr(void) {
   uint32_t ccsidr;
 
-  __asm__ __volatile__("mrc p15, 1, %0, c0, c0, 0" : "=r"(ccsidr));
+  // __asm__ __volatile__("mrc p15, 1, %0, c0, c0, 0" : "=r"(ccsidr));
   return ccsidr;
 }
 
@@ -150,11 +145,11 @@ static inline void __v7_cache_inv_range(uint32_t start, uint32_t stop,
                                         uint32_t line) {
   uint32_t mva;
 
-  start &= ~(line - 1);
-  if (stop & (line - 1)) stop = (stop + line) & ~(line - 1);
-  for (mva = start; mva < stop; mva = mva + line) {
-    __asm__ __volatile__("mcr p15, 0, %0, c7, c6, 1" : : "r"(mva));
-  }
+  // start &= ~(line - 1);
+  // if (stop & (line - 1)) stop = (stop + line) & ~(line - 1);
+  // for (mva = start; mva < stop; mva = mva + line) {
+  //   __asm__ __volatile__("mcr p15, 0, %0, c7, c6, 1" : : "r"(mva));
+  // }
 }
 /*
  * Invalidate range, affects the range [start, stop - 1]
@@ -163,11 +158,11 @@ void cache_inv_range(unsigned long start, unsigned long stop) {
   uint32_t ccsidr;
   uint32_t line;
 
-  ccsidr = get_ccsidr();
-  line = ((ccsidr & 0x7) >> 0) + 2;
-  line += 2;
-  line = 1 << line;
-  __v7_cache_inv_range(start, stop, line);
+  // ccsidr = get_ccsidr();
+  // line = ((ccsidr & 0x7) >> 0) + 2;
+  // line += 2;
+  // line = 1 << line;
+  // __v7_cache_inv_range(start, stop, line);
   dsb();
 }
 
@@ -176,7 +171,7 @@ int cpu_get_number() { return boot_info->tss_number; }
 u32 cpu_get_id() {
   int cpu = 0;
 #if MP_ENABLE
-  __asm__ volatile("mrc p15, #0, %0, c0, c0, #5\n" : "=r"(cpu));
+  // __asm__ volatile("mrc p15, #0, %0, c0, c0, #5\n" : "=r"(cpu));
 #endif
   return cpu & 0xf;
 }
@@ -189,23 +184,14 @@ u32 cpu_get_index(int idx) {
   return cpus_id[idx];
 }
 
-
-
-void cpu_init() {
-
-
-}
+void cpu_init() {}
 
 void cpu_halt() {
   for (;;) {
-    
   };
 }
 
-
-void cpu_wait(){
-
-}
+void cpu_wait() {}
 
 ulong cpu_get_cs(void) {
   ulong result;
@@ -219,6 +205,4 @@ int cpu_tas(volatile int* addr, int newval) {
   return result;
 }
 
-void cpu_backtrace(void) {
-  
-}
+void cpu_backtrace(void) {}

@@ -6,7 +6,7 @@
 #include "arch/cpu.h"
 #include "arch/display.h"
 #include "arch/pmemory.h"
-
+#include "mm.h"
 #include "cpu.h"
 #include "gpio.h"
 

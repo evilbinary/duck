@@ -20,6 +20,10 @@
   #else
     #error "no support arm"
   #endif
+#elif defined(ARM64)
+  #if defined(ARMV8_A)
+    #include "armv8-a/context.h"
+  #endif
 #elif defined(X86)
   #ifdef X86_DUCK
     #include "x86-duck/context.h"

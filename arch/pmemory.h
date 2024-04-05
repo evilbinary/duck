@@ -21,6 +21,11 @@
 #else
 #error "no support arm"
 #endif
+#elif defined(ARM64)
+  #if defined(ARMV8_A)
+    #include "armv8-a/mm.h"
+  #endif
+
 #elif defined(X86)
 #include "x86/mm.h"
 #elif defined(LX6)
