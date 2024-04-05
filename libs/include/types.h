@@ -2,7 +2,7 @@
 #define TYPES_H
 
 #define _Addr int
-#define _Int64 long long
+#define _Int64 __INT64_TYPE__
 #define _Reg int
 
 typedef char i8;
@@ -11,11 +11,12 @@ typedef short i16;
 typedef unsigned short u16;
 typedef int i32;
 typedef unsigned int u32;
-typedef long long i64;
-typedef unsigned long long u64;
 
-typedef long long illong;
-typedef unsigned long long ullong;
+typedef __INT64_TYPE__ i64;
+typedef unsigned __INT64_TYPE__ u64;
+
+typedef __INT64_TYPE__ illong;
+typedef unsigned __INT64_TYPE__ ullong;
 
 typedef float f32;
 typedef double f64;
