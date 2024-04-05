@@ -31,7 +31,6 @@ extern "C" {
 int getitimer(int, struct itimerval *);
 int setitimer(int, const struct itimerval *, struct itimerval *);
 int gettimeofday(struct timeval *, void *);
-int utimes(const char *, const struct timeval[2]);
 
 #ifdef __cplusplus
 }
