@@ -31,7 +31,7 @@ plat_source={
     'stm32':[
         'stm32.c'
     ],
-    'general':[
+    'dmulator':[
         'general.c'
     ],
     'miyoo':[
@@ -57,6 +57,9 @@ plat_source={
 }
 arch_source={
     'arm': [
+        'sdhci.c'
+    ],
+    'general':[
         'sdhci.c'
     ]
 }

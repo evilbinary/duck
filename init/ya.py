@@ -70,7 +70,11 @@ def_arch_type=arch_type.replace( "-", "_").upper()
 add_defines(def_arch)
 add_defines(def_arch_type)
 
-add_ldflags("-T"+path.join(os.scriptdir(), "../xlinker/link-{plat}.ld"),  force = True)
+if arch_type=='general' and sys.platform in ['darwin']:
+    add_ldflags('-arch    i386 ')
+    pass
+else:
+    add_ldflags("-T"+path.join(os.scriptdir(), "../xlinker/link-{plat}.ld"),  force = True)
 
 
 add_rules("kernel-objcopy")

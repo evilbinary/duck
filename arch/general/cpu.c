@@ -18,10 +18,24 @@ void general_sys_fn_init(void** syscall_table) {
   genral_syscall_table = syscall_table;
 }
 
+void general_sys_fn_call_handler(int no, interrupt_context_t* ic) {
+  void* fn = genral_syscall_table[context_fn(ic)];
+  if (fn != NULL) {
+    // kprintf("syscall fn:%d r0:%x r1:%x r2:%x
+    // r3:%x\n",ic->r7,ic->r0,ic->r1,ic->r2,ic->r3);
+    sys_fn_call((ic), fn);
+    // kprintf(" ret=%x\n",context_ret(ic));
+  } else {
+    log_warn("syscall %d not found\n", context_fn(ic));
+  }
+}
+
 void cpu_init() {
   for (int i = 0; i < MAX_CPU; i++) {
     cpus_id[i] = i;
   }
+
+  sys_fn_regist_handler(general_sys_fn_call_handler);
 }
 
 void cpu_halt() { usleep(1000 * 1000); }
@@ -60,10 +74,7 @@ int cpu_init_id(u32 id) { return 0; }
 
 int cpu_start_id(u32 id, u32 entry) { return 0; }
 
-void cpu_delay(int n) {
-  for (int i = 0; i < 10000 * n; i++)
-    ;
-}
+void cpu_delay(int n) { for (int i = 0; i < 10000 * n; i++); }
 
 u32 cpu_get_fault() { return 0; }
 
@@ -90,10 +101,6 @@ void* syscall0(u32 num) {
   int ret;
   check();
 
-  if (genral_syscall_table == NULL) {
-    sys_fn_init_regist(general_sys_fn_init);
-  }
-
   int (*fn)() = genral_syscall_table[num];
 
   if (fn != NULL) {
@@ -110,10 +117,6 @@ void* syscall1(u32 num, void* arg0) {
 
   check();
 
-  if (genral_syscall_table == NULL) {
-    sys_fn_init_regist(general_sys_fn_init);
-  }
-
   int (*fn)(void* arg0) = genral_syscall_table[num];
 
   if (fn != NULL) {
@@ -128,10 +131,6 @@ void* syscall2(u32 num, void* arg0, void* arg1) {
   int ret;
 
   check();
-
-  if (genral_syscall_table == NULL) {
-    sys_fn_init_regist(general_sys_fn_init);
-  }
 
   int (*fn)(void* arg0, void* arg1) = genral_syscall_table[num];
 
@@ -148,10 +147,6 @@ void* syscall3(u32 num, void* arg0, void* arg1, void* arg2) {
 
   check();
 
-  if (genral_syscall_table == NULL) {
-    sys_fn_init_regist(general_sys_fn_init);
-  }
-
   int (*fn)(void* arg0, void* arg1, void* arg2) = genral_syscall_table[num];
 
   if (fn != NULL) {
@@ -167,10 +162,6 @@ void* syscall4(u32 num, void* arg0, void* arg1, void* arg2, void* arg3) {
   u32 ret = 0;
   usleep(1000);
   check();
-
-  if (genral_syscall_table == NULL) {
-    sys_fn_init_regist(general_sys_fn_init);
-  }
 
   int (*fn)(void* arg0, void* arg1, void* arg2, void* arg3) =
       genral_syscall_table[num];
@@ -190,10 +181,6 @@ void* syscall5(u32 num, void* arg0, void* arg1, void* arg2, void* arg3,
 
   check();
 
-  if (genral_syscall_table == NULL) {
-    sys_fn_init_regist(general_sys_fn_init);
-  }
-
   int (*fn)(void* arg0, void* arg1, void* arg2, void* arg3, void* arg4) =
       genral_syscall_table[num];
 
@@ -204,4 +191,22 @@ void* syscall5(u32 num, void* arg0, void* arg1, void* arg2, void* arg3,
   }
 
   return ret;
+}
+
+int cpu_pmu_version() {
+  u32 pmu_id = 0;
+
+  return (pmu_id >> 4) & 0xF;
+}
+
+void cpu_pmu_enable(int enable, u32 timer) {
+  if (enable == 1) {
+  } else if (enable == 0) {
+  }
+}
+
+unsigned int cpu_cyclecount(void) {
+  unsigned int value = 0;
+
+  return value;
 }

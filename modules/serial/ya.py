@@ -29,7 +29,7 @@ plat_source={
     'stm32':[
         'stm32.c'
     ],
-    'general':[
+    'dmulator':[
         'general.c'
     ],
     'riscv-virt':[

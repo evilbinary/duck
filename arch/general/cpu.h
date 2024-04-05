@@ -50,4 +50,7 @@ typedef u32 (*sys_call_fn)(u32 arg1, u32 arg2, u32 arg3, u32 arg4, u32 arg5);
 #define cpu_cpl() (cpu_get_cs() & 0x3)
 u32 cpu_get_id();
 
+#define cpu_faa(ptr) 1//__sync_fetch_and_add(ptr, 1)
+
+
 #endif

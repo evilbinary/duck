@@ -8,11 +8,11 @@
 
 
 void serial_write(char a) {
-  uart_send(a);
+  com_write(a);
 }
 
 char serial_read() {
-  return uart_receive();
+  return com_read();
 }
 
 static size_t read(device_t* dev, void* buf, size_t len) {

@@ -40,7 +40,7 @@ u32* page_clone(u32* old_page_dir, u32 level) {
   return page_dir_ptr_tab;
 }
 
-void unpage_map_on(page_dir_t* page, u32 virtualaddr) {}
+void page_unmap_on(page_dir_t* page, u32 virtualaddr) {}
 
 void mm_page_enable(u32 page_dir) {
   kprintf("enable page\n");

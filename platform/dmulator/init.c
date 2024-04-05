@@ -95,3 +95,8 @@ int main(int argc, char *argv[]) {
   kstart(argc, argv, envp);
   return 0;
 }
+
+int interrupt_get_source(u32 no) {
+  no=EX_TIMER;
+  return no;
+}
