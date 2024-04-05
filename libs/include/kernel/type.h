@@ -99,64 +99,64 @@ typedef	int32_t		pid_t;
 #endif
 
 
-#ifndef _HAVE_PTHREAD_ATTR_T
-#define _HAVE_PTHREAD_ATTR_T
-typedef	int32_t		pthread_attr_t;
-#endif
+// #ifndef _HAVE_PTHREAD_ATTR_T
+// #define _HAVE_PTHREAD_ATTR_T
+// typedef	int32_t		pthread_attr_t;
+// #endif
 
 
-#ifndef _HAVE_PTHREAD_COND_T
-#define _HAVE_PTHREAD_COND_T
-typedef	int32_t		pthread_cond_t;
-#endif
+// #ifndef _HAVE_PTHREAD_COND_T
+// #define _HAVE_PTHREAD_COND_T
+// typedef	int32_t		pthread_cond_t;
+// #endif
 
 
-#ifndef _HAVE_PTHREAD_CONDATTR_T
-#define _HAVE_PTHREAD_CONDATTR_T
-typedef	int32_t		pthread_condattr_t;
-#endif
+// #ifndef _HAVE_PTHREAD_CONDATTR_T
+// #define _HAVE_PTHREAD_CONDATTR_T
+// typedef	int32_t		pthread_condattr_t;
+// #endif
 
 
-#ifndef _HAVE_PTHREAD_KEY_T
-#define _HAVE_PTHREAD_KEY_T
-typedef	int32_t		pthread_key_t;
-#endif
+// #ifndef _HAVE_PTHREAD_KEY_T
+// #define _HAVE_PTHREAD_KEY_T
+// typedef	int32_t		pthread_key_t;
+// #endif
 
 
-#ifndef _HAVE_PTHREAD_MUTEX_T
-#define _HAVE_PTHREAD_MUTEX_T
-typedef	int32_t		pthread_mutex_t;
-#endif
+// #ifndef _HAVE_PTHREAD_MUTEX_T
+// #define _HAVE_PTHREAD_MUTEX_T
+// typedef	int32_t		pthread_mutex_t;
+// #endif
 
 
-#ifndef _HAVE_PTHREAD_MUTEXATTR_T
-#define _HAVE_PTHREAD_MUTEXATTR_T
-typedef	int32_t		pthread_mutexattr_t;
-#endif
+// #ifndef _HAVE_PTHREAD_MUTEXATTR_T
+// #define _HAVE_PTHREAD_MUTEXATTR_T
+// typedef	int32_t		pthread_mutexattr_t;
+// #endif
 
 
-#ifndef _HAVE_PTHREAD_ONCE_T
-#define _HAVE_PTHREAD_ONCE_T
-typedef	int32_t		pthread_once_t;
-#endif
+// #ifndef _HAVE_PTHREAD_ONCE_T
+// #define _HAVE_PTHREAD_ONCE_T
+// typedef	int32_t		pthread_once_t;
+// #endif
 
 
-#ifndef _HAVE_PTHREAD_RWLOCK_T
-#define _HAVE_PTHREAD_RWLOCK_T
-typedef	int32_t		pthread_rwlock_t;
-#endif
+// #ifndef _HAVE_PTHREAD_RWLOCK_T
+// #define _HAVE_PTHREAD_RWLOCK_T
+// typedef	int32_t		pthread_rwlock_t;
+// #endif
 
 
-#ifndef _HAVE_PTHREAD_RWLOCKATTR_T
-#define _HAVE_PTHREAD_RWLOCKATTR_T
-typedef	int32_t		pthread_rwlockattr_t;
-#endif
+// #ifndef _HAVE_PTHREAD_RWLOCKATTR_T
+// #define _HAVE_PTHREAD_RWLOCKATTR_T
+// typedef	int32_t		pthread_rwlockattr_t;
+// #endif
 
 
-#ifndef _HAVE_PTHREAD_T
-#define _HAVE_PTHREAD_T
-typedef	int32_t		pthread_t;
-#endif
+// #ifndef _HAVE_PTHREAD_T
+// #define _HAVE_PTHREAD_T
+// typedef	int32_t		pthread_t;
+// #endif
 
 
 #ifndef _HAVE_SIZE_T
@@ -195,7 +195,7 @@ typedef	int32_t		timer_t;
 
 #ifndef _HAVE_UID_T
 #define _HAVE_UID_T
-typedef	int32_t		uid_t;
+typedef	uint32_t		uid_t;
 #endif
 
 

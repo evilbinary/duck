@@ -2,7 +2,7 @@
 #include <signal.h>
 
 #include "arch/arch.h"
-#include "arch/io.h"
+#include <stdio.h>
 
 static int com_serial_init() { return 0; }
 

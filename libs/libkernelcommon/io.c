@@ -4,6 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "io.h"
+#include "common.h"
 
 #include "stdarg.h"
 

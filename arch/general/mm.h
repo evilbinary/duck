@@ -16,4 +16,5 @@
 
 typedef u32 page_dir_t;
 
+#define PAGE_RW_NC PAGE_RW
 #endif

@@ -11,12 +11,6 @@
 event_t* all_events[MAX_EVENT] = {0};
 u32 all_events_count = 0;
 
-void do_event_thread() {
-  for (;;) {
-    event_poll();
-  }
-}
-
 void event_poll() {
   // log_debug("process event  %d\n", all_events_count);
   for (int i = 0; i < MAX_EVENT; i++) {
@@ -115,5 +109,12 @@ void event_wakeup_io(event_t* e) {
     // free event and source
     // kfree(e->source);
     // kfree(e);
+  }
+}
+
+
+void do_event_thread() {
+  for (;;) {
+    event_poll();
   }
 }

@@ -9,7 +9,6 @@
 #include "libs/include/types.h"
 
 void display_init();
-void putch(u8 c);
 
 #define debug kprintf
 #define log kprintf
