@@ -181,11 +181,6 @@ typedef	int32_t		suseconds_t;
 #endif
 
 
-#ifndef _HAVE_TIME_T
-#define _HAVE_TIME_T
-typedef	int32_t		time_t;
-#endif
-
 
 #ifndef _HAVE_TIMER_T
 #define _HAVE_TIMER_T
