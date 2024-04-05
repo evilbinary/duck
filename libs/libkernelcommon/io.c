@@ -36,7 +36,7 @@ int kprintf(const char* fmt, ...) {
   int i = 0;
   va_list args;
   va_start(args, fmt);
-  i = vsprintf(printf_buffer, fmt, args);
+  i = kvsprintf(printf_buffer, fmt, args);
   va_end(args);
 
   int len = kstrlen(printf_buffer);

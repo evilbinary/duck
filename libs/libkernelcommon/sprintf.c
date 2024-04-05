@@ -93,13 +93,13 @@ static char *number(char *str, unsigned long num, int base, int size,
 }
 
 /*------------------------------------------------------------------------
- Procedure:     vsprintf ID:1
+ Procedure:     kvsprintf ID:1
  Purpose:
  Input:
  Output:
  Errors:
 ------------------------------------------------------------------------*/
-int vsprintf(char *buf, const char *fmt, va_list args) {
+int kvsprintf(char *buf, const char *fmt, va_list args) {
   int len;
   int i;
   char *str;
@@ -255,6 +255,6 @@ void sprintf(char *buf, const char *fmt, ...) {
   int i;
   va_list args;
   va_start(args, fmt);
-  i = vsprintf(buf, fmt, args);
+  i = kvsprintf(buf, fmt, args);
   va_end(args);
 }
