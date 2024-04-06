@@ -5,6 +5,7 @@
  ********************************************************************/
 #include "sdhci.h"
 #include "sunxi-sdhci.h"
+#include "gpio.h"
 
 #define CACHE_COUNT 1
 #define SECTOR_SIZE (512 * CACHE_COUNT)
