@@ -463,6 +463,11 @@ static inline uint64_t timer_read_sys_usec(void) {  // read microsec
   return fast_div64_6(read_cntvct());
 }
 
+uint64_t cpu_read_ms(){
+  return read_cntvct()/24000;
+}
+
+
 void cpu_delay_usec(uint64_t count) {
   uint64_t s = timer_read_sys_usec();
   uint64_t t = s + count;

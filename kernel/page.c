@@ -102,11 +102,13 @@ void page_fault_handle(interrupt_context_t *ic) {
 void *kernel_page_dir = NULL;
 
 void page_map(u32 virtualaddr, u32 physaddr, u32 flags) {
+#ifdef VM_ENABLE
   if (kernel_page_dir == NULL) {
     log_error("kernel_page_dir is null\n");
     return;
   }
   page_map_on(kernel_page_dir, virtualaddr, physaddr, flags);
+#endif
 }
 
 void *page_kernel_dir() { return kernel_page_dir; }

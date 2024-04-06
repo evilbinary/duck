@@ -1,6 +1,11 @@
 #ifndef T113_GPIO_H
 #define T113_GPIO_H
 
+#include "types.h"
+#include "t113-ccu.h"
+#include "t113-de.h"
+#include "t113-tcon.h"
+
 #define GPIO_BASE 0x02000000
 
 #define UART0_BASE 0x02500000
@@ -33,5 +38,8 @@ struct t113_s3_timer {
 #define TIMER_BASE  0x02050000 
 
 #define CCU_BASE 0x02001000  // 0x0200 1000---0x0200 1FFF
+
+#define DMA_BASE 0x03002000
+
 
 #endif

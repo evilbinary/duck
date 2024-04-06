@@ -35,7 +35,7 @@ plat_source={
         'dummy.c'
     ],
     't113-s3':[
-        't113-s3.c'
+        'sunxi-dma.c'
     ],
     'orangepi-pc':[
         'dummy.c',

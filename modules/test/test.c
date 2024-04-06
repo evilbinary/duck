@@ -25,6 +25,17 @@ void test_vfs(){
 }
 
 
+void test_dma(){
+  #ifdef DMA_MODULE
+  log_info("test dma\n");
+  dma_init(0);
+  dma_test();
+
+
+  #endif
+
+}
+
 int test_init(void) {
   log_info("test hello\n");
 #ifdef X86
@@ -35,6 +46,7 @@ int test_init(void) {
   // test_kernel_thread();
 
   // test_vfs();
+  // test_dma();
 
   return 0;
 }

@@ -15,6 +15,6 @@
 #define DMA_MODE_TRANSFER_BLOCK  0x80
 #define DMA_MODE_TRANSFER_CASCADE  0xC0
 
-u32 dma_trans(u8 channel, u8 mode, void* addr, void* phyaddr, size_t size);
+u32 dma_trans(u32 channel, u32 mode, void* addr, void* phyaddr, size_t size);
 
 #endif
