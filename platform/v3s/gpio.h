@@ -1,6 +1,10 @@
 #ifndef GPIO_H
 #define GPIO_H
 
+#include "v3s-ccu.h"
+#include "v3s-de.h"
+#include "v3s-tcon.h"
+
 #define MMIO_BASE       0x01C20800
 
 #define SUNXI_PIO_BASE		0x01C20800

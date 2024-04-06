@@ -41,5 +41,6 @@ struct t113_s3_timer {
 
 #define DMA_BASE 0x03002000
 
+#define MMC_BASE 0x04020000
 
 #endif

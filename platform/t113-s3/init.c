@@ -1,8 +1,8 @@
 #include "arch/arch.h"
-#include "t113-ccu.h"
 #include "gpio.h"
-#include "t113-tcon.h"
+#include "t113-ccu.h"
 #include "t113-de.h"
+#include "t113-tcon.h"
 
 static u32 cntfrq[MAX_CPU] = {
     0,
@@ -32,8 +32,7 @@ static u32 cntfrq[MAX_CPU] = {
 #define IE_T1 0x02
 
 void uart_send_char(char c) {
-  while ((io_read32(UART0_BASE + UART_USR) & UART_TRANSMIT) == 0)
-    ;
+  while ((io_read32(UART0_BASE + UART_USR) & UART_TRANSMIT) == 0);
   io_write32(UART0_BASE, c);
 }
 
@@ -46,16 +45,11 @@ void uart_send(unsigned int c) {
 }
 
 u32 uart_receive() {
-  while ((io_read32(UART0_BASE + UART_LSR) & UART_RECEIVE) == 0)
-    ;
+  while ((io_read32(UART0_BASE + UART_LSR) & UART_RECEIVE) == 0);
   return (io_read32(UART0_BASE));
 }
 
-
-void cpu_clock_init(void) {
-
-  sunxi_clk_init();
-}
+void cpu_clock_init(void) { sunxi_clk_init(); }
 
 void platform_init() {
   io_add_write_channel(uart_send);
@@ -76,13 +70,11 @@ void platform_map() {
   // ccu
   page_map(CCU_BASE, CCU_BASE, 0);
 
-  //mmc
-  page_map(0x04020000, 0x04020000, 0);
+  // mmc
+  page_map(MMC_BASE, MMC_BASE, 0);
 
-  //gpio
-  page_map(GPIO_BASE,GPIO_BASE,0);
-
-
+  // gpio
+  page_map(GPIO_BASE, GPIO_BASE, 0);
 }
 
 void platform_end() {}
@@ -92,7 +84,6 @@ void timer_ack(void) {
   hp->irq_status = IE_T0;
 }
 
-
 void timer_init(int hz) {
   struct t113_s3_timer *timer = (struct t113_s3_timer *)TIMER_BASE;
 
@@ -101,7 +92,7 @@ void timer_init(int hz) {
 
   int frq = read_cntfrq();
   kprintf("timer frq %d\n", frq);
-  cntfrq[cpu] = frq/hz ;
+  cntfrq[cpu] = frq / hz;
 
   if (cntfrq[cpu] <= 0) {
     cntfrq[cpu] = 6000000 / hz;
@@ -122,8 +113,7 @@ void timer_init(int hz) {
 
   timer->t0_ctrl |= CTL_RELOAD;  // 2: Reload the Interval value for timer0
 
-  while ((timer->t0_ctrl >> 1) & 1)
-    ;
+  while ((timer->t0_ctrl >> 1) & 1);
 
   kprintf("  Timer I val: %x\n", timer->t0_ival);
   kprintf("  Timer C val: %x\n", timer->t0_cval);
@@ -146,11 +136,10 @@ void timer_end() {
 
   // kprintf("timer end %d\n",irq);
   timer->irq_status = IE_T0;
-
 }
 
 int interrupt_get_source(u32 no) {
-  no=EX_TIMER;
+  no = EX_TIMER;
   return no;
 }
 

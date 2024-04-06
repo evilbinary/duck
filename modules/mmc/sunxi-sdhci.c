@@ -4,15 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "sunxi-sdhci.h"
-#ifdef V3S
-#include "v3s-ccu.h"
-#elif T113_S3
-#include "t113-ccu.h"
-#elif ORANGEPI_PC
-#include "h3-ccu.h"
-#elif F1C200S
-#include "f1c200s-ccu.h"
-#endif
+#include "gpio.h"
 
 #define UNSTUFF_BITS(resp, start, size)                     \
   ({                                                        \
