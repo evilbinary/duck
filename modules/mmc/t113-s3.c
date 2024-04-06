@@ -22,7 +22,7 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   pdat->rca = 0;
   pdat->isspi = 0;
   pdat->write_bl_len = BYTE_PER_SECTOR;
-  pdat->virt = 0x04020000;
+  pdat->virt = MMC_BASE;
   pdat->port= 0;
 
   pdat->voltage = MMC_VDD_27_36;
