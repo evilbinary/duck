@@ -20,6 +20,8 @@
 
 #define DMAC_CFG_TYPE_SPI0 (22)
 #define DMAC_CFG_TYPE_SHMC0 (20)
+#define DMAC_CFG_TYPE_AUDIO (7)
+
 #define DMAC_CFG_SRC_TYPE_NAND (5)
 
 /* DMA base config  */

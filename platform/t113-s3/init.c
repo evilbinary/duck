@@ -75,6 +75,8 @@ void platform_map() {
 
   // gpio
   page_map(GPIO_BASE, GPIO_BASE, 0);
+
+  page_map(CODEC_BASE, CODEC_BASE, 0);
 }
 
 void platform_end() {}

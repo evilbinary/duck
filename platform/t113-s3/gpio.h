@@ -43,4 +43,6 @@ struct t113_s3_timer {
 
 #define MMC_BASE 0x04020000
 
+#define CODEC_BASE 0x02030000
+
 #endif

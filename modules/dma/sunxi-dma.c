@@ -208,7 +208,7 @@ int dma_querystatus(u32 hdma) {
   dma_channel_reg_t *channel = dma_source->channel;
 
   kprintf("left_bytes %d src %x dst %x desc %x\n", channel->left_bytes,
-          channel->cur_dst_addr, channel->cur_dst_addr, channel->desc_addr);
+          channel->cur_src_addr, channel->cur_dst_addr, channel->desc_addr);
 
   channel_count = dma_source->channel_count;
 
@@ -234,7 +234,7 @@ int dma_test() {
           (u32)dst_addr, (len / 1024));
 
   // dma
-  dma_set.loop_mode = 0;
+  dma_set.loop_mode = 1;
   dma_set.wait_cyc = 8;
   dma_set.data_block_size = 1 * 32 / 8;
   // channel config (from dram to dram)
@@ -311,12 +311,62 @@ int dma_test() {
 
 u32 dma_init(u32 channel) { dma_init_all(); }
 
-u32 dma_trans(u32 channel, u32 mode, void *addr, void *phyaddr, size_t size) {
+u32 dma_trans(u32 channel, u32 mode, void *src, void *dst, size_t len) {
   if (dma_init_ok <= 0) {
     dma_init_all();
   }
 
   dma_set_t dma_set;
+  u32 hdma, st = 0;
+  u32 timeout = 0;
+
+  // dma
+  dma_set.loop_mode = 0;
+  dma_set.wait_cyc = 8;
+  dma_set.data_block_size = 1 * 32 / 8;
+  // channel config (from dram to dram)
+  dma_set.channel_cfg.src_drq_type = DMAC_CFG_TYPE_DRAM;  // dram
+  dma_set.channel_cfg.src_addr_mode = DMAC_CFG_DEST_ADDR_TYPE_LINEAR_MODE;
+  dma_set.channel_cfg.src_burst_length = DMAC_CFG_SRC_4_BURST;
+  dma_set.channel_cfg.src_data_width = DMAC_CFG_SRC_DATA_WIDTH_16BIT;
+  dma_set.channel_cfg.reserved0 = 0;
+
+  dma_set.channel_cfg.dst_drq_type =
+      DMAC_CFG_TYPE_AUDIO;  // DMAC_CFG_TYPE_AUDIO
+  dma_set.channel_cfg.dst_addr_mode = DMAC_CFG_DEST_ADDR_TYPE_IO_MODE;
+  dma_set.channel_cfg.dst_burst_length = DMAC_CFG_DEST_4_BURST;
+  dma_set.channel_cfg.dst_data_width = DMAC_CFG_SRC_DATA_WIDTH_16BIT;
+  dma_set.channel_cfg.reserved1 = 0;
+
+  hdma = dma_request(0);
+  if (!hdma) {
+    kprintf("DMA: can't request dma\r\n");
+    return -1;
+  }
+  dma_setting(hdma, &dma_set);
+
+  kprintf("dma trans start ==>%x to %x len %d\n", src, dst, len);
+
+  dma_source_t *dma_source = (dma_source_t *)hdma;
+
+
+  dma_start(hdma, (u32)src, (u32)dst, len);
+  st = dma_querystatus(hdma);
+
+  timeout = cpu_read_ms();
+  while ((cpu_read_ms() - timeout < 100) && st) {
+    st = dma_querystatus(hdma);
+    kprintf("read ms %d\n", cpu_read_ms());
+  }
+  kprintf("st ==>%x\n", st);
+  if (st) {
+    kprintf("DMA: tran timeout! ret=%x\r\n", st);
+    dma_stop(hdma);
+    dma_release(hdma);
+    return -1;
+  }
+  dma_stop(hdma);
+  dma_release(hdma);
 
   return 1;
 }
