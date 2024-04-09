@@ -207,8 +207,8 @@ int dma_querystatus(u32 hdma) {
   }
   dma_channel_reg_t *channel = dma_source->channel;
 
-  kprintf("left_bytes %d src %x dst %x desc %x\n", channel->left_bytes,
-          channel->cur_src_addr, channel->cur_dst_addr, channel->desc_addr);
+  // kprintf("left_bytes %d src %x dst %x desc %x\n", channel->left_bytes,
+  //         channel->cur_src_addr, channel->cur_dst_addr, channel->desc_addr);
 
   channel_count = dma_source->channel_count;
 
