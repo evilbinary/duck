@@ -103,6 +103,10 @@ void exception_on_undef(interrupt_context_t *ic) {
   exception_process_error(current, ic, (void *)&exception_error_exit);
 }
 
+void exception_on_none(interrupt_context_t *ic) {
+  
+}
+
 void exception_init() {
   interrupt_regist_service(exception_process);
 
@@ -111,4 +115,6 @@ void exception_init() {
   exception_regist(EX_PREF_ABORT, exception_on_other);
   exception_regist(EX_RESET, exception_on_other);
   exception_regist(EX_UNDEF, exception_on_undef);
+  exception_regist(EX_NONE, exception_on_none);
+
 }

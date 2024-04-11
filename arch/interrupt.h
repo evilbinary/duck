@@ -28,6 +28,8 @@ enum {
   EX_TIMER = 9,
   EX_KEYBOARD = 10,
   EX_MOUSE = 11,
+  EX_AUDIO = 12,
+  EX_NONE = 13
 };
 
 void interrupt_regist(u32 vec, interrupt_handler_t handler);

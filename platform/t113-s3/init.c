@@ -8,8 +8,6 @@ static u32 cntfrq[MAX_CPU] = {
     0,
 };
 
-#define IRQ_TIMER0 91
-
 #define CLOCK_24M 24000000
 #define CTL_ENABLE 0x01
 #define CTL_RELOAD 0x02 /* reload ival */
@@ -130,7 +128,8 @@ void timer_init(int hz) {
 }
 
 void timer_end() {
-  int irq = gic_irqwho();
+  // int irq = gic_irqwho();
+  int irq = IRQ_TIMER0;
   gic_irqack(irq);
   write_cntv_tval(cntfrq[0]);
 
@@ -140,8 +139,20 @@ void timer_end() {
   timer->irq_status = IE_T0;
 }
 
-int interrupt_get_source(u32 no) {
+u32 interrupt_get_source(u32 no) {
+  u32 irq = gic_irqwho();
   no = EX_TIMER;
+
+  if (irq == IRQ_TIMER0) {
+    // kprintf("irq timer %d\n", irq);
+  } else if (irq == IRQ_AUDIO_CODEC) {
+    no = EX_AUDIO;
+    // kprintf("irq audio %d\n", irq);
+  } else {
+    no = EX_NONE;
+    gic_irqack(irq);
+  }
+
   return no;
 }
 

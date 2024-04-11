@@ -112,7 +112,7 @@ void gic_unpend(int irq) {
   gic.dist->icpend[x] = mask;
 }
 
-int gic_irqwho(void) { return gic.cpu->ia; }
+u32 gic_irqwho(void) { return gic.cpu->ia; }
 
 void gic_irqack(int irq) {
   gic.cpu->eoi = irq;

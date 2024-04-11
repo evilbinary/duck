@@ -9,6 +9,7 @@
 #include "kernel/kernel.h"
 
 #define SUNXI_DMA_MAX 16
+#define kprintf 
 
 static int dma_init_ok = -1;
 static dma_source_t dma_channel_source[SUNXI_DMA_MAX];
