@@ -45,6 +45,16 @@ static size_t write(device_t* dev, void* buf, size_t len) {
   return ret;
 }
 
+static void print_hex(u8* addr, u32 size) {
+  for (int x = 0; x < size; x++) {
+    kprintf("%02x ", addr[x]);
+    if (x != 0 && (x % 32) == 0) {
+      kprintf("\n");
+    }
+  }
+  kprintf("\n\r");
+}
+
 void sound_play(void* buf, size_t len) {
   void* phys = kpage_v2p(buf, 0);
   if (phys == NULL) {
@@ -52,9 +62,14 @@ void sound_play(void* buf, size_t len) {
     return;
   }
 
+
+  u32 val = io_read32(CODEC_BASE + 0x0024);
+  // kprintf("tx count %d len=%d\n",val,len);
+
   // AC_DAC_TXDATA
   u32* dac_txdata = CODEC_BASE + 0x0020;
-  dma_trans(0, 0, phys, dac_txdata, len);
+  dma_trans(1, 0, phys, dac_txdata, len);
+  
 
   // u32* p = buf;
   // u32 val = 0;
@@ -67,7 +82,7 @@ void sound_play(void* buf, size_t len) {
   //   }
   // }
 
-  kprintf("dma trans end %x %d\n", phys, len);
+  // kprintf("dma trans end %x %d\n", phys, len);
 }
 
 void audio_ccu() {
@@ -110,36 +125,36 @@ void audio_ccu() {
   val |= 1 << 31;  // PLL_EN
   io_write32(CCU_BASE + 0x0078, val);
 
-  // play back
-  //  c. PLL_Audio1 PLL_AUDIO1 frequency   PLL_AUDIO1_CTRL_REG  ccu 0x0080
-  val = io_read32(CCU_BASE + 0x0080);
-  //   PLL_AUDIO1 = 24MHz*N/M 3072MHz
-  val |= 4 << 16;  // PLL_P
-  val |= 39 << 8;  // PLL_N
-  val |= 0 << 0;   // PLL_M0
-  val |= 1 << 27;  // PLL_OUTPUT_GATE 1: Enable
-  val |= 1 << 30;  // PLL_LDO_EN
-  val |= 0 << 24;  // PLL_SDM_EN
-  // enable PLL_AUDIO1
-  val |= 1 << 31;  // PLL_EN
-  io_write32(CCU_BASE + 0x0080, val);
+  // // play back
+  // //  c. PLL_Audio1 PLL_AUDIO1 frequency   PLL_AUDIO1_CTRL_REG  ccu 0x0080
+  // val = io_read32(CCU_BASE + 0x0080);
+  // //   PLL_AUDIO1 = 24MHz*N/M 3072MHz
+  // val |= 4 << 16;  // PLL_P
+  // val |= 39 << 8;  // PLL_N
+  // val |= 0 << 0;   // PLL_M0
+  // val |= 1 << 27;  // PLL_OUTPUT_GATE 1: Enable
+  // val |= 1 << 30;  // PLL_LDO_EN
+  // val |= 0 << 24;  // PLL_SDM_EN
+  // // enable PLL_AUDIO1
+  // val |= 1 << 31;  // PLL_EN
+  // io_write32(CCU_BASE + 0x0080, val);
 
   log_info("codec init2\n");
 
   // PLL_AUDIO_PAT0_CTRL_REG 0x178
-  // val = io_read32(CCU_BASE + 0x178);
-  // val |= 1 << 31;  // SIG_DELT_PAT_EN
-  // val |= 1 << 29;  // SPR_FREQ_MODE
-  // val |= 0 << 20;  // WAVE_STEP
-  // val |= 0 << 19;  // SDM_CLK_SEL
-  // val |= 0x1EB85;  // WAVE_BOT
-  // io_write32(CCU_BASE + 0x178, val);
+  val = io_read32(CCU_BASE + 0x178);
+  val |= 1 << 31;  // SIG_DELT_PAT_EN
+  val |= 1 << 29;  // SPR_FREQ_MODE
+  val |= 0 << 20;  // WAVE_STEP
+  val |= 0 << 19;  // SDM_CLK_SEL
+  val |= 0x1EB85;  // WAVE_BOT
+  io_write32(CCU_BASE + 0x178, val);
 
   // PLL_AUDIO_PAT1_CTRL_REG 0x17C
-  // io_write32(CCU_BASE + 0x17C, 0x0);
+  io_write32(CCU_BASE + 0x17C, 0x0);
 
   // PLL_AUDIO_BIAS_REG 0x378
-  // io_write32(CCU_BASE + 0x378, 0x00030000);
+  io_write32(CCU_BASE + 0x378, 0x00030000);
 
   /* Wait pll stable */
   val = io_read32(CCU_BASE + 0x0078);
@@ -192,8 +207,8 @@ void codec_dac() {
   // volumn DAC_VOL_CTRL 4
   val = io_read32(CODEC_BASE + 4);
   val |= 1 << 16;    // DAC_VOL_SEL
-  val |= 0xa0 << 8;  // DAC_VOL_L 0xA0 = 0 dB 0xFF = 71.25 dB
-  val |= 0xa0 << 0;  // DAC_VOL_R 0xA0 = 0 dB 0xFF = 71.25 dB
+  val |= 0x0 << 8;  // DAC_VOL_L 0xA0 = 0 dB 0xFF = 71.25 dB
+  val |= 0x0 << 0;  // DAC_VOL_R 0xA0 = 0 dB 0xFF = 71.25 dB
   io_write32(CODEC_BASE + 4, val);
 }
 
@@ -325,7 +340,7 @@ void codec_enable() {
 
   // AC_DAC_DAP_CTR
   val = io_read32(CODEC_BASE + 0x00F0);
-  val |= 1 << 29;  // DDAP_DRC_EN
+  val |= 1 << 29;  // DDAP_DRC_EN //动态控制
   io_write32(CODEC_BASE + 0x00F0, val);
 
   // DAC_FIFOC
@@ -345,7 +360,6 @@ void codec_enable() {
   // AC_DAC_FIFOC
   val = io_read32(CODEC_BASE + 0x0010);
   val |= 1 << 4;  // DAC_DRQ_EN
-
   io_write32(CODEC_BASE + 0x0010, val);
 }
 
@@ -421,19 +435,19 @@ void codec_init() {
   codec_dac();
   codec_analog();
   codec_enable();
-  codec_param(16, 1, 44100);
+  codec_param(16, 2, 44100);
 
   // gic_enable(0, IRQ_AUDIO_CODEC);
 
   // codec_debug();
 
   // 生成正弦波 PCM 数据
-  generate_sine_wave(pcm_data, SAMPLE_RATE);
+  // generate_sine_wave(pcm_data, SAMPLE_RATE);
 
-  while (1) {
-    sound_play(pcm_data, SAMPLE_RATE);
-    cpu_delay_msec(4000);
-  }
+  // while (1) {
+  //   // sound_play(pcm_data, SAMPLE_RATE);
+  //   sound_play(test_pcm, test_pcm_len);
+  // }
 }
 
 int write_count = 0;

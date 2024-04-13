@@ -9,7 +9,7 @@
 #include "kernel/kernel.h"
 
 #define SUNXI_DMA_MAX 16
-// #define kprintf
+#define kprintf
 
 static int dma_init_ok = -1;
 static dma_source_t dma_channel_source[SUNXI_DMA_MAX];
@@ -322,21 +322,26 @@ u32 dma_trans(u32 channel, u32 mode, void *src, void *dst, size_t len) {
   u32 timeout = 0;
 
   // dma
-  dma_set.loop_mode = 0;
+  dma_set.loop_mode = 1;
   dma_set.wait_cyc = 8;
   dma_set.data_block_size = 32 / 8;
   // channel config (from dram to audio io)
   dma_set.channel_cfg.src_drq_type = DMAC_CFG_TYPE_DRAM;  // dram
   dma_set.channel_cfg.src_addr_mode = DMAC_CFG_SRC_ADDR_TYPE_LINEAR_MODE;
-  dma_set.channel_cfg.src_burst_length = DMAC_CFG_SRC_1_BURST;
-  dma_set.channel_cfg.src_data_width = DMAC_CFG_SRC_DATA_WIDTH_16BIT;
+  dma_set.channel_cfg.src_burst_length = DMAC_CFG_SRC_16_BURST;
+  dma_set.channel_cfg.src_data_width = DMAC_CFG_SRC_DATA_WIDTH_32BIT;
   dma_set.channel_cfg.reserved0 = 0;
 
   dma_set.channel_cfg.dst_drq_type = DMAC_CFG_TYPE_AUDIO;
   dma_set.channel_cfg.dst_addr_mode = DMAC_CFG_DEST_ADDR_TYPE_IO_MODE;
-  dma_set.channel_cfg.dst_burst_length = DMAC_CFG_DEST_4_BURST;
-  dma_set.channel_cfg.dst_data_width = DMAC_CFG_DEST_DATA_WIDTH_16BIT;
+  dma_set.channel_cfg.dst_burst_length = DMAC_CFG_DEST_16_BURST;
+  dma_set.channel_cfg.dst_data_width = DMAC_CFG_DEST_DATA_WIDTH_32BIT;
   dma_set.channel_cfg.reserved1 = 0;
+
+  dma_set.channel_cfg.src_burst_length = DMAC_CFG_SRC_16_BURST;
+  dma_set.channel_cfg.src_data_width = DMAC_CFG_SRC_DATA_WIDTH_32BIT;
+  dma_set.channel_cfg.dst_burst_length = DMAC_CFG_DEST_16_BURST;
+  dma_set.channel_cfg.dst_data_width = DMAC_CFG_DEST_DATA_WIDTH_32BIT;
 
   hdma = dma_request(0);
   if (!hdma) {
