@@ -241,8 +241,9 @@ void t113_flush_screen(vga_device_t *vga, u32 index) {
   // kprintf("flip %d %d %d\n",index,vga->width,vga->height);
   // rgb2nv12(vga->pframbuffer, vga->frambuffer, vga->width, vga->height);
   // kmemcpy(vga->pframbuffer, vga->frambuffer, vga->width * vga->height);
-  // cpu_invalid_tlb();
-  cpu_cache_flush_range(vga->pframbuffer, vga->width * vga->height);
+  cpu_invalid_tlb();
+  cache_inv_range(vga->pframbuffer,vga->width * vga->height*4);
+  cpu_cache_flush_range(vga->pframbuffer, vga->width * vga->height*4);
 }
 
 int gpu_init_mode(vga_device_t *vga, int mode) {
@@ -287,8 +288,8 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
 
   vga->framebuffer_index = 0;
   vga->framebuffer_count = 1;
-  vga->pframbuffer = 0x73e00000;
-  vga->frambuffer = 0xfb000000;
+  vga->pframbuffer = 0xfe000000;
+  vga->frambuffer  = 0xfb000000;
 
   vga->flip_buffer = t113_flush_screen;
   t113_lcd_init(vga);
@@ -316,7 +317,7 @@ int t113_lcd_init(vga_device_t *vga) {
   lcd->bytes_per_pixel = 4;
   lcd->index = 0;
 
-  vga->framebuffer_length = lcd->width * lcd->height * lcd->bytes_per_pixel * 8;
+  vga->framebuffer_length = lcd->width * lcd->height * lcd->bytes_per_pixel;
 
   log_debug("lcd %dx%d len= %d\n", lcd->width, lcd->height,
             vga->framebuffer_length);
