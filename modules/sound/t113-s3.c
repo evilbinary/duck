@@ -18,7 +18,19 @@
 #define DURATION 1
 #define AMPLITUDE 32767
 
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
+
 #include "test.h"
+
+struct sample_rate {
+  unsigned int rate;
+  unsigned int bit;
+};
+
+struct sample_rate rate_tab[] = {
+    {44100, 0}, {48000, 0}, {8000, 5},  {32000, 1},  {22050, 2}, {24000, 2},
+    {16000, 3}, {11025, 4}, {12000, 4}, {192000, 6}, {96000, 7}, {88200, 7},
+};
 
 static size_t read(device_t* dev, void* buf, size_t len) {
   u32 ret = 0;
@@ -40,32 +52,22 @@ void sound_play(void* buf, size_t len) {
     return;
   }
 
-  // cpu_delay_msec(20);
-
   // AC_DAC_TXDATA
   u32* dac_txdata = CODEC_BASE + 0x0020;
+  dma_trans(0, 0, phys, dac_txdata, len);
 
-  // dma_trans(0, 0, buf, dac_txdata, len);
-
-  u32* p = buf;
-  u32 val = 0;
-  for (int i = 0; i < len/4;i++) {
-    io_write32(dac_txdata, p[i]);
-    val = io_read32(CODEC_BASE + 0x0014);
-    while ((val & (1 << 23))) {
-    }
-  }
-
-  // u16* p = buf;
+  // u32* p = buf;
   // u32 val = 0;
-  // for (int i = 0; i < len / 2; i++) {
-  //   io_write16(dac_txdata, p[i]);
+  // for (int i = 0; i < len;) {
+  //   io_write32(dac_txdata, p[i]);
+  //   i += 4;
+  //   p++;
   //   val = io_read32(CODEC_BASE + 0x0014);
   //   while ((val & (1 << 23))) {
   //   }
   // }
 
-  // kprintf("dma trans end %x %d\n", phys, len);
+  kprintf("dma trans end %x %d\n", phys, len);
 }
 
 void audio_ccu() {
@@ -176,23 +178,6 @@ void codec_dac() {
 
   io_write32(CODEC_BASE + 0x0010, val);
 
-  // DAC_FIFOC
-  // val = io_read32(CODEC_BASE + 0x0010);
-
-  // val |= 0 << 29;  // DAC_FS   010: 24KHz 001: 32KHz 000: 48KHz
-  // val |=
-  //     1 << 6;  // DAC_MONO_EN 0: Stereo, 64 Levels FIFO 1: Mono, 128 Levels
-  //     FIFO
-  // val |= 1 << 5;   // TX_SAMPLE_BITS 0: 16 bits 1: 20 bits
-  // val |= 1 << 24;  // FIFO_MODE
-  // val |= 1 << 4;   // DAC FIFO Empty DRQ enable clear fifo
-  // val |= 0 << 8;   // TX_TRI_LEVEL
-  // val |= 1 << 28;  // FIR_VER
-  // val |= 1 << 26;  // SEND_LASAT
-  // val |= 3 << 21;  // DAC_DRQ_CLR_CNT
-  // val |= 1 << 0;   // FIFO_FLUSH
-  // io_write32(CODEC_BASE + 0x0010, val);
-
   log_info("codec init3.1 %x\n", io_read32(CODEC_BASE + 0x0010));
 
   // AC_DAC_DPC
@@ -238,8 +223,8 @@ void codec_analog() {
   val = io_read32(CODEC_BASE + 0x0348);
   val |= 1 << 31;    // ALDO_EN
   val |= 1 << 30;    // HPLDO_EN
-  val |= 3 << 12;    // ALDO_OUTPUT_VOLTAGE 011: 1.80 V
-  val |= 3 << 8;     // HPLDO_OUTPUT_VOLTAGE 011: 1.80 V
+  val |= 0 << 12;    // ALDO_OUTPUT_VOLTAGE 011: 1.80 V
+  val |= 0 << 8;     // HPLDO_OUTPUT_VOLTAGE 011: 1.80 V
   val |= 0x19 << 0;  // BG_TRIM
   io_write32(CODEC_BASE + 0x0348, val);
 
@@ -400,41 +385,29 @@ void codec_param(int format, int channal, int freq) {
     val &= ~(0 << 6);
     val |= (0 << 6);
   }
-  if (freq == 44100) {
-    val &= ~(0);
-    val |= 0;
-  } else if (freq == 48100) {
-    val &= ~(0);
-    val |= 0;
-  } else if (freq == 3200) {
-    val &= ~(1);
-    val |= 1;
+  for (int i = 0; i < ARRAY_SIZE(rate_tab); i++) {
+    if (freq == rate_tab[i].rate) {
+      val &= ~(7 << 29);
+      val |= rate_tab[i].bit << 29;
+    }
   }
 
   io_write32(CODEC_BASE + 0x0010, val);
 }
 
-void sound_create_square_wave(unsigned short* data, int size, uint32_t freq) {
-  const int sample = 48000;
-  const unsigned short amplitude = 16000; /* between 1 and 32767 */
-  const int period = freq ? sample / freq : 0;
-  const int half = period / 2;
+#define SAMPLE_RATE 44100  // 采样率
+#define AMPLITUDE 32767    // 振幅
 
-  kassert(freq);
-  if (size % 2) size--;
+// 正弦波查表
+#define TABLE_SIZE 1000
 
-  while (size) {
-    int i;
-    for (i = 0; size && i < half; i++) {
-      size -= 2;
-      *data++ = amplitude;
-      *data++ = amplitude;
-    }
-    for (i = 0; size && i < period - half; i++) {
-      size -= 2;
-      *data++ = -amplitude;
-      *data++ = -amplitude;
-    }
+int16_t pcm_data[SAMPLE_RATE];
+
+// 生成正弦波 PCM 数据
+void generate_sine_wave(int16_t* pcm_data, int num_samples) {
+  for (int i = 0; i < num_samples; i++) {
+    int index = i * TABLE_SIZE / SAMPLE_RATE;
+    pcm_data[i] = sine_table[index];
   }
 }
 
@@ -446,34 +419,21 @@ void codec_init() {
   audio_ccu();
   // 2.  Configure the sample rate and data transfer format, then open the DAC.
   codec_dac();
-
   codec_analog();
-
   codec_enable();
+  codec_param(16, 1, 44100);
 
   // gic_enable(0, IRQ_AUDIO_CODEC);
+
   // codec_debug();
 
-  // kprintf("pcm len %d\n", test_pcm_len);
-
-  codec_param(24, 1, 44100);
+  // 生成正弦波 PCM 数据
+  generate_sine_wave(pcm_data, SAMPLE_RATE);
 
   while (1) {
-    u16* p = test_pcm;
-    sound_play(p, test_pcm_len);
+    sound_play(pcm_data, SAMPLE_RATE);
     cpu_delay_msec(4000);
   }
-
-  // int data_size = 10240;
-  // unsigned int* data = kmalloc(data_size, DEVICE_TYPE);
-
-  // sound_create_square_wave((unsigned short*)data,
-  //                          data_size / sizeof(unsigned short), SAMPLE_RATE);
-
-  // while (1) {
-  //   sound_play(data, data_size);
-  //   cpu_delay_msec(4000);
-  // }
 }
 
 int write_count = 0;
@@ -512,15 +472,7 @@ void* audio_handler(interrupt_context_t* ic) {
 
   kprintf("irq TXE_INT1\n");
 
-  u32* p = test_pcm;
-  kprintf("irq TXE_INT2\n");
-
-  if (write_count > (test_pcm_len / 4)) {
-    write_count = 0;
-  }
-
-  sound_play(&p[write_count++], 4);
-  kprintf("irq TXE_INT3 %d\n", write_count);
+  sound_play(pcm_data, SAMPLE_RATE);
 
   gic_irqack(IRQ_AUDIO_CODEC);
 
