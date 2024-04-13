@@ -12,6 +12,13 @@
 #define NUM_SAMPLES 10000
 #define FREQUENCY 440  // 440 Hz
 #define M_PI 3.1415926
+#define BUFFER_SIZE sizeof(int)  // 缓冲区大小
+
+#define NUM_CHANNELS 1
+#define DURATION 1
+#define AMPLITUDE 32767
+
+#include "test.h"
 
 static size_t read(device_t* dev, void* buf, size_t len) {
   u32 ret = 0;
@@ -33,11 +40,30 @@ void sound_play(void* buf, size_t len) {
     return;
   }
 
-  // cpu_delay_msec(10);
+  // cpu_delay_msec(20);
+
   // AC_DAC_TXDATA
   u32* dac_txdata = CODEC_BASE + 0x0020;
-  // io_write32(dac_txdata, buf);
-  dma_trans(0, 0, phys, dac_txdata, len);
+
+  // dma_trans(0, 0, buf, dac_txdata, len);
+
+  u32* p = buf;
+  u32 val = 0;
+  for (int i = 0; i < len/4;i++) {
+    io_write32(dac_txdata, p[i]);
+    val = io_read32(CODEC_BASE + 0x0014);
+    while ((val & (1 << 23))) {
+    }
+  }
+
+  // u16* p = buf;
+  // u32 val = 0;
+  // for (int i = 0; i < len / 2; i++) {
+  //   io_write16(dac_txdata, p[i]);
+  //   val = io_read32(CODEC_BASE + 0x0014);
+  //   while ((val & (1 << 23))) {
+  //   }
+  // }
 
   // kprintf("dma trans end %x %d\n", phys, len);
 }
@@ -134,20 +160,20 @@ void codec_dac() {
   val = io_read32(CODEC_BASE + 0x0010);
 
   val |= 0 << 29;  // DAC_FS  000: 48KHz 010: 24KHz 001: 32KHz
-  val |=
-      1 << 6;  // DAC_MONO_EN 0: Stereo, 64 Levels FIFO 1: Mono, 128 Levels FIFO
-  val |= 0 << 5;   // TX_SAMPLE_BITS 0: 16 bits 1: 24 bits
-  val |= 1 << 24;  // FIFO_MODE
-  val |= 0 << 4;   // DAC FIFO Empty DRQ enable clear fifo
-  val |= 1 << 3;   // DAC_IRQ_EN
-  val |= 1 << 2;   // FIFO_UNDERRUN_IRQ_EN
-  val |= 1 << 1;   // FIFO_OVERRUN_IRQ_EN
-
-  val |= 0 << 8;   // TX_TRI_LEVEL
   val |= 0 << 28;  // FIR_VER
   val |= 1 << 26;  // SEND_LASAT
+  val |= 1 << 24;  // FIFO_MODE
   val |= 0 << 21;  // DAC_DRQ_CLR_CNT
-  val |= 1 << 0;   // FIFO_FLUSH elf clear to ‘0’
+  val |= 0 << 8;   // TX_TRI_LEVEL
+  val |=
+      1 << 6;  // DAC_MONO_EN 0: Stereo, 64 Levels FIFO 1: Mono, 128 Levels FIFO
+  val |= 0 << 5;  // TX_SAMPLE_BITS 0: 16 bits 1: 20 bits
+  val |= 0 << 4;  // DAC FIFO Empty DRQ enable clear fifo
+  val |= 1 << 3;  // DAC_IRQ_EN
+  val |= 1 << 2;  // FIFO_UNDERRUN_IRQ_EN
+  val |= 1 << 1;  // FIFO_OVERRUN_IRQ_EN
+  val |= 0 << 0;  // FIFO_FLUSH elf clear to ‘0’
+
   io_write32(CODEC_BASE + 0x0010, val);
 
   // DAC_FIFOC
@@ -157,7 +183,7 @@ void codec_dac() {
   // val |=
   //     1 << 6;  // DAC_MONO_EN 0: Stereo, 64 Levels FIFO 1: Mono, 128 Levels
   //     FIFO
-  // val |= 1 << 5;   // TX_SAMPLE_BITS 0: 16 bits 1: 24 bits
+  // val |= 1 << 5;   // TX_SAMPLE_BITS 0: 16 bits 1: 20 bits
   // val |= 1 << 24;  // FIFO_MODE
   // val |= 1 << 4;   // DAC FIFO Empty DRQ enable clear fifo
   // val |= 0 << 8;   // TX_TRI_LEVEL
@@ -182,7 +208,7 @@ void codec_dac() {
   val = io_read32(CODEC_BASE + 4);
   val |= 1 << 16;    // DAC_VOL_SEL
   val |= 0xa0 << 8;  // DAC_VOL_L 0xA0 = 0 dB 0xFF = 71.25 dB
-  val | 0xa0 << 0;   // DAC_VOL_R 0xA0 = 0 dB 0xFF = 71.25 dB
+  val |= 0xa0 << 0;  // DAC_VOL_R 0xA0 = 0 dB 0xFF = 71.25 dB
   io_write32(CODEC_BASE + 4, val);
 }
 
@@ -191,10 +217,12 @@ void codec_analog() {
   // DAC  DAC Analog Control
   val = io_read32(CODEC_BASE + 0x0310);
 
+  // val |= 1 << 23;  // CURRENT_TEST_SELECT
+
   val |= 1 << 20;  // IOPVRS 01: 7 uA
+  val |= 1 << 17;  // IOPDACS
   val |= 1 << 15;  // DACL_EN
   val |= 1 << 14;  // DACR_EN
-  val |= 1 << 17;  // IOPDACS
 
   // val |= 1 << 10;    // DACR_MUTE ?
   // val |= 0x1f << 0;  // LINEOUT_VOL?
@@ -208,11 +236,11 @@ void codec_analog() {
 
   // POWER Analog Control
   val = io_read32(CODEC_BASE + 0x0348);
-  val |= 1 << 30;  // HPLDO_EN
-  val |= 1 << 31;  // ALDO_EN
-  val |= 3 << 12;  // ALDO_OUTPUT_VOLTAGE 011: 1.80 V
-  val |= 3 << 8;   // HPLDO_OUTPUT_VOLTAGE 011: 1.80 V
-  val |= 19 << 0;  // BG_TRIM
+  val |= 1 << 31;    // ALDO_EN
+  val |= 1 << 30;    // HPLDO_EN
+  val |= 3 << 12;    // ALDO_OUTPUT_VOLTAGE 011: 1.80 V
+  val |= 3 << 8;     // HPLDO_OUTPUT_VOLTAGE 011: 1.80 V
+  val |= 0x19 << 0;  // BG_TRIM
   io_write32(CODEC_BASE + 0x0348, val);
 
   // RAMP_REG Ramp Control Register
@@ -225,15 +253,14 @@ void codec_analog() {
   // HP2_REG
   val = io_read32(CODEC_BASE + 0x0340);
   val |= 1 << 31;  // HPFB_BUF_EN
-  val |= 1 << 17;  // HPFB_IN_EN
-  val |= 1 << 15;  // RAMP_OUT_EN
-  val |= 1 << 19;  // RSWITCH
+  val |= 1 << 26;  // HPFB_RES
+  val |= 2 << 24;  // OPDRV_CUR
+  val |= 1 << 22;  // IOPHP
   val |= 1 << 21;  // HP_DRVEN
   val |= 1 << 20;  // HP_DRVOUTEN
-
-  val |= 1 << 26;  // HPFB_RES
-  val |= 1 << 24;  // OPDRV_CUR
-  val |= 1 << 22;  // IOPHP
+  val |= 1 << 19;  // RSWITCH
+  val |= 1 << 17;  // HPFB_IN_EN
+  val |= 1 << 15;  // RAMP_OUT_EN
   val |= 2 << 13;  // RAMP_FINAL_STATE_RES
 
   io_write32(CODEC_BASE + 0x0340, val);
@@ -349,6 +376,68 @@ void codec_debug() {
   io_write32(CODEC_BASE + 0x0028, val);
 }
 
+void codec_param(int format, int channal, int freq) {
+  u32 val = 0;
+  val = io_read32(CODEC_BASE + 0x0010);
+  if (format == 16) {
+    // DAC_FIFOC
+    val &= ~(3 << 24);
+    val |= 3 << 24;
+    val &= ~(0 << 5);
+    val |= (0 << 5);
+
+  } else if (format == 24) {
+    // DAC_FIFOC
+    val &= ~(0 << 24);
+    val |= 0 << 24;
+    val &= ~(1 << 5);
+    val |= (1 << 5);
+  }
+  if (channal == 1) {  // mono
+    val &= ~(1 << 6);
+    val |= (1 << 6);
+  } else if (channal == 2) {  // stereo
+    val &= ~(0 << 6);
+    val |= (0 << 6);
+  }
+  if (freq == 44100) {
+    val &= ~(0);
+    val |= 0;
+  } else if (freq == 48100) {
+    val &= ~(0);
+    val |= 0;
+  } else if (freq == 3200) {
+    val &= ~(1);
+    val |= 1;
+  }
+
+  io_write32(CODEC_BASE + 0x0010, val);
+}
+
+void sound_create_square_wave(unsigned short* data, int size, uint32_t freq) {
+  const int sample = 48000;
+  const unsigned short amplitude = 16000; /* between 1 and 32767 */
+  const int period = freq ? sample / freq : 0;
+  const int half = period / 2;
+
+  kassert(freq);
+  if (size % 2) size--;
+
+  while (size) {
+    int i;
+    for (i = 0; size && i < half; i++) {
+      size -= 2;
+      *data++ = amplitude;
+      *data++ = amplitude;
+    }
+    for (i = 0; size && i < period - half; i++) {
+      size -= 2;
+      *data++ = -amplitude;
+      *data++ = -amplitude;
+    }
+  }
+}
+
 void codec_init() {
   log_info("codec init %x\n", CODEC_BASE);
   u32 val;
@@ -364,26 +453,77 @@ void codec_init() {
 
   // gic_enable(0, IRQ_AUDIO_CODEC);
   // codec_debug();
+
+  // kprintf("pcm len %d\n", test_pcm_len);
+
+  codec_param(24, 1, 44100);
+
+  while (1) {
+    u16* p = test_pcm;
+    sound_play(p, test_pcm_len);
+    cpu_delay_msec(4000);
+  }
+
+  // int data_size = 10240;
+  // unsigned int* data = kmalloc(data_size, DEVICE_TYPE);
+
+  // sound_create_square_wave((unsigned short*)data,
+  //                          data_size / sizeof(unsigned short), SAMPLE_RATE);
+
+  // while (1) {
+  //   sound_play(data, data_size);
+  //   cpu_delay_msec(4000);
+  // }
 }
+
+int write_count = 0;
 
 void* audio_handler(interrupt_context_t* ic) {
   kprintf("audio hndler\n");
-  u32 val=0;
+  u32 val = 0;
 
   // AC_DAC_FIFOS
   val = io_read32(CODEC_BASE + 0x0014);
 
-  if (val & (1 << 2)) {
-    val |= 1 << 2;  // TXU_INT
-    kprintf("over run\n");
+  u32 count = val >> 8 & 0xe;
+  kprintf("count %d\n", count);
+
+  // if (val & (1 << 2)) {
+  //   val &= ~(1 << 2);
+  //   kprintf("over run\n");
+  //   io_write32(CODEC_BASE + 0x0014, val);
+
+  //   while (!(io_read32(CODEC_BASE + 0x0014) & (1 << 2)));
+  // }
+  // if (val & (1 << 1)) {
+  //   val &= ~(1 << 1);
+  //   kprintf("under run\n");
+  //   io_write32(CODEC_BASE + 0x0014, val);
+
+  //   while (!(io_read32(CODEC_BASE + 0x0014) & (1 << 1)));
+  // }
+
+  if (val & (1 << 3)) {
+    val &= ~(1 << 3);
+    kprintf("irq TXE_INT\n");
+    io_write32(CODEC_BASE + 0x0014, val);
+    while (!(io_read32(CODEC_BASE + 0x0014) & (1 << 3)));
   }
-  if (val & (1 << 1)) {
-    val |= 1 << 1;  // TXO_INT
-    kprintf("under run\n");
+
+  kprintf("irq TXE_INT1\n");
+
+  u32* p = test_pcm;
+  kprintf("irq TXE_INT2\n");
+
+  if (write_count > (test_pcm_len / 4)) {
+    write_count = 0;
   }
-  io_write32(CODEC_BASE + 0x0014, val);
+
+  sound_play(&p[write_count++], 4);
+  kprintf("irq TXE_INT3 %d\n", write_count);
 
   gic_irqack(IRQ_AUDIO_CODEC);
+
   return NULL;
 }
 
@@ -396,6 +536,8 @@ int sound_init(void) {
   dev->id = DEVICE_SB;
   dev->type = DEVICE_TYPE_BLOCK;
   device_add(dev);
+
+  gic_irq_priority(0, IRQ_AUDIO_CODEC, 10);
 
   exception_regist(EX_AUDIO, audio_handler);
 
