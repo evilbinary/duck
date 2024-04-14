@@ -131,14 +131,14 @@ void timer_init(int hz) {
 
 void timer_end() {
   // int irq = gic_irqwho();
-  int irq = IRQ_TIMER0;
-  gic_irqack(irq);
   write_cntv_tval(cntfrq[0]);
 
   struct t113_s3_timer *timer = (struct t113_s3_timer *)TIMER_BASE;
 
   // kprintf("timer end %d\n",irq);
   timer->irq_status = IE_T0;
+  int irq = IRQ_TIMER0;
+  gic_irqack(irq);
 }
 
 u32 interrupt_get_source(u32 no) {
@@ -150,9 +150,14 @@ u32 interrupt_get_source(u32 no) {
   } else if (irq == IRQ_AUDIO_CODEC) {
     no = EX_AUDIO;
     // kprintf("irq audio %d\n", irq);
-  } else {
+  } else if (irq == 1023) {
     no = EX_NONE;
     gic_irqack(irq);
+  } else if (irq == IRQ_DMAC) {
+    no = EX_DMA;
+     gic_irqack(irq);
+  } else {
+    kprintf("irq else %d\n", irq);
   }
 
   return no;

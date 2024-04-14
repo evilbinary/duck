@@ -95,8 +95,8 @@ typedef struct {
 
 typedef struct {
   void *m_data;
-  // void (*m_func)(void *data);
-  void (*m_func)(void);
+  void (*m_func)(void *data);
+  // void (*m_func)(void);
 } dma_irq_handler_t;
 
 typedef struct {
@@ -143,6 +143,11 @@ typedef struct {
 
 #define DMA_RST_OFS 16
 #define DMA_GATING_OFS 0
+
+/*dma int config*/
+#define DMA_PKG_HALF_INT (1 << 0)
+#define DMA_PKG_END_INT (1 << 1)
+#define DMA_QUEUE_END_INT (1 << 2)
 
 void dma_init_all(void);
 void dma_exit(void);

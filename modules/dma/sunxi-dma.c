@@ -9,7 +9,8 @@
 #include "kernel/kernel.h"
 
 #define SUNXI_DMA_MAX 16
-#define kprintf
+// #define kprintf
+#define log_debug
 
 static int dma_init_ok = -1;
 static dma_source_t dma_channel_source[SUNXI_DMA_MAX];
@@ -19,20 +20,60 @@ static dma_source_t dma_channel_source[SUNXI_DMA_MAX];
 
 dma_desc_t *dma_channel_desc = NULL;
 
+void *dma_handler(interrupt_context_t *ic) {
+  int irq = gic_irqwho();
+
+  int i;
+  uint pending;
+  u32 channel_no=0;
+  dma_reg_t *dma_reg = (dma_reg_t *)SUNXI_DMA_BASE;
+
+  for (i = 0; i < 8 && i < SUNXI_DMA_MAX; i++) {
+    pending = (DMA_PKG_END_INT << (i * 4));
+    if (dma_reg->irq_pending0 & pending) {
+      dma_reg->irq_pending0 = pending;
+      log_debug("dma pedding %d\n", i);
+
+      if (dma_channel_source[i].dma_func.m_func != NULL) {
+        dma_channel_source[i].dma_func.m_func(
+            dma_channel_source[i].dma_func.m_data);
+      }
+    }
+  }
+  for (i = 8; i < SUNXI_DMA_MAX; i++) {
+    pending = (DMA_PKG_END_INT << ((i - 8) * 4));
+    if (dma_reg->irq_pending1 & pending) {
+      dma_reg->irq_pending1 = pending;
+
+      if (dma_channel_source[i].dma_func.m_func != NULL) {
+        dma_channel_source[i].dma_func.m_func(
+            dma_channel_source[i].dma_func.m_data);
+      }
+    }
+  }
+
+
+  gic_irqack(irq);
+
+  kprintf("dma handler %d\n",irq);
+
+  return NULL;
+}
+
 void dma_init_all(void) {
   int i;
   dma_reg_t *const dma_reg = (dma_reg_t *)DMA_BASE;
   if (dma_init_ok > 0) return;
 
-  kprintf("dma init\n");
+  log_debug("dma init\n");
   page_map(DMA_BASE, DMA_BASE, 0);
 
-  kprintf("ccu base %x\n", ccu);
+  log_debug("ccu base %x\n", ccu);
 
   /* dma : mbus clock gating */
   ccu->mbus_gate |= 1 << 0;  // DMA_MCLK_EN
 
-  kprintf("ccu bus gate %x\n", ccu->mbus_gate);
+  log_debug("ccu bus gate %x\n", ccu->mbus_gate);
 
   /* dma reset */
   ccu->dma_gate_reset |= 1 << DMA_RST_OFS;
@@ -40,10 +81,10 @@ void dma_init_all(void) {
   /* dma gating */
   ccu->dma_gate_reset |= 1 << DMA_GATING_OFS;
 
-  kprintf("ccu gate reset %x\n", ccu->dma_gate_reset);
+  log_debug("ccu gate reset %x\n", ccu->dma_gate_reset);
 
-  dma_reg->irq_en0 = 1;
-  dma_reg->irq_en1 = 1;
+  dma_reg->irq_en0 = 0;
+  dma_reg->irq_en1 = 0;
 
   dma_reg->irq_pending0 = 0xffffffff;
   dma_reg->irq_pending1 = 0xffffffff;
@@ -52,7 +93,7 @@ void dma_init_all(void) {
   dma_reg->auto_gate &= ~(0x7 << 0);
   dma_reg->auto_gate |= 0x7 << 0;
 
-  kprintf("dma_reg auto_gate %x\n", dma_reg->auto_gate);
+  log_debug("dma_reg auto_gate %x\n", dma_reg->auto_gate);
 
   memset((void *)dma_channel_source, 0, SUNXI_DMA_MAX * sizeof(dma_source_t));
 
@@ -64,13 +105,14 @@ void dma_init_all(void) {
     dma_channel_source[i].channel = &(dma_reg->channel[i]);
     dma_channel_source[i].desc = &dma_channel_desc[i];
 
-    kprintf("dma %d channel %x desc %x\n", i, dma_channel_source[i].channel,
-            dma_channel_source[i].desc);
+    log_debug("dma %d channel %x desc %x\n", i, dma_channel_source[i].channel,
+              dma_channel_source[i].desc);
   }
 
   dma_init_ok = 1;
 
-  kprintf("dma init end\n");
+  exception_regist(EX_DMA, dma_handler);
+  log_debug("dma init end\n");
 }
 
 void dma_exit(void) {
@@ -118,7 +160,7 @@ u32 dma_request(u32 dmatype) {
     if (dma_channel_source[i].used == 0) {
       dma_channel_source[i].used = 1;
       dma_channel_source[i].channel_count = i;
-      kprintf("DMA: USE CHANNEL %u\r\n", i);
+      log_debug("DMA: USE CHANNEL %u\r\n", i);
       return (u32)&dma_channel_source[i];
     }
   }
@@ -160,20 +202,40 @@ int dma_setting(u32 hdma, dma_set_t *cfg) {
   return 0;
 }
 
+void dma_set_mode(u32 hdma, u32 mode) {
+  dma_reg_t *dma_reg = (dma_reg_t *)DMA_BASE;
+  dma_source_t *dma_source = (dma_source_t *)hdma;
+  u32 channel_no = dma_source->channel_count;
+
+  if (mode == 1) {
+    if (channel_no < 8) {
+      dma_reg->irq_en0 |= ((DMA_PKG_END_INT) << (channel_no * 4));
+      log_debug("dma reg %x channel %x\n", dma_reg->irq_en0, channel_no);
+    } else {
+      dma_reg->irq_en1 |= ((DMA_PKG_END_INT) << ((channel_no - 8) * 4));
+    }
+    gic_irq_priority(0, IRQ_DMAC, 10);
+    gic_irq_enable(IRQ_DMAC);
+  }
+}
+
 int dma_start(u32 hdma, u32 saddr, u32 daddr, u32 bytes) {
   dma_source_t *dma_source = (dma_source_t *)hdma;
   dma_channel_reg_t *channel = dma_source->channel;
   dma_desc_t *desc = dma_source->desc;
 
+  u32 channel_no = dma_source->channel_count;
+
   if (!dma_source->used) return -1;
 
-  kprintf("dma desc %x channel %x\n", desc, channel);
+  log_debug("dma desc %x channel %x\n", desc, channel);
 
   /*config desc */
   desc->source_addr = saddr;
   desc->dest_addr = daddr;
   desc->byte_count = bytes;
 
+  cpu_cache_flush_range(desc, (u32)desc + sizeof(dma_desc_t));
   /* start dma */
   dmb();
   channel->desc_addr = (u32)desc;
@@ -181,8 +243,8 @@ int dma_start(u32 hdma, u32 saddr, u32 daddr, u32 bytes) {
   channel->enable = 1;
   channel->pause = 0;
   dmb();
-  kprintf("dma src %x des %x count %d\n", desc->source_addr, desc->dest_addr,
-          desc->byte_count);
+  log_debug("dma src %x des %x count %d\n", desc->source_addr, desc->dest_addr,
+            desc->byte_count);
   return 0;
 }
 
@@ -231,8 +293,8 @@ int dma_test() {
   u32 timeout;
   u32 i, valid;
 
-  kprintf("DMA: test 0x%08x ====> 0x%08x, len %uKB \r\n", (u32)src_addr,
-          (u32)dst_addr, (len / 1024));
+  log_debug("DMA: test 0x%08x ====> 0x%08x, len %uKB \r\n", (u32)src_addr,
+            (u32)dst_addr, (len / 1024));
 
   // dma
   dma_set.loop_mode = 1;
@@ -253,11 +315,13 @@ int dma_test() {
 
   hdma = dma_request(0);
   if (!hdma) {
-    kprintf("DMA: can't request dma\r\n");
+    log_debug("DMA: can't request dma\r\n");
     return -1;
   }
 
   dma_setting(hdma, &dma_set);
+
+  dma_set_mode(hdma, 1);
 
   // prepare data
   for (i = 0; i < (len / 4); i += 4) {
@@ -335,40 +399,42 @@ u32 dma_trans(u32 channel, u32 mode, void *src, void *dst, size_t len) {
   dma_set.channel_cfg.dst_drq_type = DMAC_CFG_TYPE_AUDIO;
   dma_set.channel_cfg.dst_addr_mode = DMAC_CFG_DEST_ADDR_TYPE_IO_MODE;
   dma_set.channel_cfg.dst_burst_length = DMAC_CFG_DEST_16_BURST;
-  dma_set.channel_cfg.dst_data_width = DMAC_CFG_DEST_DATA_WIDTH_32BIT;
+  dma_set.channel_cfg.dst_data_width = DMAC_CFG_DEST_DATA_WIDTH_16BIT;
   dma_set.channel_cfg.reserved1 = 0;
 
-  dma_set.channel_cfg.src_burst_length = DMAC_CFG_SRC_16_BURST;
+  dma_set.channel_cfg.src_burst_length = DMAC_CFG_SRC_4_BURST;
   dma_set.channel_cfg.src_data_width = DMAC_CFG_SRC_DATA_WIDTH_32BIT;
-  dma_set.channel_cfg.dst_burst_length = DMAC_CFG_DEST_16_BURST;
+  dma_set.channel_cfg.dst_burst_length = DMAC_CFG_DEST_4_BURST;
   dma_set.channel_cfg.dst_data_width = DMAC_CFG_DEST_DATA_WIDTH_32BIT;
 
   hdma = dma_request(0);
   if (!hdma) {
-    kprintf("DMA: can't request dma\r\n");
+    log_debug("DMA: can't request dma\r\n");
     return -1;
   }
   dma_setting(hdma, &dma_set);
 
-  kprintf("dma trans start ==>%x to %x len %d\n", src, dst, len);
+  log_debug("dma trans start ==>%x to %x len %d\n", src, dst, len);
 
   dma_source_t *dma_source = (dma_source_t *)hdma;
+
+  dma_set_mode(hdma, mode);
 
   dma_start(hdma, (u32)src, (u32)dst, len);
 
   timeout = cpu_read_ms();
   while ((cpu_read_ms() - timeout < 100) && st) {
     st = dma_querystatus(hdma);
-    kprintf("read ms %d\n", cpu_read_ms());
+    log_debug("read ms %d\n", cpu_read_ms());
   }
-  kprintf("st ==>%x\n", st);
+  log_debug("st ==>%x\n", st);
   if (st) {
-    kprintf("DMA: tran timeout! ret=%x\r\n", st);
-    dma_stop(hdma);
+    log_debug("DMA: tran timeout! ret=%x\r\n", st);
+    // dma_stop(hdma);
     dma_release(hdma);
     return -1;
   }
-  dma_stop(hdma);
+  // dma_stop(hdma);
   dma_release(hdma);
 
   return 1;

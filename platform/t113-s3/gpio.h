@@ -48,6 +48,7 @@ struct t113_s3_timer {
 
 #define IRQ_AUDIO_CODEC 57
 #define IRQ_TIMER0 91
-
+#define IRQ_DMAC 82
+#define IRQ_DMACS 83
 
 #endif

@@ -19,7 +19,7 @@
 #define AMPLITUDE 32767
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
-#define TRANS_CPU 1
+// #define TRANS_CPU 1
 
 #include "test.h"
 
@@ -73,7 +73,6 @@ void sound_play(void* buf, size_t len) {
   cpu_cache_flush_range(buf, (u32)buf + len);
 #ifdef TRANS_CPU
   u32* p = buf;
-  codec_enable();
   for (int i = 0; i < len;) {
     io_write32(dac_txdata, p[i]);
     i += 4;
@@ -85,8 +84,7 @@ void sound_play(void* buf, size_t len) {
     }
   }
 #else
-  dma_trans(0, 0, phys, dac_txdata, len);
-  codec_enable();
+  dma_trans(0, 1, phys, dac_txdata, len);
 #endif
 
   // kprintf("dma trans end %x %d\n", phys, len);
@@ -198,7 +196,7 @@ void codec_dac() {
   val |= 1 << 26;  // SEND_LASAT
   val |= 1 << 24;  // FIFO_MODE
   val |= 0 << 21;  // DAC_DRQ_CLR_CNT
-  val |= 0 << 8;   // TX_TRI_LEVEL
+  val |= 32 << 8;   // TX_TRIG_LEVEL
   val |=
       1 << 6;  // DAC_MONO_EN 0: Stereo, 64 Levels FIFO 1: Mono, 128 Levels FIFO
   val |= 0 << 5;  // TX_SAMPLE_BITS 0: 16 bits 1: 20 bits
@@ -379,6 +377,10 @@ void codec_enable(int enable) {
   val |= 1 << 1;  // FIFO_OVERRUN_IRQ_EN
   val |= 1 << 4;  // DAC_DRQ_EN
   io_write32(CODEC_BASE + 0x0010, val);
+
+
+  // gic_irq_enable( IRQ_AUDIO_CODEC);
+
 }
 
 void codec_debug() {
@@ -458,9 +460,9 @@ void codec_init() {
   codec_analog();
   codec_param(16, 2, 44100);
 
-  // gic_enable(0, IRQ_AUDIO_CODEC);
-
   // codec_debug();
+
+  codec_enable(1);
 
   // // 生成正弦波 PCM 数据
   // generate_sine_wave(pcm_data, SAMPLE_RATE);
@@ -507,7 +509,7 @@ void* audio_handler(interrupt_context_t* ic) {
 
   kprintf("irq TXE_INT1\n");
 
-  sound_play(pcm_data, SAMPLE_RATE);
+  // sound_play(pcm_data, SAMPLE_RATE);
 
   gic_irqack(IRQ_AUDIO_CODEC);
 
