@@ -241,9 +241,10 @@ void t113_flush_screen(vga_device_t *vga, u32 index) {
   // kprintf("flip %d %d %d\n",index,vga->width,vga->height);
   // rgb2nv12(vga->pframbuffer, vga->frambuffer, vga->width, vga->height);
   // kmemcpy(vga->pframbuffer, vga->frambuffer, vga->width * vga->height);
-  cpu_invalid_tlb();
+  // cpu_invalid_tlb();
   cache_inv_range(vga->pframbuffer,vga->width * vga->height*4);
   cpu_cache_flush_range(vga->pframbuffer, vga->width * vga->height*4);
+  cpu_cache_flush_range(vga->frambuffer, vga->width * vga->height*4);
 }
 
 int gpu_init_mode(vga_device_t *vga, int mode) {

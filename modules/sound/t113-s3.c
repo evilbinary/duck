@@ -19,6 +19,7 @@
 #define AMPLITUDE 32767
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
+// #define TRANS_CPU 1
 
 #include "test.h"
 
@@ -61,26 +62,30 @@ void sound_play(void* buf, size_t len) {
     kprintf("phys is null\n");
     return;
   }
+  u32 val = 0;
 
-
-  u32 val = io_read32(CODEC_BASE + 0x0024);
+  // val = io_read32(CODEC_BASE + 0x0024);
   // kprintf("tx count %d len=%d\n",val,len);
 
   // AC_DAC_TXDATA
   u32* dac_txdata = CODEC_BASE + 0x0020;
-  dma_trans(1, 0, phys, dac_txdata, len);
-  
 
-  // u32* p = buf;
-  // u32 val = 0;
-  // for (int i = 0; i < len;) {
-  //   io_write32(dac_txdata, p[i]);
-  //   i += 4;
-  //   p++;
-  //   val = io_read32(CODEC_BASE + 0x0014);
-  //   while ((val & (1 << 23))) {
-  //   }
-  // }
+#ifdef TRANS_CPU
+  u32* p = buf;
+
+  for (int i = 0; i < len;) {
+    io_write32(dac_txdata, p[i]);
+    i += 4;
+    p++;
+    val = io_read32(CODEC_BASE + 0x0014);
+    // while ((val & (1 << 23))) {
+    // }
+  }
+#else
+  cpu_cache_flush_range(phys, (u32)phys + len);
+
+  dma_trans(0, 0, phys, dac_txdata, len);
+#endif
 
   // kprintf("dma trans end %x %d\n", phys, len);
 }
@@ -88,6 +93,7 @@ void sound_play(void* buf, size_t len) {
 void audio_ccu() {
   // a. AUDIO_CODEC_BGR_REG  ccu  0x0A5C
   u32 val;
+
   // open codec bus clock gating
   val = io_read32(CCU_BASE + 0x0A5C);
   val |= 1 << 0;  // AUDIO_CODEC_GATING PASS
@@ -101,28 +107,31 @@ void audio_ccu() {
   // b. AUDIO_CODEC_DAC_CLK_REG  ccu 0x0A50
   val = io_read32(CCU_BASE + 0x0A50);  // AUDIO_CODEC_DAC_CLK = Clock
                                        // Source/M/N.
+  val |= 1 << 31;                      // AUDIO_CODEC_DAC_CLK_GATING
+  io_write32(CCU_BASE + 0x0A50, val);
+
   val |= 0 << 24;  // 00: PLL_AUDIO0(1X) 10: PLL_AUDIO1(DIV5)
   val |= 0 << 8;   // 00: /1 FACTOR_N
   val |= 0 << 0;   // FACTOR_M
   io_write32(CCU_BASE + 0x0A50, val);
-
-  val |= 1 << 31;  // AUDIO_CODEC_DAC_CLK_GATING
-  io_write32(CCU_BASE + 0x0A50, val);
-
   log_info("codec init1\n");
 
   // c. PLL_Audio0 frequency   PLL_AUDIO0_CTRL_REG  ccu 0x0078
   val = io_read32(CCU_BASE + 0x0078);
-  // PLL_AUDIO0(1X) = (24MHz*N/M1/M0)/P/4
+
+  // enable PLL_AUDIO0
+  val |= 1 << 31;  // PLL_EN
+  val |= 1 << 30;  // PLL_LDO_EN
+  val |= 7 << 28;  // PLL_OUTPUT_GATE
+  val |= 1 << 27;  // PLL_OUTPUT_GATE
+  val |= 1 << 24;  // PLL_SDM_EN
+  // PLL_AUDIO0(1X) = (24MHz*N/M1/M0)/P/4 (24000000 * 39 / 2 / 1) / 4 /
+  // 4=29 250 000
   val |= 4 << 16;  // PLL_P
   val |= 39 << 8;  // PLL_N
   val |= 0 << 1;   // PLL_M1
   val |= 1 << 0;   // PLL_M0
-  val |= 1 << 30;  // PLL_LDO_EN
-  val |= 1 << 27;  // PLL_OUTPUT_GATE
-  val |= 1 << 24;  // PLL_SDM_EN
-  // enable PLL_AUDIO0
-  val |= 1 << 31;  // PLL_EN
+
   io_write32(CCU_BASE + 0x0078, val);
 
   // // play back
@@ -144,17 +153,27 @@ void audio_ccu() {
   // PLL_AUDIO_PAT0_CTRL_REG 0x178
   val = io_read32(CCU_BASE + 0x178);
   val |= 1 << 31;  // SIG_DELT_PAT_EN
-  val |= 1 << 29;  // SPR_FREQ_MODE
+  val |= 2 << 29;  // SPR_FREQ_MODE
   val |= 0 << 20;  // WAVE_STEP
   val |= 0 << 19;  // SDM_CLK_SEL
   val |= 0x1EB85;  // WAVE_BOT
   io_write32(CCU_BASE + 0x178, val);
 
-  // PLL_AUDIO_PAT1_CTRL_REG 0x17C
-  io_write32(CCU_BASE + 0x17C, 0x0);
+  val = io_read32(CCU_BASE + 0x0080);
+  val &= ~(1 << 29);
+  val |= (0 << 29);
+  io_write32(CCU_BASE + 0x0080, val);
 
-  // PLL_AUDIO_BIAS_REG 0x378
-  io_write32(CCU_BASE + 0x378, 0x00030000);
+  val = io_read32(CCU_BASE + 0x0080);
+  val |= (1 << 29);
+  io_write32(CCU_BASE + 0x0080, val);
+  while (!(io_read32(CCU_BASE + 0x0080) & (0x1 << 28)));
+
+  // // PLL_AUDIO_PAT1_CTRL_REG 0x17C
+  // io_write32(CCU_BASE + 0x17C, 0x0);
+
+  // // PLL_AUDIO_BIAS_REG 0x378
+  // io_write32(CCU_BASE + 0x378, 0x00030000);
 
   /* Wait pll stable */
   val = io_read32(CCU_BASE + 0x0078);
@@ -163,11 +182,7 @@ void audio_ccu() {
 
   while (!(io_read32(CCU_BASE + 0x0078) & (0x1 << 28)));
 
-  val = io_read32(CCU_BASE + 0x0080);
-  val |= (1 << 29);
-  io_write32(CCU_BASE + 0x0080, val);
-
-  while (!(io_read32(CCU_BASE + 0x0080) & (0x1 << 28)));
+  cpu_delay_msec(20);
 }
 
 void codec_dac() {
@@ -198,7 +213,7 @@ void codec_dac() {
   // AC_DAC_DPC
   val = io_read32(CODEC_BASE + 0);
   val |= 1 << 31;  // DAC_EN
-  val |= 0 << 12;  // DVOL
+  val |= 1 << 12;  // DVOL
   val |= 1 << 18;  // HPF_EN
   val |= 1 << 0;   // HUB_EN
   io_write32(CODEC_BASE + 0, val);
@@ -206,9 +221,9 @@ void codec_dac() {
 
   // volumn DAC_VOL_CTRL 4
   val = io_read32(CODEC_BASE + 4);
-  val |= 1 << 16;    // DAC_VOL_SEL
-  val |= 0x0 << 8;  // DAC_VOL_L 0xA0 = 0 dB 0xFF = 71.25 dB
-  val |= 0x0 << 0;  // DAC_VOL_R 0xA0 = 0 dB 0xFF = 71.25 dB
+  val |= 1 << 16;   // DAC_VOL_SEL
+  val |= 0xa0 << 8;  // DAC_VOL_L 0xA0 = 0 dB 0xFF = 71.25 dB
+  val |= 0xa0 << 0;  // DAC_VOL_R 0xA0 = 0 dB 0xFF = 71.25 dB
   io_write32(CODEC_BASE + 4, val);
 }
 
@@ -217,9 +232,10 @@ void codec_analog() {
   // DAC  DAC Analog Control
   val = io_read32(CODEC_BASE + 0x0310);
 
-  // val |= 1 << 23;  // CURRENT_TEST_SELECT
+  val |= 0 << 23;  // CURRENT_TEST_SELECT
 
   val |= 1 << 20;  // IOPVRS 01: 7 uA
+  val |= 1 << 18;  // ILINEOUTAMPS
   val |= 1 << 17;  // IOPDACS
   val |= 1 << 15;  // DACL_EN
   val |= 1 << 14;  // DACR_EN
@@ -238,14 +254,14 @@ void codec_analog() {
   val = io_read32(CODEC_BASE + 0x0348);
   val |= 1 << 31;    // ALDO_EN
   val |= 1 << 30;    // HPLDO_EN
-  val |= 0 << 12;    // ALDO_OUTPUT_VOLTAGE 011: 1.80 V
-  val |= 0 << 8;     // HPLDO_OUTPUT_VOLTAGE 011: 1.80 V
+  val |= 3 << 12;    // ALDO_OUTPUT_VOLTAGE 011: 1.80 V
+  val |= 3 << 8;     // HPLDO_OUTPUT_VOLTAGE 011: 1.80 V
   val |= 0x19 << 0;  // BG_TRIM
   io_write32(CODEC_BASE + 0x0348, val);
 
   // RAMP_REG Ramp Control Register
   val = io_read32(CODEC_BASE + 0x031C);
-  val |= 1 << 0;    // RD_EN
+  // val |= 1 << 0;    // RD_EN
   val |= 1 << 1;    // RMC_EN
   val |= 24 << 16;  // RAMP_CLK_DIV_M
   io_write32(CODEC_BASE + 0x031C, val);
@@ -265,12 +281,12 @@ void codec_analog() {
 
   io_write32(CODEC_BASE + 0x0340, val);
 
-  // G
-  val = io_read32(CODEC_BASE + 0x0324);
-  val |= 1 << 15;  // G_EN
-  val |= 1 << 10;  // HPOUTPUTEN
-  val |= 1 << 11;  // HPINPUTEN
-  io_write32(CODEC_BASE + 0x0324, val);
+  // // G
+  // val = io_read32(CODEC_BASE + 0x0324);
+  // val |= 1 << 15;  // G_EN
+  // val |= 1 << 10;  // HPOUTPUTEN
+  // val |= 1 << 11;  // HPINPUTEN
+  // io_write32(CODEC_BASE + 0x0324, val);
 }
 
 void codec_enable() {
@@ -368,7 +384,7 @@ void codec_debug() {
   // debug AC_DAC_DG
   val = io_read32(CODEC_BASE + 0x0028);
   val |= 1 << 11;  // DAC_MODU_SELECT  DAC Modulator Debug Mode
-  val |= 0 << 8;  // 1: CODEC clock from OSC (for Debug) 0: CODEC clock from PLL
+  val |= 1 << 8;  // 1: CODEC clock from OSC (for Debug) 0: CODEC clock from PLL
   val |= 1 << 9;  // DAC_PATTERN_SELECT 01: -6 dB Sin wave
   val |= 0 << 0;  // 000: Disabled
   val |= 0 << 6;  // DA_SWP
@@ -403,6 +419,10 @@ void codec_param(int format, int channal, int freq) {
     if (freq == rate_tab[i].rate) {
       val &= ~(7 << 29);
       val |= rate_tab[i].bit << 29;
+      kprintf("set rate bit %x\n", rate_tab[i].bit);
+    } else {
+      val &= ~(7 << 29);
+      val |= 0 << 29;
     }
   }
 
@@ -435,19 +455,19 @@ void codec_init() {
   codec_dac();
   codec_analog();
   codec_enable();
-  codec_param(16, 2, 44100);
+  codec_param(24, 2, 44100);
 
   // gic_enable(0, IRQ_AUDIO_CODEC);
 
   // codec_debug();
 
   // 生成正弦波 PCM 数据
-  // generate_sine_wave(pcm_data, SAMPLE_RATE);
+  generate_sine_wave(pcm_data, SAMPLE_RATE);
 
-  // while (1) {
-  //   // sound_play(pcm_data, SAMPLE_RATE);
-  //   sound_play(test_pcm, test_pcm_len);
-  // }
+  while (1) {
+    // sound_play(pcm_data, SAMPLE_RATE);
+    sound_play(test_pcm, test_pcm_len);
+  }
 }
 
 int write_count = 0;
