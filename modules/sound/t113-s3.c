@@ -19,9 +19,8 @@
 #define AMPLITUDE 32767
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
-// #define TRANS_CPU 1
+#define TRANS_CPU 1
 
-#include "test.h"
 
 struct sample_rate {
   unsigned int rate;
@@ -431,22 +430,6 @@ void codec_param(int format, int channal, int freq) {
   }
 
   io_write32(CODEC_BASE + 0x0010, val);
-}
-
-#define SAMPLE_RATE 44100  // 采样率
-#define AMPLITUDE 32767    // 振幅
-
-// 正弦波查表
-#define TABLE_SIZE 1000
-
-int16_t pcm_data[SAMPLE_RATE];
-
-// 生成正弦波 PCM 数据
-void generate_sine_wave(int16_t* pcm_data, int num_samples) {
-  for (int i = 0; i < num_samples; i++) {
-    int index = i * TABLE_SIZE / SAMPLE_RATE;
-    pcm_data[i] = sine_table[index];
-  }
 }
 
 void codec_init() {
