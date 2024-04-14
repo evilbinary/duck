@@ -19,7 +19,7 @@
 #define AMPLITUDE 32767
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
-// #define TRANS_CPU 1
+#define TRANS_CPU 1
 
 #include "test.h"
 
@@ -70,21 +70,23 @@ void sound_play(void* buf, size_t len) {
   // AC_DAC_TXDATA
   u32* dac_txdata = CODEC_BASE + 0x0020;
 
+  cpu_cache_flush_range(buf, (u32)buf + len);
 #ifdef TRANS_CPU
   u32* p = buf;
-
+  codec_enable();
   for (int i = 0; i < len;) {
     io_write32(dac_txdata, p[i]);
     i += 4;
     p++;
     val = io_read32(CODEC_BASE + 0x0014);
-    // while ((val & (1 << 23))) {
-    // }
+
+    while (!(val & (1 << 23))) {
+      val = io_read32(CODEC_BASE + 0x0014);
+    }
   }
 #else
-  cpu_cache_flush_range(phys, (u32)phys + len);
-
   dma_trans(0, 0, phys, dac_txdata, len);
+  codec_enable();
 #endif
 
   // kprintf("dma trans end %x %d\n", phys, len);
@@ -201,9 +203,6 @@ void codec_dac() {
       1 << 6;  // DAC_MONO_EN 0: Stereo, 64 Levels FIFO 1: Mono, 128 Levels FIFO
   val |= 0 << 5;  // TX_SAMPLE_BITS 0: 16 bits 1: 20 bits
   val |= 0 << 4;  // DAC FIFO Empty DRQ enable clear fifo
-  val |= 1 << 3;  // DAC_IRQ_EN
-  val |= 1 << 2;  // FIFO_UNDERRUN_IRQ_EN
-  val |= 1 << 1;  // FIFO_OVERRUN_IRQ_EN
   val |= 0 << 0;  // FIFO_FLUSH elf clear to ‘0’
 
   io_write32(CODEC_BASE + 0x0010, val);
@@ -221,7 +220,7 @@ void codec_dac() {
 
   // volumn DAC_VOL_CTRL 4
   val = io_read32(CODEC_BASE + 4);
-  val |= 1 << 16;   // DAC_VOL_SEL
+  val |= 1 << 16;    // DAC_VOL_SEL
   val |= 0xa0 << 8;  // DAC_VOL_L 0xA0 = 0 dB 0xFF = 71.25 dB
   val |= 0xa0 << 0;  // DAC_VOL_R 0xA0 = 0 dB 0xFF = 71.25 dB
   io_write32(CODEC_BASE + 4, val);
@@ -281,15 +280,15 @@ void codec_analog() {
 
   io_write32(CODEC_BASE + 0x0340, val);
 
-  // // G
-  // val = io_read32(CODEC_BASE + 0x0324);
-  // val |= 1 << 15;  // G_EN
-  // val |= 1 << 10;  // HPOUTPUTEN
-  // val |= 1 << 11;  // HPINPUTEN
-  // io_write32(CODEC_BASE + 0x0324, val);
+  // G
+  val = io_read32(CODEC_BASE + 0x0324);
+  val |= 1 << 15;  // G_EN
+  val |= 1 << 10;  // HPOUTPUTEN
+  val |= 1 << 11;  // HPINPUTEN
+  io_write32(CODEC_BASE + 0x0324, val);
 }
 
-void codec_enable() {
+void codec_enable(int enable) {
   u32 val;
   // enable dma int
   // 3. Configure the DMA and DMA request.
@@ -375,6 +374,9 @@ void codec_enable() {
 
   // AC_DAC_FIFOC
   val = io_read32(CODEC_BASE + 0x0010);
+  val |= 1 << 3;  // DAC_IRQ_EN
+  val |= 1 << 2;  // FIFO_UNDERRUN_IRQ_EN
+  val |= 1 << 1;  // FIFO_OVERRUN_IRQ_EN
   val |= 1 << 4;  // DAC_DRQ_EN
   io_write32(CODEC_BASE + 0x0010, val);
 }
@@ -454,20 +456,19 @@ void codec_init() {
   // 2.  Configure the sample rate and data transfer format, then open the DAC.
   codec_dac();
   codec_analog();
-  codec_enable();
-  codec_param(24, 2, 44100);
+  codec_param(16, 2, 44100);
 
   // gic_enable(0, IRQ_AUDIO_CODEC);
 
   // codec_debug();
 
-  // 生成正弦波 PCM 数据
-  generate_sine_wave(pcm_data, SAMPLE_RATE);
+  // // 生成正弦波 PCM 数据
+  // generate_sine_wave(pcm_data, SAMPLE_RATE);
 
-  while (1) {
-    // sound_play(pcm_data, SAMPLE_RATE);
-    sound_play(test_pcm, test_pcm_len);
-  }
+  // while (1) {
+  //   // sound_play(pcm_data, SAMPLE_RATE);
+  //   sound_play(test_pcm, test_pcm_len);
+  // }
 }
 
 int write_count = 0;

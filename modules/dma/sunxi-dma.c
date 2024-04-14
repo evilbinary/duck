@@ -42,8 +42,8 @@ void dma_init_all(void) {
 
   kprintf("ccu gate reset %x\n", ccu->dma_gate_reset);
 
-  dma_reg->irq_en0 = 0;
-  dma_reg->irq_en1 = 0;
+  dma_reg->irq_en0 = 1;
+  dma_reg->irq_en1 = 1;
 
   dma_reg->irq_pending0 = 0xffffffff;
   dma_reg->irq_pending1 = 0xffffffff;
@@ -323,7 +323,7 @@ u32 dma_trans(u32 channel, u32 mode, void *src, void *dst, size_t len) {
 
   // dma
   dma_set.loop_mode = 1;
-  dma_set.wait_cyc = 8;
+  dma_set.wait_cyc = 0;
   dma_set.data_block_size = 32 / 8;
   // channel config (from dram to audio io)
   dma_set.channel_cfg.src_drq_type = DMAC_CFG_TYPE_DRAM;  // dram
