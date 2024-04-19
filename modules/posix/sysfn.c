@@ -947,6 +947,7 @@ int sys_thread_self() {
     current->info->errno = 0;
     current->info->prev = current->info->next = NULL;
     current->info->locale = kmalloc(sizeof(locale_t), KERNEL_TYPE);
+    current->info->robust_list.head= &current->info->robust_list.head;
     log_debug("locale at %x\n", current->info->locale);
     log_debug("thread info at %x\n", current->info);
   }
