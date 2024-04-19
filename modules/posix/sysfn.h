@@ -282,6 +282,15 @@ typedef struct iovec {
   size_t iov_len;
 } iovec_t;
 
+#define _NSIG 65
+
+typedef struct start_args {
+	void *(*start_func)(void *);
+	void *start_arg;
+	volatile int control;
+	unsigned long sig_mask[_NSIG/8/sizeof(long)];
+}start_args_t;
+
 #define F_DUPFD 0
 #define F_GETFD 1
 #define F_SETFD 2
@@ -358,8 +367,9 @@ int sys_fcntl64(int fd, int cmd, void* arg);
 int sys_getcwd(char* buf, size_t size);
 int sys_fchdir(int fd);
 
-int sys_clone(void* fn, void* stack, int flags, void* arg, .../* int parent_tid,
-              void* tls, int child_tid */);
+int sys_clone( int flags, void* stack,int* parent_tid,
+              void* tls, int child_tid);
+
 int sys_llseek(int fd, int offset_hi, int offset_lo, off_t* result, int whence);
 
 int sys_umask(int mask);

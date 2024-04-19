@@ -36,13 +36,13 @@ typedef struct cpsr {
 } __attribute__((packed)) cpsr_t;
 
 typedef u32 (*sys_call_fn)(u32 arg1, u32 arg2, u32 arg3, u32 arg4, u32 arg5,
-                           u32 arg6);
+                           u32 arg6,u32 arg7);
 
 #define sys_fn_call(duck_interrupt_context, fn)               \
   duck_interrupt_context->r0 = ((sys_call_fn)fn)(             \
       duck_interrupt_context->r0, duck_interrupt_context->r1, \
       duck_interrupt_context->r2, duck_interrupt_context->r3, \
-      duck_interrupt_context->r4, duck_interrupt_context->r5);
+      duck_interrupt_context->r4, duck_interrupt_context->r5,duck_interrupt_context->r6);
 
 #define cpu_cli() asm("cpsid if" : : : "memory", "cc")
 #define cpu_sti() asm("cpsie if" : : : "memory", "cc")

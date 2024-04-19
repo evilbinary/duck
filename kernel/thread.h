@@ -77,7 +77,7 @@ typedef struct thread_info {
 #ifndef TLS_ABOVE_TP
   uintptr_t* dtv;
 #endif
-  int reversed[2];
+  // int reversed[2];
   struct thread_info *prev, *next; /* non-ABI */
   uintptr_t sysinfo;
 #ifndef TLS_ABOVE_TP
@@ -126,6 +126,17 @@ typedef struct thread_info {
 #endif
 
 } thread_info_t;
+
+#ifndef TP_OFFSET
+#define TP_OFFSET 0
+#endif
+
+#ifdef TLS_ABOVE_TP
+#define TP_ADJ(p) ((char *)(p) + sizeof(thread_info_t) + TP_OFFSET)
+#else
+#define TP_ADJ(p) (p)
+#endif
+
 
 typedef struct thread {
   u32 id;

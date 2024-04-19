@@ -337,21 +337,21 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   return args;
 }
 
-int sys_clone(void* fn, void* stack, int flags, void* arg, .../*, int parent_tid,
-              void* tls, int child_tid*/) {
+int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
+              int child_tid) {
   thread_t* current = thread_current();
   if (current == NULL) {
     log_error("current is null\n");
     return -1;
   }
-  va_list ap;
-  va_start(ap, arg);
-  int* parent_tid = va_arg(ap, int*);
-  int* tls = va_arg(ap, int*);
-  int* child_tid = va_arg(ap, int*);
-  va_end(ap);
+  start_args_t* start_args = stack;
+  void* fn = start_args->start_func;
+  void* arg = start_args->start_arg;
 
-  thread_t* find = thread_find_id(*parent_tid);
+  thread_t* find = current;
+  if (*parent_tid > 0) {
+    find = thread_find_id(*parent_tid);
+  }
   if (find == NULL) {
     log_error("find parent tid %d is null\n", *parent_tid);
     find = current;
@@ -362,9 +362,11 @@ int sys_clone(void* fn, void* stack, int flags, void* arg, .../*, int parent_tid
   thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
   kprintf("-------dump clone thread %d-------------\n", copy_thread->id);
   thread_dump(copy_thread, DUMP_DEFAULT | DUMP_CONTEXT);
+  kprintf("entry ===>%x arg %x\n", fn, arg);
 #endif
 
-  thread_set_ret(copy_thread, 0);
+  thread_set_ret(copy_thread, copy_thread->id);
+  thread_set_arg(copy_thread, arg);
   thread_set_entry(copy_thread, fn);
 
   thread_run(copy_thread);
@@ -801,6 +803,12 @@ int sys_fcntl64(int fd, int cmd, void* arg) {
     u32 ret = sys_dup(fd);
 
     return ret;
+  } else if (cmd == F_GETFL) {
+    u32 ret = vioctl(node, cmd, arg);
+    return ret;
+  } else if (cmd == F_SETFL) {
+    u32 ret = vioctl(node, cmd, arg);
+    return ret;
   } else {
     log_error("not support cmd %d\n", cmd);
   }
@@ -940,9 +948,10 @@ int sys_thread_self() {
     current->info->prev = current->info->next = NULL;
     current->info->locale = kmalloc(sizeof(locale_t), KERNEL_TYPE);
     log_debug("locale at %x\n", current->info->locale);
+    log_debug("thread info at %x\n", current->info);
   }
   // log_debug("sys thread self at %x\n", current->info);
-  return current->info;
+  return TP_ADJ(current->info);
 }
 
 int sys_statx(int dirfd, const char* restrict pathname, int flags,

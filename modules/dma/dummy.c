@@ -6,7 +6,7 @@
 #include "kernel/kernel.h"
 #include "dma.h"
 
-u32 dma_trans(u8 channel, u8 mode, void* addr, void* phyaddr, size_t size) {
+u32 dma_trans(u32 channel, u32 mode, void *src, void *dst, size_t len) {
 
 
   return 1;
