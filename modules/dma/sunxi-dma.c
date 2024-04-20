@@ -10,7 +10,7 @@
 
 #define SUNXI_DMA_MAX 16
 // #define kprintf
-#define log_debug
+// #define log_debug
 
 static int dma_init_ok = -1;
 static dma_source_t dma_channel_source[SUNXI_DMA_MAX];
@@ -25,13 +25,14 @@ void *dma_handler(interrupt_context_t *ic) {
 
   int i;
   uint pending;
-  u32 channel_no=0;
+  u32 channel_no = 0;
   dma_reg_t *dma_reg = (dma_reg_t *)SUNXI_DMA_BASE;
 
   for (i = 0; i < 8 && i < SUNXI_DMA_MAX; i++) {
     pending = (DMA_PKG_END_INT << (i * 4));
     if (dma_reg->irq_pending0 & pending) {
-      dma_reg->irq_pending0 = pending;
+      // dma_reg->irq_pending0 = pending;
+      dma_reg->irq_pending0 &= ~pending;
       log_debug("dma pedding %d\n", i);
 
       if (dma_channel_source[i].dma_func.m_func != NULL) {
@@ -43,7 +44,8 @@ void *dma_handler(interrupt_context_t *ic) {
   for (i = 8; i < SUNXI_DMA_MAX; i++) {
     pending = (DMA_PKG_END_INT << ((i - 8) * 4));
     if (dma_reg->irq_pending1 & pending) {
-      dma_reg->irq_pending1 = pending;
+      // dma_reg->irq_pending1 = pending;
+      dma_reg->irq_pending1 &= ~pending;
 
       if (dma_channel_source[i].dma_func.m_func != NULL) {
         dma_channel_source[i].dma_func.m_func(
@@ -54,8 +56,7 @@ void *dma_handler(interrupt_context_t *ic) {
 
 
   gic_irqack(irq);
-
-  kprintf("dma handler %d\n",irq);
+  kprintf("dma handler %d\n", irq);
 
   return NULL;
 }
@@ -105,8 +106,9 @@ void dma_init_all(void) {
     dma_channel_source[i].channel = &(dma_reg->channel[i]);
     dma_channel_source[i].desc = &dma_channel_desc[i];
 
-    log_debug("dma %d channel %x desc %x\n", i, dma_channel_source[i].channel,
-              dma_channel_source[i].desc);
+    log_debug("dma %d channel %x desc %x channel addr %x\n", i,
+              dma_channel_source[i].channel, dma_channel_source[i].desc,
+              &dma_channel_source[i]);
   }
 
   dma_init_ok = 1;
@@ -153,18 +155,13 @@ u32 dma_request_from_last(u32 dmatype) {
   return 0;
 }
 
-u32 dma_request(u32 dmatype) {
-  int i;
-
-  for (i = 0; i < SUNXI_DMA_MAX; i++) {
-    if (dma_channel_source[i].used == 0) {
-      dma_channel_source[i].used = 1;
-      dma_channel_source[i].channel_count = i;
-      log_debug("DMA: USE CHANNEL %u\r\n", i);
-      return (u32)&dma_channel_source[i];
-    }
+u32 dma_request(u32 channel) {
+  int i = channel;
+  if (channel < SUNXI_DMA_MAX) {
+    dma_channel_source[i].used = 1;
+    dma_channel_source[i].channel_count = channel;
+    return (u32)&dma_channel_source[i];
   }
-
   return 0;
 }
 
@@ -202,7 +199,7 @@ int dma_setting(u32 hdma, dma_set_t *cfg) {
   return 0;
 }
 
-void dma_set_mode(u32 hdma, u32 mode) {
+void dma_set_mode(u32 hdma, u32 mode, dma_interrupt_handler_t fun) {
   dma_reg_t *dma_reg = (dma_reg_t *)DMA_BASE;
   dma_source_t *dma_source = (dma_source_t *)hdma;
   u32 channel_no = dma_source->channel_count;
@@ -214,6 +211,9 @@ void dma_set_mode(u32 hdma, u32 mode) {
     } else {
       dma_reg->irq_en1 |= ((DMA_PKG_END_INT) << ((channel_no - 8) * 4));
     }
+    dma_source->dma_func.m_data = NULL;
+    dma_source->dma_func.m_func = fun;
+
     gic_irq_priority(0, IRQ_DMAC, 10);
     gic_irq_enable(IRQ_DMAC);
   }
@@ -321,7 +321,7 @@ int dma_test() {
 
   dma_setting(hdma, &dma_set);
 
-  dma_set_mode(hdma, 1);
+  dma_set_mode(hdma, 1, NULL);
 
   // prepare data
   for (i = 0; i < (len / 4); i += 4) {
@@ -374,16 +374,18 @@ int dma_test() {
   return 0;
 }
 
-u32 dma_init(u32 channel) { dma_init_all(); }
-
-u32 dma_trans(u32 channel, u32 mode, void *src, void *dst, size_t len) {
-  if (dma_init_ok <= 0) {
-    dma_init_all();
-  }
+u32 dma_init(u32 channel, u32 mode, dma_interrupt_handler_t handler) {
+  dma_init_all();
 
   dma_set_t dma_set;
   u32 hdma, st = 0;
   u32 timeout = 0;
+
+  log_debug("dma init request\n");
+
+  hdma = dma_request(channel);
+
+  log_debug("dma init request %x\n", hdma);
 
   // dma
   dma_set.loop_mode = 1;
@@ -402,23 +404,39 @@ u32 dma_trans(u32 channel, u32 mode, void *src, void *dst, size_t len) {
   dma_set.channel_cfg.dst_data_width = DMAC_CFG_DEST_DATA_WIDTH_16BIT;
   dma_set.channel_cfg.reserved1 = 0;
 
-  dma_set.channel_cfg.src_burst_length = DMAC_CFG_SRC_4_BURST;
-  dma_set.channel_cfg.src_data_width = DMAC_CFG_SRC_DATA_WIDTH_32BIT;
-  dma_set.channel_cfg.dst_burst_length = DMAC_CFG_DEST_4_BURST;
-  dma_set.channel_cfg.dst_data_width = DMAC_CFG_DEST_DATA_WIDTH_32BIT;
+  dma_set.channel_cfg.src_burst_length = DMAC_CFG_SRC_1_BURST;
+  dma_set.channel_cfg.src_data_width = DMAC_CFG_SRC_DATA_WIDTH_16BIT;
+  dma_set.channel_cfg.dst_burst_length = DMAC_CFG_DEST_1_BURST;
+  dma_set.channel_cfg.dst_data_width = DMAC_CFG_DEST_DATA_WIDTH_16BIT;
 
-  hdma = dma_request(0);
+  log_debug("dma init settting\n");
+
+  dma_setting(hdma, &dma_set);
+
+  log_debug("dma init set mode\n");
+
+  dma_set_mode(hdma, mode, handler);
+  log_debug("dma init end\n");
+}
+
+u32 dma_trans(u32 channel, void *src, void *dst, size_t len) {
+  if (dma_init_ok <= 0) {
+    dma_init_all();
+  }
+
+  u32 hdma, st = 0;
+  u32 timeout = 0;
+
+  hdma = dma_request(channel);
   if (!hdma) {
     log_debug("DMA: can't request dma\r\n");
     return -1;
   }
-  dma_setting(hdma, &dma_set);
-
   log_debug("dma trans start ==>%x to %x len %d\n", src, dst, len);
 
   dma_source_t *dma_source = (dma_source_t *)hdma;
 
-  dma_set_mode(hdma, mode);
+  dma_source->dma_func.m_data = src;
 
   dma_start(hdma, (u32)src, (u32)dst, len);
 

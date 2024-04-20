@@ -7,6 +7,7 @@
 #include "dma/dma.h"
 #include "gpio.h"
 #include "kernel/kernel.h"
+#include "sound.h"
 
 #define SAMPLE_RATE 44100
 #define NUM_SAMPLES 10000
@@ -21,6 +22,7 @@
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 #define TRANS_CPU 1
 
+#define SOUND_BUF_SIZE SAMPLE_RATE * 4
 
 struct sample_rate {
   unsigned int rate;
@@ -41,7 +43,7 @@ static size_t read(device_t* dev, void* buf, size_t len) {
 static size_t write(device_t* dev, void* buf, size_t len) {
   u32 ret = len;
 
-  sound_play(buf, len);
+  sound_play(dev->data, buf, len);
   return ret;
 }
 
@@ -55,7 +57,7 @@ static void print_hex(u8* addr, u32 size) {
   kprintf("\n\r");
 }
 
-void sound_play(void* buf, size_t len) {
+void sound_play(sound_device_t* dev, void* buf, size_t len) {
   void* phys = kpage_v2p(buf, 0);
   if (phys == NULL) {
     kprintf("phys is null\n");
@@ -66,27 +68,32 @@ void sound_play(void* buf, size_t len) {
   // val = io_read32(CODEC_BASE + 0x0024);
   // kprintf("tx count %d len=%d\n",val,len);
 
-  // AC_DAC_TXDATA
-  u32* dac_txdata = CODEC_BASE + 0x0020;
-
   cpu_cache_flush_range(buf, (u32)buf + len);
 #ifdef TRANS_CPU
+  u32* dac_txdata = CODEC_BASE + 0x0020;
+
   u32* p = buf;
   for (int i = 0; i < len;) {
-    io_write32(dac_txdata, p[i]);
-    i += 4;
-    p++;
     val = io_read32(CODEC_BASE + 0x0014);
-
-    while (!(val & (1 << 23))) {
+    while ((val & (1 << 23))) {
+      io_write32(dac_txdata, *p++);
+      io_write32(dac_txdata, *p++);
+      i += 8;
       val = io_read32(CODEC_BASE + 0x0014);
     }
+    
   }
-#else
-  dma_trans(0, 1, phys, dac_txdata, len);
-#endif
 
-  // kprintf("dma trans end %x %d\n", phys, len);
+#else
+  kmemcpy(dev->sound_buf, phys, len);
+  if (dev->is_play == 0) {
+    kprintf("dma trans start\n");
+    dma_trans(0, dev->sound_buf, CODEC_BASE + 0x0020, SOUND_BUF_SIZE);
+    kprintf("dma trans start1\n");
+    dev->is_play = 1;
+  }
+  kprintf("copy end %x %d\n", phys, len);
+#endif
 }
 
 void audio_ccu() {
@@ -192,8 +199,8 @@ void codec_dac() {
 
   val |= 0 << 29;  // DAC_FS  000: 48KHz 010: 24KHz 001: 32KHz
   val |= 0 << 28;  // FIR_VER
-  val |= 1 << 26;  // SEND_LASAT
-  val |= 1 << 24;  // FIFO_MODE
+  val |= 0 << 26;  // SEND_LASAT
+  val |= 0 << 24;  // FIFO_MODE 1 2 3
   val |= 0 << 21;  // DAC_DRQ_CLR_CNT
   val |= 32 << 8;   // TX_TRIG_LEVEL
   val |=
@@ -377,9 +384,7 @@ void codec_enable(int enable) {
   val |= 1 << 4;  // DAC_DRQ_EN
   io_write32(CODEC_BASE + 0x0010, val);
 
-
   // gic_irq_enable( IRQ_AUDIO_CODEC);
-
 }
 
 void codec_debug() {
@@ -430,6 +435,12 @@ void codec_param(int format, int channal, int freq) {
   }
 
   io_write32(CODEC_BASE + 0x0010, val);
+}
+
+void dma_audio_handler(void* data) {
+  log_info("dma_audio_handler %x\n", data);
+
+  dma_trans(0, data, CODEC_BASE + 0x0020, SOUND_BUF_SIZE);
 }
 
 void codec_init() {
@@ -499,15 +510,50 @@ void* audio_handler(interrupt_context_t* ic) {
   return NULL;
 }
 
+size_t sound_ioctl(device_t* dev, u32 cmd, void* args) {
+  u32 ret = 0;
+  kprintf("cound_ioct %d\n", cmd);
+
+  if (cmd == SNDCTL_DSP_GETFMTS) {
+    u32* val = args;
+    *val = AFMT_S16_LE;
+  } else if (cmd == SNDCTL_DSP_CHANNELS) {
+    u32 val = args;
+    kprintf("SNDCTL_DSP_CHANNELS %d\n", val);
+    codec_param(-1, val, -1);
+
+  } else if (cmd == SNDCTL_DSP_SPEED) {
+    u32 val = args;
+    kprintf("SNDCTL_DSP_SPEED %d\n", val);
+    codec_param(-1, -1, val);
+
+    kprintf("dma_init\n");
+#ifdef TRANS_CPU
+    dma_init(0, 0, dma_audio_handler);
+#else
+    dma_init(0, 1, dma_audio_handler);
+#endif
+
+    kprintf("dma_init end\n");
+  }
+
+  return ret;
+}
+
 int sound_init(void) {
   log_info("sound init\n");
   device_t* dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
   dev->name = "sound";
   dev->read = read;
   dev->write = write;
+  dev->ioctl = sound_ioctl;
   dev->id = DEVICE_SB;
   dev->type = DEVICE_TYPE_BLOCK;
   device_add(dev);
+
+  sound_device_t* sound_device = kmalloc(sizeof(sound_device_t), DEFAULT_TYPE);
+  dev->data = sound_device;
+  sound_device->sound_buf = kmalloc(SOUND_BUF_SIZE, DEVICE_TYPE);
 
   gic_irq_priority(0, IRQ_AUDIO_CODEC, 10);
 

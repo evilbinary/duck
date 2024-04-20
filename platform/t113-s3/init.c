@@ -62,6 +62,8 @@ void platform_map() {
   page_map(0x03020000, 0x03020000, 0);
   page_map(0x03021000, 0x03021000, 0);
   page_map(0x03022000, 0x03022000, 0);
+  page_map(0x03023000, 0x03023000, 0);
+
   // timer
   page_map(TIMER_BASE, TIMER_BASE, 0);
 
