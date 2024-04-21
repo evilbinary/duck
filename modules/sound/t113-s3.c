@@ -30,8 +30,19 @@ struct sample_rate {
 };
 
 struct sample_rate rate_tab[] = {
-    {44100, 0}, {48000, 0}, {8000, 5},  {32000, 1},  {22050, 2}, {24000, 2},
-    {16000, 3}, {11025, 4}, {12000, 4}, {192000, 6}, {96000, 7}, {88200, 7},
+    {8000, 5},
+    {11025, 4},
+    {12000, 4},
+    {16000, 3},
+    {22050, 2}, 
+    {24000, 2},
+    {32000, 1}, 
+    {44100, 0}, 
+    {48000, 0},  
+    {88200, 7},
+    {96000, 7},
+    {192000, 6},
+    {992000, 6},
 };
 
 static size_t read(device_t* dev, void* buf, size_t len) {
@@ -81,7 +92,7 @@ void sound_play(sound_device_t* dev, void* buf, size_t len) {
       i += 8;
       val = io_read32(CODEC_BASE + 0x0014);
     }
-    
+
   }
 
 #else
@@ -423,14 +434,15 @@ void codec_param(int format, int channal, int freq) {
     val &= ~(0 << 6);
     val |= (0 << 6);
   }
+
+  val &= ~(7 << 29);
+  val |= 0 << 29;
   for (int i = 0; i < ARRAY_SIZE(rate_tab); i++) {
-    if (freq == rate_tab[i].rate) {
+     kprintf("freq %d rate %d\n",freq,rate_tab[i].rate);
+    if (freq >= rate_tab[i].rate ) {
       val &= ~(7 << 29);
       val |= rate_tab[i].bit << 29;
-      kprintf("set rate bit %x\n", rate_tab[i].bit);
-    } else {
-      val &= ~(7 << 29);
-      val |= 0 << 29;
+      kprintf("set rate %d bit %x\n",rate_tab[i].rate, rate_tab[i].bit);
     }
   }
 
@@ -523,7 +535,7 @@ size_t sound_ioctl(device_t* dev, u32 cmd, void* args) {
     codec_param(-1, val, -1);
 
   } else if (cmd == SNDCTL_DSP_SPEED) {
-    u32 val = args;
+    int val = args;
     kprintf("SNDCTL_DSP_SPEED %d\n", val);
     codec_param(-1, -1, val);
 
