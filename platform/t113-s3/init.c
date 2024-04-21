@@ -79,6 +79,8 @@ void platform_map() {
   page_map(CODEC_BASE, CODEC_BASE, 0);
 
   page_map(DMA_BASE, DMA_BASE, 0);
+
+  page_map(RTC_BASE,RTC_BASE,0);
 }
 
 void platform_end() {}

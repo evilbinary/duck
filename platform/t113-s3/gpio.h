@@ -45,6 +45,8 @@ struct t113_s3_timer {
 
 #define CODEC_BASE 0x02030000
 
+#define RTC_BASE 0x07090000
+
 
 #define IRQ_AUDIO_CODEC 57
 #define IRQ_TIMER0 91

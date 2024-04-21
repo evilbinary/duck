@@ -947,7 +947,7 @@ int sys_thread_self() {
     current->info->errno = 0;
     current->info->prev = current->info->next = NULL;
     current->info->locale = kmalloc(sizeof(locale_t), KERNEL_TYPE);
-    current->info->robust_list.head= &current->info->robust_list.head;
+    current->info->robust_list.head = &current->info->robust_list.head;
     log_debug("locale at %x\n", current->info->locale);
     log_debug("thread info at %x\n", current->info);
   }
@@ -1038,7 +1038,10 @@ u32 sys_time(time_t* t) {
   if (time_fd == -1) {
     time_fd = sys_open("/dev/time", 0);
   }
-  if (time_fd < 0) return 0;
+  if (time_fd < 0) {
+    log_error("open time faild\n");
+    return 0;
+  }
   rtc_time_t time;
   time.day = 1;
   time.hour = 0;
@@ -1065,6 +1068,14 @@ int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
     ts->tv_sec = seconds;
     ts->tv_nsec = 0;
     return 0;
+  } else if (clockid == 0) {
+    time_t seconds;
+    int rc = sys_time(&seconds);
+    ts->tv_sec = seconds;
+    ts->tv_nsec = 0;
+    return 0;
+  }else{
+    log_warn("clock not support %d\n",clockid);
   }
   return 0;
 }

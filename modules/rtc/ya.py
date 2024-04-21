@@ -32,11 +32,14 @@ plat_source={
     ],
     'general':[
         'general.c'
-    ]
+    ],
+    't113-s3':[
+        't113-s3.c'
+    ],
 }
 arch_source={
     'arm': [
-        'rtc.c'
+
     ],
     'x86':[
         'rtc.c'
