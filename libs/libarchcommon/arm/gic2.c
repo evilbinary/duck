@@ -116,6 +116,7 @@ u32 gic_irqwho(void) { return gic.cpu->ia; }
 
 void gic_irqack(int irq) {
   gic.cpu->eoi = irq;
+  gic.cpu->dir = irq;
   gic_unpend(irq);
 }
 

@@ -31,8 +31,7 @@ void *dma_handler(interrupt_context_t *ic) {
   for (i = 0; i < 8 && i < SUNXI_DMA_MAX; i++) {
     pending = (DMA_PKG_END_INT << (i * 4));
     if (dma_reg->irq_pending0 & pending) {
-      // dma_reg->irq_pending0 = pending;
-      dma_reg->irq_pending0 &= ~pending;
+      dma_reg->irq_pending0 = pending;
       log_debug("dma pedding %d\n", i);
 
       if (dma_channel_source[i].dma_func.m_func != NULL) {
@@ -44,9 +43,7 @@ void *dma_handler(interrupt_context_t *ic) {
   for (i = 8; i < SUNXI_DMA_MAX; i++) {
     pending = (DMA_PKG_END_INT << ((i - 8) * 4));
     if (dma_reg->irq_pending1 & pending) {
-      // dma_reg->irq_pending1 = pending;
-      dma_reg->irq_pending1 &= ~pending;
-
+      dma_reg->irq_pending1 = pending;
       if (dma_channel_source[i].dma_func.m_func != NULL) {
         dma_channel_source[i].dma_func.m_func(
             dma_channel_source[i].dma_func.m_data);
@@ -240,6 +237,7 @@ int dma_start(u32 hdma, u32 saddr, u32 daddr, u32 bytes) {
   dmb();
   channel->desc_addr = (u32)desc;
   dmb();
+  channel->enable = 0;
   channel->enable = 1;
   channel->pause = 0;
   dmb();

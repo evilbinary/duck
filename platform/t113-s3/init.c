@@ -133,13 +133,14 @@ void timer_init(int hz) {
 
 void timer_end() {
   // int irq = gic_irqwho();
+  int irq = IRQ_TIMER0;
+
   write_cntv_tval(cntfrq[0]);
 
   struct t113_s3_timer *timer = (struct t113_s3_timer *)TIMER_BASE;
 
   // kprintf("timer end %d\n",irq);
   timer->irq_status = IE_T0;
-  int irq = IRQ_TIMER0;
   gic_irqack(irq);
 }
 

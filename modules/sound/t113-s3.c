@@ -20,7 +20,7 @@
 #define AMPLITUDE 32767
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
-#define TRANS_CPU 1
+// #define TRANS_CPU 1
 
 #define SOUND_BUF_SIZE SAMPLE_RATE * 4
 
@@ -85,14 +85,14 @@ void sound_play(sound_device_t* dev, void* buf, size_t len) {
   }
 
 #else
-  kmemcpy(dev->sound_buf, phys, len);
+  kmemcpy(dev->sound_buf, buf, len);
   if (dev->is_play == 0) {
-    kprintf("dma trans start\n");
+    kprintf("dma trans start sound buf %x buf %x\n",dev->sound_buf,buf );
     dma_trans(0, dev->sound_buf, CODEC_BASE + 0x0020, SOUND_BUF_SIZE);
     kprintf("dma trans start1\n");
     dev->is_play = 1;
   }
-  kprintf("copy end %x %d\n", phys, len);
+  // kprintf("copy end %x %d\n", phys, len);
 #endif
 }
 
@@ -445,8 +445,8 @@ void codec_param(int format, int channal, int freq) {
 
 void dma_audio_handler(void* data) {
   log_info("dma_audio_handler %x\n", data);
-
   dma_trans(0, data, CODEC_BASE + 0x0020, SOUND_BUF_SIZE);
+  log_info("dma_audio_handler end %x\n", data);
 }
 
 void codec_init() {
