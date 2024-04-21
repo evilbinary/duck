@@ -85,10 +85,17 @@ void sound_play(sound_device_t* dev, void* buf, size_t len) {
   }
 
 #else
+  if (dev->buf_pos > SOUND_BUF_SIZE) {
+    dev->buf_pos = 0;
+  }
+  // kmemcpy(&dev->sound_buf[dev->buf_pos], buf, len);
+  // dev->buf_pos += len;
+
+  dev->play_size = len;
   kmemcpy(dev->sound_buf, buf, len);
   if (dev->is_play == 0) {
-    kprintf("dma trans start sound buf %x buf %x\n",dev->sound_buf,buf );
-    dma_trans(0, dev->sound_buf, CODEC_BASE + 0x0020, SOUND_BUF_SIZE);
+    kprintf("dma trans start sound buf %x buf %x\n", dev->sound_buf, buf);
+    dma_trans(0, dev->sound_buf, CODEC_BASE + 0x0020, len);
     kprintf("dma trans start1\n");
     dev->is_play = 1;
   }
@@ -429,7 +436,6 @@ void codec_param(int format, int channal, int freq) {
   val &= ~(7 << 29);
   val |= 0 << 29;
   if (freq > 0) {
-
     for (int i = 0; i < ARRAY_SIZE(rate_tab); i++) {
       kprintf("freq %d rate %d\n", freq, rate_tab[i].rate);
       if (freq >= rate_tab[i].rate) {
@@ -444,9 +450,17 @@ void codec_param(int format, int channal, int freq) {
 }
 
 void dma_audio_handler(void* data) {
-  log_info("dma_audio_handler %x\n", data);
-  dma_trans(0, data, CODEC_BASE + 0x0020, SOUND_BUF_SIZE);
-  log_info("dma_audio_handler end %x\n", data);
+  sound_device_t* dev = data;
+  if (dev->play_size <= 0) {
+    dma_stop(0);
+    log_debug("dma stop\n");
+    return 0;
+  }
+
+  // log_info("dma_audio_handler %x play size %d\n", dev->sound_buf,
+  // dev->play_size);
+  dma_trans(0, dev->sound_buf, CODEC_BASE + 0x0020, dev->play_size);
+  // log_info("dma_audio_handler end %x\n", dev->sound_buf);
 }
 
 void codec_init() {
@@ -536,9 +550,9 @@ size_t sound_ioctl(device_t* dev, u32 cmd, void* args) {
 
     kprintf("dma_init\n");
 #ifdef TRANS_CPU
-    dma_init(0, 0, dma_audio_handler);
+    dma_init(0, 0, dma_audio_handler, NULL);
 #else
-    dma_init(0, 1, dma_audio_handler);
+    dma_init(0, 1, dma_audio_handler, dev->data);
 #endif
 
     kprintf("dma_init end\n");

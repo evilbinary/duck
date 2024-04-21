@@ -17,10 +17,10 @@
 
 typedef void(dma_interrupt_handler_t)(void *);
 
-u32 dma_init(u32 channel, u32 mode, dma_interrupt_handler_t handler);
+u32 dma_init(u32 channel, u32 mode, dma_interrupt_handler_t handler,void* data);
 
 u32 dma_trans(u32 channel, void *src, void *dst, size_t len);
 
-// void dma_stop(u32 channel);
+void dma_stop(u32 channel);
 
 #endif

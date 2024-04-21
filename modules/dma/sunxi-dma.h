@@ -157,7 +157,7 @@ u32 dma_request_from_last(u32 dmatype);
 int dma_release(u32 hdma);
 int dma_setting(u32 hdma, dma_set_t *cfg);
 int dma_start(u32 hdma, u32 saddr, u32 daddr, u32 bytes);
-int dma_stop(u32 hdma);
+int sunxi_dma_stop(u32 hdma);
 int dma_querystatus(u32 hdma);
 
 int dma_test();

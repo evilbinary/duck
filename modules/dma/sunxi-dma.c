@@ -10,7 +10,7 @@
 
 #define SUNXI_DMA_MAX 16
 // #define kprintf
-// #define log_debug
+#define log_debug
 
 static int dma_init_ok = -1;
 static dma_source_t dma_channel_source[SUNXI_DMA_MAX];
@@ -53,7 +53,7 @@ void *dma_handler(interrupt_context_t *ic) {
 
 
   gic_irqack(irq);
-  kprintf("dma handler %d\n", irq);
+  // kprintf("dma handler %d\n", irq);
 
   return NULL;
 }
@@ -162,7 +162,7 @@ u32 dma_request(u32 channel) {
   return 0;
 }
 
-int dma_release(u32 hdma) {
+int sunxi_dma_release(u32 hdma) {
   dma_source_t *dma_source = (dma_source_t *)hdma;
 
   if (!dma_source->used) return -1;
@@ -196,7 +196,7 @@ int dma_setting(u32 hdma, dma_set_t *cfg) {
   return 0;
 }
 
-void dma_set_mode(u32 hdma, u32 mode, dma_interrupt_handler_t fun) {
+void dma_set_mode(u32 hdma, u32 mode, dma_interrupt_handler_t fun,void* data) {
   dma_reg_t *dma_reg = (dma_reg_t *)DMA_BASE;
   dma_source_t *dma_source = (dma_source_t *)hdma;
   u32 channel_no = dma_source->channel_count;
@@ -208,7 +208,7 @@ void dma_set_mode(u32 hdma, u32 mode, dma_interrupt_handler_t fun) {
     } else {
       dma_reg->irq_en1 |= ((DMA_PKG_END_INT) << ((channel_no - 8) * 4));
     }
-    dma_source->dma_func.m_data = NULL;
+    dma_source->dma_func.m_data = data;
     dma_source->dma_func.m_func = fun;
 
     gic_irq_priority(0, IRQ_DMAC, 10);
@@ -246,7 +246,7 @@ int dma_start(u32 hdma, u32 saddr, u32 daddr, u32 bytes) {
   return 0;
 }
 
-int dma_stop(u32 hdma) {
+int sunxi_dma_stop(u32 hdma) {
   dma_source_t *dma_source = (dma_source_t *)hdma;
   dma_channel_reg_t *channel = dma_source->channel;
 
@@ -319,7 +319,7 @@ int dma_test() {
 
   dma_setting(hdma, &dma_set);
 
-  dma_set_mode(hdma, 1, NULL);
+  dma_set_mode(hdma, 1, NULL,NULL);
 
   // prepare data
   for (i = 0; i < (len / 4); i += 4) {
@@ -343,8 +343,8 @@ int dma_test() {
 
   if (st) {
     kprintf("DMA: test timeout! ret=%x\r\n", st);
-    dma_stop(hdma);
-    dma_release(hdma);
+    sunxi_dma_stop(hdma);
+    sunxi_dma_release(hdma);
 
     return -2;
   } else {
@@ -366,13 +366,19 @@ int dma_test() {
     }
   }
 
-  dma_stop(hdma);
-  dma_release(hdma);
+  sunxi_dma_stop(hdma);
+  sunxi_dma_release(hdma);
 
   return 0;
 }
 
-u32 dma_init(u32 channel, u32 mode, dma_interrupt_handler_t handler) {
+void dma_stop(u32 channel){
+  u32 hdma = dma_request(channel);
+  sunxi_dma_stop(hdma);
+  sunxi_dma_release(hdma);
+}
+
+u32 dma_init(u32 channel, u32 mode, dma_interrupt_handler_t handler,void* data) {
   dma_init_all();
 
   dma_set_t dma_set;
@@ -402,9 +408,9 @@ u32 dma_init(u32 channel, u32 mode, dma_interrupt_handler_t handler) {
   dma_set.channel_cfg.dst_data_width = DMAC_CFG_DEST_DATA_WIDTH_16BIT;
   dma_set.channel_cfg.reserved1 = 0;
 
-  dma_set.channel_cfg.src_burst_length = DMAC_CFG_SRC_1_BURST;
+  dma_set.channel_cfg.src_burst_length = DMAC_CFG_SRC_4_BURST;
   dma_set.channel_cfg.src_data_width = DMAC_CFG_SRC_DATA_WIDTH_16BIT;
-  dma_set.channel_cfg.dst_burst_length = DMAC_CFG_DEST_1_BURST;
+  dma_set.channel_cfg.dst_burst_length = DMAC_CFG_DEST_4_BURST;
   dma_set.channel_cfg.dst_data_width = DMAC_CFG_DEST_DATA_WIDTH_16BIT;
 
   log_debug("dma init settting\n");
@@ -413,7 +419,7 @@ u32 dma_init(u32 channel, u32 mode, dma_interrupt_handler_t handler) {
 
   log_debug("dma init set mode\n");
 
-  dma_set_mode(hdma, mode, handler);
+  dma_set_mode(hdma, mode, handler,data);
   log_debug("dma init end\n");
 }
 
@@ -434,7 +440,7 @@ u32 dma_trans(u32 channel, void *src, void *dst, size_t len) {
 
   dma_source_t *dma_source = (dma_source_t *)hdma;
 
-  dma_source->dma_func.m_data = src;
+  cpu_cache_flush_range(src, (u32)src + len);
 
   dma_start(hdma, (u32)src, (u32)dst, len);
 
@@ -446,12 +452,12 @@ u32 dma_trans(u32 channel, void *src, void *dst, size_t len) {
   log_debug("st ==>%x\n", st);
   if (st) {
     log_debug("DMA: tran timeout! ret=%x\r\n", st);
-    // dma_stop(hdma);
-    dma_release(hdma);
+    // sunxi_dma_stop(hdma);
+    sunxi_dma_release(hdma);
     return -1;
   }
-  // dma_stop(hdma);
-  dma_release(hdma);
+  // sunxi_dma_stop(hdma);
+  sunxi_dma_release(hdma);
 
   return 1;
 }
