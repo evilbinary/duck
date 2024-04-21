@@ -1,6 +1,6 @@
 #include "buffer.h"
 
-#define DEBUG_BUFFER 1
+// #define DEBUG_BUFFER 1
 
 buffer_t* buffer_create(u32 size, buffer_write_wait_fn write,
                         buffer_read_wait_fn read, buffer_write_notify_fn wn,
