@@ -913,15 +913,15 @@ int sys_self(void* t) {
 int sys_clock_nanosleep(int clock, int flag, struct timespec* req,
                         struct timespec* rem) {
   thread_t* current = thread_current();
-  if(current->id>3){
-    kprintf("sys_clock_nanosleep %d %d\n",req->tv_sec,req->tv_nsec);
-  }
-  schedule_sleep(req->tv_sec * 1000  + req->tv_nsec/1000);
+  // if (current->id > 3) {
+  //   kprintf("sys_clock_nanosleep %d %d\n", req->tv_sec, req->tv_nsec);
+  // }
+  schedule_sleep(req->tv_sec * 1000 + req->tv_nsec / 1000);
   return 0;
 }
 
 int sys_nanosleep(struct timespec* req, struct timespec* rem) {
-  schedule_sleep(req->tv_sec * 1000  + req->tv_nsec/1000);
+  schedule_sleep(req->tv_sec * 1000 + req->tv_nsec / 1000);
   return 0;
 }
 
@@ -1051,11 +1051,13 @@ u32 sys_time(time_t* t) {
   time.minute = 0;
   time.month = 1;
   time.second = 0;
-  time.year = 1900;
+  time.year = 1970;
   int ret = sys_read(time_fd, &time, sizeof(rtc_time_t));
   if (ret < 0) {
     return 0;
   }
+  //log_info("%d-%d-%d %d:%d:%d\n",time.year,time.month,time.day,time.hour,time.minute,time.second);
+
   uint32_t seconds = secs_of_years(time.year - 1) +
                      secs_of_month(time.month - 1, time.year) +
                      (time.day - 1) * 86400 + time.hour * 3600 +
@@ -1069,10 +1071,11 @@ int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
     time_t seconds;
     int rc = sys_time(&seconds);
     ts->tv_sec = seconds;
-    ts->tv_nsec = 0;
+    int ticks = schedule_get_ticks() % 1000;
+    ts->tv_nsec = ticks * 1000;
     return 0;
-  }else{
-    log_warn("clock not support %d\n",clockid);
+  } else {
+    log_warn("clock not support %d\n", clockid);
   }
   return 0;
 }

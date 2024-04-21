@@ -223,7 +223,10 @@ int dma_start(u32 hdma, u32 saddr, u32 daddr, u32 bytes) {
 
   u32 channel_no = dma_source->channel_count;
 
-  if (!dma_source->used) return -1;
+  if (!dma_source->used){
+    log_debug("dma is used\n");
+    return -1;
+  } 
 
   log_debug("dma desc %x channel %x\n", desc, channel);
 
@@ -237,7 +240,6 @@ int dma_start(u32 hdma, u32 saddr, u32 daddr, u32 bytes) {
   dmb();
   channel->desc_addr = (u32)desc;
   dmb();
-  channel->enable = 0;
   channel->enable = 1;
   channel->pause = 0;
   dmb();

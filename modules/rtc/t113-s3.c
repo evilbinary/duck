@@ -25,41 +25,49 @@ void rtc_convert_bcd(rtc_time_t* current, u32 b) {
   }
 }
 
-void days_to_date(int days, int* year, int* month, int* day) {
-  static const int days_per_month[] = {31, 28, 31, 30, 31, 30,
-                                       31, 31, 30, 31, 30, 31};
+// 判断是否为闰年
+int is_leap_year(int year) {
+  if ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)) {
+    return 1;  // 是闰年
+  } else {
+    return 0;  // 不是闰年
+  }
+}
 
-  int y = 1900;  // 假设起始年份为1970年
-  int m = 1;     // 从1月开始计算
-  int d = 1;     // 从1号开始计算
+// 天数转换为年月日
+void convert_days_to_date(int days, int* year, int* month, int* day) {
+  *year = 1900;  // 开始年份
+  *month = 1;    // 开始月份
+  *day = 1;      // 开始日
+
+  if (days < 30) {
+    return;
+  }
 
   while (days > 0) {
-    int days_in_year = 365;
-    if (((y % 4 == 0) && (y % 100 != 0)) || (y % 400 == 0))  // 判断是否是闰年
-      days_in_year = 366;
-
-    if (days >= days_in_year) {
-      days -= days_in_year;
-      y++;
-    } else {
-      int days_in_month = days_per_month[m - 1];
-      if (m == 2 &&
-          ((y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)))  // 闰年的2月份
-        days_in_month++;
-
-      if (days >= days_in_month) {
-        days -= days_in_month;
-        m++;
+    // 如果是闰年，二月有29天，否则有28天
+    if (is_leap_year(*year)) {
+      if (days > 366) {
+        days -= 366;
+        (*year)++;
       } else {
-        d += days;
-        break;
+        *month = 3;
+        *day = days - 31;  // 1月31天，2月29天
+        days = 0;
+      }
+    } else {
+      // 非闰年的二月有28天
+      static const int days_per_month[12] = {31, 28, 31, 30, 31, 30,
+                                             31, 31, 30, 31, 30, 31};
+      if (days > days_per_month[*month - 1]) {
+        days -= days_per_month[*month - 1];
+        (*month)++;
+      } else {
+        *day = days;
+        days = 0;
       }
     }
   }
-
-  *year = y;
-  *month = m;
-  *day = d;
 }
 
 void rtc_get_time() {
@@ -69,13 +77,16 @@ void rtc_get_time() {
   u32 d = io_read32(RTC_BASE + 0x0010);
   u32 t = io_read32(RTC_BASE + 0x0014);
 
+  rtc_time.second = ((t >> 0) & 0x3f);
+  rtc_time.minute = ((t >> 8) & 0x3f);
+  rtc_time.hour = ((t >> 16) & 0x1f);
+
+  convert_days_to_date(d, &rtc_time.year, &rtc_time.month, &rtc_time.day);
+
   // kprintf("day %d  t %d\n", d, t);
 
-  rtc_time.second = ((t >> 0) & 0x3f);
-  rtc_time.minute = ((t >> 8) & 0x3f) * 60;
-  rtc_time.hour = ((t >> 16) & 0x1f) * 3600;
-
-  days_to_date(d, &rtc_time.year, &rtc_time.month, &rtc_time.day);
+  // kprintf("%d-%d-%d %d:%d:%d\n", rtc_time.year, rtc_time.month, rtc_time.day,
+          // rtc_time.hour, rtc_time.minute, rtc_time.second);
 }
 
 void rtc_write_time(rtc_time_t* current) {
