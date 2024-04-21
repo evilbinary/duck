@@ -39,7 +39,7 @@ thread_t* schedule_next(int cpu) {
     if (v->state != THREAD_RUNNING || v == next) {
       continue;
     }
-    if (v->counter <= next->counter) {
+    if (v->counter < next->counter) {
       next = v;
     }
   }
@@ -84,9 +84,11 @@ void schedule_sleep(u32 nsec) {
   if (current == NULL || current->state != THREAD_RUNNING) {
     return;
   }
-  u32 tick = nsec / SCHEDULE_FREQUENCY / 1000;
+  u32 tick = nsec / SCHEDULE_FREQUENCY;
   // kprintf("%d schedule_sleep nsec=%d tick=%d\n", current->id, nsec,tick);
   thread_sleep(current, tick);
+  // thread_dumps();
+
   // this will fail on qemu memory
   if (current->ctx != NULL && current->ctx->ic != NULL) {
     // schedule(current->ctx->ic);
@@ -107,15 +109,14 @@ void* do_schedule(interrupt_context_t* ic) {
 
   if (timer_ticks[cpu] % (count * 10) == 1) {
     next_thread = schedule_next(cpu);
-
     if (next_thread == NULL) {
       log_debug("schedule error next\n");
       return NULL;
     }
   }
 
-  current_thread->counter++;
-  current_thread->ticks++;
+  next_thread->counter++;
+  next_thread->ticks++;
   timer_ticks[cpu]++;
 
   if (next_thread->id >= 0) {

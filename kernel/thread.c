@@ -290,7 +290,7 @@ void thread_fill_fd(thread_t* thread) {
 
 void thread_sleep(thread_t* thread, u32 count) {
   thread->state = THREAD_SLEEP;
-  thread->sleep_counter = count;
+  thread->sleep_counter += count;
   thread->counter += count;
 }
 

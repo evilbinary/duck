@@ -16,7 +16,7 @@
 
 static void* syscall_table[SYSCALL_NUMBER] = {0};
 
-// #define log_debug
+#define log_debug
 
 int sys_print(char* s) {
   thread_t* current = thread_current();
@@ -912,13 +912,16 @@ int sys_self(void* t) {
 
 int sys_clock_nanosleep(int clock, int flag, struct timespec* req,
                         struct timespec* rem) {
-  // kprintf("sys_clock_nanosleep %d %d\n",req->tv_sec,req->tv_nsec);
-  schedule_sleep(req->tv_sec * 1000 * 1000 * 1000 + req->tv_nsec);
+  thread_t* current = thread_current();
+  if(current->id>3){
+    kprintf("sys_clock_nanosleep %d %d\n",req->tv_sec,req->tv_nsec);
+  }
+  schedule_sleep(req->tv_sec * 1000  + req->tv_nsec/1000);
   return 0;
 }
 
 int sys_nanosleep(struct timespec* req, struct timespec* rem) {
-  schedule_sleep(req->tv_sec * 1000 * 1000 * 1000 + req->tv_nsec);
+  schedule_sleep(req->tv_sec * 1000  + req->tv_nsec/1000);
   return 0;
 }
 
@@ -1062,13 +1065,7 @@ u32 sys_time(time_t* t) {
 }
 
 int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
-  if (clockid == 1) {
-    time_t seconds;
-    int rc = sys_time(&seconds);
-    ts->tv_sec = seconds;
-    ts->tv_nsec = 0;
-    return 0;
-  } else if (clockid == 0) {
+  if (clockid == 0) {
     time_t seconds;
     int rc = sys_time(&seconds);
     ts->tv_sec = seconds;

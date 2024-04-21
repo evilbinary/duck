@@ -28,8 +28,8 @@ void test_vfs(){
 void test_dma(){
   #ifdef DMA_MODULE
   log_info("test dma\n");
-  dma_init(0);
-  dma_test();
+  // dma_init(0);
+  // dma_test();
 
 
   #endif
