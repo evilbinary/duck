@@ -107,13 +107,13 @@ void* do_schedule(interrupt_context_t* ic) {
 
   int count = schedule_state(cpu);
 
-  if (timer_ticks[cpu] % (count * 10) == 1) {
+  // if (timer_ticks[cpu] % (count * 2) == 1) {
     next_thread = schedule_next(cpu);
     if (next_thread == NULL) {
       log_debug("schedule error next\n");
       return NULL;
     }
-  }
+  // }
 
   next_thread->counter++;
   next_thread->ticks++;
