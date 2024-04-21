@@ -24,7 +24,7 @@
 
 
 typedef struct sound_device{
-
+    void * buffer;
     char* sound_buf;
     int is_play;
     int play_size;

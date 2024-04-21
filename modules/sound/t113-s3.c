@@ -22,7 +22,8 @@
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 // #define TRANS_CPU 1
 
-#define SOUND_BUF_SIZE SAMPLE_RATE * 4
+#define SOUND_BUF_SIZE SAMPLE_RATE * 6
+#define SOUND_PLAY_SIZE 8192
 
 struct sample_rate {
   unsigned int rate;
@@ -91,8 +92,14 @@ void sound_play(sound_device_t* dev, void* buf, size_t len) {
   // kmemcpy(&dev->sound_buf[dev->buf_pos], buf, len);
   // dev->buf_pos += len;
 
-  dev->play_size = len;
-  kmemcpy(dev->sound_buf, buf, len);
+  // dev->play_size = len;
+  // kmemcpy(dev->sound_buf, buf, len);
+
+  if ((buffer_size(dev->buffer) + len) > SOUND_BUF_SIZE) {
+    buffer_clear(dev->buffer);
+  }
+  buffer_write(dev->buffer, buf, len);
+
   if (dev->is_play == 0) {
     kprintf("dma trans start sound buf %x buf %x\n", dev->sound_buf, buf);
     dma_trans(0, dev->sound_buf, CODEC_BASE + 0x0020, len);
@@ -457,6 +464,8 @@ void dma_audio_handler(void* data) {
     return 0;
   }
 
+  buffer_read(dev->buffer, dev->sound_buf, dev->play_size);
+
   // log_info("dma_audio_handler %x play size %d\n", dev->sound_buf,
   // dev->play_size);
   dma_trans(0, dev->sound_buf, CODEC_BASE + 0x0020, dev->play_size);
@@ -574,7 +583,10 @@ int sound_init(void) {
 
   sound_device_t* sound_device = kmalloc(sizeof(sound_device_t), DEFAULT_TYPE);
   dev->data = sound_device;
-  sound_device->sound_buf = kmalloc(SOUND_BUF_SIZE, DEVICE_TYPE);
+
+  sound_device->sound_buf = kmalloc(SOUND_PLAY_SIZE, DEVICE_TYPE);
+  sound_device->buffer = buffer_create(SOUND_BUF_SIZE, NULL, NULL, NULL, NULL);
+  sound_device->play_size = SOUND_PLAY_SIZE;
 
   gic_irq_priority(0, IRQ_AUDIO_CODEC, 10);
 

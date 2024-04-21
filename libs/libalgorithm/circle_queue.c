@@ -4,7 +4,7 @@ cqueue_t* cqueue_create(u32 size, u32 type) {
   cqueue_t* queue = fn_malloc(sizeof(cqueue_t));
   if (queue) {
     queue->type = type;
-    queue->elements = fn_malloc(size * sizeof(void*)+1);
+    queue->elements = fn_malloc(size * sizeof(void*) + 1);
     if (queue->elements) {
       queue->size = size;
       queue->head = 0;
@@ -18,6 +18,15 @@ cqueue_t* cqueue_create(u32 size, u32 type) {
   return queue;
 }
 
+void cqueue_clear(cqueue_t* queue) {
+  if (queue) {
+    queue->head = 0;
+    queue->tail = 0;
+    queue->is_full = 0;
+    kmemset(queue->elements,0,queue->size);
+  }
+}
+
 void cqueue_destroy(cqueue_t* queue) {
   if (queue) {
     fn_free(queue->elements);
@@ -25,7 +34,13 @@ void cqueue_destroy(cqueue_t* queue) {
   }
 }
 
-u32 cqueue_is_full(cqueue_t* queue) { return queue->is_full == 1; }
+u32 cqueue_is_full(cqueue_t* queue) {
+  if (queue->tail == queue->size) {
+    return 1;
+  } else {
+    return queue->is_full == 1;
+  }
+}
 
 u32 cqueue_is_empty(cqueue_t* queue) {
   return (queue->head == queue->tail) && !queue->is_full;
@@ -99,19 +114,9 @@ void cqueue_resize(cqueue_t* queue) {
   }
 }
 
-
 int cqueue_put_byte(cqueue_t* queue, u8* element) {
   unsigned int result;
-  if (queue->is_full) {
-    if (queue->type == CQUEUE_DROP) {
-      cqueue_poll_byte(queue);
-    } else if (queue->type == CQUEUE_RESIZE) {
-      cqueue_resize(queue);
-    }
-    if (queue->is_full) {
-      result = 0;
-    }
-  }
+
   if (!queue->is_full) {
     ((u8*)queue->elements)[queue->tail++] = element;
     if (queue->tail == queue->size) {
@@ -122,6 +127,18 @@ int cqueue_put_byte(cqueue_t* queue, u8* element) {
     }
     result = 1;
   }
+
+  if (queue->is_full) {
+    if (queue->type == CQUEUE_DROP) {
+      cqueue_poll_byte(queue);
+    } else if (queue->type == CQUEUE_RESIZE) {
+      cqueue_resize(queue);
+    }
+    if (queue->is_full) {
+      result = 0;
+    }
+  }
+
   return result;
 }
 
