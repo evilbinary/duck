@@ -30,19 +30,9 @@ struct sample_rate {
 };
 
 struct sample_rate rate_tab[] = {
-    {8000, 5},
-    {11025, 4},
-    {12000, 4},
-    {16000, 3},
-    {22050, 2}, 
-    {24000, 2},
-    {32000, 1}, 
-    {44100, 0}, 
-    {48000, 0},  
-    {88200, 7},
-    {96000, 7},
-    {192000, 6},
-    {992000, 6},
+    {8000, 5},  {11025, 4},  {12000, 4},  {16000, 3}, {22050, 2},
+    {24000, 2}, {32000, 1},  {44100, 0},  {48000, 0}, {88200, 7},
+    {96000, 7}, {192000, 6}, {992000, 6},
 };
 
 static size_t read(device_t* dev, void* buf, size_t len) {
@@ -92,7 +82,6 @@ void sound_play(sound_device_t* dev, void* buf, size_t len) {
       i += 8;
       val = io_read32(CODEC_BASE + 0x0014);
     }
-
   }
 
 #else
@@ -184,7 +173,8 @@ void audio_ccu() {
   val = io_read32(CCU_BASE + 0x0080);
   val |= (1 << 29);
   io_write32(CCU_BASE + 0x0080, val);
-  while (!(io_read32(CCU_BASE + 0x0080) & (0x1 << 28)));
+  while (!(io_read32(CCU_BASE + 0x0080) & (0x1 << 28)))
+    ;
 
   // // PLL_AUDIO_PAT1_CTRL_REG 0x17C
   // io_write32(CCU_BASE + 0x17C, 0x0);
@@ -197,7 +187,8 @@ void audio_ccu() {
   val |= (1 << 29);
   io_write32(CCU_BASE + 0x0078, val);
 
-  while (!(io_read32(CCU_BASE + 0x0078) & (0x1 << 28)));
+  while (!(io_read32(CCU_BASE + 0x0078) & (0x1 << 28)))
+    ;
 
   cpu_delay_msec(20);
 }
@@ -213,7 +204,7 @@ void codec_dac() {
   val |= 0 << 26;  // SEND_LASAT
   val |= 0 << 24;  // FIFO_MODE 1 2 3
   val |= 0 << 21;  // DAC_DRQ_CLR_CNT
-  val |= 32 << 8;   // TX_TRIG_LEVEL
+  val |= 32 << 8;  // TX_TRIG_LEVEL
   val |=
       1 << 6;  // DAC_MONO_EN 0: Stereo, 64 Levels FIFO 1: Mono, 128 Levels FIFO
   val |= 0 << 5;  // TX_SAMPLE_BITS 0: 16 bits 1: 20 bits
@@ -422,27 +413,30 @@ void codec_param(int format, int channal, int freq) {
 
   } else if (format == 24) {
     // DAC_FIFOC
-    val &= ~(0 << 24);
+    val &= ~(3 << 24);
     val |= 0 << 24;
     val &= ~(1 << 5);
     val |= (1 << 5);
   }
+
   if (channal == 1) {  // mono
     val &= ~(1 << 6);
     val |= (1 << 6);
   } else if (channal == 2) {  // stereo
-    val &= ~(0 << 6);
+    val &= ~(1 << 6);
     val |= (0 << 6);
   }
-
   val &= ~(7 << 29);
   val |= 0 << 29;
-  for (int i = 0; i < ARRAY_SIZE(rate_tab); i++) {
-     kprintf("freq %d rate %d\n",freq,rate_tab[i].rate);
-    if (freq >= rate_tab[i].rate ) {
-      val &= ~(7 << 29);
-      val |= rate_tab[i].bit << 29;
-      kprintf("set rate %d bit %x\n",rate_tab[i].rate, rate_tab[i].bit);
+  if (freq > 0) {
+
+    for (int i = 0; i < ARRAY_SIZE(rate_tab); i++) {
+      kprintf("freq %d rate %d\n", freq, rate_tab[i].rate);
+      if (freq >= rate_tab[i].rate) {
+        val &= ~(7 << 29);
+        val |= rate_tab[i].bit << 29;
+        kprintf("set rate %d bit %x\n", rate_tab[i].rate, rate_tab[i].bit);
+      }
     }
   }
 
@@ -510,7 +504,8 @@ void* audio_handler(interrupt_context_t* ic) {
     val &= ~(1 << 3);
     kprintf("irq TXE_INT\n");
     io_write32(CODEC_BASE + 0x0014, val);
-    while (!(io_read32(CODEC_BASE + 0x0014) & (1 << 3)));
+    while (!(io_read32(CODEC_BASE + 0x0014) & (1 << 3)))
+      ;
   }
 
   kprintf("irq TXE_INT1\n");
@@ -524,20 +519,20 @@ void* audio_handler(interrupt_context_t* ic) {
 
 size_t sound_ioctl(device_t* dev, u32 cmd, void* args) {
   u32 ret = 0;
-  kprintf("cound_ioct %d\n", cmd);
+  kprintf("sound_ioctl %d\n", cmd);
 
   if (cmd == SNDCTL_DSP_GETFMTS) {
     u32* val = args;
     *val = AFMT_S16_LE;
   } else if (cmd == SNDCTL_DSP_CHANNELS) {
-    u32 val = args;
-    kprintf("SNDCTL_DSP_CHANNELS %d\n", val);
-    codec_param(-1, val, -1);
+    u32* val = args;
+    kprintf("SNDCTL_DSP_CHANNELS %d\n", *val);
+    codec_param(-1, *val, -1);
 
   } else if (cmd == SNDCTL_DSP_SPEED) {
-    int val = args;
-    kprintf("SNDCTL_DSP_SPEED %d\n", val);
-    codec_param(-1, -1, val);
+    u32* val = args;
+    kprintf("SNDCTL_DSP_SPEED %d\n", *val);
+    codec_param(-1, -1, *val);
 
     kprintf("dma_init\n");
 #ifdef TRANS_CPU

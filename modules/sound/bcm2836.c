@@ -6,6 +6,7 @@
 #include "dev/devfs.h"
 #include "dma/dma.h"
 #include "kernel/kernel.h"
+#include "sound.h"
 
 static size_t read(device_t* dev, void* buf, size_t len) {
   u32 ret = 0;
@@ -20,12 +21,30 @@ static size_t write(device_t* dev, void* buf, size_t len) {
   return ret;
 }
 
+void codec_init() {}
 
-void codec_init(){
+size_t sound_ioctl(device_t* dev, u32 cmd, void* args) {
+  u32 ret = 0;
+  kprintf("sound_ioctl %d %x\n", cmd, args);
+  if (args == NULL) {
+    return 0;
+  }
+  if (cmd == SNDCTL_DSP_GETFMTS) {
+    u32* val = args;
+    *val = AFMT_S16_LE;
+  } else if (cmd == SNDCTL_DSP_CHANNELS) {
+    u32* val = args;
+    kprintf("SNDCTL_DSP_CHANNELS %d\n", *val);
 
-    
+  } else if (cmd == SNDCTL_DSP_SPEED) {
+    u32* val = args;
+    kprintf("SNDCTL_DSP_SPEED %d\n", *val);
+
+    kprintf("dma_init end\n");
+  }
+
+  return ret;
 }
-
 
 int sound_init(void) {
   log_info("sound init\n");
@@ -33,6 +52,7 @@ int sound_init(void) {
   dev->name = "sound";
   dev->read = read;
   dev->write = write;
+  dev->ioctl = sound_ioctl;
   dev->id = DEVICE_SB;
   dev->type = DEVICE_TYPE_BLOCK;
   device_add(dev);
@@ -43,9 +63,7 @@ int sound_init(void) {
   dsp->op = &device_operator;
   vfs_mount(NULL, "/dev", dsp);
 
-
   codec_init();
-
 
   return 0;
 }
