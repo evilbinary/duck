@@ -22,8 +22,8 @@
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 // #define TRANS_CPU 1
 
-#define SOUND_BUF_SIZE SAMPLE_RATE * 6
-#define SOUND_PLAY_SIZE 8192
+#define SOUND_BUF_SIZE SAMPLE_RATE * 40
+#define SOUND_PLAY_SIZE 44100
 
 struct sample_rate {
   unsigned int rate;
@@ -147,11 +147,10 @@ void audio_ccu() {
   val |= 1 << 24;  // PLL_SDM_EN
   // PLL_AUDIO0(1X) = (24MHz*N/M1/M0)/P/4 (24000000 * 39 / 2 / 1) / 4 /
   // 4=29 250 000
-  val |= 4 << 16;  // PLL_P
-  val |= 39 << 8;  // PLL_N
+  val |= 0 << 16;  // PLL_P
+  val |= 1 << 8;  // PLL_N
   val |= 0 << 1;   // PLL_M1
   val |= 1 << 0;   // PLL_M0
-
   io_write32(CCU_BASE + 0x0078, val);
 
   // // play back
@@ -273,8 +272,8 @@ void codec_analog() {
   val = io_read32(CODEC_BASE + 0x0348);
   val |= 1 << 31;    // ALDO_EN
   val |= 1 << 30;    // HPLDO_EN
-  val |= 3 << 12;    // ALDO_OUTPUT_VOLTAGE 011: 1.80 V
-  val |= 3 << 8;     // HPLDO_OUTPUT_VOLTAGE 011: 1.80 V
+  val |= 0 << 12;    // ALDO_OUTPUT_VOLTAGE 011: 1.80 V
+  val |= 0 << 8;     // HPLDO_OUTPUT_VOLTAGE 011: 1.80 V
   val |= 0x19 << 0;  // BG_TRIM
   io_write32(CODEC_BASE + 0x0348, val);
 
@@ -363,11 +362,11 @@ void codec_enable(int enable) {
 
   // AC_DAC_DRC_CTRL
   val = io_read32(CODEC_BASE + 0x0108);
-  // val |= 1 << 4;  // DAC_DRC_DETECT_NOISE_EN
-  // val |= 1 << 3;  // DAC_DRC_SIGNAL_FUNC_SEL
-  // val |= 1 << 6;  // DAC_DRC_GAIN_MAX_LIMIT_EN
-  // val |= 1 << 5;  // DAC_DRC_GAIN_MIN_LIMIT_EN
-  // val |= 1 << 7;  // DAC_DRC_DELAY_BUF_EN
+  val |= 1 << 4;  // DAC_DRC_DETECT_NOISE_EN
+  val |= 1 << 3;  // DAC_DRC_SIGNAL_FUNC_SEL
+  val |= 1 << 6;  // DAC_DRC_GAIN_MAX_LIMIT_EN
+  val |= 1 << 5;  // DAC_DRC_GAIN_MIN_LIMIT_EN
+  val |= 1 << 7;  // DAC_DRC_DELAY_BUF_EN
 
   val |= 1 << 1;  // DAC_DRC_LT_EN
   val |= 1 << 0;  // DAC_DRC_ET_EN
@@ -543,6 +542,7 @@ void* audio_handler(interrupt_context_t* ic) {
 size_t sound_ioctl(device_t* dev, u32 cmd, void* args) {
   u32 ret = 0;
   kprintf("sound_ioctl %d\n", cmd);
+  sound_device_t* sound_device= dev->data;
 
   if (cmd == SNDCTL_DSP_GETFMTS) {
     u32* val = args;
@@ -550,12 +550,13 @@ size_t sound_ioctl(device_t* dev, u32 cmd, void* args) {
   } else if (cmd == SNDCTL_DSP_CHANNELS) {
     u32* val = args;
     kprintf("SNDCTL_DSP_CHANNELS %d\n", *val);
+    sound_device->channal=*val;
     codec_param(-1, *val, -1);
 
   } else if (cmd == SNDCTL_DSP_SPEED) {
     u32* val = args;
     kprintf("SNDCTL_DSP_SPEED %d\n", *val);
-    codec_param(-1, -1, *val);
+    codec_param(-1, sound_device->channal, *val);
 
     kprintf("dma_init\n");
 #ifdef TRANS_CPU

@@ -396,7 +396,7 @@ u32 dma_init(u32 channel, u32 mode, dma_interrupt_handler_t handler,void* data) 
   // dma
   dma_set.loop_mode = 1;
   dma_set.wait_cyc = 0;
-  dma_set.data_block_size = 32 / 8;
+  dma_set.data_block_size = 16 / 8;
   // channel config (from dram to audio io)
   dma_set.channel_cfg.src_drq_type = DMAC_CFG_TYPE_DRAM;  // dram
   dma_set.channel_cfg.src_addr_mode = DMAC_CFG_SRC_ADDR_TYPE_LINEAR_MODE;
@@ -411,9 +411,9 @@ u32 dma_init(u32 channel, u32 mode, dma_interrupt_handler_t handler,void* data) 
   dma_set.channel_cfg.reserved1 = 0;
 
   dma_set.channel_cfg.src_burst_length = DMAC_CFG_SRC_4_BURST;
-  dma_set.channel_cfg.src_data_width = DMAC_CFG_SRC_DATA_WIDTH_16BIT;
+  dma_set.channel_cfg.src_data_width = DMAC_CFG_SRC_DATA_WIDTH_32BIT;
   dma_set.channel_cfg.dst_burst_length = DMAC_CFG_DEST_4_BURST;
-  dma_set.channel_cfg.dst_data_width = DMAC_CFG_DEST_DATA_WIDTH_16BIT;
+  dma_set.channel_cfg.dst_data_width = DMAC_CFG_DEST_DATA_WIDTH_32BIT;
 
   log_debug("dma init settting\n");
 
