@@ -148,7 +148,7 @@ void audio_ccu() {
   // PLL_AUDIO0(1X) = (24MHz*N/M1/M0)/P/4 (24000000 * 39 / 2 / 1) / 4 /
   // 4=29 250 000
   val |= 0 << 16;  // PLL_P
-  val |= 1 << 8;  // PLL_N
+  val |= 1 << 8;   // PLL_N
   val |= 0 << 1;   // PLL_M1
   val |= 1 << 0;   // PLL_M0
   io_write32(CCU_BASE + 0x0078, val);
@@ -541,8 +541,7 @@ void* audio_handler(interrupt_context_t* ic) {
 
 size_t sound_ioctl(device_t* dev, u32 cmd, void* args) {
   u32 ret = 0;
-  kprintf("sound_ioctl %d\n", cmd);
-  sound_device_t* sound_device= dev->data;
+  sound_device_t* sound_device = dev->data;
 
   if (cmd == SNDCTL_DSP_GETFMTS) {
     u32* val = args;
@@ -550,7 +549,7 @@ size_t sound_ioctl(device_t* dev, u32 cmd, void* args) {
   } else if (cmd == SNDCTL_DSP_CHANNELS) {
     u32* val = args;
     kprintf("SNDCTL_DSP_CHANNELS %d\n", *val);
-    sound_device->channal=*val;
+    sound_device->channal = *val;
     codec_param(-1, *val, -1);
 
   } else if (cmd == SNDCTL_DSP_SPEED) {
@@ -566,6 +565,15 @@ size_t sound_ioctl(device_t* dev, u32 cmd, void* args) {
 #endif
 
     kprintf("dma_init end\n");
+  } else if (cmd == IOC_STAT) {
+    struct stat* stat = args;
+    stat->st_mode = S_IFCHR;
+  } else if (cmd == IOC_STATFS) {
+    kprintf("sound_ioctl2 %d\n", cmd);
+    struct stat* stat = args;
+    stat->st_mode = S_IFCHR;
+  } else {
+    kprintf("sound_ioctl %d\n", cmd);
   }
 
   return ret;

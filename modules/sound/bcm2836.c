@@ -25,7 +25,6 @@ void codec_init() {}
 
 size_t sound_ioctl(device_t* dev, u32 cmd, void* args) {
   u32 ret = 0;
-  kprintf("sound_ioctl %d %x\n", cmd, args);
   if (args == NULL) {
     return 0;
   }
@@ -41,6 +40,15 @@ size_t sound_ioctl(device_t* dev, u32 cmd, void* args) {
     kprintf("SNDCTL_DSP_SPEED %d\n", *val);
 
     kprintf("dma_init end\n");
+  } else if (cmd == IOC_STAT) {
+    struct stat* stat = args;
+    stat->st_mode = S_IFCHR;
+  } else if (cmd == IOC_STATFS) {
+    kprintf("sound_ioctl2 %d\n", cmd);
+    struct stat* stat = args;
+    stat->st_mode = S_IFCHR;
+  } else {
+    kprintf("sound_ioctl %d\n", cmd);
   }
 
   return ret;

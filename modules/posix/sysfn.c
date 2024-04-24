@@ -348,15 +348,18 @@ int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
   void* fn = start_args->start_func;
   void* arg = start_args->start_arg;
 
+  //log_debug("stack %x praent tid %x tls %x child_tid %x\n",stack,parent_tid,tls,child_tid);
   thread_t* find = current;
-  if (*parent_tid > 0) {
-    find = thread_find_id(*parent_tid);
-  }
   if (find == NULL) {
     log_error("find parent tid %d is null\n", *parent_tid);
     find = current;
   }
   thread_t* copy_thread = thread_copy(find, THREAD_FORK);
+  *parent_tid = copy_thread->id;
+
+  thread_info_t* info= ((char *)tls) - sizeof(thread_info_t);
+  copy_thread->info= info;
+
 #ifdef LOG_DEBUG
   kprintf("-------dump current thread %d %s-------------\n", current->id);
   thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
@@ -1056,7 +1059,8 @@ u32 sys_time(time_t* t) {
   if (ret < 0) {
     return 0;
   }
-  //log_info("%d-%d-%d %d:%d:%d\n",time.year,time.month,time.day,time.hour,time.minute,time.second);
+  // log_info("%d-%d-%d
+  // %d:%d:%d\n",time.year,time.month,time.day,time.hour,time.minute,time.second);
 
   uint32_t seconds = secs_of_years(time.year - 1) +
                      secs_of_month(time.month - 1, time.year) +
