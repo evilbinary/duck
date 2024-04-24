@@ -608,6 +608,13 @@ int sound_init(void) {
   dsp->op = &device_operator;
   vfs_mount(NULL, "/dev", dsp);
 
+
+  // /dev/dsp0
+  vnode_t* dsp0 = vfs_create_node("dsp0", V_FILE | V_BLOCKDEVICE);
+  dsp0->device = device_find(DEVICE_SB);
+  dsp0->op = &device_operator;
+  vfs_mount(NULL, "/dev", dsp0);
+
   log_info("sound init3 %x\n", CODEC_BASE);
 
   codec_init();

@@ -1078,6 +1078,13 @@ int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
     int ticks = schedule_get_ticks() % 1000;
     ts->tv_nsec = ticks * 1000;
     return 0;
+  }else if (clockid == 4) {
+    time_t seconds;
+    int rc = sys_time(&seconds);
+    ts->tv_sec = seconds;
+    int ticks = schedule_get_ticks() % 1000;
+    ts->tv_nsec = ticks * 1000;
+    return 0;
   } else {
     log_warn("clock not support %d\n", clockid);
   }
@@ -1243,7 +1250,7 @@ void sys_fn_call_handler(int no, interrupt_context_t* ic) {
     sys_fn_call((ic), fn);
     // kprintf(" ret=%x\n",context_ret(ic));
   } else {
-    log_warn("syscall %d not found\n", context_fn(ic));
+    log_warn("syscall %d not found handler\n", context_fn(ic));
   }
 }
 
