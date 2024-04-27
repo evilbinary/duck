@@ -348,7 +348,8 @@ int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
   void* fn = start_args->start_func;
   void* arg = start_args->start_arg;
 
-  //log_debug("stack %x praent tid %x tls %x child_tid %x\n",stack,parent_tid,tls,child_tid);
+  // log_debug("stack %x praent tid %x tls %x child_tid
+  // %x\n",stack,parent_tid,tls,child_tid);
   thread_t* find = current;
   if (find == NULL) {
     log_error("find parent tid %d is null\n", *parent_tid);
@@ -357,8 +358,8 @@ int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
   thread_t* copy_thread = thread_copy(find, THREAD_FORK);
   *parent_tid = copy_thread->id;
 
-  thread_info_t* info= ((char *)tls) - sizeof(thread_info_t);
-  copy_thread->info= info;
+  thread_info_t* info = ((char*)tls) - sizeof(thread_info_t);
+  copy_thread->info = info;
 
 #ifdef LOG_DEBUG
   kprintf("-------dump current thread %d %s-------------\n", current->id);
@@ -1078,7 +1079,7 @@ int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
     int ticks = schedule_get_ticks() % 1000;
     ts->tv_nsec = ticks * 1000;
     return 0;
-  }else if (clockid == 4) {
+  } else if (clockid == 4) {
     time_t seconds;
     int rc = sys_time(&seconds);
     ts->tv_sec = seconds;
@@ -1234,6 +1235,37 @@ int sys_statfs64(const char* filename, struct statfs* stat) {
   return ret;
 }
 
+int sys_sched_getparam(int pid, sched_param_t* param) {
+  log_debug("sys sched getparam not impl\n");
+
+  return 0;
+}
+
+int sys_sched_setparam(int pid, sched_param_t* param) {
+  log_debug("sys sched setparam not impl\n");
+
+  return 0;
+}
+
+int sys_sched_get_priority_max(int policy) {
+  log_debug("sys_sched_get_priority_max not impl\n");
+
+  return 0;
+}
+
+int sys_sched_get_priority_min(int policy) {
+  log_debug("sys_sched_get_priority_min not impl\n");
+
+  return 0;
+}
+
+int sys_sched_setscheduler(pid_t pid, int policy,
+                           const struct sched_param* param) {
+  log_debug("sys_sched_setscheduler not impl\n");
+
+  return 0;
+}
+
 int sys_fn_faild_handler(int no, interrupt_context_t* ic) {
   int call_id = context_fn(ic);
   log_debug("sys fn faild %x\n", call_id);
@@ -1352,4 +1384,9 @@ void sys_fn_init() {
   syscall_table[SYS_THREAD_MAP] = &sys_thread_map;
   syscall_table[SYS_FSTAT64] = &sys_fstat64;
   syscall_table[SYS_STATFS64] = &sys_statfs64;
+  syscall_table[SYS_SCHED_GETPARAM] = &sys_sched_getparam;
+  syscall_table[SYS_SCHED_SETPARAM] = &sys_sched_setparam;
+  syscall_table[SYS_SCHED_SETSCHEDULER] = &sys_sched_setscheduler;
+  syscall_table[SYS_SCHED_GET_PRIORITY_MAX] = &sys_sched_get_priority_max;
+  syscall_table[SYS_SCHED_GET_PRIORITY_MIN] = &sys_sched_get_priority_min;
 }

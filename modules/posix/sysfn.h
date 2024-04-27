@@ -52,6 +52,12 @@ enum {
   SYS_GETDENTS = 141,
   SYS_READV = 145,
   SYS_WRITEV = 146,
+  SYS_SCHED_GETPARAM = 155,
+  SYS_SCHED_SETPARAM = 156,
+  SYS_SCHED_SETSCHEDULER = 157,
+  SYS_SCHED_YIELD = 158,
+  SYS_SCHED_GET_PRIORITY_MAX = 159,
+  SYS_SCHED_GET_PRIORITY_MIN = 160,
   SYS_YIELD = 158,
   SYS_NANOSLEEP = 162,
   SYS_MREMAP = 163,
@@ -133,6 +139,13 @@ enum {
   SYS_GETDENTS = 141,
   SYS_READV = 145,
   SYS_WRITEV = 146,
+  SYS_SCHED_GETPARAM = 155,
+  SYS_SCHED_SETPARAM = 156,
+  SYS_SCHED_SETSCHEDULER = 157,
+  SYS_SCHED_YIELD = 158,
+  SYS_SCHED_GET_PRIORITY_MAX = 159,
+  SYS_SCHED_GET_PRIORITY_MIN = 160,
+
   SYS_YIELD = 158,
   SYS_NANOSLEEP = 162,
   SYS_MREMAP = 163,
@@ -211,6 +224,12 @@ enum {
   SYS_WRITEV = 146,
   SYS_READV = 145,
   SYS_YIELD = 158,
+  SYS_SCHED_GETPARAM = 155,
+  SYS_SCHED_SETPARAM = 156,
+  SYS_SCHED_SETSCHEDULER = 157,
+  SYS_SCHED_YIELD = 158,
+  SYS_SCHED_GET_PRIORITY_MAX = 159,
+  SYS_SCHED_GET_PRIORITY_MIN = 160,
   SYS_GETCWD = 183,
   SYS_MMAP2 = 192,
   SYS_FSTAT64 = 197,
@@ -290,6 +309,20 @@ typedef struct start_args {
 	volatile int control;
 	unsigned long sig_mask[_NSIG/8/sizeof(long)];
 }start_args_t;
+
+typedef struct sched_param {
+	int sched_priority;
+	int __reserved1;
+#if _REDIR_TIME64
+	long __reserved2[4];
+#else
+	struct {
+		time_t __reserved1;
+		long __reserved2;
+	} __reserved2[2];
+#endif
+	int __reserved3;
+}sched_param_t;
 
 #define F_DUPFD 0
 #define F_GETFD 1
