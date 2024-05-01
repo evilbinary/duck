@@ -16,7 +16,7 @@
 
 static void* syscall_table[SYSCALL_NUMBER] = {0};
 
-// #define log_debug
+#define log_debug
 
 int sys_print(char* s) {
   thread_t* current = thread_current();
@@ -951,6 +951,7 @@ int sys_thread_self() {
 
   if (tinfo == NULL) {
     tinfo = kmalloc(sizeof(thread_info_t), KERNEL_TYPE);
+    current->tinfo = tinfo;
     tinfo->self = tinfo;
     tinfo->tid = current->id;
     tinfo->errno = 0;
@@ -959,6 +960,7 @@ int sys_thread_self() {
     tinfo->robust_list.head = &tinfo->robust_list.head;
     log_debug("locale at %x\n", tinfo->locale);
     log_debug("thread info at %x\n", tinfo);
+    log_debug("tsd at %x\n", tinfo->tsd);
   }
   // log_debug("sys thread self at %x\n", tinfo);
   return TP_ADJ(tinfo);

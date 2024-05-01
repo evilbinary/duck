@@ -36,6 +36,9 @@ struct sample_rate rate_tab[] = {
     {96000, 7}, {192000, 6}, {992000, 6},
 };
 
+
+void dma_audio_handler(void* data);
+
 static size_t read(device_t* dev, void* buf, size_t len) {
   u32 ret = 0;
 
@@ -101,7 +104,14 @@ void sound_play(sound_device_t* dev, void* buf, size_t len) {
   buffer_write(dev->buffer, buf, len);
 
   if (dev->is_play == 0) {
-    kprintf("dma trans start sound buf %x buf %x\n", dev->sound_buf, buf);
+    kprintf("dma_init\n");
+#ifdef TRANS_CPU
+    dma_init(0, 0, dma_audio_handler, NULL);
+#else
+    dma_init(0, 1, dma_audio_handler, dev);
+#endif
+
+    kprintf("dma trans start sound buf %x buf %x len %d\n", dev->sound_buf, buf,len);
     dma_trans(0, dev->sound_buf, CODEC_BASE + 0x0020, len);
     kprintf("dma trans start1\n");
     dev->is_play = 1;
@@ -557,13 +567,6 @@ size_t sound_ioctl(device_t* dev, u32 cmd, void* args) {
     kprintf("SNDCTL_DSP_SPEED %d\n", *val);
     codec_param(-1, sound_device->channal, *val);
 
-    kprintf("dma_init\n");
-#ifdef TRANS_CPU
-    dma_init(0, 0, dma_audio_handler, NULL);
-#else
-    dma_init(0, 1, dma_audio_handler, dev->data);
-#endif
-
     kprintf("dma_init end\n");
   } else if (cmd == IOC_STAT) {
     struct stat* stat = args;
@@ -607,7 +610,6 @@ int sound_init(void) {
   dsp->device = device_find(DEVICE_SB);
   dsp->op = &device_operator;
   vfs_mount(NULL, "/dev", dsp);
-
 
   // /dev/dsp0
   vnode_t* dsp0 = vfs_create_node("dsp0", V_FILE | V_BLOCKDEVICE);
