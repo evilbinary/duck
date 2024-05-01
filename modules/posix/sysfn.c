@@ -16,7 +16,7 @@
 
 static void* syscall_table[SYSCALL_NUMBER] = {0};
 
-#define log_debug
+// #define log_debug
 
 int sys_print(char* s) {
   thread_t* current = thread_current();
@@ -220,8 +220,8 @@ void sys_exit(int status) {
   // }
   // cpu_cli();
 
-  if (current->info != NULL) {
-    current->info->detach_state = 0;
+  if (current->tinfo != NULL) {
+    ((thread_info_t*)current->tinfo)->detach_state = 0;
   }
 }
 
@@ -358,8 +358,8 @@ int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
   thread_t* copy_thread = thread_copy(find, THREAD_FORK);
   *parent_tid = copy_thread->id;
 
-  thread_info_t* info = ((char*)tls) - sizeof(thread_info_t);
-  copy_thread->info = info;
+  thread_info_t* tinfo = ((char*)tls) - sizeof(thread_info_t);
+  copy_thread->tinfo = tinfo;
 
 #ifdef LOG_DEBUG
   kprintf("-------dump current thread %d %s-------------\n", current->id);
@@ -947,19 +947,21 @@ int sys_info(sysinfo_t* info) {
 
 int sys_thread_self() {
   thread_t* current = thread_current();
-  if (current->info == NULL) {
-    current->info = kmalloc(sizeof(thread_info_t), KERNEL_TYPE);
-    current->info->self = current->info;
-    current->info->tid = current->id;
-    current->info->errno = 0;
-    current->info->prev = current->info->next = NULL;
-    current->info->locale = kmalloc(sizeof(locale_t), KERNEL_TYPE);
-    current->info->robust_list.head = &current->info->robust_list.head;
-    log_debug("locale at %x\n", current->info->locale);
-    log_debug("thread info at %x\n", current->info);
+  thread_info_t* tinfo = current->tinfo;
+
+  if (tinfo == NULL) {
+    tinfo = kmalloc(sizeof(thread_info_t), KERNEL_TYPE);
+    tinfo->self = tinfo;
+    tinfo->tid = current->id;
+    tinfo->errno = 0;
+    tinfo->prev = tinfo->next = NULL;
+    tinfo->locale = kmalloc(sizeof(locale_t), KERNEL_TYPE);
+    tinfo->robust_list.head = &tinfo->robust_list.head;
+    log_debug("locale at %x\n", tinfo->locale);
+    log_debug("thread info at %x\n", tinfo);
   }
-  // log_debug("sys thread self at %x\n", current->info);
-  return TP_ADJ(current->info);
+  // log_debug("sys thread self at %x\n", tinfo);
+  return TP_ADJ(tinfo);
 }
 
 int sys_statx(int dirfd, const char* restrict pathname, int flags,
@@ -1248,7 +1250,7 @@ int sys_sched_setparam(int pid, sched_param_t* param) {
 }
 
 int sys_sched_get_priority_max(int policy) {
-  log_debug("sys_sched_get_priority_max not impl\n");
+  log_debug("sys_sched_get_priority_max not impl %d\n", policy);
 
   return 0;
 }

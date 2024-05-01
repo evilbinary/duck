@@ -10,8 +10,4 @@
 
 void display_init();
 
-#define debug kprintf
-#define log kprintf
-#define info kprintf
-
 #endif
