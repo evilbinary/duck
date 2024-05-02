@@ -139,7 +139,14 @@ int sys_close(u32 fd) {
     // fd use by other do not close
     thread_set_fd(current, fd, NULL);
   }
-  return 0;
+  vnode_t* node = f->data;
+  if (node == NULL) {
+    log_error("sys close node is null tid %d \n", current->id);
+    return -1;
+  }
+  ret = vclose(node);
+
+  return ret;
 }
 
 size_t sys_write(u32 fd, void* buf, size_t nbytes) {
