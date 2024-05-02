@@ -45,6 +45,7 @@ typedef struct file_info {
   FIL fil;
   DIR dir;
   FILINFO file;
+  int offset;
 } file_info_t;
 
 vnode_t *default_node = NULL;
@@ -73,12 +74,15 @@ static u32 fat_device_write(vnode_t *node, u32 offset, size_t nbytes,
   return ret;
 }
 
-void MMC_disk_initialize() { log_debug("MMC_disk_initialize\n"); }
+int MMC_disk_initialize() {
+  log_debug("MMC_disk_initialize\n");
+  return RES_OK;
+}
 
 int MMC_disk_status() { return RES_OK; }
 
 int MMC_disk_read(char *buffer, LBA_t sector, int count) {
-  // log_debug("MMC_disk_read %x %d\n",sector,count);
+  log_debug("MMC_disk_read %x %d buffer %x\n", sector, count, buffer);
 
   u32 offset = sector * FF_MIN_SS;
   u32 length = count * FF_MIN_SS;
@@ -174,14 +178,28 @@ u32 fat_op_write(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
 }
 
 u32 fat_op_open(vnode_t *node, u32 mode) {
+  char *name = node->name;
   file_info_t *file_info = node->data;
   char buf[MAX_FILE_PATH];
+
   if (file_info == NULL) {
-    return 1;
+    file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
+    file_info_t *super_file_info = node->super->data;
+    file_info->fs = super_file_info->fs;
+    node->data = file_info;
   }
+
+  if (file_info == NULL) {
+    log_error("fat may init faild\n");
+    return -1;
+  }
+
+  file_info->offset = 0;
+
   if ((mode & O_CREAT) == O_CREAT) {
+    log_debug("create new file not impl %s\n", name);
+
   } else if ((mode & O_DIRECTORY) == O_DIRECTORY) {
-    char buf[MAX_FILE_PATH];
     kstrcpy(buf, VOLUME);
     vfs_path_append(node, "", &buf[2]);
     int res = f_opendir(&file_info->dir, buf);
@@ -250,20 +268,18 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
   return file;
 }
 
-u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent,u32* offset, u32 count) {
+u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
   if (!((node->flags & V_FILE) == V_FILE ||
         (node->flags & V_DIRECTORY) == V_DIRECTORY)) {
     log_debug("read dir failed for not file flags is %x\n", node->flags);
     return 0;
   }
   char buf[MAX_FILE_PATH];
-  int res = 0;
-
+  int res;
   file_info_t *file_info = node->data;
   if (file_info == NULL) {
     file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
     node->data = file_info;
-
     kstrcpy(buf, VOLUME);
     int ret = vfs_path_append(node, "", &buf[2]);
     res = f_opendir(&file_info->dir, buf);
@@ -281,7 +297,7 @@ u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent,u32* offset, u32 count
       break;
     }
 
-    if (i < *offset) {  // 定位到某个文件数量开始
+    if (i < file_info->offset) {  // 定位到某个文件数量开始
       i++;
       continue;
     }
@@ -291,12 +307,13 @@ u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent,u32* offset, u32 count
       } else if ((fno.fattrib & AM_ARC) == AM_ARC) {
         dirent->type = DT_REG;
       }
+
       kstrcpy(dirent->name, fno.fname);
       dirent->offset = i;
       dirent->length = sizeof(struct vdirent);
       nbytes += dirent->length;
       dirent++;  // maybe change to offset
-      *offset++;
+      file_info->offset++;
       read_count++;
     } else {
       break;
@@ -371,32 +388,6 @@ size_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args) {
   ret = dev->ioctl(dev, cmd, args);
   // va_end(args);
   return ret;
-}
-
-void get_datetime(uint16_t *year, uint8_t *month, uint8_t *day, uint8_t *hour,
-                  uint8_t *min, uint8_t *sec) {
-  int time_fd = -1;
-  time_fd = sys_open("/dev/time", 0);
-  if (time_fd < 0) return;
-
-  rtc_time_t time;
-  time.day = 1;
-  time.hour = 0;
-  time.minute = 0;
-  time.month = 1;
-  time.second = 0;
-  time.year = 1900;
-  int ret = sys_read(time_fd, &time, sizeof(rtc_time_t));
-  if (ret < 0) {
-    log_error("erro read time\n");
-    return;
-  }
-  *year = time.year;
-  *month = time.month;
-  *day = time.day;
-  *hour = time.hour;
-  *min = time.minute;
-  *sec = time.second;
 }
 
 voperator_t fat_op = {

@@ -36,7 +36,7 @@ DSTATUS disk_status (
 		return stat;
 
 	case DEV_MMC :
-		result = MMC_disk_status();
+		stat = MMC_disk_status();
 
 		// translate the reslut code here
 
@@ -74,7 +74,7 @@ DSTATUS disk_initialize (
 		return stat;
 
 	case DEV_MMC :
-		result = MMC_disk_initialize();
+		stat = MMC_disk_initialize();
 
 		// translate the reslut code here
 
@@ -119,7 +119,7 @@ DRESULT disk_read (
 	case DEV_MMC :
 		// translate the arguments here
 
-		result = MMC_disk_read(buff, sector, count);
+		res = MMC_disk_read(buff, sector, count);
 
 		// translate the reslut code here
 
