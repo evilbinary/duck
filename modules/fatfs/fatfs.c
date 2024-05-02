@@ -248,7 +248,7 @@ int find_in_dir(DIR *dp, FILINFO *fno, char *name) {
       res = FR_NO_FILE;
       break;
     }
-    kprintf("%s=%s\n", fno->fname, name);
+    // kprintf("%s=%s\n", fno->fname, name);
     if (kstrcmp(fno->fname, name) == 0) {
       res = FR_OK;
       break;
@@ -267,7 +267,8 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
   if ((node->flags & V_BLOCKDEVICE) == V_BLOCKDEVICE) {
     res = f_opendir(&dir, VOLUME_ROOT);
   } else {
-    vfs_path_append(node, NULL, &buf[3]);
+    kstrcpy(buf, VOLUME);
+    vfs_path_append(node, NULL, &buf[2]);
     res = f_opendir(&file_info->dir, buf);
     kmemcpy(&dir, &file_info->dir, sizeof(DIR));
     res = FR_OK;
