@@ -21,7 +21,7 @@ voperator_t trace_operator = {.ioctl = device_ioctl,
 static void print_trace(ytrace_t* t) {
   for (int i = 0; i < SYSCALL_NUMBER; i++) {
     if (t->counts[i] > 0) {
-      kprintf("sys no %d count %d times %d avg %d\n",i, t->counts[i], t->times[i],
+      kprintf("sys no %4d count %4d times %10d avg %10d\n",i, t->counts[i], t->times[i],
               t->times[i] / t->counts[i]);
     }
   }
@@ -64,7 +64,7 @@ u32 ytrace_hook_call(int no, interrupt_context_t* ic) {
 
     if (print == 1) {
 #ifdef ARMV7_A
-      kprintf("sys %3d args: %08x %08x %08x %08x %08x times:%d\n", no, ic->r0, ic->r1, ic->r2,
+      kprintf("sys %3d args: %8x %8x %8x %8x %8x times:%10d\n", no, ic->r0, ic->r1, ic->r2,
               ic->r3, ic->r4,diff);
 #else
       kprintf("sys %d \n", no);
