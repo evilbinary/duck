@@ -64,7 +64,7 @@ u32 ytrace_hook_call(int no, interrupt_context_t* ic) {
 
     if (print == 1) {
 #ifdef ARMV7_A
-      kprintf("sys %3d args: %x %x %x %x %x times:%d\n", no, ic->r0, ic->r1, ic->r2,
+      kprintf("sys %3d args: %08x %08x %08x %08x %08x times:%d\n", no, ic->r0, ic->r1, ic->r2,
               ic->r3, ic->r4,diff);
 #else
       kprintf("sys %d \n", no);
