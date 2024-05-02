@@ -82,7 +82,7 @@ int MMC_disk_initialize() {
 int MMC_disk_status() { return RES_OK; }
 
 int MMC_disk_read(char *buffer, LBA_t sector, int count) {
-  log_debug("MMC_disk_read %x %d buffer %x\n", sector, count, buffer);
+  // log_debug("MMC_disk_read %x %d buffer %x\n", sector, count, buffer);
 
   u32 offset = sector * FF_MIN_SS;
   u32 length = count * FF_MIN_SS;
@@ -146,7 +146,7 @@ static void print_hex(u8 *addr, u32 size) {
 u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   file_info_t *file_info = node->data;
 
-  if (offset > 0) {
+  if (offset >= 0) {
     f_lseek(&file_info->fil, offset);
   }
   // log_debug("fat_op_read %x %d\n", offset, nbytes);
@@ -159,7 +159,7 @@ u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   }
   // print_hex(buffer,nbytes);
 
-  return nbytes;
+  return readbytes;
 }
 
 u32 fat_op_write(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
@@ -174,7 +174,7 @@ u32 fat_op_write(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
     return -1;
   }
 
-  return nbytes;
+  return readbytes;
 }
 
 u32 fat_op_open(vnode_t *node, u32 mode) {
@@ -199,7 +199,8 @@ u32 fat_op_open(vnode_t *node, u32 mode) {
   if ((mode & O_CREAT) == O_CREAT) {
     log_debug("create new file not impl %s\n", name);
 
-  } else if ((mode & O_DIRECTORY) == O_DIRECTORY) {
+  } else if ((mode & O_DIRECTORY) == O_DIRECTORY ||
+             (node->flags & V_DIRECTORY) == V_DIRECTORY) {
     kstrcpy(buf, VOLUME);
     vfs_path_append(node, "", &buf[2]);
     int res = f_opendir(&file_info->dir, buf);
@@ -341,12 +342,13 @@ size_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args) {
   u32 ret = 0;
   log_debug("fat_op_ioctl\n");
 
+  file_info_t *file_info = node->data;
+  if (file_info == NULL) {
+    log_error("fat_op_ioctl faild file_info is null\n");
+    return -1;
+  }
+
   if (cmd == IOC_STAT) {
-    file_info_t *file_info = node->data;
-    if (file_info == NULL) {
-      file_info = node->super->data;
-      node->data = file_info;
-    }
     struct stat *stat = args;
     FILINFO fno;
     int res = get_fileinfo(&file_info->dir, &fno);
@@ -369,11 +371,6 @@ size_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args) {
 
     return 0;
   } else if (cmd == IOC_STATFS) {
-    file_info_t *file_info = node->data;
-    if (file_info == NULL) {
-      file_info = node->super->data;
-      node->data = file_info;
-    }
     struct statfs *stat = args;
 
     return 0;
