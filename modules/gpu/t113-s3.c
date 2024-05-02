@@ -12,9 +12,9 @@
 #include "t113-tcon.h"
 #include "vga/vga.h"
 
-static void inline t113_de_enable(t113_s3_lcd_t *pdat) {
+static void inline t113_de_enable(t113_s3_lcd_t *pdat,u32 flag) {
   struct de_glb_t *glb = (struct de_glb_t *)(pdat->de + T113_DE_MUX_GLB);
-  io_write32((u32)&glb->dbuff, 1);
+  io_write32((u32)&glb->dbuff, flag);
 }
 
 static inline void t113_de_set_address(t113_s3_lcd_t *pdat, void *vram) {
@@ -241,10 +241,10 @@ void t113_flush_screen(vga_device_t *vga, u32 index) {
   // kprintf("flip %d %d %d\n",index,vga->width,vga->height);
   // rgb2nv12(vga->pframbuffer, vga->frambuffer, vga->width, vga->height);
   // kmemcpy(vga->pframbuffer, vga->frambuffer, vga->width * vga->height);
-  // cpu_invalid_tlb();
+  cpu_invalid_tlb();
   cache_inv_range(vga->pframbuffer,vga->width * vga->height*4);
-  cpu_cache_flush_range(vga->pframbuffer, vga->width * vga->height*4);
-  cpu_cache_flush_range(vga->frambuffer, vga->width * vga->height*4);
+  // cpu_cache_flush_range(vga->pframbuffer, vga->width * vga->height*4);
+  // cpu_cache_flush_range(vga->frambuffer, vga->width * vga->height*4);
 }
 
 int gpu_init_mode(vga_device_t *vga, int mode) {
@@ -472,8 +472,8 @@ int t113_lcd_init(vga_device_t *vga) {
     //  gpio_config(GPIO_E,3,GPIO_OUTPUT);
     //  gpio_output(GPIO_E,3,0);
   }
-
   // tcon init
+  t113_de_enable(lcd,0);
   t113_tconlcd_disable(lcd);
   t113_tconlcd_set_timing(lcd);
   t113_tconlcd_set_dither(lcd);
@@ -481,16 +481,17 @@ int t113_lcd_init(vga_device_t *vga) {
   t113_tconlcd_enable(lcd);
 
   t113_de_set_mode(lcd);
-  t113_de_enable(lcd);
+  t113_de_enable(lcd,1);
 
   t113_de_set_address(lcd, lcd->vram[1]);
 
-  t113_de_enable(lcd);
+  t113_de_enable(lcd,1);
 
-  u32 *buffer = vga->frambuffer;
-  for (int i = 0; i < vga->framebuffer_length / 8; i++) {
-    buffer[i] = 0;
-  }
+  // u32 *buffer = vga->frambuffer;
+  // for (int i = 0; i < vga->framebuffer_length / 8; i++) {
+  //   buffer[i] = 0;
+  // }
+
 
   log_info("t113_lcd_init end\n");
 

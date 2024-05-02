@@ -44,7 +44,7 @@ size_t gpu_ioctl(device_t* dev, u32 cmd, void* args) {
       vga->flip_buffer(vga, offset % vga->framebuffer_count);
     }
   } else if (cmd == IOC_READ_FRAMBUFFER_INFO) {
-    gpu_init_device(vga);
+    //gpu_init_device(vga);
     vga_device_t* buffer_info = (u32*)args;
     u32 size = (u32*)args;
     *buffer_info = *vga;
