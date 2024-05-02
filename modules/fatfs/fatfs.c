@@ -351,7 +351,10 @@ size_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args) {
   if (cmd == IOC_STAT) {
     struct stat *stat = args;
     FILINFO fno;
-    int res = get_fileinfo(&file_info->dir, &fno);
+    char buf[MAX_FILE_PATH];
+    kstrcpy(buf, VOLUME);
+    int ret = vfs_path_append(node, "", &buf[2]);
+    int res = f_stat(buf, &fno);
     if (res != FR_OK) {
       log_error("get file info error %s code %d\n", node->name, res);
       ret = -1;
