@@ -149,7 +149,7 @@ u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   if (offset >= 0) {
     f_lseek(&file_info->fil, offset);
   }
-  // log_debug("fat_op_read %x %d\n", offset, nbytes);
+  // kprintf("read file-->%s fil: %x \n",node->name,&file_info->fil);
 
   int readbytes = 0;
   int res = f_read(&file_info->fil, buffer, nbytes, &readbytes);
@@ -157,15 +157,23 @@ u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
     log_error("fat read %s error code %d\n", node->name, res);
     return -1;
   }
-  // print_hex(buffer,nbytes);
+
+  // log_debug("fat_op_read %x %d ret=%d\n", offset, readbytes);
+  // print_hex(buffer,readbytes);
 
   return readbytes;
 }
 
 u32 fat_op_write(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   file_info_t *file_info = node->data;
-  // log_debug("fat_op_write\n");
-  f_lseek(&file_info->fil, offset);
+  if (file_info == NULL) {
+    log_error("write file info faild not opend\n");
+    return -1;
+  }
+  // log_debug("fat_op_write fil %x %d %s\n",&file_info->fil,nbytes,buffer);
+  if (offset >= 0) {
+    f_lseek(&file_info->fil, offset);
+  }
 
   int readbytes = 0;
   int res = f_write(&file_info->fil, buffer, nbytes, &readbytes);
@@ -197,7 +205,15 @@ u32 fat_op_open(vnode_t *node, u32 mode) {
   file_info->offset = 0;
 
   if ((mode & O_CREAT) == O_CREAT) {
-    log_debug("create new file not impl %s\n", name);
+    log_debug("create new file %s\n", name);
+    kstrcpy(buf, VOLUME);
+    vfs_path_append(node, NULL, &buf[2]);
+    int res = f_open(&file_info->fil, buf, FA_READ | FA_WRITE | FA_OPEN_ALWAYS);
+    if (res != FR_OK) {
+      log_error("open create file %s error code %d\n", node->name, res);
+      return -1;
+    }
+    // kprintf("create file_info->fil->%x buf %s\n", &file_info->fil, buf);
 
   } else if ((mode & O_DIRECTORY) == O_DIRECTORY ||
              (node->flags & V_DIRECTORY) == V_DIRECTORY) {
@@ -210,57 +226,87 @@ u32 fat_op_open(vnode_t *node, u32 mode) {
     }
   } else {
     kstrcpy(buf, VOLUME);
-    vfs_path_append(node, "", &buf[2]);
-    int res = f_open(&file_info->fil, buf, FA_READ | FA_WRITE);
-    if (res != FR_OK) {
-      log_error("open file %s error code %d\n", node->name, res);
-      return -1;
+    vfs_path_append(node, NULL, &buf[2]);
+    // kprintf("file_info->fil->%x\n", &file_info->fil);
+
+    if (file_info->fil.obj.fs == NULL) {
+      int res = f_open(&file_info->fil, buf, FA_READ | FA_WRITE);
+      if (res != FR_OK) {
+        log_error("open file %s path %s error code %d\n", node->name, buf, res);
+        return -1;
+      }
     }
   }
   return 1;
 }
 
+int find_in_dir(DIR *dp, FILINFO *fno, char *name) {
+  FRESULT res = FR_NO_FILE;
+  for (;;) {
+    res = f_readdir(dp, fno); /* Get a directory item */
+    if (res != FR_OK || !fno || !fno->fname[0]) {
+      res = FR_NO_FILE;
+      break;
+    }
+    kprintf("%s=%s\n", fno->fname, name);
+    if (kstrcmp(fno->fname, name) == 0) {
+      res = FR_OK;
+      break;
+    }
+  }
+  return res;
+}
+
 vnode_t *fat_op_find(vnode_t *node, char *name) {
   file_info_t *file_info = node->data;
+  DIR dir;
+  FILINFO find_file;
+
   u32 res = -1;
   char buf[MAX_FILE_PATH];
   if ((node->flags & V_BLOCKDEVICE) == V_BLOCKDEVICE) {
-    res = f_opendir(&file_info->dir, VOLUME_ROOT);
+    res = f_opendir(&dir, VOLUME_ROOT);
   } else {
+    vfs_path_append(node, NULL, &buf[3]);
+    res = f_opendir(&file_info->dir, buf);
+    kmemcpy(&dir, &file_info->dir, sizeof(DIR));
     res = FR_OK;
   }
   if (res != FR_OK) {
     log_error("bad dir %s code %d\n", name, res);
     return NULL;
   }
-
   u32 type = V_FILE;
 
   file_info_t *new_file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
-
-  kmemcpy(&new_file_info->dir, &file_info->dir, sizeof(DIR));
-
   // find file in dir
-  new_file_info->dir.pat = name;
-  FILINFO find_file;
-  res = f_findnext_match(&new_file_info->dir, &find_file);
+  res = find_in_dir(&dir, &find_file, name);
   if (res != FR_OK) {
-    log_error("bad fd %s in %s code %d\n", name, node->name, res);
+    log_error("not found file %s in %s code %d\n", name, node->name, res);
     return NULL;
   }
-  kmemcpy(&new_file_info->file, &find_file, sizeof(FILINFO));
 
-  if (new_file_info->file.fattrib == AM_DIR) {
+  if (file_info != NULL) {
+    new_file_info->fs = file_info->fs;
+  }
+  kmemcpy(&new_file_info->file, &find_file, sizeof(FILINFO));
+  kmemcpy(&new_file_info->dir, &file_info->dir, sizeof(DIR));
+
+  if ((new_file_info->file.fattrib & AM_DIR) == AM_DIR) {
     type = V_DIRECTORY;
     if ((node->flags & V_BLOCKDEVICE) == V_BLOCKDEVICE) {
       kstrcpy(buf, VOLUME_ROOT);
       kstrcpy(&buf[3], name);
-    } else {
-      kstrcpy(buf, VOLUME);
-      int ret = vfs_path_append(node, name, &buf[3]);
     }
-    res = f_opendir(&new_file_info->dir, buf);
+
+  } else if ((new_file_info->file.fattrib & AM_ARC) == AM_ARC) {
+    kstrcpy(buf, VOLUME);
+    int ret = vfs_path_append(node, name, &buf[3]);
+    int res = f_open(&new_file_info->fil, buf, FA_READ | FA_WRITE);
+
+    // kprintf("file--->%s fil: %x\n", name, &new_file_info->fil);
   }
+
   vnode_t *file = vfs_create_node(name, type);
   file->data = new_file_info;
   file->device = node->device;
@@ -282,7 +328,7 @@ u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
     file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
     node->data = file_info;
     kstrcpy(buf, VOLUME);
-    int ret = vfs_path_append(node, "", &buf[2]);
+    int ret = vfs_path_append(node, NULL, &buf[2]);
     res = f_opendir(&file_info->dir, buf);
   }
 
@@ -329,6 +375,7 @@ u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
 int fat_op_close(vnode_t *node) {
   file_info_t *file_info = node->data;
   if (file_info != NULL) {
+    file_info->offset = 0;
     if (file_info->file.fattrib == AM_DIR) {
       f_closedir(&file_info->dir);
     } else {
@@ -340,7 +387,7 @@ int fat_op_close(vnode_t *node) {
 
 size_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args) {
   u32 ret = 0;
-  log_debug("fat_op_ioctl\n");
+  // log_debug("fat_op_ioctl %x\n", cmd);
 
   file_info_t *file_info = node->data;
   if (file_info == NULL) {

@@ -169,7 +169,7 @@ DRESULT disk_write (
 	case DEV_MMC :
 		// translate the arguments here
 
-		result = MMC_disk_write(buff, sector, count);
+		res = MMC_disk_write(buff, sector, count);
 
 		// translate the reslut code here
 
