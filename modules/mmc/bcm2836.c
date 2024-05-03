@@ -1727,17 +1727,17 @@ int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
     sdhci_dev->write_buf_size = bsize;
   }
   // log_debug("write ====>>>>\n");
-//   ret = sd_write(buf, bsize, bno);
+  ret = sd_write(buf, bsize, bno);
 
-// #ifdef CACHE_ENABLED
-//   int i;
-//   u8 *p = buf;
-//   for (i = 0; i < bcount; i++) {
-//     int index = (bno + i) & CACHE_MASK;
-//     void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
-//     kmemmove(cache_p, &p[SECTOR_SIZE * i], SECTOR_SIZE);
-//   }
-// #endif
+#ifdef CACHE_ENABLED
+  int i;
+  u8 *p = buf;
+  for (i = 0; i < bcount; i++) {
+    int index = (bno + i) & CACHE_MASK;
+    void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
+    kmemmove(cache_p, &p[SECTOR_SIZE * i], SECTOR_SIZE);
+  }
+#endif
 
   return ret;
 }

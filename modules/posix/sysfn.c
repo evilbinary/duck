@@ -502,8 +502,13 @@ int sys_readv(int fd, iovec_t* vector, int count) {
   int num = 0;
   int total = 0;
   int pos = 0;
+  // kprintf("sys_readv====>%d %x %d\n",fd,vector,count);
+
   for (i = 0; i < count; i++) {
-    n = sys_read(fd, vector[pos].iov_base, vector[pos].iov_len);
+    // kprintf("sys_read=>i=%d %d %x %d\n",i,fd,vector[pos].iov_base,vector[pos].iov_len);
+    int len=vector[pos].iov_len;
+    n = sys_read(fd, vector[pos].iov_base,len);
+    // kprintf("read %d ret =%d\n",i,n);
     if (n > 0) {
       num += n;
       ret = num;
@@ -1288,8 +1293,7 @@ int sys_fn_faild_handler(int no, interrupt_context_t* ic) {
 void sys_fn_call_handler(int no, interrupt_context_t* ic) {
   void* fn = syscall_table[context_fn(ic)];
   if (fn != NULL) {
-    // kprintf("syscall fn:%d r0:%x r1:%x r2:%x
-    // r3:%x\n",ic->r7,ic->r0,ic->r1,ic->r2,ic->r3);
+    // kprintf("syscall fn:%d r0:%x r1:%x r2:%x r3:%x fn addr %x\n",ic->r7,ic->r0,ic->r1,ic->r2,ic->r3,fn);
     sys_fn_call((ic), fn);
     // kprintf(" ret=%x\n",context_ret(ic));
   } else {

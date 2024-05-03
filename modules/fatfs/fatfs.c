@@ -88,16 +88,19 @@ int MMC_disk_read(char *buffer, LBA_t sector, int count) {
   u32 length = count * FF_MIN_SS;
   u32 ret = RES_OK;
   fat_device_read(default_node, offset, length, buffer);
-
+  // log_debug("MMC_disk_read end %x %d buffer %x\n", sector, count, buffer);
   return ret;
 }
 
 int MMC_disk_write(char *buffer, LBA_t sector, int count) {
-  // log_debug("MMC_disk_write\n");
-
+  u32 ret = RES_OK;
+  if (sector < 0 || count < 0) {
+    return ret;
+  }
   u32 offset = sector * FF_MIN_SS;
   u32 length = count * FF_MIN_SS;
-  u32 ret = RES_OK;
+
+  // log_debug("MMC_disk_write %x %d buffer %x\n", sector, count, buffer);
 
   fat_device_write(default_node, offset, length, buffer);
 
@@ -105,7 +108,29 @@ int MMC_disk_write(char *buffer, LBA_t sector, int count) {
 }
 
 int MMC_disk_ioctl(u8 pdrv, u8 cmd, void *buff) {
-  // log_debug("MMC_disk_ioctl\n");
+  // log_debug("MMC_disk_ioctl cmd %d buff %x\n",cmd,buff);
+  DWORD *pdword = NULL;
+  WORD *pword = NULL;
+  switch (cmd) {
+    case GET_SECTOR_COUNT:
+      pdword = (DWORD *)buff;
+      *pdword = 9999999 + 1;
+      return RES_OK;
+
+    case GET_SECTOR_SIZE:
+      pword = (WORD *)buff;
+      *pword = FF_MIN_SS;
+      return RES_OK;
+
+    case GET_BLOCK_SIZE:
+      pdword = (DWORD *)buff;
+      *pdword = 1;
+      return RES_OK;
+    case CTRL_SYNC:
+      return RES_OK;
+    case CTRL_TRIM:
+      return RES_PARERR;
+  }
   return RES_OK;
 }
 
@@ -149,7 +174,8 @@ u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   if (offset >= 0) {
     f_lseek(&file_info->fil, offset);
   }
-  // kprintf("read file-->%s fil: %x \n",node->name,&file_info->fil);
+  // kprintf("read file-->%s fil: %x offset %d\n", node->name, &file_info->fil,
+  //         offset);
 
   int readbytes = 0;
   int res = f_read(&file_info->fil, buffer, nbytes, &readbytes);
@@ -158,7 +184,8 @@ u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
     return -1;
   }
 
-  // log_debug("fat_op_read %x %d ret=%d\n", offset, readbytes);
+  // log_debug("fat_op_read offset %x nbytes %d readbytes %d ret=%d\n", offset,
+            // nbytes, readbytes, res);
   // print_hex(buffer,readbytes);
 
   return readbytes;
@@ -191,7 +218,7 @@ u32 fat_op_open(vnode_t *node, u32 mode) {
   char buf[MAX_FILE_PATH];
 
   if (file_info == NULL) {
-    file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
+    file_info = kmalloc(sizeof(file_info_t), DEFAULT_TYPE);
     file_info_t *super_file_info = node->super->data;
     file_info->fs = super_file_info->fs;
     node->data = file_info;
@@ -279,7 +306,7 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
   }
   u32 type = V_FILE;
 
-  file_info_t *new_file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
+  file_info_t *new_file_info = kmalloc(sizeof(file_info_t), DEFAULT_TYPE);
   // find file in dir
   res = find_in_dir(&dir, &find_file, name);
   if (res != FR_OK) {
@@ -326,7 +353,7 @@ u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
   int res;
   file_info_t *file_info = node->data;
   if (file_info == NULL) {
-    file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
+    file_info = kmalloc(sizeof(file_info_t), DEFAULT_TYPE);
     node->data = file_info;
     kstrcpy(buf, VOLUME);
     int ret = vfs_path_append(node, NULL, &buf[2]);
@@ -460,7 +487,7 @@ void fat_init(void) {
     if (dev == NULL) {
       continue;
     }
-    name = kmalloc(4, KERNEL_TYPE);
+    name = kmalloc(4, DEFAULT_TYPE);
     name[0] = 's';
     name[1] = 'd';
     name[2] = 0x61 + i;
@@ -485,7 +512,7 @@ void fat_init(void) {
   }
   fat_init_op(node);
 
-  file_info_t *file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
+  file_info_t *file_info = kmalloc(sizeof(file_info_t), DEFAULT_TYPE);
 
   int res = f_mount(&file_info->fs, VOLUME, 0);
   if (res != FR_OK) {
