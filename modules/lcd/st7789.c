@@ -72,14 +72,14 @@ static void delay(int n) {
 void st7789_reset() {
 #ifdef CPU_SPI
   SPI_RST_0;
-  delay(10);
+  delay(100);
   SPI_RST_1;
   delay(120);
 #else
   LCD_RSET_CLR;
   delay(100);
   LCD_RSET_SET;
-  delay(50);
+  delay(120);
 #endif
 }
 
@@ -221,7 +221,7 @@ void st7789_init() {
 
   gpio_config(GPIO_C, 0, GPIO_OUTPUT);  // RS/DC     PC0
   gpio_config(GPIO_C, 1, 3);            // SPI_CLK PC1
-  gpio_config(GPIO_C, 2, 3);            // SPI_CS  PC2
+  gpio_config(GPIO_C, 2, GPIO_OUTPUT);  // SPI_CS  PC2
   gpio_config(GPIO_C, 3, 3);            // SPI_MOSI PC3
   gpio_config(GPIO_B, 2, GPIO_OUTPUT);  // RESET      PB2
 
@@ -242,14 +242,10 @@ void st7789_init() {
   sunxi_spi_init(SPI0);
   sunxi_spi_cs(SPI0, 0);
 
-  int rate = 240 * 320 * 60;
-  rate = 240 * 240 * 60;
-  rate = 1000000;
-
-  rate = 12000000 ;//4608000;
+  int rate = 240 * 320 * 60*16;
   kprintf("st7789 spi rate %d\n", rate);
 
-  sunxi_spi_rate(SPI0, rate);  // 240x320x60
+  // sunxi_spi_rate(SPI0, rate);  // 240x320x60
 
   u16 id = st7789_read_id();
   kprintf("st7789 spi init id %x end\n", id);
@@ -273,6 +269,9 @@ void st7789_init() {
   } else {
     st7789_write_data(0xA0);
   }
+
+  st7789_write_cmd(0x3A);   // 65k mode
+  st7789_write_data(0x05);  // RGB 5-6-5-bit Input
 
   //-------------ST7789V Frame rate setting-----------//
   st7789_write_cmd(0xb2);  // Porch Setting
@@ -387,12 +386,14 @@ void st7789_test() {
 
   // kprintf("st7789 test 1\n");
 
-  // st7789_fill(0, 0, 240, 240, 0);
+  // for(int i=0;i<16;i++){
+  //   st7789_fill(0, 0, 200, 200, 0xF<<i );
+  // }
   kprintf("st7789 test 2\n");
 
-  st7789_fill(0, 0, 240, 320, 0X001F);
+  st7789_fill(0, 0, 240, 320, MAGENTA);
   st7789_fill(0, 0, 128, 128, GREEN);
-  // st7789_fill(0, 0, 128, 128, RED);
+  st7789_fill(0, 0, 128, 128, RED);
 
   kprintf("st7789 test lcd end\n");
 }
