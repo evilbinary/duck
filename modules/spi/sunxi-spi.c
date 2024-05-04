@@ -10,7 +10,7 @@ void sunxi_spi_set_base(u32* base) { sunxi_spi_base = base; }
 void sunxi_spi_cs(int spi, u32 val) {
   u32 r = sunxi_spi_base[spi]->tcr;
   r &= ~((3 << 4) | (1 << 7));
-  r |= ((val & 3) << 4) | (1 << 7);
+  r |= ((val & 3) << 4) | (0 << 7);
   sunxi_spi_base[spi]->tcr = r;
 }
 
@@ -32,7 +32,7 @@ void sunxi_spi_rate(int spi, u32 rate) {
   }
   sunxi_spi_base[spi]->ccr = reg;
 
-  log_debug("spi %d rate=%u\n", spi, rate);
+  log_debug("spi %d rate=%u reg=%x\n", spi, rate,reg);
 }
 
 void sunxi_spi_set_mode(int spi, u32 mode) {
@@ -82,7 +82,7 @@ u32 sunxi_spi_xfer(int spi, spi_msg_t* msg) {
 
     sunxi_spi_base[spi]->tcr |= (1 << 31);
 
-    // while (sunxi_spi_base[spi]->tcr & (1 << 31));
+    while (sunxi_spi_base[spi]->tcr & (1 << 31));
     while ((sunxi_spi_base[spi]->fsr & 0xff) < n);
 
     for (i = 0; i < n; i++) {

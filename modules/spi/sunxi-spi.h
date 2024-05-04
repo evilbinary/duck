@@ -22,6 +22,7 @@ typedef struct sunxi_spi {
   u32 bcc;        // SPI Burst Control register
   u32 reserved3[(0x200 - 0x38) / 4- 1];
   u32 txd;  // SPI TX Data register
+  u32 reserved4[(0x100) / 4- 1];
   u32 rxd;  // SPI RX Data register
 } sunxi_spi_t;
 
