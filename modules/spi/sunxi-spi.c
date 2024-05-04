@@ -117,7 +117,7 @@ u32 sunxi_spi_rw_data(int spi, spi_msg_t* msg) {
     sunxi_spi_base[spi]->mtc = fifo_byte;
     // Master Write Transmit Counter
     sunxi_spi_base[spi]->mbc = fifo_byte;
-    sunxi_spi_base[spi]->bcc = fifo_byte;
+    sunxi_spi_base[spi]->bcc = 1<<28| fifo_byte<<24|fifo_byte;
 
     if (tx_buf != NULL) {
       u32 len = fifo_byte;
