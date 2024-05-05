@@ -50,7 +50,6 @@ size_t lcd_ioctl(device_t* dev, u32 cmd, void* args) {
     }
   } else if (cmd == IOC_READ_FRAMBUFFER_INFO) {
     kprintf("lcd read framebuffer info\n");
-    lcd_init_device(dev);
     vga_device_t* buffer_info = (u32*)args;
     u32 size = (u32*)args;
     *buffer_info = *vga;

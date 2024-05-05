@@ -168,6 +168,11 @@ void platform_map() {
   page_map(0x01C81000, 0x01C81000, L2_NCNB);
   page_map(0x01C82000, 0x01C82000, L2_NCNB);
 
+  //spi0
+  page_map(0x01C68000, 0x01C68000, L2_NCNB);
+
+  
+
   // test_cpu_speed();
 }
 

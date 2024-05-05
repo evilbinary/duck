@@ -55,13 +55,13 @@ void sunxi_spi_init(int spi) {
     // N/Divider M.
     reg = io_read32(V3S_CCU_BASE + CCU_SPI0_CLK);
     io_write32(V3S_CCU_BASE + CCU_SPI0_CLK,
-               reg | 1 << 31 | 1 << 24 | 2 << 16 | 2 << 3);  //  use PLL_PERIPH0
+               reg | 1 << 31 | 1 << 24 | 1 << 16 | 0 << 3);  //  use PLL_PERIPH0
                              // SCLK = Clock Source/Divider N/Divider M 
 
     // 200MHz
     //  set sclk clock  Select Clock Divide Rate 2 SPI_CLK = Source_CLK / (2*(n
     //  + 1)).
-    spio_base[spi]->ccr |= 1 << 12 | 1;
+    spio_base[spi]->ccr |= 1 << 12 | 0;
 
     // enable clock
     reg = io_read32(V3S_CCU_BASE + CCU_SPI0_CLK);

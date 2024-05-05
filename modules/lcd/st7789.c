@@ -4,6 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 
+#include "dev/devfs.h"
 #include "gpio/sunxi-gpio.h"
 #include "lcd.h"
 #include "spi/spi.h"
@@ -117,6 +118,7 @@ void st7789_write_cmd(u8 cmd) {
   // sunxi_spi_cs(SPI0, 0);
   LCD_DC_CLR;
   sunxi_spi_write(SPI0, &cmd, 1);
+  LCD_DC_SET;
   // LCD_CS_CLR;
   // sunxi_spi_cs(SPI0, 1);
 #endif
@@ -129,7 +131,6 @@ void st7789_write_data(u8 data) {
 #else
   // LCD_CS_SET;
   // sunxi_spi_cs(SPI0, 0);
-  LCD_DC_SET;
   sunxi_spi_write(SPI0, &data, 1);
   // LCD_CS_CLR;
   // sunxi_spi_cs(SPI0, 1);
@@ -236,7 +237,6 @@ void st7789_init() {
   gpio_config(GPIO_C, 3, 3);            // SPI_MOSI PC3
   gpio_config(GPIO_B, 2, GPIO_OUTPUT);  // RESET      PB2
   gpio_pull(GPIO_C, 2, GPIO_PULL_DOWN);
-
 
   int rate = 240 * 320 * 60 * 16;
   kprintf("st7789 spi rate %d\n", rate);
@@ -368,13 +368,30 @@ void st7789_set_pixel(u32 x, u32 y, u32 color) {
   st7789_write_data16(color);
 }
 
-int st7789_write_pixel(vga_device_t* vga, const void* buf, size_t len) {
-  u16* color = buf;
-  int i = 0;
-  for (i = 0; i < len / 6; i += 3) {
-    st7789_set_pixel(color[i], color[i + 1], color[i + 2]);
+static inline u32 RGB888_to_RGB565(u32 rgb) {
+  return (((rgb >> 19) & 0x1f) << 11) | (((rgb >> 10) & 0x3f) << 6) |
+         (((rgb >> 3) & 0x1f));
+}
+
+void st7789_flush_screen(vga_device_t* vga, u32 index) {
+  // vga->framebuffer_index = index;
+  kprintf("flip %d %d %d %x\n", index, vga->width, vga->height,
+          vga->pframbuffer);
+  u32* color = vga->pframbuffer;
+
+  u32 xsta = 0;
+  u32 ysta = 0;
+  u32 xend = vga->height;
+  u32 yend = vga->width;
+
+  u16 i, j;
+  st7789_address_set(xsta, ysta, xend - 1, yend - 1);  // 设置显示范围
+  for (i = ysta; i < yend; i++) {
+    for (j = xsta; j < xend; j++) {
+      st7789_write_data16(RGB888_to_RGB565(*color++));
+    }
   }
-  return i;
+  // kmemcpy(vga->pframbuffer, vga->frambuffer, vga->width * vga->height);
 }
 
 void st7789_test() {
@@ -408,25 +425,43 @@ int lcd_init_mode(vga_device_t* vga, int mode) {
   vga->bpp = 16;
 
   vga->mode = mode;
-  vga->write = st7789_write_pixel;
+  vga->write = NULL;
   // vga->flip_buffer=gpu_flush;
 
   vga->framebuffer_index = 0;
   vga->framebuffer_count = 1;
   vga->frambuffer = NULL;
-  vga->pframbuffer = vga->frambuffer;
+  vga->framebuffer_length = vga->width * vga->height * vga->bpp * 2;
+
+  vga->pframbuffer = kmalloc(vga->framebuffer_length, DEVICE_TYPE);
+  vga->frambuffer = vga->pframbuffer;
+  vga->flip_buffer = st7789_flush_screen;
+
+  log_debug("lcd %dx%d len= %d\n", vga->width, vga->height,
+            vga->framebuffer_length);
+
+  // map fb
+  // u32 addr = vga->frambuffer;
+  // u32 paddr = vga->pframbuffer;
+  // for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
+  //   page_map(addr, paddr, 0);
+  //   addr += 0x1000;
+  //   paddr += 0x1000;
+  // }
 
   // frambuffer
-  // device_t* fb_dev = device_find(DEVICE_LCD);
-
-  // if (fb_dev != NULL) {
-  //   vnode_t* frambuffer = vfs_create_node("fb", V_FILE);
-  //   vfs_mount(NULL, "/dev", frambuffer);
-  //   frambuffer->device = fb_dev;
-  //   frambuffer->op = &device_operator;
-  // } else {
-  //   log_error("dev fb not found\n");
-  // }
+  device_t* fb_dev = device_find(DEVICE_LCD);
+  if (fb_dev != NULL) {
+    vnode_t* frambuffer = vfs_find(NULL, "/dev/fb");
+    if (frambuffer == NULL) {
+      vnode_t* frambuffer = vfs_create_node("fb", V_FILE);
+      vfs_mount(NULL, "/dev", frambuffer);
+    }
+    frambuffer->device = fb_dev;
+    frambuffer->op = &device_operator;
+  } else {
+    log_error("dev fb not found\n");
+  }
 
   st7789_init();
 
