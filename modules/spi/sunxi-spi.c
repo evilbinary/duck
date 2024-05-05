@@ -32,7 +32,7 @@ void sunxi_spi_rate(int spi, u32 rate) {
   }
   sunxi_spi_base[spi]->ccr = reg;
 
-  log_debug("spi %d rate=%u reg=%x\n", spi, rate,reg);
+  log_debug("spi %d rate=%u reg=%x\n", spi, rate, reg);
 }
 
 void sunxi_spi_set_mode(int spi, u32 mode) {
@@ -82,12 +82,16 @@ u32 sunxi_spi_xfer(int spi, spi_msg_t* msg) {
 
     sunxi_spi_base[spi]->tcr |= (1 << 31);
 
-    while (sunxi_spi_base[spi]->tcr & (1 << 31));
-    while ((sunxi_spi_base[spi]->fsr & 0xff) < n);
+    while (sunxi_spi_base[spi]->tcr & (1 << 31))
+      ;
+    while ((sunxi_spi_base[spi]->fsr & 0xff) < n)
+      ;
 
-    for (i = 0; i < n; i++) {
-      val = sunxi_spi_base[spi]->rxd;
-      if (rx) *rx++ = val;
+    if (rx != NULL) {
+      for (i = 0; i < n; i++) {
+        val = sunxi_spi_base[spi]->rxd;
+        if (rx) *rx++ = val;
+      }
     }
     // sunxi_spi_base[spi]->isr = 1 << 12;
     if (tx) tx += n;
@@ -117,15 +121,14 @@ u32 sunxi_spi_rw_data(int spi, spi_msg_t* msg) {
     sunxi_spi_base[spi]->mtc = fifo_byte;
     // Master Write Transmit Counter
     sunxi_spi_base[spi]->mbc = fifo_byte;
-    sunxi_spi_base[spi]->bcc = 1<<28| fifo_byte<<24|fifo_byte;
+    sunxi_spi_base[spi]->bcc = 1 << 28 | fifo_byte << 24 | fifo_byte;
 
     if (tx_buf != NULL) {
       u32 len = fifo_byte;
       // fill data
       for (; len > 0; len--) {
         // u8 d = *tx_buf;
-        sunxi_spi_base[spi]->txd = *tx_buf++;
-
+        io_write8(&sunxi_spi_base[spi]->txd, *tx_buf++);
         // kprintf("trans txd=%x d=%x\n", sunxi_spi_base[spi]->txd, d);
       }
       tx_len -= fifo_byte;
@@ -134,11 +137,15 @@ u32 sunxi_spi_rw_data(int spi, spi_msg_t* msg) {
     // start trans
     sunxi_spi_base[spi]->tcr |= 1 << 31;
 
-    kprintf("trans %x\n", sunxi_spi_base[spi]->isr);
+    // kprintf("trans %x\n", sunxi_spi_base[spi]->isr);
     // wait finish Transfer Completed
-    while ((sunxi_spi_base[spi]->isr & (1 << 12)) == 0);
-    while ((sunxi_spi_base[spi]->fsr & 0xff) < fifo_byte);
-    kprintf("trans end %d %d\n", rx_len, tx_len);
+    while (sunxi_spi_base[spi]->tcr & (1 << 31))
+      ;
+    // while ((sunxi_spi_base[spi]->isr & (1 << 12)) == 0)
+    //   ;
+    while ((sunxi_spi_base[spi]->fsr & 0xff) < fifo_byte)
+      ;
+    // kprintf("trans end %d %d\n", rx_len, tx_len);
 
     // clear flag
     sunxi_spi_base[spi]->isr = 1 << 12;
@@ -168,8 +175,10 @@ u32 sunxi_spi_write(int spi, u32* data, u32 size) {
   spi_msg_t msg = {0};
   msg.tx_buf = data;
   msg.tx_len = size;
+  msg.rx_len = 0;
+  msg.rx_buf = NULL;
   msg.bits = 8;
   sunxi_spi_xfer(spi, &msg);
 
-  // sunxi_spi_rw_data(spi,&msg);
+  // sunxi_spi_rw_data(spi, &msg);
 }

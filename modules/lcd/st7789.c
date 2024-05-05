@@ -31,7 +31,7 @@
 #define SPI0_BASE 0x01C68000
 #define SPI1_BASE 0x01C68000
 
-#define CPU_SPI 1
+// #define CPU_SPI 1
 
 int horizontal_mode = 0;
 
@@ -113,7 +113,6 @@ void st7789_write_cmd(u8 cmd) {
   SPI_DC_0;
   st7789_cpu_send_byte(cmd);
 #else
-  LCD_CS_CLR;
   LCD_DC_CLR;
   sunxi_spi_write(SPI0, &cmd, 1);
 #endif
@@ -124,7 +123,6 @@ void st7789_write_data(u8 data) {
   SPI_DC_1;
   st7789_cpu_send_byte(data);
 #else
-  LCD_CS_CLR;
   LCD_DC_SET;
   sunxi_spi_write(SPI0, &data, 1);
 #endif
@@ -221,9 +219,22 @@ void st7789_init() {
 
   gpio_config(GPIO_C, 0, GPIO_OUTPUT);  // RS/DC     PC0
   gpio_config(GPIO_C, 1, 3);            // SPI_CLK PC1
-  gpio_config(GPIO_C, 2, GPIO_OUTPUT);  // SPI_CS  PC2
+  gpio_config(GPIO_C, 2, 3);            // SPI_CS  PC2
   gpio_config(GPIO_C, 3, 3);            // SPI_MOSI PC3
   gpio_config(GPIO_B, 2, GPIO_OUTPUT);  // RESET      PB2
+
+  // use SPI0_BASE
+  sunxi_spi_set_base(spio_base);
+  sunxi_spi_init(SPI0);
+  sunxi_spi_cs(SPI0, 0);
+
+  int rate = 240 * 320 * 60 * 16;
+  kprintf("st7789 spi rate %d\n", rate);
+
+  // sunxi_spi_rate(SPI0, rate);  // 240x320x60
+
+  u16 id = st7789_read_id();
+  kprintf("st7789 spi init id %x end\n", id);
 
 #endif
 
@@ -233,30 +244,9 @@ void st7789_init() {
 
   // init lcd
   st7789_reset();
-
-#ifdef CPU_SPI
-
-#else
-  // use SPI0_BASE
-  sunxi_spi_set_base(spio_base);
-  sunxi_spi_init(SPI0);
-  sunxi_spi_cs(SPI0, 0);
-
-  int rate = 240 * 320 * 60*16;
-  kprintf("st7789 spi rate %d\n", rate);
-
-  // sunxi_spi_rate(SPI0, rate);  // 240x320x60
-
-  u16 id = st7789_read_id();
-  kprintf("st7789 spi init id %x end\n", id);
-
   kprintf("st7789 lcd reset\n");
 
-#endif
-
   //************************************************
-  st7789_write_cmd(0x3A);  // 65k mode
-  st7789_write_data(0x05);
   st7789_write_cmd(0xC5);  // VCOM
   st7789_write_data(0x1A);
   st7789_write_cmd(0x36);  // 屏幕显示方向设置
@@ -391,8 +381,10 @@ void st7789_test() {
   // }
   kprintf("st7789 test 2\n");
 
-  st7789_fill(0, 0, 240, 320, MAGENTA);
-  st7789_fill(0, 0, 128, 128, GREEN);
+  // delay(1000);
+
+  // st7789_fill(0, 0, 240, 320, MAGENTA);
+  // st7789_fill(0, 0, 240, 250, GREEN);
   st7789_fill(0, 0, 128, 128, RED);
 
   kprintf("st7789 test lcd end\n");

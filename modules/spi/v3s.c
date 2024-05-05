@@ -51,12 +51,26 @@ void sunxi_spi_init(int spi) {
     io_write32(V3S_CCU_BASE + CCU_BUS_CLK_GATE0, reg | 1 << 20);  // spi 0 gate
     // Clock Source Select 00: OSC24M
 
-    // set spi0 sclk enable
+    // set spi0 sclk enable  pll periph0 - 600MHZ SCLK = Clock Source/Divider
+    // N/Divider M.
     reg = io_read32(V3S_CCU_BASE + CCU_SPI0_CLK);
-    io_write32(V3S_CCU_BASE + CCU_SPI0_CLK, reg | 1 << 31);
+    io_write32(V3S_CCU_BASE + CCU_SPI0_CLK,
+               reg | 1 << 31 | 1 << 24 | 2 << 16 |
+                   2 << 3);  //  use PLL_PERIPH0
+                             // SCLK = Clock Source/Divider N/Divider M
+
+    // 200MHz
+    //  set sclk clock  Select Clock Divide Rate 2 SPI_CLK = Source_CLK / (2*(n
+    //  + 1)).
+    spio_base[spi]->ccr |= 1 << 12 | 1;
+
+    // enable clock
+    reg = io_read32(V3S_CCU_BASE + CCU_SPI0_CLK);
+    reg |= 1 << 31;
+    io_write32(V3S_CCU_BASE + CCU_SPI0_CLK, reg);
 
     // set master mode  stop transmit data when RXFIFO full
-    spio_base[spi]->gcr |= 1 << 31 | 1 << 7 | 1 << 1 | 1;
+    spio_base[spi]->gcr |= 1 << 31 | 1 << 1 | 1 | 1 << 7;  //
 
     // wait
     while (spio_base[spi]->gcr & (1 << 31))
@@ -69,18 +83,31 @@ void sunxi_spi_init(int spi) {
     // spio_base[spi]->tcr |= 0 << 6 | 1 << 2;
     // spio_base[spi]->tcr |= 0 << 6 | 0 << 2;
 
-    //LSB first CPOL 1 CPHA 1 
-    spio_base[spi]->tcr |=1<<12| 0 << 6 | 1 << 1 | 1 << 0;
+    // MSB first CPOL 1 CPHA 1
+    // spio_base[spi]->tcr |= 0 << 12; //
+    // spio_base[spi]->tcr &= ~(1 << 1); //CPOL 0
+    // spio_base[spi]->tcr &= ~(1 << 0); //CPHA 0
 
+    // spio_base[spi]->tcr &= ~(1 << 7); //SS_LEVEL 0
+
+    // spio_base[spi]->tcr |= (1 << 6);
+
+    spio_base[spi]->tcr |= (0 << 1);
+    spio_base[spi]->tcr |= (1 << 0);
+
+    spio_base[spi]->tcr |= (1 << 3);
+    spio_base[spi]->tcr |= (1 << 2);
+
+    spio_base[spi]->tcr |= (1 << 13);
+    
     // clear intterrupt
     spio_base[spi]->isr = ~0;
 
     // set fcr TX FIFO Reset RX FIFO Reset
-    spio_base[spi]->fcr |= 1 << 31 | 1 << 15;
+    spio_base[spi]->fcr |= 1 << 31 | 1 << 15;  //| 1<<30  TF_TEST_ENB
 
-    // set sclk clock  Select Clock Divide Rate 2 SPI_CLK = Source_CLK / (2*(n +
-    // 1)).
-    spio_base[spi]->ccr |= 1 << 12 | 0;
+    //
+    // spio_base[spi]->wcr = 2;
 
   } else if (spi == 1) {
   }
