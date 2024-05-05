@@ -103,11 +103,15 @@ void sunxi_spi_init(int spi) {
     // clear intterrupt
     spio_base[spi]->isr = ~0;
 
-    // set fcr TX FIFO Reset RX FIFO Reset
-    spio_base[spi]->fcr |= 1 << 31 | 1 << 15;  //| 1<<30  TF_TEST_ENB
+    // set fcr TX FIFO Reset RX FIFO Reset  TF_ DRQ_EN
+    spio_base[spi]->fcr |= 1 << 31 | 1 << 15 |1<<24;  //| 1<<30  TF_TEST_ENB
+
+    spio_base[spi]->ier |=1<<12| 1<<4| 1<<5 |1<<6;
 
     //
     // spio_base[spi]->wcr = 2;
+
+    
 
   } else if (spi == 1) {
   }

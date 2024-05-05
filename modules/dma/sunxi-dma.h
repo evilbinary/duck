@@ -18,9 +18,20 @@
 #define DMAC_CFG_TYPE_DRAM (1)
 #define DMAC_CFG_TYPE_SRAM (0)
 
+
+#define DMAC_CFG_TYPE(type) type<<16
+#define DMAC_CFG_ADDR_MODE(type) type
+
+#ifdef T113_S3
+
 #define DMAC_CFG_TYPE_SPI0 (22)
 #define DMAC_CFG_TYPE_SHMC0 (20)
 #define DMAC_CFG_TYPE_AUDIO (7)
+
+#else defined(V3S)
+#define DMAC_CFG_TYPE_SPI0 (23)
+#define DMAC_CFG_TYPE_AUDIO (15)
+#endif
 
 #define DMAC_CFG_SRC_TYPE_NAND (5)
 

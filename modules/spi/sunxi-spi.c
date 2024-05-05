@@ -9,8 +9,7 @@ void sunxi_spi_set_base(u32* base) { sunxi_spi_base = base; }
 
 void* sunxi_spi_get_base(int spi) { sunxi_spi_base[spi]; }
 
-void* sunxi_spi_get_tx(int spi) { sunxi_spi_base[spi]->txd; }
-
+void* sunxi_spi_get_tx(int spi) { return &sunxi_spi_base[spi]->txd; }
 
 void sunxi_spi_cs(int spi, u32 val) {
   u32 r = sunxi_spi_base[spi]->tcr;

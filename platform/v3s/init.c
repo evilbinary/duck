@@ -1,4 +1,5 @@
 #include "init.h"
+
 #include "arch/interrupt.h"
 #include "arch/pmemory.h"
 #include "gpio.h"
@@ -45,7 +46,8 @@ void timer_init(int hz) {
   ccnt_reset();
   timer_init2(hz);
 
-  gic_init2(); 
+  gic_init(0);
+  gic_init2();
 
   // timer_watch();
   // gic_watch();
@@ -53,8 +55,12 @@ void timer_init(int hz) {
 }
 
 void timer_end() {
+  int irq = IRQ_TIMER0;
+
+  timer_ack();
   // kprintf("timer end %d\n",timer_count);
-  gic_handler2();
+  // gic_handler2();
+  gic_irqack2(irq);
 }
 
 static inline void sdelay(int loops) {
@@ -89,8 +95,8 @@ static void cpu_clock_set_pll_cpu(u32 clk) {
   val = (0x1 << 31);
   val |= ((p & 0x3) << 16);
   val |= ((((clk / (24000000 * k / m)) - 1) & 0x1f) << 8);
-	val |= (((k - 1) & 0x3) << 4);
-	val |= (((m - 1) & 0x3) << 0);
+  val |= (((k - 1) & 0x3) << 4);
+  val |= (((m - 1) & 0x3) << 0);
 
   // val |= ((((clk / (24000000 * k / m)) - 1) & 0x1f) << 8);
   // val |= ((n - 1) & 0x1f) << 8;
@@ -157,8 +163,9 @@ void platform_map() {
   page_map(MMIO_BASE, MMIO_BASE, 0);
   page_map(UART0_DR, UART0_DR, L2_NCNB);
   page_map(CORE0_TIMER_IRQCNTL, CORE0_TIMER_IRQCNTL, L2_NCNB);
-  page_map(0x01c0f000, 0x01c0f000, 0);//fix v3s_transfer_command 2 failed 4294967295
-  
+  page_map(0x01c0f000, 0x01c0f000,
+           0);  // fix v3s_transfer_command 2 failed 4294967295
+
   // ccu -pio timer
   page_map(0x01C20000, 0x01C20000, L2_NCNB);
   // uart
@@ -169,18 +176,32 @@ void platform_map() {
   page_map(0x01C81000, 0x01C81000, L2_NCNB);
   page_map(0x01C82000, 0x01C82000, L2_NCNB);
 
-  //spi0
+  // spi0
   page_map(0x01C68000, 0x01C68000, L2_NCNB);
-  //dma
+  // dma
   page_map(0x01C02000, 0x01C02000, L2_NCNB);
-
-  
 
   // test_cpu_speed();
 }
 
 int interrupt_get_source(u32 no) {
-  no=EX_TIMER;
+  u32 irq = gic_irqwho2();
+  no = EX_TIMER;
+
+  if (irq == IRQ_TIMER0) {
+    // kprintf("irq timer %d\n", irq);
+  }else if (irq == 1023) {
+    no = EX_NONE;
+    gic_irqack2(irq);
+  } else if (irq == IRQ_DMAC) {
+    kprintf("irq dma %d\n", irq);
+
+    no = EX_DMA;
+    gic_irqack2(irq);
+  } else {
+    kprintf("irq else %d\n", irq);
+  }
+
   return no;
 }
 

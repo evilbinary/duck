@@ -5,11 +5,12 @@
  ********************************************************************/
 
 #include "dev/devfs.h"
+#include "dma/dma.h"
 #include "gpio/sunxi-gpio.h"
+#include "dma/sunxi-dma.h"
 #include "lcd.h"
 #include "spi/spi.h"
 #include "spi/sunxi-spi.h"
-#include "dma/dma.h"
 
 #define WHITE 0xFFFF
 #define BLACK 0x0000
@@ -374,22 +375,21 @@ static inline u32 RGB888_to_RGB565(u32 rgb) {
          (((rgb >> 3) & 0x1f));
 }
 
-void dma_audio_handler(void* data) {
-
+void dma_st7789_handler(void* data) {
   // buffer_read(dev->buffer, dev->sound_buf, dev->play_size);
 
   // log_info("dma_audio_handler %x play size %d\n", dev->sound_buf,
   // dev->play_size);
-  u32 * txd=sunxi_spi_get_tx(SPI0);
+  u32* txd = sunxi_spi_get_tx(SPI0);
 
-  // dma_trans(0, dev->sound_buf, txd, dev->play_size);
+  // dma_trans(0, dev->sound_buf, txd, 64);
   log_info("dma_audio_handler end\n");
 }
 
 void st7789_flush_screen(vga_device_t* vga, u32 index) {
   // vga->framebuffer_index = index;
-  kprintf("flip %d %d %d %x\n", index, vga->width, vga->height,
-          vga->pframbuffer);
+  // kprintf("flip %d %d %d %x\n", index, vga->width, vga->height,
+  //         vga->pframbuffer);
   u32* color = vga->pframbuffer;
 
   u32 xsta = 0;
@@ -405,10 +405,12 @@ void st7789_flush_screen(vga_device_t* vga, u32 index) {
   //   }
   // }
   // sunxi_spi_write(SPI0, color, vga->width * vga->height);
-  u32 * txd=sunxi_spi_get_tx(SPI0);
-  dma_init(0, 0, dma_audio_handler, NULL);
+  u32* txd = sunxi_spi_get_tx(SPI0);
 
-  dma_trans(0,vga->pframbuffer, txd, vga->width * vga->height);
+  kprintf("trans %x %x len %d\n", vga->pframbuffer, txd,
+          vga->width * vga->height);
+
+  dma_trans(0, vga->pframbuffer, txd, vga->width * vga->height * 4);
 }
 
 void st7789_test() {
@@ -463,7 +465,9 @@ int lcd_init_mode(vga_device_t* vga, int mode) {
     paddr += 0x1000;
   }
 
-  // dma_init(0, 0, dma_audio_handler, NULL);
+  u32 type = DMAC_CFG_TYPE(DMAC_CFG_TYPE_SPI0 << 8 | DMAC_CFG_TYPE_DRAM);
+
+  dma_init(0, type, dma_st7789_handler, NULL);
 
   // frambuffer
   device_t* fb_dev = device_find(DEVICE_LCD);

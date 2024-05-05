@@ -84,7 +84,7 @@ void dma_init_all(void) {
 
 #else defined(V3S)
 
-  // dma bus gate, deassert 
+  // dma bus gate, deassert
   u32 reg = io_read32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0);
   io_write32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0, reg | 1 << 6);
 
@@ -214,7 +214,52 @@ void dma_set_mode(u32 hdma, u32 mode, dma_interrupt_handler_t fun, void *data) {
   dma_source_t *dma_source = (dma_source_t *)hdma;
   u32 channel_no = dma_source->channel_count;
 
-  if (mode == 1) {
+  dma_set_t dma_set;
+
+  // dma
+  dma_set.loop_mode = 1;
+  dma_set.wait_cyc = 0;
+  dma_set.data_block_size = 16 / 8;
+  // channel config (from dram to audio io)
+  dma_set.channel_cfg.src_drq_type = DMAC_CFG_TYPE_DRAM;  // dram
+  dma_set.channel_cfg.src_addr_mode = DMAC_CFG_SRC_ADDR_TYPE_LINEAR_MODE;
+  dma_set.channel_cfg.src_burst_length = DMAC_CFG_SRC_16_BURST;
+  dma_set.channel_cfg.src_data_width = DMAC_CFG_SRC_DATA_WIDTH_32BIT;
+  dma_set.channel_cfg.reserved0 = 0;
+
+  dma_set.channel_cfg.dst_drq_type = DMAC_CFG_TYPE_AUDIO;
+  dma_set.channel_cfg.dst_addr_mode = DMAC_CFG_DEST_ADDR_TYPE_IO_MODE;
+  dma_set.channel_cfg.dst_burst_length = DMAC_CFG_DEST_16_BURST;
+  dma_set.channel_cfg.dst_data_width = DMAC_CFG_DEST_DATA_WIDTH_16BIT;
+  dma_set.channel_cfg.reserved1 = 0;
+
+  dma_set.channel_cfg.src_burst_length = DMAC_CFG_SRC_4_BURST;
+  dma_set.channel_cfg.src_data_width = DMAC_CFG_SRC_DATA_WIDTH_32BIT;
+  dma_set.channel_cfg.dst_burst_length = DMAC_CFG_DEST_4_BURST;
+  dma_set.channel_cfg.dst_data_width = DMAC_CFG_DEST_DATA_WIDTH_32BIT;
+
+  if (mode >= 1) {
+    u16 type = mode >> 18;
+    u8 src_drq_type = mode & 0xff;
+    u8 dst_drq_type = mode >> 8;
+    if (src_drq_type > 0) {
+      kprintf("src_drq_type %d\n", src_drq_type);
+
+      dma_set.channel_cfg.src_drq_type = src_drq_type;
+    }
+    if (dst_drq_type > 0) {
+      kprintf("dst_drq_type %d\n", dst_drq_type);
+
+      dma_set.channel_cfg.dst_drq_type = dst_drq_type;
+    }
+    u16 addr_mode = mode & 0xffff;
+    if (addr_mode >> 8 > 0) {
+      dma_set.channel_cfg.src_addr_mode = addr_mode >> 8;
+    }
+    if (addr_mode & 0xff > 0) {
+      dma_set.channel_cfg.dst_addr_mode = addr_mode & 0xff;
+    }
+
     if (channel_no < 8) {
       dma_reg->irq_en0 |= ((DMA_PKG_END_INT) << (channel_no * 4));
       log_debug("dma reg %x channel %x\n", dma_reg->irq_en0, channel_no);
@@ -227,6 +272,9 @@ void dma_set_mode(u32 hdma, u32 mode, dma_interrupt_handler_t fun, void *data) {
     gic_irq_priority(0, IRQ_DMAC, 10);
     gic_irq_enable(IRQ_DMAC);
   }
+
+  log_debug("dma init settting\n");
+  dma_setting(hdma, &dma_set);
 }
 
 int dma_start(u32 hdma, u32 saddr, u32 daddr, u32 bytes) {
@@ -332,9 +380,9 @@ int dma_test() {
     return -1;
   }
 
-  dma_setting(hdma, &dma_set);
-
   dma_set_mode(hdma, 1, NULL, NULL);
+
+  dma_setting(hdma, &dma_set);
 
   // prepare data
   for (i = 0; i < (len / 4); i += 4) {
@@ -407,35 +455,9 @@ u32 dma_init(u32 channel, u32 mode, dma_interrupt_handler_t handler,
 
   log_debug("dma init request %x\n", hdma);
 
-  // dma
-  dma_set.loop_mode = 1;
-  dma_set.wait_cyc = 0;
-  dma_set.data_block_size = 16 / 8;
-  // channel config (from dram to audio io)
-  dma_set.channel_cfg.src_drq_type = DMAC_CFG_TYPE_DRAM;  // dram
-  dma_set.channel_cfg.src_addr_mode = DMAC_CFG_SRC_ADDR_TYPE_LINEAR_MODE;
-  dma_set.channel_cfg.src_burst_length = DMAC_CFG_SRC_16_BURST;
-  dma_set.channel_cfg.src_data_width = DMAC_CFG_SRC_DATA_WIDTH_32BIT;
-  dma_set.channel_cfg.reserved0 = 0;
-
-  dma_set.channel_cfg.dst_drq_type = DMAC_CFG_TYPE_AUDIO;
-  dma_set.channel_cfg.dst_addr_mode = DMAC_CFG_DEST_ADDR_TYPE_IO_MODE;
-  dma_set.channel_cfg.dst_burst_length = DMAC_CFG_DEST_16_BURST;
-  dma_set.channel_cfg.dst_data_width = DMAC_CFG_DEST_DATA_WIDTH_16BIT;
-  dma_set.channel_cfg.reserved1 = 0;
-
-  dma_set.channel_cfg.src_burst_length = DMAC_CFG_SRC_4_BURST;
-  dma_set.channel_cfg.src_data_width = DMAC_CFG_SRC_DATA_WIDTH_32BIT;
-  dma_set.channel_cfg.dst_burst_length = DMAC_CFG_DEST_4_BURST;
-  dma_set.channel_cfg.dst_data_width = DMAC_CFG_DEST_DATA_WIDTH_32BIT;
-
-  log_debug("dma init settting\n");
-
-  dma_setting(hdma, &dma_set);
-
   log_debug("dma init set mode\n");
-
   dma_set_mode(hdma, mode, handler, data);
+
   log_debug("dma init end\n");
 }
 
