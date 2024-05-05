@@ -44,7 +44,8 @@ void timer_init(int hz) {
   ccnt_enable(0);
   ccnt_reset();
   timer_init2(hz);
-  gic_init();
+
+  gic_init2(); 
 
   // timer_watch();
   // gic_watch();
@@ -53,7 +54,7 @@ void timer_init(int hz) {
 
 void timer_end() {
   // kprintf("timer end %d\n",timer_count);
-  gic_handler();
+  gic_handler2();
 }
 
 static inline void sdelay(int loops) {
@@ -170,6 +171,8 @@ void platform_map() {
 
   //spi0
   page_map(0x01C68000, 0x01C68000, L2_NCNB);
+  //dma
+  page_map(0x01C02000, 0x01C02000, L2_NCNB);
 
   
 

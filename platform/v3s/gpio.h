@@ -82,4 +82,12 @@
 #define CORE0_TIMER_IRQCNTL 0x40000040
 #define CORE0_IRQ_SOURCE 0x40000060
 
+#define DMA_BASE 0x01C02000
+#define IRQ_DMAC 82
+#define IRQ_DMACS 83
+
+#define IRQ_UART0 32
+#define IRQ_TIMER0 50
+#define IRQ_ETHER 114
+
 #endif

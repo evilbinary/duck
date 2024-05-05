@@ -154,21 +154,21 @@ extern volatile int timer_count;
 #define GIC_DIST_SOFTINT 0xf00
 #endif
 
-void gic_enable(int irq) {
+void gic_enable2(int irq) {
   struct v3s_gic_dist *gp = GIC_DIST_BASE;
   int x = irq / 32;
   unsigned long mask = 1 << (irq % 32);
   gp->isenable[x] = mask;
 }
 
-void gic_unpend(int irq) {
+void gic_unpend2(int irq) {
   struct v3s_gic_dist *gp = GIC_DIST_BASE;
   int x = irq / 32;
   unsigned long mask = 1 << (irq % 32);
   gp->icpend[x] = mask;
 }
 
-void gic_handler(void) {
+void gic_handler2(void) {
   struct v3s_gic_dist *gp = GIC_DIST_BASE;
   struct v3s_gic_cpu *cp = GIC_CPU_BASE;
   int irq;
@@ -183,28 +183,28 @@ void gic_handler(void) {
     if (irq == IRQ_TIMER0) {
       timer_handler(0);
     }
-    gic_irqack(irq);
+    gic_irqack2(irq);
     // cp->eoi = irq;
-    // gic_unpend(IRQ_TIMER0);
+    // gic_unpend2(IRQ_TIMER0);
   }
 
   // ms_delay ( 5 );
 }
 
-int gic_irqwho(void) {
+int gic_irqwho2(void) {
   struct v3s_gic_cpu *cp = GIC_CPU_BASE;
 
   return cp->ia;
 }
 
-void gic_irqack(int irq) {
+void gic_irqack2(int irq) {
   struct v3s_gic_cpu *cp = GIC_CPU_BASE;
 
   cp->eoi = irq;
-  gic_unpend(irq);
+  gic_unpend2(irq);
 }
 
-void gic_init(void) {
+void gic_init2(void) {
   struct v3s_gic_dist *gp = GIC_DIST_BASE;
   struct v3s_gic_cpu *cp = GIC_CPU_BASE;
   unsigned long *p;
@@ -274,7 +274,7 @@ void gic_init(void) {
   gp->itargets[irq_id] |= (1 << cpu_id) & 0xff;
 
   // enable irq
-  gic_enable(IRQ_TIMER0);
+  gic_enable2(IRQ_TIMER0);
   gp->ctl = G0_ENABLE;
 
   cp->pm = 0xff;
@@ -282,7 +282,7 @@ void gic_init(void) {
   cp->ctl = G0_ENABLE;
 }
 
-void gic_check(void) {
+void gic_check2(void) {
   struct v3s_gic_dist *gp = GIC_DIST_BASE;
   kprintf("GIC pending timer_count:%d ispend:\n", timer_count);
   for (int i = 0; i < 32; i++) {
@@ -291,14 +291,14 @@ void gic_check(void) {
   kprintf("\n");
 }
 
-void gic_poll(void) {
+void gic_poll2(void) {
   struct v3s_gic_dist *gp = GIC_DIST_BASE;
 
   for (;;) {
     // ms_delay ( 2000 );
     if (gp->ispend[1] & TIMER_MASK) {
-      gic_check();
-      gic_handler();
+      gic_check2();
+      gic_handler2();
       kprintf("+GIC pending: %x %x %d\n", gp->ispend[0], gp->ispend[1],
               timer_count);
     }
@@ -331,6 +331,6 @@ void delay_ms(int ms) {
 void gic_watch(void) {
   for (;;) {
     delay_x();
-    gic_check();
+    gic_check2();
   }
 }

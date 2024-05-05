@@ -8,7 +8,8 @@ target("mod-lcd")
 set_kind("static")
 
 add_deps(
-    'kernel'
+    'kernel',
+    'mod-dma'
 )
 
 

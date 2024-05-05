@@ -7,6 +7,11 @@ sunxi_spi_t** sunxi_spi_base = NULL;
 
 void sunxi_spi_set_base(u32* base) { sunxi_spi_base = base; }
 
+void* sunxi_spi_get_base(int spi) { sunxi_spi_base[spi]; }
+
+void* sunxi_spi_get_tx(int spi) { sunxi_spi_base[spi]->txd; }
+
+
 void sunxi_spi_cs(int spi, u32 val) {
   u32 r = sunxi_spi_base[spi]->tcr;
   r &= ~((3 << 4) | (1 << 7));
@@ -115,7 +120,7 @@ u32 sunxi_spi_rw_data(int spi, spi_msg_t* msg) {
   if (tx_len < fifo_byte) {
     fifo_byte = 1;
   }
-  // kprintf("tx_len %d tx buf %x\n", tx_len, tx_buf);
+  kprintf("tx_len %d tx buf %x\n", tx_len, tx_buf);
   for (; tx_len > 0;) {
     // set Master Burst Counter
     sunxi_spi_base[spi]->mtc = fifo_byte;
@@ -123,21 +128,19 @@ u32 sunxi_spi_rw_data(int spi, spi_msg_t* msg) {
     sunxi_spi_base[spi]->mbc = fifo_byte;
     sunxi_spi_base[spi]->bcc = 1 << 28 | fifo_byte << 24 | fifo_byte;
 
-    if (tx_buf != NULL) {
-      u32 len = fifo_byte;
-      // fill data
-      for (; len > 0; len--) {
-        // u8 d = *tx_buf;
-        io_write8(&sunxi_spi_base[spi]->txd, *tx_buf++);
-        // kprintf("trans txd=%x d=%x\n", sunxi_spi_base[spi]->txd, d);
-      }
-      tx_len -= fifo_byte;
+    u32 len = fifo_byte;
+    // fill data
+    for (; len > 0; len--) {
+      u8 d = *tx_buf;
+      io_write8(&sunxi_spi_base[spi]->txd, *tx_buf++);
+      kprintf("trans txd=%x d=%x\n", sunxi_spi_base[spi]->txd, d);
     }
+    tx_len -= fifo_byte;
 
     // start trans
     sunxi_spi_base[spi]->tcr |= 1 << 31;
 
-    // kprintf("trans %x\n", sunxi_spi_base[spi]->isr);
+    kprintf("trans %x\n", sunxi_spi_base[spi]->isr);
     // wait finish Transfer Completed
     while (sunxi_spi_base[spi]->tcr & (1 << 31))
       ;
@@ -145,18 +148,18 @@ u32 sunxi_spi_rw_data(int spi, spi_msg_t* msg) {
     //   ;
     while ((sunxi_spi_base[spi]->fsr & 0xff) < fifo_byte)
       ;
-    // kprintf("trans end %d %d\n", rx_len, tx_len);
+  }
+  kprintf("trans end %d %d\n", rx_len, tx_len);
 
-    // clear flag
-    sunxi_spi_base[spi]->isr = 1 << 12;
+  // clear flag
+  sunxi_spi_base[spi]->isr = 1 << 12;
 
-    if (rx_buf != NULL) {
-      u32 len = fifo_byte;
-      for (; len > 0; len--) {
-        *rx_buf++ = sunxi_spi_base[spi]->rxd;
-      }
-      rx_len -= fifo_byte;
+  if (rx_buf != NULL) {
+    u32 len = fifo_byte;
+    for (; len > 0; len--) {
+      *rx_buf++ = sunxi_spi_base[spi]->rxd;
     }
+    rx_len -= fifo_byte;
   }
 
   return msg->tx_len;
@@ -179,6 +182,5 @@ u32 sunxi_spi_write(int spi, u32* data, u32 size) {
   msg.rx_buf = NULL;
   msg.bits = 8;
   sunxi_spi_xfer(spi, &msg);
-
   // sunxi_spi_rw_data(spi, &msg);
 }

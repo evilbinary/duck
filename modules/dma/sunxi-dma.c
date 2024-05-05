@@ -51,7 +51,6 @@ void *dma_handler(interrupt_context_t *ic) {
     }
   }
 
-
   gic_irqack(irq);
   // kprintf("dma handler %d\n", irq);
 
@@ -66,7 +65,9 @@ void dma_init_all(void) {
   log_debug("dma init\n");
   page_map(DMA_BASE, DMA_BASE, 0);
 
+#ifdef T113_S3
   log_debug("ccu base %x\n", ccu);
+  volatile ccu_reg_t *const ccu = (ccu_reg_t *)CCU_BASE;
 
   /* dma : mbus clock gating */
   ccu->mbus_gate |= 1 << 0;  // DMA_MCLK_EN
@@ -80,6 +81,18 @@ void dma_init_all(void) {
   ccu->dma_gate_reset |= 1 << DMA_GATING_OFS;
 
   log_debug("ccu gate reset %x\n", ccu->dma_gate_reset);
+
+#else defined(V3S)
+
+  // dma bus gate, deassert 
+  u32 reg = io_read32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0);
+  io_write32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0, reg | 1 << 6);
+
+  // dma gating
+  reg = io_read32(CCU_BASE + CCU_BUS_CLK_GATE0);
+  io_write32(V3S_CCU_BASE + CCU_BUS_CLK_GATE0, reg | 1 << 6);
+
+#endif
 
   dma_reg->irq_en0 = 0;
   dma_reg->irq_en1 = 0;
@@ -196,7 +209,7 @@ int dma_setting(u32 hdma, dma_set_t *cfg) {
   return 0;
 }
 
-void dma_set_mode(u32 hdma, u32 mode, dma_interrupt_handler_t fun,void* data) {
+void dma_set_mode(u32 hdma, u32 mode, dma_interrupt_handler_t fun, void *data) {
   dma_reg_t *dma_reg = (dma_reg_t *)DMA_BASE;
   dma_source_t *dma_source = (dma_source_t *)hdma;
   u32 channel_no = dma_source->channel_count;
@@ -223,10 +236,10 @@ int dma_start(u32 hdma, u32 saddr, u32 daddr, u32 bytes) {
 
   u32 channel_no = dma_source->channel_count;
 
-  if (!dma_source->used){
+  if (!dma_source->used) {
     log_debug("dma is used\n");
     return -1;
-  } 
+  }
 
   log_debug("dma desc %x channel %x\n", desc, channel);
 
@@ -321,7 +334,7 @@ int dma_test() {
 
   dma_setting(hdma, &dma_set);
 
-  dma_set_mode(hdma, 1, NULL,NULL);
+  dma_set_mode(hdma, 1, NULL, NULL);
 
   // prepare data
   for (i = 0; i < (len / 4); i += 4) {
@@ -374,13 +387,14 @@ int dma_test() {
   return 0;
 }
 
-void dma_stop(u32 channel){
+void dma_stop(u32 channel) {
   u32 hdma = dma_request(channel);
   sunxi_dma_stop(hdma);
   sunxi_dma_release(hdma);
 }
 
-u32 dma_init(u32 channel, u32 mode, dma_interrupt_handler_t handler,void* data) {
+u32 dma_init(u32 channel, u32 mode, dma_interrupt_handler_t handler,
+             void *data) {
   dma_init_all();
 
   dma_set_t dma_set;
@@ -421,7 +435,7 @@ u32 dma_init(u32 channel, u32 mode, dma_interrupt_handler_t handler,void* data) 
 
   log_debug("dma init set mode\n");
 
-  dma_set_mode(hdma, mode, handler,data);
+  dma_set_mode(hdma, mode, handler, data);
   log_debug("dma init end\n");
 }
 

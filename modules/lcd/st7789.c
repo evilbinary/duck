@@ -9,6 +9,7 @@
 #include "lcd.h"
 #include "spi/spi.h"
 #include "spi/sunxi-spi.h"
+#include "dma/dma.h"
 
 #define WHITE 0xFFFF
 #define BLACK 0x0000
@@ -124,7 +125,7 @@ void st7789_write_cmd(u8 cmd) {
 #endif
 }
 
-void st7789_write_data(u8 data) {
+static inline void st7789_write_data(u8 data) {
 #ifdef CPU_SPI
   SPI_DC_1;
   st7789_cpu_send_byte(data);
@@ -137,7 +138,7 @@ void st7789_write_data(u8 data) {
 #endif
 }
 
-void st7789_write_data16(u16 data) {
+static inline void st7789_write_data16(u16 data) {
   st7789_write_data(data >> 8);
   st7789_write_data(data);
 }
@@ -305,7 +306,7 @@ void st7789_init() {
   st7789_write_data(0x20);  // 0v
 
   st7789_write_cmd(0xC6);   // Frame Rate Control in Normal Mode
-  st7789_write_data(0x0F);  // 0x0F 60Hz 0X01 111Hz
+  st7789_write_data(0x01);  // 0x0F 60Hz 0X01 111Hz
 
   st7789_write_cmd(0xd0);  // Power Control 1
   st7789_write_data(0xa4);
@@ -373,6 +374,18 @@ static inline u32 RGB888_to_RGB565(u32 rgb) {
          (((rgb >> 3) & 0x1f));
 }
 
+void dma_audio_handler(void* data) {
+
+  // buffer_read(dev->buffer, dev->sound_buf, dev->play_size);
+
+  // log_info("dma_audio_handler %x play size %d\n", dev->sound_buf,
+  // dev->play_size);
+  u32 * txd=sunxi_spi_get_tx(SPI0);
+
+  // dma_trans(0, dev->sound_buf, txd, dev->play_size);
+  log_info("dma_audio_handler end\n");
+}
+
 void st7789_flush_screen(vga_device_t* vga, u32 index) {
   // vga->framebuffer_index = index;
   kprintf("flip %d %d %d %x\n", index, vga->width, vga->height,
@@ -381,17 +394,21 @@ void st7789_flush_screen(vga_device_t* vga, u32 index) {
 
   u32 xsta = 0;
   u32 ysta = 0;
-  u32 xend = vga->height;
-  u32 yend = vga->width;
+  u32 xend = vga->height - 1;
+  u32 yend = vga->width - 1;
 
   u16 i, j;
   st7789_address_set(xsta, ysta, xend - 1, yend - 1);  // 设置显示范围
-  for (i = ysta; i < yend; i++) {
-    for (j = xsta; j < xend; j++) {
-      st7789_write_data16(RGB888_to_RGB565(*color++));
-    }
-  }
-  // kmemcpy(vga->pframbuffer, vga->frambuffer, vga->width * vga->height);
+  // for (i = ysta; i < yend; i++) {
+  //   for (j = xsta; j < xend; j++) {
+  //     st7789_write_data16(RGB888_to_RGB565(*color++));
+  //   }
+  // }
+  // sunxi_spi_write(SPI0, color, vga->width * vga->height);
+  u32 * txd=sunxi_spi_get_tx(SPI0);
+  dma_init(0, 0, dma_audio_handler, NULL);
+
+  dma_trans(0,vga->pframbuffer, txd, vga->width * vga->height);
 }
 
 void st7789_test() {
@@ -409,9 +426,6 @@ void st7789_test() {
   kprintf("st7789 test 2\n");
 
   // delay(1000);
-  // for(;;){
-  //   st7789_write_cmd(0x76);
-  // }
   st7789_fill(0, 0, 240, 320, MAGENTA);
   st7789_fill(0, 0, 240, 250, GREEN);
   st7789_fill(0, 0, 128, 128, RED);
@@ -434,20 +448,22 @@ int lcd_init_mode(vga_device_t* vga, int mode) {
   vga->framebuffer_length = vga->width * vga->height * vga->bpp * 2;
 
   vga->pframbuffer = kmalloc(vga->framebuffer_length, DEVICE_TYPE);
-  vga->frambuffer = vga->pframbuffer;
+  vga->frambuffer = 0xfb000000;
   vga->flip_buffer = st7789_flush_screen;
 
   log_debug("lcd %dx%d len= %d\n", vga->width, vga->height,
             vga->framebuffer_length);
 
   // map fb
-  // u32 addr = vga->frambuffer;
-  // u32 paddr = vga->pframbuffer;
-  // for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-  //   page_map(addr, paddr, 0);
-  //   addr += 0x1000;
-  //   paddr += 0x1000;
-  // }
+  u32 addr = vga->frambuffer;
+  u32 paddr = vga->pframbuffer;
+  for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
+    page_map(addr, paddr, PAGE_USR);
+    addr += 0x1000;
+    paddr += 0x1000;
+  }
+
+  // dma_init(0, 0, dma_audio_handler, NULL);
 
   // frambuffer
   device_t* fb_dev = device_find(DEVICE_LCD);

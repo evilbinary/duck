@@ -17,7 +17,7 @@ plat=get_plat()
 
 plat_source={
     'v3s':[
-        'dummy.c',
+        'sunxi-dma.c'
     ],
     'raspi2':[
         'dummy.c',
