@@ -34,7 +34,7 @@ void sunxi_spi_init(int spi) {
 
     // gpio set cs pc2 SPI_CS
     gpio_config(GPIO_C, 2, 3);  // 011: SPI0_CS
-    gpio_pull(GPIO_C, 2, GPIO_PULL_DISABLE);
+    gpio_pull(GPIO_C, 2, GPIO_PULL_DOWN);
 
     // gpio set mosi pc3 SPI_MOSI
     gpio_config(GPIO_C, 3, 3);  // 011: SPI0_MOSI
@@ -55,9 +55,8 @@ void sunxi_spi_init(int spi) {
     // N/Divider M.
     reg = io_read32(V3S_CCU_BASE + CCU_SPI0_CLK);
     io_write32(V3S_CCU_BASE + CCU_SPI0_CLK,
-               reg | 1 << 31 | 1 << 24 | 2 << 16 |
-                   2 << 3);  //  use PLL_PERIPH0
-                             // SCLK = Clock Source/Divider N/Divider M
+               reg | 1 << 31 | 1 << 24 | 2 << 16 | 2 << 3);  //  use PLL_PERIPH0
+                             // SCLK = Clock Source/Divider N/Divider M 
 
     // 200MHz
     //  set sclk clock  Select Clock Divide Rate 2 SPI_CLK = Source_CLK / (2*(n
@@ -96,7 +95,8 @@ void sunxi_spi_init(int spi) {
     spio_base[spi]->tcr |= (1 << 0);
 
     spio_base[spi]->tcr |= (1 << 3);
-    spio_base[spi]->tcr |= (1 << 2);
+    spio_base[spi]->tcr |= (1 << 6);
+    // spio_base[spi]->tcr |= (1 << 2);
 
     spio_base[spi]->tcr |= (1 << 13);
     
