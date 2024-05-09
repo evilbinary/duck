@@ -4,6 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "sunxi-sdhci.h"
+
 #include "gpio.h"
 
 #define UNSTUFF_BITS(resp, start, size)                     \
@@ -375,16 +376,19 @@ uint32_t clk_sdc_config(uint32_t reg, uint32_t freq) {
     samp_phase = 0;
   } else if (freq <= 25000000) {
     out_phase = 0;
-    samp_phase = 5;
+    samp_phase = 0;
   } else if (freq <= 52000000) {
-    out_phase = 3;
-    samp_phase = 4;
+    out_phase = 0;
+    samp_phase = 0;
   } else { /* freq > 52000000 */
-    out_phase = 1;
-    samp_phase = 4;
+    out_phase = 0;
+    samp_phase = 0;
   }
   reg_val |= (samp_phase << 20) | (out_phase << 8);
   reg_val |= (prediv << 16) | ((div - 1) << 0);
+
+  log_debug("clk samp_phase %d out_phase %d prediv %d div %d\n", samp_phase,
+            out_phase, prediv, div);
 
   io_write32(CCU_BASE + reg, reg_val);
 

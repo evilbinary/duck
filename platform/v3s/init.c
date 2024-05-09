@@ -157,7 +157,7 @@ void cpu_clock_init(void) {
   reg &= ~(1 << 18);  // PLL_24M_OUT_EN 0 disable
   reg &= ~(0x1F << 8);
   reg |= 24 << 8;  // PLL_FACTOR_N 24*25*2/2=600MHZ
-  reg |= 1 << 4;   // PLL_FACTOR_K
+  reg |= 0 << 4;   // PLL_FACTOR_K
   reg |= 0 << 1;   // PLL_FACTOR_M
 
   io_write32(V3S_CCU_BASE + CCU_PLL_PERIPH0_CTRL, reg);

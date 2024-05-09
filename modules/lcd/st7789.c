@@ -424,11 +424,11 @@ void st7789_test() {
 
   // kprintf("st7789 test 1\n");
 
-  for (int i = 0;; i++) {
-    st7789_fill(0, 0, 240, 320, 0xF << i);
-    i = i % 16;
-    kprintf("st7789 test 2\n");
-  }
+  // for (int i = 0;; i++) {
+  //   st7789_fill(0, 0, 240, 320, 0xF << i);
+  //   i = i % 16;
+  //   kprintf("st7789 test 2\n");
+  // }
 
   // delay(1000);
   st7789_fill(0, 0, 240, 320, MAGENTA);
