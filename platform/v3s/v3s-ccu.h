@@ -16,7 +16,7 @@
 
 #define CCU_CPU_AXI_CFG			(0x050)
 #define CCU_AHB_APB0_CFG		(0x054)
-#define CCU_APB2_CFG			(0x058)
+#define CCU_APB1_CFG			(0x058)
 #define CCU_AHB2_CFG			(0x05c)
 
 #define CCU_BUS_CLK_GATE0		(0x060)

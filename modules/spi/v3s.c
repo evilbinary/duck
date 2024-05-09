@@ -62,7 +62,7 @@ void sunxi_spi_init(int spi) {
     reg |= 1 << 31;  // SCLK_GATING SCLK = Clock Source/N/M 600MHZ/2/3= 100MHZ
     reg |= 1 << 24;  // CLK_SRC_SEL 01: PLL_PERIPH0 600MHZ 0 24MHZ
     reg |= 1 << 16;  // CLK_DIV_RATIO_N  01: 2
-    reg |= 2 << 0;   // CLK_DIV_RATIO_M
+    reg |= 1 << 0;   // CLK_DIV_RATIO_M
     io_write32(V3S_CCU_BASE + CCU_SPI0_CLK, reg);
 
     //  set sclk clock  Select Clock Divide Rate 2 SPI_CLK = src_clk / (2*(n +
