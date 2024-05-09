@@ -1,13 +1,12 @@
-/* SPDX-License-Identifier: GPL-2.0+ */
-/*
- * (C) Copyright 2015 Roy Spliet <rspliet@ultimaker.com>
- */
-
+/*******************************************************************
+ * Copyright 2021-present evilbinary
+ * 作者: evilbinary on 01/01/20
+ * 邮箱: rootdebug@163.com
+ ********************************************************************/
 #ifndef _SUNXI_DMA_H
 #define _SUNXI_DMA_H
 
 #include "gpio.h"
-
 
 #define SUNXI_DMA_BASE DMA_BASE
 
@@ -18,8 +17,7 @@
 #define DMAC_CFG_TYPE_DRAM (1)
 #define DMAC_CFG_TYPE_SRAM (0)
 
-
-#define DMAC_CFG_TYPE(type) type<<16
+#define DMAC_CFG_TYPE(type) type << 16
 #define DMAC_CFG_ADDR_MODE(type) type
 
 #ifdef T113_S3
@@ -125,6 +123,8 @@ typedef struct {
   u32 volatile res[5];
 } dma_channel_reg_t;
 
+#ifdef T113_S3
+
 typedef struct {
   u32 volatile irq_en0; /* 0x0 dma irq enable register 0 */
   u32 volatile irq_en1; /* 0x4 dma irq enable register 1 */
@@ -142,6 +142,26 @@ typedef struct {
   u32 volatile reserved6[47];
   dma_channel_reg_t channel[16]; /* 0x100 dma channel register */
 } dma_reg_t;
+
+#else defiend(V3S)
+
+typedef struct {
+  u32 volatile irq_en0; /* 0x0 dma irq enable register 0 */
+  u32 volatile irq_en1; /* 0x4 dma irq enable register 1 */
+  u32 volatile reserved0[2];
+  u32 volatile irq_pending0; /* 0x10 dma irq pending register 0 */
+  u32 volatile irq_pending1; /* 0x14 dma irq pending register 1 */
+  u32 volatile reserved1[2];
+  u32 volatile auto_gate; /* 0x20 dma auto gating register */
+  u32 volatile reserved4[1];
+  u32 volatile status; /* 0x30 dma status register */
+  u32 volatile reserved5[3];
+  u32 volatile version; /* 0x40 dma Version register */
+  u32 volatile reserved6[47];
+  dma_channel_reg_t channel[16]; /* 0x100 dma channel register */
+} dma_reg_t;
+
+#endif
 
 typedef struct {
   u32 used;

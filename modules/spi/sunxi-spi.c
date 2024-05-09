@@ -88,8 +88,15 @@ u32 sunxi_spi_xfer(int spi, spi_msg_t* msg) {
 
     while (sunxi_spi_base[spi]->tcr & (1 << 31))
       ;
-    while ((sunxi_spi_base[spi]->fsr & 0xff) < n)
+    int poll_time = 1000000;
+    while (((sunxi_spi_base[spi]->fsr & (0xFF << 16) ) >> 16) && (--poll_time > 0))
       ;
+    if (poll_time <= 0) {
+      log_error("spi poll time out\n");
+      return -1;
+    }
+    // while (((sunxi_spi_base[spi]->fsr) & 0xff) < n)
+    //   ;
 
     if (rx != NULL) {
       for (i = 0; i < n; i++) {

@@ -110,29 +110,14 @@ static void cpu_clock_set_pll_cpu(u32 clk) {
   io_write32(V3S_CCU_BASE + CCU_CPU_AXI_CFG, val);
 }
 
-void cpu_clock_init(void) {
-  cpu_clock_set_pll_cpu(1008000000);
+static uint32_t pll_periph_get_freq(void) {
+  uint32_t reg = io_read32(CCU_BASE + CCU_PLL_PERIPH0_CTRL);
 
-  /* pll video - 396MHZ */
-  io_write32(V3S_CCU_BASE + CCU_PLL_VIDEO_CTRL, 0x91004107);
+  uint32_t mul = (reg >> 8) & 0x1F;
+  uint32_t div = (reg >> 4) & 0x3;
+  kprintf("mul %d  div %d\n", mul, div);
 
-  /* pll periph0 - 600MHZ */
-  io_write32(V3S_CCU_BASE + CCU_PLL_PERIPH0_CTRL, 0x90041811);
-  while (!(io_read32(V3S_CCU_BASE + CCU_PLL_PERIPH0_CTRL) & (1 << 28)))
-    ;
-
-  /* ahb1 = pll periph0 / 3, apb1 = ahb1 / 2 */
-  io_write32(V3S_CCU_BASE + CCU_AHB_APB0_CFG, 0x00003180);
-
-  /* mbus  = pll periph0 / 4 */
-  io_write32(V3S_CCU_BASE + CCU_MBUS_CLK, 0x81000003);
-
-  /* Set APB2 to OSC24M/1 (24MHz). */
-  io_write32(V3S_CCU_BASE + CCU_AHB2_CFG, 1 << 24 | 0 << 16 | 0);
-
-  // Enable TWI0 clock gating
-  u32 gate_reg = io_read32(V3S_CCU_BASE + CCU_BUS_CLK_GATE3);
-  io_write32(V3S_CCU_BASE + CCU_BUS_CLK_GATE3, gate_reg | 1 << 0);
+  return (24000000 * (mul + 1) / (div + 1));
 }
 
 u32 cpu_get_rate(u32 prate) {
@@ -150,6 +135,76 @@ u32 cpu_get_rate(u32 prate) {
   rate = (((prate * n * k) >> p) / m);
   return rate;
 }
+
+void cpu_clock_init(void) {
+  u32 reg;
+  cpu_clock_set_pll_cpu(1152000000);
+
+  kprintf("cpu rate %d\n",cpu_get_rate(24000000));
+  /* pll video - 396MHZ */
+  io_write32(V3S_CCU_BASE + CCU_PLL_VIDEO_CTRL, 0x91004107);
+
+  /* pll periph0 - 600MHZ */
+  reg = io_read32(V3S_CCU_BASE + CCU_PLL_PERIPH0_CTRL);
+  reg = 0;
+  reg |= 1 << 31;  // PLL_ENABLE 24MHz*N*K/2
+  reg |= 0 << 25;  // PLL_BYPASS_EN  If the bypass is enabled, the PLL output is
+                   // 24MHz.
+  reg |= 1 << 24;  // PLL_CLK_OUT_EN
+  reg &= ~(1 << 18);  // PLL_24M_OUT_EN 0 disable
+
+  reg &= ~(0x1F << 8);
+
+  reg |= 24 << 8;  // PLL_FACTOR_N 24*25*2/2=600MHZ
+  reg &= ~(3 << 4);
+  reg |= 1 << 4;  // PLL_FACTOR_K
+  reg &= ~(3 << 4);
+  reg |= 0 << 4;  // PLL_FACTOR_M
+
+  io_write32(V3S_CCU_BASE + CCU_PLL_PERIPH0_CTRL, reg);
+  kprintf("clock periph0 %d\n", pll_periph_get_freq());
+
+  // io_write32(V3S_CCU_BASE + CCU_PLL_PERIPH0_CTRL, 0x90041811);
+  while (!(io_read32(V3S_CCU_BASE + CCU_PLL_PERIPH0_CTRL) & (1 << 28)))
+    ;
+
+  /* ahb1 = pll periph0 / 3, apb1 = ahb1 / 2 */
+  reg = io_read32(V3S_CCU_BASE + CCU_AHB_APB0_CFG);
+  reg = 0;
+  reg |= 3 << 12;  // AHB1_CLK_SRC_SEL PLL_PERIPH0   600/3=200MHZ
+  reg |= 1 << 25;  // PLL_BYPASS_EN  1: Enable
+  reg |= 1 << 24;  // PLL_CLK_OUT_EN  1: Enable
+  reg &= ~(3 << 8);
+  reg |= 0 << 8;  // APB1_CLK_RATIO 00: /2          AHB1/2 =100MHZ
+  reg |= 2 << 6;  // AHB1_PRE_DIV 00: /1  10: /3
+  reg &= ~(3 << 4);
+  reg |= 0 << 4;  // AHB1_CLK_DIV_RATIO 01: /2
+
+  io_write32(V3S_CCU_BASE + CCU_AHB_APB0_CFG, reg);
+  // io_write32(V3S_CCU_BASE + CCU_AHB_APB0_CFG, 0x00003180);
+
+  /* mbus  = pll periph0 / 4 */
+  reg = io_read32(V3S_CCU_BASE + CCU_MBUS_CLK);
+  reg = 0;
+  reg |= 1 << 31;  // MBUS_SCLK_GATING  MBUS_CLOCK = Clock Source/Divider M
+  reg |= 1 << 24;  // MBUS_SCLK_SRC  01: PLL_PERIPH0(2X)
+  reg |= 3 << 0;   // MBUS_SCLK_RATIO_M
+
+  io_write32(V3S_CCU_BASE + CCU_MBUS_CLK, reg);
+  // io_write32(V3S_CCU_BASE + CCU_MBUS_CLK, 0x81000003);
+
+  /* Set APB2 to OSC24M/1 (24MHz). */
+  reg = io_read32(V3S_CCU_BASE + CCU_APB2_CFG);
+  reg = 0;
+  reg |= 1 << 24 | 0 << 16 | 0;
+  io_write32(V3S_CCU_BASE + CCU_APB2_CFG, reg);
+
+  // Enable TWI0 clock gating
+  u32 gate_reg = io_read32(V3S_CCU_BASE + CCU_BUS_CLK_GATE3);
+  io_write32(V3S_CCU_BASE + CCU_BUS_CLK_GATE3, gate_reg | 1 << 0);
+}
+
+
 
 void platform_init() {
   io_add_write_channel(uart_send);
@@ -190,7 +245,7 @@ int interrupt_get_source(u32 no) {
 
   if (irq == IRQ_TIMER0) {
     // kprintf("irq timer %d\n", irq);
-  }else if (irq == 1023) {
+  } else if (irq == 1023) {
     no = EX_NONE;
     gic_irqack2(irq);
   } else if (irq == IRQ_DMAC) {

@@ -6,8 +6,8 @@
 
 #include "dev/devfs.h"
 #include "dma/dma.h"
-#include "gpio/sunxi-gpio.h"
 #include "dma/sunxi-dma.h"
+#include "gpio/sunxi-gpio.h"
 #include "lcd.h"
 #include "spi/spi.h"
 #include "spi/sunxi-spi.h"
@@ -277,16 +277,16 @@ void st7789_init() {
 
   //-------------ST7789V Frame rate setting-----------//
   st7789_write_cmd(0xb2);  // Porch Setting
-  st7789_write_data(0x05);
-  st7789_write_data(0x05);
-  st7789_write_data(0x00);
-  st7789_write_data(0x33);
-  st7789_write_data(0x33);
-  // st7789_write_data(0x0C);
-  // st7789_write_data(0x0C);
+  // st7789_write_data(0x05);
+  // st7789_write_data(0x05);
   // st7789_write_data(0x00);
   // st7789_write_data(0x33);
   // st7789_write_data(0x33);
+  st7789_write_data(0x0C);
+  st7789_write_data(0x0C);
+  st7789_write_data(0x00);
+  st7789_write_data(0x33);
+  st7789_write_data(0x33);
 
   st7789_write_cmd(0xb7);   // Gate Control
   st7789_write_data(0x05);  // 12.2v   -10.43v
@@ -385,6 +385,7 @@ void dma_st7789_handler(void* data) {
   // dma_trans(0, dev->sound_buf, txd, 64);
   log_info("dma_audio_handler end\n");
 }
+int ii = 0;
 
 void st7789_flush_screen(vga_device_t* vga, u32 index) {
   // vga->framebuffer_index = index;
@@ -399,11 +400,12 @@ void st7789_flush_screen(vga_device_t* vga, u32 index) {
 
   u16 i, j;
   st7789_address_set(xsta, ysta, xend - 1, yend - 1);  // 设置显示范围
-  // for (i = ysta; i < yend; i++) {
-  //   for (j = xsta; j < xend; j++) {
-  //     st7789_write_data16(RGB888_to_RGB565(*color++));
-  //   }
-  // }
+  for (i = ysta; i < yend; i++) {
+    for (j = xsta; j < xend; j++) {
+      // st7789_write_data16(RGB888_to_RGB565(*color++));
+      vga->pframbuffer[i * j] = MAGENTA << ii++;
+    }
+  }
   // sunxi_spi_write(SPI0, color, vga->width * vga->height);
   u32* txd = sunxi_spi_get_tx(SPI0);
 
@@ -422,10 +424,11 @@ void st7789_test() {
 
   // kprintf("st7789 test 1\n");
 
-  // for(int i=0;i<16;i++){
-  //   st7789_fill(0, 0, 200, 200, 0xF<<i );
-  // }
-  kprintf("st7789 test 2\n");
+  for (int i = 0;; i++) {
+    st7789_fill(0, 0, 240, 320, 0xF << i);
+    i = i % 16;
+    kprintf("st7789 test 2\n");
+  }
 
   // delay(1000);
   st7789_fill(0, 0, 240, 320, MAGENTA);
