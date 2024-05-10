@@ -46,19 +46,24 @@ void sunxi_spi_init(int spi) {
 
     u32 reg = 0;
 
-    // spi0 bus gate, deassert spi
-    reg = io_read32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0);
-    io_write32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0, reg | 1 << 20);
-
     // set spi0 clock bus gating
     reg = io_read32(V3S_CCU_BASE + CCU_BUS_CLK_GATE0);
     reg |= 1 << 20;                                     // SPI0_GATING
     io_write32(V3S_CCU_BASE + CCU_BUS_CLK_GATE0, reg);  // spi 0 gate
 
+    // spi0 bus gate, deassert spi
+    reg = io_read32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0);
+    io_write32(V3S_CCU_BASE + CCU_BUS_SOFT_RST0, reg | 1 << 20);
+
+
+    // enable clock
+    reg = io_read32(V3S_CCU_BASE + CCU_SPI0_CLK);
+    reg |= 1 << 31;
+    io_write32(V3S_CCU_BASE + CCU_SPI0_CLK, reg);
+
     // set spi0 sclk enable  pll periph0 - 600MHZ SCLK = Clock Source/Divider
     // N/Divider M.
     reg = io_read32(V3S_CCU_BASE + CCU_SPI0_CLK);
-    reg = 0;
     reg |= 1 << 31;  // SCLK_GATING SCLK = Clock Source/N/M 600MHZ/2/3= 100MHZ
     reg |= 1 << 24;  // CLK_SRC_SEL 01: PLL_PERIPH0 600MHZ 0 24MHZ
     reg |= 1 << 16;  // CLK_DIV_RATIO_N  01: 2
@@ -70,12 +75,7 @@ void sunxi_spi_init(int spi) {
     spio_base[spi]->ccr = 0;
     spio_base[spi]->ccr |= 1 << 12;
     spio_base[spi]->ccr &= ~0xFF;
-    spio_base[spi]->ccr |= 0;  // 100 MHZ/(2*1)=50
-
-    // enable clock
-    reg = io_read32(V3S_CCU_BASE + CCU_SPI0_CLK);
-    reg |= 1 << 31;
-    io_write32(V3S_CCU_BASE + CCU_SPI0_CLK, reg);
+    spio_base[spi]->ccr |= 0;  // 100 MHZ/(2*1)=50  Source_CLK / (2*(n + 1)).
 
     // set master mode  stop transmit data when RXFIFO full
     spio_base[spi]->gcr |= 1 << 31 | 1 << 1 | 1;  //
