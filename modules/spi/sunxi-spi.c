@@ -47,12 +47,18 @@ void sunxi_spi_set_mode(int spi, u32 mode) {
   sunxi_spi_base[spi]->tcr = reg;
 }
 
+
+u32 sunxi_spi_status(int spi){
+  return sunxi_spi_base[spi]->isr;
+}
+
 static void sunxi_spi_write_txbuf(int spi, u8* buf, int len) {
   int i;
 
   sunxi_spi_base[spi]->mtc = len & 0xffffff;
   sunxi_spi_base[spi]->bcc = len & 0xffffff;
   sunxi_spi_base[spi]->mbc = len & 0xffffff;
+
   if (buf) {
     for (i = 0; i < len; i++) {
       io_write8(&sunxi_spi_base[spi]->txd, *buf);
@@ -86,16 +92,17 @@ u32 sunxi_spi_xfer(int spi, spi_msg_t* msg) {
 
     sunxi_spi_base[spi]->tcr |= (1 << 31);
 
-    while (sunxi_spi_base[spi]->tcr & (1 << 31))
-      ;
+    // while (sunxi_spi_base[spi]->tcr & (1 << 31))
+    //   ;
     int poll_time = 1000000;
-    while (((sunxi_spi_base[spi]->fsr & (0xFF << 16) ) >> 16) && (--poll_time > 0))
+    while (((sunxi_spi_base[spi]->fsr & (0xFF << 16)) >> 16) &&
+           (--poll_time > 0))
       ;
     if (poll_time <= 0) {
       log_error("spi poll time out\n");
       return -1;
     }
-    // while (((sunxi_spi_base[spi]->fsr) & 0xff) < n)
+    // while ((((sunxi_spi_base[spi]->fsr) & (0xFF << 16) ) >> 16) < n)
     //   ;
 
     if (rx != NULL) {

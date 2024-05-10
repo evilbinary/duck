@@ -384,6 +384,16 @@ void dma_st7789_handler(void* data) {
 
   // dma_trans(0, dev->sound_buf, txd, 64);
   log_info("dma_audio_handler end\n");
+
+  u32 sta=sunxi_spi_status();
+
+  if(sta& (1<<12)){ //1: Transfer Completed
+ 
+  }else if(sta&(1<<4)){ //X_READY
+
+
+  }
+
 }
 int ii = 0;
 
@@ -399,7 +409,7 @@ void st7789_flush_screen(vga_device_t* vga, u32 index) {
   u32 yend = vga->width - 1;
 
   u16 i, j;
-  st7789_address_set(xsta, ysta, xend - 1, yend - 1);  // 设置显示范围
+  // st7789_address_set(xsta, ysta, xend - 1, yend - 1);  // 设置显示范围
   for (i = ysta; i < yend; i++) {
     for (j = xsta; j < xend; j++) {
       // st7789_write_data16(RGB888_to_RGB565(*color++));
@@ -412,7 +422,13 @@ void st7789_flush_screen(vga_device_t* vga, u32 index) {
   kprintf("trans %x %x len %d\n", vga->pframbuffer, txd,
           vga->width * vga->height);
 
-  dma_trans(0, vga->pframbuffer, txd, vga->width * vga->height * 4);
+  void* phys = kpage_v2p(vga->pframbuffer, 0);
+  if (phys == NULL) {
+    kprintf("phys is null\n");
+    return;
+  }
+  
+  dma_trans(0,phys , txd, vga->width * vga->height *4);
 }
 
 void st7789_test() {

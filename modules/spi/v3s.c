@@ -58,16 +58,16 @@ void sunxi_spi_init(int spi) {
     // set spi0 sclk enable  pll periph0 - 600MHZ SCLK = Clock Source/Divider
     // N/Divider M.
     reg = io_read32(V3S_CCU_BASE + CCU_SPI0_CLK);
-    reg=0;
+    reg = 0;
     reg |= 1 << 31;  // SCLK_GATING SCLK = Clock Source/N/M 600MHZ/2/3= 100MHZ
     reg |= 1 << 24;  // CLK_SRC_SEL 01: PLL_PERIPH0 600MHZ 0 24MHZ
     reg |= 1 << 16;  // CLK_DIV_RATIO_N  01: 2
-    reg |= 1 << 0;   // CLK_DIV_RATIO_M
+    reg |= 0 << 0;   // CLK_DIV_RATIO_M
     io_write32(V3S_CCU_BASE + CCU_SPI0_CLK, reg);
 
     //  set sclk clock  Select Clock Divide Rate 2 SPI_CLK = src_clk / (2*(n +
     //  1)).
-    spio_base[spi]->ccr =0;
+    spio_base[spi]->ccr = 0;
     spio_base[spi]->ccr |= 1 << 12;
     spio_base[spi]->ccr &= ~0xFF;
     spio_base[spi]->ccr |= 0;  // 100 MHZ/(2*1)=50
@@ -78,11 +78,10 @@ void sunxi_spi_init(int spi) {
     io_write32(V3S_CCU_BASE + CCU_SPI0_CLK, reg);
 
     // set master mode  stop transmit data when RXFIFO full
-    spio_base[spi]->gcr |= 1 << 31 | 1 << 1 | 1 | 1 << 7;  //
+    spio_base[spi]->gcr |= 1 << 31 | 1 << 1 | 1;  //
 
     // wait
-    while (spio_base[spi]->gcr & (1 << 31))
-      ;
+    while (spio_base[spi]->gcr & (1 << 31));
     kprintf("spi0 gcr %x\n", spio_base[spi]->gcr);
 
     // set SS Output Owner Select  1: Active low polarity (1 = Idle)
@@ -108,12 +107,20 @@ void sunxi_spi_init(int spi) {
     // spio_base[spi]->tcr |= (1 << 2);
 
     spio_base[spi]->tcr |= (1 << 13);
+    // spio_base[spi]->tcr |= (1 << 11);
+    spio_base[spi]->tcr |= (1 << 10);
+    spio_base[spi]->tcr |= (1 << 8);
 
     // clear intterrupt
     spio_base[spi]->isr = ~0;
 
     // set fcr TX FIFO Reset RX FIFO Reset  TF_ DRQ_EN
-    spio_base[spi]->fcr |= 1 << 31 | 1 << 15 | 1 << 24;  //| 1<<30  TF_TEST_ENB
+    spio_base[spi]->fcr |= 1 << 31;
+    spio_base[spi]->fcr |= 1 << 15;
+    spio_base[spi]->fcr |= 1 << 24;  //| 1<<30  TF_TEST_ENB
+    spio_base[spi]->fcr |= 8 << 16;
+    spio_base[spi]->fcr |= 1 << 9;
+    spio_base[spi]->fcr |= 1 << 14;
 
     spio_base[spi]->ier |=
         1 << 12 | 1 << 6 | 1 << 5 | 1 << 4 | 1 << 2 | 1 << 1 | 1 << 0;
