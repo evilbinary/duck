@@ -9,7 +9,7 @@
 
 #define CACHE_COUNT 1
 #define SECTOR_SIZE (512 * CACHE_COUNT)
-#define CACHE_ENABLED 1  // have problem
+// #define CACHE_ENABLED 1  // have problem
 
 #define CACHE_ENTRIES (1 << 4)          ///< 16 entries
 #define CACHE_MASK (CACHE_ENTRIES - 1)  ///< mask 0x0F

@@ -13,7 +13,7 @@
 
 #define CACHE_COUNT 1
 #define SECTOR_SIZE (512 * CACHE_COUNT)
-#define CACHE_ENABLED 1
+// #define CACHE_ENABLED 1
 
 #ifdef CACHE_ENABLED
 #define CACHE_ENTRIES (1 << 4)          ///< 16 entries

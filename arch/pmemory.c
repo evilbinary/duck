@@ -10,7 +10,7 @@ extern boot_info_t* boot_info;
 
 memory_manager_t mmt;
 
-#define DEBUG 1
+// #define DEBUG 1
 #define MM_YA_ALLOC 1
 
 #ifdef MM_YA_ALLOC
@@ -195,9 +195,10 @@ void* ya_alloc(size_t size) {
         "map=%x\n",
         t->id, addr, size, mmt.alloc_count, mmt.alloc_size / 1024, block,
         block->size, block->count, mmt.last_map_addr);
-  }
-  ya_verify();
+    ya_verify();
   // kprintf("ya_alloc(%d);//no %d addr %x \n", size, block->no, addr);
+  }
+
 #endif
 
   return addr;
@@ -217,9 +218,11 @@ void ya_verify() {
       kassert(current->magic == MAGIC_FREE);
       free += current->size;
     } else {
-      kprintf("tid %d block error addr %x free %d\n", current->tid,
-              &current->free, current->free);
-      kassert((current->free == BLOCK_FREE || current->free == BLOCK_USED));
+      if(current->tid >0 ){
+        kprintf("tid %d block error addr %x free %d\n", current->tid,
+                &current->free, current->free);
+        kassert((current->free == BLOCK_FREE || current->free == BLOCK_USED));
+      }
     }
     void* addr = ya_block_addr(current);
     kassert(addr != NULL);
