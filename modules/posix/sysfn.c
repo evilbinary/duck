@@ -1087,7 +1087,7 @@ u32 sys_time(time_t* t) {
 }
 
 int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
-  if (clockid == 0) {
+  if (clockid == 0 ||clockid == 1) {
     time_t seconds;
     int rc = sys_time(&seconds);
     ts->tv_sec = seconds;

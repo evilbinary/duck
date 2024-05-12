@@ -111,6 +111,14 @@ void page_map(u32 virtualaddr, u32 physaddr, u32 flags) {
 #endif
 }
 
+void page_map_current(u32 virtualaddr, u32 physaddr, u32 flags) {
+#ifdef VM_ENABLE
+  thread_t* current=thread_current();
+  // log_error("page_map_current %d %x %x\n",current->id,virtualaddr,virtualaddr);
+  page_map_on(current->vm->upage, virtualaddr, physaddr, flags);
+#endif
+}
+
 void *page_kernel_dir() { return kernel_page_dir; }
 
 void page_init() {
