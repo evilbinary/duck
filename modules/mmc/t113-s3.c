@@ -26,7 +26,7 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   pdat->port= 0;
 
   pdat->voltage = MMC_VDD_27_36;
-  pdat->clock = 24000000;
+  pdat->clock = 24000000*3;
   pdat->width = MMC_BUS_WIDTH_4;
 
   pdat->reset = 8;

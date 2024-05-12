@@ -376,13 +376,13 @@ uint32_t clk_sdc_config(uint32_t reg, uint32_t freq) {
     samp_phase = 0;
   } else if (freq <= 25000000) {
     out_phase = 0;
-    samp_phase = 0;
+    samp_phase = 5;
   } else if (freq <= 52000000) {
     out_phase = 0;
     samp_phase = 0;
   } else { /* freq > 52000000 */
-    out_phase = 0;
-    samp_phase = 0;
+    out_phase = 3;
+    samp_phase = 4;
   }
   reg_val |= (samp_phase << 20) | (out_phase << 8);
   reg_val |= (prediv << 16) | ((div - 1) << 0);
