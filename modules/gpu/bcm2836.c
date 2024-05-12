@@ -81,7 +81,11 @@ int gpu_init_mode(vga_device_t* vga, int mode) {
     vga->width = 640;
     vga->height = 480;
     vga->bpp = 24;
-  } else if (mode == VGA_MODE_480x272x24) {
+  } else if (mode == VGA_MODE_640x480x32) {
+    vga->width = 640;
+    vga->height = 480;
+    vga->bpp = 32;
+  }  else if (mode == VGA_MODE_480x272x24) {
     vga->width = 480;
     vga->height = 272;
     vga->bpp = 24;

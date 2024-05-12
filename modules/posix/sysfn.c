@@ -1076,8 +1076,7 @@ u32 sys_time(time_t* t) {
   if (ret < 0) {
     return 0;
   }
-  // log_info("%d-%d-%d
-  // %d:%d:%d\n",time.year,time.month,time.day,time.hour,time.minute,time.second);
+  // log_info("%d-%d-%d %d:%d:%d\n",time.year,time.month,time.day,time.hour,time.minute,time.second);
 
   uint32_t seconds = secs_of_years(time.year - 1) +
                      secs_of_month(time.month - 1, time.year) +
