@@ -10,7 +10,7 @@ extern boot_info_t* boot_info;
 
 memory_manager_t mmt;
 
-// #define DEBUG 1
+#define DEBUG 1
 #define MM_YA_ALLOC 1
 
 #ifdef MM_YA_ALLOC
@@ -182,17 +182,20 @@ void* ya_alloc(size_t size) {
 #include "kernel/thread.h"
   thread_t* t = thread_current();
   if (t != NULL) {
-    block->tid = t->id;
-  } else {
-    block->tid = 66666;
-  }
+    if (t != NULL) {
+      block->tid = t->id;
+    } else {
+      block->tid = 66666;
+    }
 
-  kprintf(
-      "tid %d alloc %x size=%d count=%d total=%dk  baddr=%x bsize=%d bcount=%d "
-      "last "
-      "map=%x\n",
-      t->id, addr, size, mmt.alloc_count, mmt.alloc_size / 1024, block,
-      block->size, block->count, mmt.last_map_addr);
+    kprintf(
+        "tid %d alloc %x size=%d count=%d total=%dk  baddr=%x bsize=%d "
+        "bcount=%d "
+        "last "
+        "map=%x\n",
+        t->id, addr, size, mmt.alloc_count, mmt.alloc_size / 1024, block,
+        block->size, block->count, mmt.last_map_addr);
+  }
   ya_verify();
   // kprintf("ya_alloc(%d);//no %d addr %x \n", size, block->no, addr);
 #endif
@@ -602,8 +605,7 @@ void* mm_alloc(size_t size) {
   }
   kprintf("erro alloc count %d size %d kb\n", count, size / 1024);
   mm_dump();
-  for (;;)
-    ;
+  for (;;);
 
   return NULL;
 }
