@@ -110,7 +110,9 @@ void test_fat_read_file() {
 }
 
 void test_fat() {
+#ifdef FAT_MODULE
   test_fat_read();
-  // test_fat_read_small();
-  // test_fat_read_file();
+  test_fat_read_small();
+#endif
+  test_fat_read_file();
 }

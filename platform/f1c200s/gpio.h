@@ -1,6 +1,8 @@
 #ifndef GPIO_H
 #define GPIO_H
 
+#include "f1c200s-ccu.h"
+
 #define GPIO_BASE 0x01C20800
 
 #define UART0_BASE 0x01C25000
