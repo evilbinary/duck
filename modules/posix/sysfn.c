@@ -1061,17 +1061,8 @@ uint32_t secs_of_month(int months, int year) {
   return days * 86400;
 }
 
-
-
 u32 sys_time(time_t* t) {
-  u32 time_fd = -1;
-  if (time_fd == -1) {
-    time_fd = sys_open("/dev/time", 0);
-  }
-  if (time_fd < 0) {
-    log_error("open time faild\n");
-    return 0;
-  }
+  vnode_t* time_node = vfs_find(NULL, "/dev/time");
   rtc_time_t time;
   time.day = 1;
   time.hour = 0;
@@ -1081,8 +1072,17 @@ u32 sys_time(time_t* t) {
   time.year = 1970;
 
   // kprintf("time fd %d\n", time_fd);
+  u32 ret = vread(time_node, 0, sizeof(rtc_time_t), &time);
 
-  int ret = sys_read(time_fd, &time, sizeof(rtc_time_t));
+  // u32 time_fd = -1;
+  // if (time_fd == -1) {
+  //   time_fd = sys_open("/dev/time", 0);
+  // }
+  // if (time_fd < 0) {
+  //   log_error("open time faild\n");
+  //   return 0;
+  // }
+  // int ret = sys_read(time_fd, &time, sizeof(rtc_time_t));
   if (ret < 0) {
     return 0;
   }
