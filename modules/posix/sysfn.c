@@ -1056,8 +1056,8 @@ uint32_t secs_of_month(int months, int year) {
   return days * 86400;
 }
 
+u32 time_fd = -1;
 u32 sys_time(time_t* t) {
-  u32 time_fd = -1;
   if (time_fd == -1) {
     time_fd = sys_open("/dev/time", 0);
   }
