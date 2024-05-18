@@ -651,7 +651,7 @@ void thread_dumps() {
   log_debug("kernel ticks: %d\n", ticks);
 
   kprintf(
-      "id   pid  name           state     cpu  count  "
+      "id   pid  name                 state     cpu  count  "
       "  vm   pm   nstack  file  sleep  level  faults ticks\n");
   for (int i = 0; i < MAX_CPU; i++) {
     for (thread_t* p = schedulable_head_thread[i]; p != NULL; p = p->next) {
@@ -662,7 +662,7 @@ void thread_dumps() {
       kprintf("%-4d ", p->pid);
 
       if (p->name != NULL) {
-        kprintf("%-14s ", p->name);
+        kprintf("%-20s ", p->name);
       } else {
         kprintf("   ");
       }

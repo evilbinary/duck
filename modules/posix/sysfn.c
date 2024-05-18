@@ -226,9 +226,9 @@ void sys_exit(int status) {
   //   cpu_sti();
   // }
   // cpu_cli();
-
+  sys_thread_self();
   if (current->tinfo != NULL) {
-    ((thread_info_t*)current->tinfo)->detach_state = 0;
+    ((thread_info_t*)current->tinfo)->detach_state = DT_EXITED;
   }
 }
 
@@ -505,9 +505,10 @@ int sys_readv(int fd, iovec_t* vector, int count) {
   // kprintf("sys_readv====>%d %x %d\n",fd,vector,count);
 
   for (i = 0; i < count; i++) {
-    // kprintf("sys_read=>i=%d %d %x %d\n",i,fd,vector[pos].iov_base,vector[pos].iov_len);
-    int len=vector[pos].iov_len;
-    n = sys_read(fd, vector[pos].iov_base,len);
+    // kprintf("sys_read=>i=%d %d %x
+    // %d\n",i,fd,vector[pos].iov_base,vector[pos].iov_len);
+    int len = vector[pos].iov_len;
+    n = sys_read(fd, vector[pos].iov_base, len);
     // kprintf("read %d ret =%d\n",i,n);
     if (n > 0) {
       num += n;
@@ -970,6 +971,7 @@ int sys_thread_self() {
     tinfo->prev = tinfo->next = NULL;
     tinfo->locale = kmalloc(sizeof(locale_t), KERNEL_TYPE);
     tinfo->robust_list.head = &tinfo->robust_list.head;
+    tinfo->detach_state = DT_JOINABLE;
     log_debug("locale at %x\n", tinfo->locale);
     log_debug("thread info at %x\n", tinfo);
     log_debug("tsd at %x\n", tinfo->tsd);
@@ -1076,7 +1078,8 @@ u32 sys_time(time_t* t) {
   if (ret < 0) {
     return 0;
   }
-  // log_info("%d-%d-%d %d:%d:%d\n",time.year,time.month,time.day,time.hour,time.minute,time.second);
+  // log_info("%d-%d-%d
+  // %d:%d:%d\n",time.year,time.month,time.day,time.hour,time.minute,time.second);
 
   uint32_t seconds = secs_of_years(time.year - 1) +
                      secs_of_month(time.month - 1, time.year) +
@@ -1087,19 +1090,19 @@ u32 sys_time(time_t* t) {
 }
 
 int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
-  if (clockid == 0 ||clockid == 1) {
+  if (clockid == 0 || clockid == 1) {
     time_t seconds;
     int rc = sys_time(&seconds);
     ts->tv_sec = seconds;
     int ticks = schedule_get_ticks() % 1000;
-    ts->tv_nsec = ticks/1000;
+    ts->tv_nsec = ticks / 1000;
     return 0;
   } else if (clockid == 4) {
     time_t seconds;
     int rc = sys_time(&seconds);
     ts->tv_sec = seconds;
     int ticks = schedule_get_ticks() % 1000;
-    ts->tv_nsec = ticks/1000;
+    ts->tv_nsec = ticks / 1000;
     return 0;
   } else {
     log_warn("clock not support %d\n", clockid);
@@ -1169,7 +1172,27 @@ void* sys_thread_addr(void* vaddr) {
 int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
               const struct timespec* timeout, /* or: uint32_t val2 */
               uint32_t* uaddr2, uint32_t val3) {
-  log_debug("sys futext not impl\n");
+  thread_t* current = thread_current();
+  if ((futex_op & FUTEX_WAKE) == FUTEX_WAIT) {
+    if (*uaddr == val) {
+      log_debug("wait %d\n", current->id);
+      thread_sleep(current, 400);
+    } else {
+      // thread_sleep(current, 0);
+      return EAGAIN;
+    }
+
+  } else if ((futex_op & FUTEX_WAKE) == FUTEX_WAKE) {
+    if (*uaddr == val) {
+      log_debug("wake %d\n", current->id);
+
+      thread_wake(current);
+    } else {
+      return EAGAIN;
+    }
+  } else {
+    log_debug("sys futext not impl %d\n", futex_op);
+  }
 
   return 0;
 }
@@ -1292,7 +1315,8 @@ int sys_fn_faild_handler(int no, interrupt_context_t* ic) {
 void sys_fn_call_handler(int no, interrupt_context_t* ic) {
   void* fn = syscall_table[context_fn(ic)];
   if (fn != NULL) {
-    // kprintf("syscall fn:%d r0:%x r1:%x r2:%x r3:%x fn addr %x\n",ic->r7,ic->r0,ic->r1,ic->r2,ic->r3,fn);
+    // kprintf("syscall fn:%d r0:%x r1:%x r2:%x r3:%x fn addr
+    // %x\n",ic->r7,ic->r0,ic->r1,ic->r2,ic->r3,fn);
     sys_fn_call((ic), fn);
     // kprintf(" ret=%x\n",context_ret(ic));
   } else {
