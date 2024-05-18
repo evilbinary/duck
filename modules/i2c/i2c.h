@@ -23,6 +23,7 @@ typedef struct i2c_msg {
 	int flags;
 	int len;
 	u8* buf;
+	int no;
 }i2c_msg_t;
 
 
