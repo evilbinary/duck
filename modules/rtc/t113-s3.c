@@ -85,8 +85,8 @@ void rtc_get_time() {
 
   // kprintf("day %d  t %d\n", d, t);
 
-  // kprintf("%d-%d-%d %d:%d:%d\n", rtc_time.year, rtc_time.month, rtc_time.day,
-          // rtc_time.hour, rtc_time.minute, rtc_time.second);
+//   kprintf("%d-%d-%d %d:%d:%d\n", rtc_time.year, rtc_time.month, rtc_time.day,
+//           rtc_time.hour, rtc_time.minute, rtc_time.second);
 }
 
 void rtc_write_time(rtc_time_t* current) {

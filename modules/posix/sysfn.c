@@ -89,7 +89,8 @@ u32 sys_open(char* name, int attr, ...) {
   } else {
     pwd = current->vfs->pwd;
   }
-  char* path_name = kmalloc(256, KERNEL_TYPE);
+  char path_name[256];
+  // char* path_name= kmalloc(256, KERNEL_TYPE);
   vfs_path_append(pwd, name, path_name);
 
   log_debug("path name %s to %s\n", name, path_name);
@@ -933,12 +934,14 @@ int sys_clock_nanosleep(int clock, int flag, struct timespec* req,
   // if (current->id > 3) {
   //   kprintf("sys_clock_nanosleep %d %d\n", req->tv_sec, req->tv_nsec);
   // }
-  schedule_sleep(req->tv_sec * 1000 + req->tv_nsec / 1000);
+  schedule_sleep(SECOND_TO_TICK(req->tv_sec) +
+                 NANOSECOND_TO_TICK(req->tv_nsec));
   return 0;
 }
 
 int sys_nanosleep(struct timespec* req, struct timespec* rem) {
-  schedule_sleep(req->tv_sec * 1000 + req->tv_nsec / 1000);
+  schedule_sleep(SECOND_TO_TICK(req->tv_sec) +
+                 NANOSECOND_TO_TICK(req->tv_nsec));
   return 0;
 }
 
@@ -1058,8 +1061,10 @@ uint32_t secs_of_month(int months, int year) {
   return days * 86400;
 }
 
-u32 time_fd = -1;
+
+
 u32 sys_time(time_t* t) {
+  u32 time_fd = -1;
   if (time_fd == -1) {
     time_fd = sys_open("/dev/time", 0);
   }
@@ -1074,18 +1079,23 @@ u32 sys_time(time_t* t) {
   time.month = 1;
   time.second = 0;
   time.year = 1970;
+
+  // kprintf("time fd %d\n", time_fd);
+
   int ret = sys_read(time_fd, &time, sizeof(rtc_time_t));
   if (ret < 0) {
     return 0;
   }
-  // log_info("%d-%d-%d
-  // %d:%d:%d\n",time.year,time.month,time.day,time.hour,time.minute,time.second);
+  // kprintf("%d-%d-%d %d:%d:%d\n", time.year, time.month, time.day, time.hour,
+  //         time.minute, time.second);
 
-  uint32_t seconds = secs_of_years(time.year - 1) +
-                     secs_of_month(time.month - 1, time.year) +
-                     (time.day - 1) * 86400 + time.hour * 3600 +
-                     time.minute * 60 + time.second + 0;
-  *t = seconds;
+  time_t seconds = secs_of_years(time.year - 1) +
+                   secs_of_month(time.month - 1, time.year) +
+                   (time.day - 1) * 86400 + time.hour * 3600 +
+                   time.minute * 60 + time.second + 0;
+
+  kmemcpy(t, &seconds, sizeof(time_t));
+
   return ret;
 }
 
@@ -1094,15 +1104,18 @@ int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
     time_t seconds;
     int rc = sys_time(&seconds);
     ts->tv_sec = seconds;
-    int ticks = schedule_get_ticks() % 1000;
-    ts->tv_nsec = ticks / 1000;
+    int ticks = TICK_TO_NANOSECOND(schedule_get_ticks() % SCHEDULE_FREQUENCY);
+    ts->tv_nsec = ticks;
+
+    // kprintf("ts->tv_sec  %ld ts->tv_nsec %d\n", ts->tv_sec, ts->tv_nsec);
+
     return 0;
   } else if (clockid == 4) {
     time_t seconds;
     int rc = sys_time(&seconds);
     ts->tv_sec = seconds;
-    int ticks = schedule_get_ticks() % 1000;
-    ts->tv_nsec = ticks / 1000;
+    int ticks = TICK_TO_NANOSECOND(schedule_get_ticks() % SCHEDULE_FREQUENCY);
+    ts->tv_nsec = ticks;
     return 0;
   } else {
     log_warn("clock not support %d\n", clockid);

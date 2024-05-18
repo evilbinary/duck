@@ -304,26 +304,25 @@ typedef struct iovec {
 #define _NSIG 65
 
 typedef struct start_args {
-	void *(*start_func)(void *);
-	void *start_arg;
-	volatile int control;
-	unsigned long sig_mask[_NSIG/8/sizeof(long)];
-}start_args_t;
+  void* (*start_func)(void*);
+  void* start_arg;
+  volatile int control;
+  unsigned long sig_mask[_NSIG / 8 / sizeof(long)];
+} start_args_t;
 
 typedef struct sched_param {
-	int sched_priority;
-	int __reserved1;
+  int sched_priority;
+  int __reserved1;
 #if _REDIR_TIME64
-	long __reserved2[4];
+  long __reserved2[4];
 #else
-	struct {
-		time_t __reserved1;
-		long __reserved2;
-	} __reserved2[2];
+  struct {
+    time_t __reserved1;
+    long __reserved2;
+  } __reserved2[2];
 #endif
-	int __reserved3;
-}sched_param_t;
-
+  int __reserved3;
+} sched_param_t;
 
 #define PTHREAD_LIBMUSL 1
 #define TLS_ABOVE_TP 1
@@ -411,17 +410,16 @@ typedef struct thread_info {
 #endif
 
 #ifdef TLS_ABOVE_TP
-#define TP_ADJ(p) ((char *)(p) + sizeof(thread_info_t) + TP_OFFSET)
+#define TP_ADJ(p) ((char*)(p) + sizeof(thread_info_t) + TP_OFFSET)
 #else
 #define TP_ADJ(p) (p)
 #endif
 
-
 enum {
-	DT_EXITED = 0,
-	DT_EXITING,
-	DT_JOINABLE,
-	DT_DETACHED,
+  DT_EXITED = 0,
+  DT_EXITING,
+  DT_JOINABLE,
+  DT_DETACHED,
 };
 
 #define F_DUPFD 0
@@ -433,22 +431,24 @@ enum {
 #define F_SETLK 6
 #define F_SETLKW 7
 
-
-#define FUTEX_WAIT		0
-#define FUTEX_WAKE		1
-#define FUTEX_FD		2
-#define FUTEX_REQUEUE		3
-#define FUTEX_CMP_REQUEUE	4
-#define FUTEX_WAKE_OP		5
-#define FUTEX_LOCK_PI		6
-#define FUTEX_UNLOCK_PI		7
-#define FUTEX_TRYLOCK_PI	8
-#define FUTEX_WAIT_BITSET	9
+#define FUTEX_WAIT 0
+#define FUTEX_WAKE 1
+#define FUTEX_FD 2
+#define FUTEX_REQUEUE 3
+#define FUTEX_CMP_REQUEUE 4
+#define FUTEX_WAKE_OP 5
+#define FUTEX_LOCK_PI 6
+#define FUTEX_UNLOCK_PI 7
+#define FUTEX_TRYLOCK_PI 8
+#define FUTEX_WAIT_BITSET 9
 
 #define FUTEX_PRIVATE 128
 
 #define FUTEX_CLOCK_REALTIME 256
 
+#define NANOSECOND_TO_TICK(time) ((time) / (1000000000 / SCHEDULE_FREQUENCY))
+#define SECOND_TO_TICK(time) ((time)/(1000/ SCHEDULE_FREQUENCY))
+#define TICK_TO_NANOSECOND(tick) (tick * 1000000)
 
 u32 sys_open(char* name, int attr, ...);
 // size_t sys_ioctl(u32 fd, u32 cmd, ...);
@@ -517,8 +517,8 @@ int sys_fcntl64(int fd, int cmd, void* arg);
 int sys_getcwd(char* buf, size_t size);
 int sys_fchdir(int fd);
 
-int sys_clone( int flags, void* stack,int* parent_tid,
-              void* tls, int child_tid);
+int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
+              int child_tid);
 
 int sys_llseek(int fd, int offset_hi, int offset_lo, off_t* result, int whence);
 

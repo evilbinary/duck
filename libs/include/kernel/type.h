@@ -5,7 +5,7 @@
 
 #ifndef _HAVE_TIME_T
 #define _HAVE_TIME_T
-typedef	int32_t		time_t;
+typedef	int64_t		time_t;
 #endif
 
 

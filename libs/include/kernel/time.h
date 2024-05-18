@@ -6,7 +6,7 @@
 
 struct timespec {
   time_t tv_sec;//秒
-  time_t tv_nsec;//纳秒
+  long tv_nsec;//纳秒
 };
 
 struct timeval {
