@@ -52,7 +52,7 @@ u32 ytrace_hook_call(int no, interrupt_context_t* ic) {
   if (current->id == id || id<=-1) {
     u32 ticks = cpu_cyclecount();
 
-    ytrace->origin_call(no, ic);
+    int ret=ytrace->origin_call(no, ic);
     u32 ticks_end = cpu_cyclecount();
 
     u32 diff = ticks_end - ticks;
@@ -64,8 +64,8 @@ u32 ytrace_hook_call(int no, interrupt_context_t* ic) {
 
     if (print == 1) {
 #ifdef ARMV7_A
-      kprintf("sys %3d args: %8x %8x %8x %8x %8x times:%10d\n", no, ic->r0, ic->r1, ic->r2,
-              ic->r3, ic->r4,diff);
+      kprintf("sys %3d args: %8x %8x %8x %8x %8x ret=%8x times:%10d\n", no, ic->r0, ic->r1, ic->r2,
+              ic->r3, ic->r4,ret,diff);
 #else
       kprintf("sys %d \n", no);
 #endif
