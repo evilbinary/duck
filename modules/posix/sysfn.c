@@ -1107,7 +1107,9 @@ int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
     int ticks = TICK_TO_NANOSECOND(schedule_get_ticks() % SCHEDULE_FREQUENCY);
     ts->tv_nsec = ticks;
 
-    // kprintf("ts->tv_sec  %ld ts->tv_nsec %d\n", ts->tv_sec, ts->tv_nsec);
+    // u32 s0=seconds&(~0);
+    // u32 s1=seconds>>32;
+    // kprintf("ts->tv_sec %d %d ts->tv_nsec %d\n", s1,s0, ts->tv_nsec);
 
     return 0;
   } else if (clockid == 4) {

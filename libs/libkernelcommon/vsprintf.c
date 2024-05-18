@@ -44,7 +44,7 @@ static int skip_atoi(const char **s) {
  Output:
  Errors:
 ------------------------------------------------------------------------*/
-static char *number(char *str, unsigned long num, int base, int size,
+static char *number(char *str, unsigned long long num, int base, int size,
                     int precision, int type) {
   int i;
   char c, sign, tmp[36];
@@ -54,7 +54,7 @@ static char *number(char *str, unsigned long num, int base, int size,
   if (type & LEFT) type &= ~ZEROPAD;
   if (base < 2 || base > 36) return 0;
   c = (type & ZEROPAD) ? '0' : ' ';
-  if (type & SIGN && (long) num < 0) {
+  if (type & SIGN && (long long) num < 0) {
     sign = '-';
     num = -num;
   } else
