@@ -1021,7 +1021,7 @@ uint32_t secs_of_years(int years) {
 }
 
 uint32_t secs_of_month(int months, int year) {
-  year += 2000;
+  // year += 2000;
 
   uint32_t days = 0;
   switch (months) {
@@ -1092,14 +1092,14 @@ int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
     int rc = sys_time(&seconds);
     ts->tv_sec = seconds;
     int ticks = schedule_get_ticks() % 1000;
-    ts->tv_nsec = ticks * 1000;
+    ts->tv_nsec = ticks/1000;
     return 0;
   } else if (clockid == 4) {
     time_t seconds;
     int rc = sys_time(&seconds);
     ts->tv_sec = seconds;
     int ticks = schedule_get_ticks() % 1000;
-    ts->tv_nsec = ticks * 1000;
+    ts->tv_nsec = ticks/1000;
     return 0;
   } else {
     log_warn("clock not support %d\n", clockid);

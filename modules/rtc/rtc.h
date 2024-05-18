@@ -14,12 +14,12 @@
 #ifndef RTC_TIME
 #define RTC_TIME
 typedef struct rtc_time {
-  u8 second;
-  u8 minute;
-  u8 hour;
-  u8 day;
-  u8 month;
-  u8 year;
+  u32 second;
+  u32 minute;
+  u32 hour;
+  u32 day;
+  u32 month;
+  u32 year;
 } rtc_time_t;
 #endif
 
