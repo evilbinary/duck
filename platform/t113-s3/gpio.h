@@ -48,9 +48,18 @@ struct t113_s3_timer {
 #define RTC_BASE 0x07090000
 
 
+#define TWI0_BASE 0x02502000
+#define TWI1_BASE 0x02502400
+#define TWI2_BASE 0x02502800
+#define TWI3_BASE 0x02502C00
+
+
 #define IRQ_AUDIO_CODEC 57
 #define IRQ_TIMER0 91
 #define IRQ_DMAC 82
 #define IRQ_DMACS 83
+#define IRQ_GPIOB_NS 101
+#define IRQ_GPIOB_S 102
+
 
 #endif

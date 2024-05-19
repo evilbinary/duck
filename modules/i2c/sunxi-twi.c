@@ -99,7 +99,7 @@ u32 sunxi_i2c_read_data(int twi, i2c_msg_t* msg) {
 
   u32 ret = sunxi_i2c_send_data(twi, (u8)(addr << 1 | 1));
   if (ret != I2C_STAT_TX_AR_ACK) {
-    log_error("send data error %x\n", ret);
+    log_error("read data send data error %x\n", ret);
     return -1;
   }
   sunxi_i2c_base[twi]->cntr |= A_ACK;
@@ -137,13 +137,13 @@ u32 sunxi_i2c_write_data(int twi, i2c_msg_t* msg) {
   u8* buf = msg->buf;
   ret = sunxi_i2c_send_data(twi, (u8)(msg->addr << 1));
   if (ret != I2C_STAT_TX_AW_ACK) {
-    log_error(" send data error %x\n", ret);
+    log_error("write data send data error %x\n", ret);
     return -1;
   }
   for (; len > 0; len--) {
     ret = sunxi_i2c_send_data(twi, *buf++);
     if (ret != I2C_STAT_TXD_ACK) {
-      log_error(" send data error %x\n", ret);
+      log_error("write ack send data error %x\n", ret);
       return -1;
     }
   }

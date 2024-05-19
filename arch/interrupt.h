@@ -31,6 +31,7 @@ enum {
   EX_AUDIO = 12,
   EX_NONE = 13,
   EX_DMA = 14,
+  EX_I2C = 15,
 };
 
 void interrupt_regist(u32 vec, interrupt_handler_t handler);

@@ -80,7 +80,10 @@ void platform_map() {
 
   page_map(DMA_BASE, DMA_BASE, 0);
 
-  page_map(RTC_BASE,RTC_BASE,0);
+  page_map(RTC_BASE, RTC_BASE, 0);
+
+  page_map(TWI0_BASE, TWI0_BASE, 0);
+
 }
 
 void platform_end() {}
@@ -160,7 +163,9 @@ u32 interrupt_get_source(u32 no) {
     gic_irqack(irq);
   } else if (irq == IRQ_DMAC) {
     no = EX_DMA;
-     gic_irqack(irq);
+    gic_irqack(irq);
+  } else if (irq == IRQ_GPIOB_S || irq == IRQ_GPIOB_NS) {
+    no = EX_I2C;
   } else {
     kprintf("irq else %d\n", irq);
   }

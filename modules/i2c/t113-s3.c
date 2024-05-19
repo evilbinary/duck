@@ -9,10 +9,6 @@
 #include "kernel/kernel.h"
 #include "sunxi-twi.h"
 
-#define TWI0_BASE 0x02502000
-#define TWI1_BASE 0x02502400
-#define TWI2_BASE 0x02502800
-#define TWI3_BASE 0x02502C00
 
 static sunxi_i2c_t *i2c_base[] = {
     (sunxi_i2c_t *)TWI0_BASE,
@@ -37,7 +33,10 @@ int i2c_init_device(device_t *dev) {
 
   // De-assert TWI0
   u32 reg = io_read32(CCU_BASE + 0x091C);
-  io_write32(CCU_BASE + 0x091C, reg | 1 << 16);
+
+  reg |= 1 << 16;  // TWI0_RST
+  reg |= 1 << 1;   // TWI0_GATING;
+  io_write32(CCU_BASE + 0x091C, reg);
 
   // gpio set sda  pb7 TWI0_SDA
   gpio_config(GPIO_B, 2, 4);  // 0100: TWI0_SDA
@@ -46,10 +45,6 @@ int i2c_init_device(device_t *dev) {
   // gpio set scl pb6 TWI0_SCK
   gpio_config(GPIO_B, 3, 4);  // 0100: TWI0_SCK
   gpio_pull(GPIO_B, 3, GPIO_PULL_UP);
-
-  // gpio  KEY_IRQ
-  gpio_config(GPIO_B, 4, 0xe);  // 1110:PB-EINT4
-  
 
   sunxi_i2c_init(0);
 
