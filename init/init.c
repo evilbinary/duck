@@ -199,7 +199,7 @@ void do_shell_cmd(char* cmd, int count, char** env) {
 
 void sleep() {
   struct timespec tv;
-  tv.tv_nsec = 200 * 1000 * 1000;
+  tv.tv_nsec = 500 * 1000 * 1000;
   tv.tv_sec = 0;
   syscall4(SYS_CLOCK_NANOSLEEP, 0, 0, &tv, &tv);
 }
@@ -278,8 +278,8 @@ void try_run(char* cmd, char** argv, char** env) {
 }
 
 void load_config() {
-  // char* config_argv[] = {"config", NULL};
-  // try_run("config", config_argv, NULL);
+  char* config_argv[] = {"config", NULL};
+  try_run("config", config_argv, NULL);
 
   // char* config_argv[] = {"etk", NULL};
   // try_run("etk", config_argv, NULL);

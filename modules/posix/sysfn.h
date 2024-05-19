@@ -44,6 +44,7 @@ enum {
   SYS_MUNMAP = 91,
   SYS_STAT = 106,
   SYS_FSTAT = 108,
+  SYS_WAIT4 = 114,
   SYS_SYSINFO = 116,
   SYS_CLONE = 120,
   SYS_MPROTECT = 125,
@@ -131,6 +132,7 @@ enum {
   SYS_MUNMAP = 91,
   SYS_STAT = 106,
   SYS_FSTAT = 108,
+  SYS_WAIT4 = 114,
   SYS_SYSINFO = 116,
   SYS_CLONE = 120,
   SYS_MPROTECT = 125,
@@ -217,6 +219,7 @@ enum {
   SYS_READDIR = 89,
   SYS_STAT = 106,
   SYS_FSTAT = 108,
+  SYS_WAIT4 = 114,
   SYS_SYSINFO = 116,
   SYS_CLONE = 120,
   SYS_FCHDIR = 133,
@@ -447,24 +450,43 @@ enum {
 #define FUTEX_CLOCK_REALTIME 256
 
 #define NANOSECOND_TO_TICK(time) ((time) / (1000000000 / SCHEDULE_FREQUENCY))
-#define SECOND_TO_TICK(time) ((time)/(1000/ SCHEDULE_FREQUENCY))
+#define SECOND_TO_TICK(time) ((time) / (1000 / SCHEDULE_FREQUENCY))
 #define TICK_TO_NANOSECOND(tick) (tick * 1000000)
 
-
-#define CLOCK_REALTIME           0
-#define CLOCK_MONOTONIC          1
+#define CLOCK_REALTIME 0
+#define CLOCK_MONOTONIC 1
 #define CLOCK_PROCESS_CPUTIME_ID 2
-#define CLOCK_THREAD_CPUTIME_ID  3
-#define CLOCK_MONOTONIC_RAW      4
-#define CLOCK_REALTIME_COARSE    5
-#define CLOCK_MONOTONIC_COARSE   6
-#define CLOCK_BOOTTIME           7
-#define CLOCK_REALTIME_ALARM     8
-#define CLOCK_BOOTTIME_ALARM     9
-#define CLOCK_SGI_CYCLE         10
-#define CLOCK_TAI               11
+#define CLOCK_THREAD_CPUTIME_ID 3
+#define CLOCK_MONOTONIC_RAW 4
+#define CLOCK_REALTIME_COARSE 5
+#define CLOCK_MONOTONIC_COARSE 6
+#define CLOCK_BOOTTIME 7
+#define CLOCK_REALTIME_ALARM 8
+#define CLOCK_BOOTTIME_ALARM 9
+#define CLOCK_SGI_CYCLE 10
+#define CLOCK_TAI 11
 
-
+struct rusage {
+  struct timeval ru_utime;
+  struct timeval ru_stime;
+  /* linux extentions, but useful */
+  long ru_maxrss;
+  long ru_ixrss;
+  long ru_idrss;
+  long ru_isrss;
+  long ru_minflt;
+  long ru_majflt;
+  long ru_nswap;
+  long ru_inblock;
+  long ru_oublock;
+  long ru_msgsnd;
+  long ru_msgrcv;
+  long ru_nsignals;
+  long ru_nvcsw;
+  long ru_nivcsw;
+  /* room for more... */
+  long __reserved[16];
+};
 
 u32 sys_open(char* name, int attr, ...);
 // size_t sys_ioctl(u32 fd, u32 cmd, ...);

@@ -1317,6 +1317,30 @@ int sys_sched_setscheduler(pid_t pid, int policy,
   return 0;
 }
 
+pid_t sys_waitpid(pid_t pid, int* wstatus, int options) {
+  log_debug("sys_waitpid %d %d %d not impl\n", pid, *wstatus, options);
+  thread_t* current = thread_current();
+
+  int ret = -1;
+  if (pid < -1) {
+  } else if (pid == -1) {
+  } else if (pid == 0) {
+  } else if (pid > 0) {
+  }
+
+  thread_wait(current);
+
+  return ret;
+}
+
+pid_t sys_wait4(pid_t pid, int* wstatus, int options, struct rusage* rusage) {
+  int ret = sys_waitpid(pid, wstatus, options);
+
+  log_debug("sys_wait4 %d %d %d %x\n", pid, *wstatus, options, rusage);
+
+  return ret;
+}
+
 int sys_fn_faild_handler(int no, interrupt_context_t* ic) {
   int call_id = context_fn(ic);
   log_debug("sys fn faild %x\n", call_id);
@@ -1440,4 +1464,6 @@ void sys_fn_init() {
   syscall_table[SYS_SCHED_SETSCHEDULER] = &sys_sched_setscheduler;
   syscall_table[SYS_SCHED_GET_PRIORITY_MAX] = &sys_sched_get_priority_max;
   syscall_table[SYS_SCHED_GET_PRIORITY_MIN] = &sys_sched_get_priority_min;
+
+  syscall_table[SYS_WAIT4] = &sys_wait4;
 }
