@@ -167,6 +167,7 @@ size_t sys_write(u32 fd, void* buf, size_t nbytes) {
   f->offset += nbytes;
   return ret;
 }
+
 size_t sys_read(u32 fd, void* buf, size_t nbytes) {
   thread_t* current = thread_current();
   fd_t* f = thread_find_fd_id(current, fd);

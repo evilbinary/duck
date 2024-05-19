@@ -17,7 +17,7 @@ char serial_read() {
 
 static size_t read(device_t* dev, void* buf, size_t len) {
   u32 count = 0;
-  int ret = -1;
+  int ret = 0;
   for (int i = 0; i < len; i++) {
     char c = serial_read();
     if (c != 0) {
