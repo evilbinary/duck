@@ -1100,7 +1100,8 @@ u32 sys_time(time_t* t) {
 }
 
 int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
-  if (clockid == 0 || clockid == 1 ||clockid == 4) {
+  if (clockid == CLOCK_REALTIME || clockid == CLOCK_MONOTONIC ||
+      clockid == CLOCK_MONOTONIC_RAW) {
     time_t seconds;
     int rc = sys_time(&seconds);
     ts->tv_sec = seconds;
@@ -1110,8 +1111,11 @@ int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
     // u32 s0=seconds&(~0);
     // u32 s1=seconds>>32;
     // kprintf("ts->tv_sec %d %d ts->tv_nsec %d\n", s1,s0, ts->tv_nsec);
-
     return 0;
+  } else if (clockid == CLOCK_THREAD_CPUTIME_ID ||
+             clockid == CLOCK_PROCESS_CPUTIME_ID) {
+    ts->tv_sec = 0;
+    ts->tv_nsec = 0;
   } else {
     log_warn("clock not support %d\n", clockid);
   }
