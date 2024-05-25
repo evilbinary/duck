@@ -28,12 +28,12 @@ void rtc_convert_bcd(rtc_time_t* current, u32 b) {
 
 void rtc_get_time() {
   int tick = (schedule_get_ticks() / SCHEDULE_FREQUENCY);
-  
+
   seconds_to_date(tick,&rtc_time.year,&rtc_time.month,&rtc_time.day,
     &rtc_time.hour,&rtc_time.minute,&rtc_time.second);
 
-    kprintf("%d-%d-%d %d:%d:%d\n", rtc_time.year, rtc_time.month, rtc_time.day,
-          rtc_time.hour, rtc_time.minute, rtc_time.second);
+    // kprintf("%d-%d-%d %d:%d:%d\n", rtc_time.year, rtc_time.month, rtc_time.day,
+    //       rtc_time.hour, rtc_time.minute, rtc_time.second);
 }
 
 void rtc_write_time(rtc_time_t* current) { for (; rtc_is_updating();); }
