@@ -3,16 +3,13 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
-#include "rtc.h"
 #include "dev/devfs.h"
 #include "kernel/kernel.h"
+#include "rtc.h"
 
 rtc_time_t rtc_time;
 
-
-u32 rtc_is_updating() {
-  return 0;
-}
+u32 rtc_is_updating() { return 0; }
 
 void rtc_convert_bcd(rtc_time_t* current, u32 b) {
   if (!(b & 0x04)) {
@@ -26,25 +23,20 @@ void rtc_convert_bcd(rtc_time_t* current, u32 b) {
     current->year = (current->year & 0x0F) + ((current->year / 16) * 10);
   }
 }
+
+
+
 void rtc_get_time() {
-  for (; rtc_is_updating();)
-    ;
-  rtc_time.second = 0;
-  rtc_time.minute = 0;
-  rtc_time.hour = 0;
-  rtc_time.day = 0;
-  rtc_time.month = 0;
-  rtc_time.year = 0;
-  u32 b = 0;
+  int tick = (schedule_get_ticks() / SCHEDULE_FREQUENCY);
+  
+  seconds_to_date(tick,&rtc_time.year,&rtc_time.month,&rtc_time.day,
+    &rtc_time.hour,&rtc_time.minute,&rtc_time.second);
 
-  rtc_convert_bcd(&rtc_time, b);
+    kprintf("%d-%d-%d %d:%d:%d\n", rtc_time.year, rtc_time.month, rtc_time.day,
+          rtc_time.hour, rtc_time.minute, rtc_time.second);
 }
 
-void rtc_write_time(rtc_time_t* current) {
-  for (; rtc_is_updating();)
-    ;
-
-}
+void rtc_write_time(rtc_time_t* current) { for (; rtc_is_updating();); }
 
 static size_t read(device_t* dev, void* buf, size_t len) {
   u32 ret = 0;
@@ -64,7 +56,7 @@ static size_t write(device_t* dev, void* buf, size_t len) {
 }
 
 int rtc_init(void) {
-  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
+  device_t* dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
   dev->name = "rtc";
   dev->read = read;
   dev->write = write;

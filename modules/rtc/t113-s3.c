@@ -25,50 +25,7 @@ void rtc_convert_bcd(rtc_time_t* current, u32 b) {
   }
 }
 
-// 判断是否为闰年
-int is_leap_year(int year) {
-  if ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)) {
-    return 1;  // 是闰年
-  } else {
-    return 0;  // 不是闰年
-  }
-}
 
-// 天数转换为年月日
-void convert_days_to_date(int days, int* year, int* month, int* day) {
-  *year = 1900;  // 开始年份
-  *month = 1;    // 开始月份
-  *day = 1;      // 开始日
-
-  if (days < 30) {
-    return;
-  }
-
-  while (days > 0) {
-    // 如果是闰年，二月有29天，否则有28天
-    if (is_leap_year(*year)) {
-      if (days > 366) {
-        days -= 366;
-        (*year)++;
-      } else {
-        *month = 3;
-        *day = days - 31;  // 1月31天，2月29天
-        days = 0;
-      }
-    } else {
-      // 非闰年的二月有28天
-      static const int days_per_month[12] = {31, 28, 31, 30, 31, 30,
-                                             31, 31, 30, 31, 30, 31};
-      if (days > days_per_month[*month - 1]) {
-        days -= days_per_month[*month - 1];
-        (*month)++;
-      } else {
-        *day = days;
-        days = 0;
-      }
-    }
-  }
-}
 
 void rtc_get_time() {
   for (; rtc_is_updating();)
@@ -80,8 +37,8 @@ void rtc_get_time() {
   rtc_time.second = ((t >> 0) & 0x3f);
   rtc_time.minute = ((t >> 8) & 0x3f);
   rtc_time.hour = ((t >> 16) & 0x1f);
-
-  convert_days_to_date(d, &rtc_time.year, &rtc_time.month, &rtc_time.day);
+  
+  days_to_date(d, &rtc_time.year, &rtc_time.month, &rtc_time.day);
 
   // kprintf("day %d  t %d\n", d, t);
 

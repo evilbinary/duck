@@ -278,8 +278,12 @@ void try_run(char* cmd, char** argv, char** env) {
 }
 
 void load_config() {
-  char* config_argv[] = {"config", NULL};
-  try_run("config", config_argv, NULL);
+  // char* config_argv[] = {"config", NULL};
+  // try_run("config", config_argv, NULL);
+
+  // char* shell_argv[] = {"shell", NULL};
+  // try_run("shell", shell_argv, NULL);
+
 
   // char* config_argv[] = {"etk", NULL};
   // try_run("etk", config_argv, NULL);

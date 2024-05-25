@@ -15,7 +15,8 @@ add_files(
 'common.c',
 'io.c',
 'stack_guard.c',
-'math.c'
+'math.c',
+'time.c'
 )
 
 add_includedirs(
