@@ -262,6 +262,10 @@ u32 fat_op_open(vnode_t *node, u32 mode) {
         log_error("open file %s path %s error code %d\n", node->name, buf, res);
         return -1;
       }
+      //dont not foget length
+      node->length = file_info->file.fsize;
+    }else{
+      log_error("get fil is null\n");
     }
   }
   return 1;
