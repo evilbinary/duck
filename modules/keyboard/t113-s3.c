@@ -33,28 +33,6 @@
 static u8 scan_code_buffer[MAX_CHARCODE_BUFFER] = {0};
 static u32 scan_code_index = 0;
 
-static size_t read(device_t* dev, void* buf, size_t len) {
-  u32 ret = 0;
-
-  u16 data = pcal_read(PCAL6416A_INPUT);
-
-  buf[0] = data & 0xff;
-  if (len > 1) {
-    buf[1] = data >> 8;
-  }
-
-  kprintf("read buf ==>%s\n", (char*)buf);
-
-  return ret;
-}
-
-void* i2c_handler(interrupt_context_t* ic) {
-  kprintf("i2c_handler\n");
-  u32 val = 0;
-
-  gic_irqack(IRQ_GPIOB_S);
-  return NULL;
-}
 
 int pcal_write(u8 cmd, u16 data) {
   int twi = 0;
@@ -108,6 +86,28 @@ u16 pcal_read(u8 reg) {
 
   return *((u16*)msg.buf);
 }
+
+static size_t read(device_t* dev, void* buf, size_t len) {
+  u32 ret = 0;
+
+  u16 data = pcal_read(PCAL6416A_INPUT);
+
+  *((u16*) buf)=data;
+
+  kprintf("read buf ==>%x\n", data);
+
+  return ret;
+}
+
+void* i2c_handler(interrupt_context_t* ic) {
+  kprintf("i2c_handler\n");
+  u32 val = 0;
+
+  gic_irqack(IRQ_GPIOB_S);
+  return NULL;
+}
+
+
 
 void pacl_init() {
   pcal_write(PCAL6416A_CONFIG, 0xffff);
