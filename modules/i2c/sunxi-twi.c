@@ -15,6 +15,11 @@ static sunxi_i2c_t** sunxi_i2c_base = NULL;
 void sunxi_i2c_set_base(u32* base) { sunxi_i2c_base = base; }
 
 void sunxi_i2c_init(int twi) {
+  if(sunxi_i2c_base[twi]==NULL){
+    log_error("twi %d init base failed %x\n", twi, sunxi_i2c_base[twi]);
+    return;
+  }
+
   // Soft Reset TWI
   sunxi_i2c_base[twi]->srst = 1 << 0;
   sunxi_i2c_base[twi]->srst = 0 << 0;
@@ -30,14 +35,18 @@ void sunxi_i2c_init(int twi) {
   sunxi_i2c_base[twi]->xaddr = 0;
 
   // TWI Bus Enable
-  sunxi_i2c_base[twi]->cntr = BUS_EN | M_STP;
+  sunxi_i2c_base[twi]->cntr = BUS_EN | M_STP;//A_ACK
+
+  if (sunxi_i2c_base[twi]->cntr == 0) {
+    log_error("twi %d init failed %x addr %x\n", twi, sunxi_i2c_base[twi]->cntr,&sunxi_i2c_base[twi]->cntr);
+  }
 }
 
 u32 sunxi_i2c_wait(int twi, u32 flag) {
   u32 timeout = 2000;
   for (; timeout > 0; timeout--) {
     u32 cntr = sunxi_i2c_base[twi]->cntr;
-    // kprintf("wait cntr %x flag %x\n",cntr,flag);
+    // kprintf("wait cntr %x flag %x\n", cntr, flag);
     if (cntr & flag) {
       // kprintf("wait ok\n");
       return sunxi_i2c_base[twi]->stat;

@@ -35,7 +35,7 @@ int i2c_init_device(device_t *dev) {
   u32 reg = io_read32(CCU_BASE + 0x091C);
 
   reg |= 1 << 16;  // TWI0_RST
-  reg |= 1 << 1;   // TWI0_GATING;
+  reg |= 1 << 0;   // TWI0_GATING;
   io_write32(CCU_BASE + 0x091C, reg);
 
   // gpio set sda  pb7 TWI0_SDA
