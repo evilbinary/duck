@@ -166,6 +166,7 @@ u32 interrupt_get_source(u32 no) {
     gic_irqack(irq);
   } else if (irq == IRQ_GPIOB_S || irq == IRQ_GPIOB_NS) {
     no = EX_I2C;
+    kprintf("irq gpio %d\n", irq);
   } else {
     kprintf("irq else %d\n", irq);
   }

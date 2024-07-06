@@ -281,12 +281,17 @@ void load_config() {
   // char* config_argv[] = {"config", NULL};
   // try_run("config", config_argv, NULL);
 
+
+  // char* gmenu_argv[] = {"gmenu", NULL};
+  // try_run("gmenu", gmenu_argv, NULL);
+
+
   // char* shell_argv[] = {"shell", NULL};
   // try_run("shell", shell_argv, NULL);
 
 
-  // char* config_argv[] = {"etk", NULL};
-  // try_run("etk", config_argv, NULL);
+  char* etk_argv[] = {"etk", NULL};
+  try_run("etk", etk_argv, NULL);
 
   // char* config_argv[] = {"lvgl", NULL};
   // try_run("lvgl", config_argv, NULL);
