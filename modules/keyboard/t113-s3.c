@@ -14,6 +14,7 @@
 #define PCAL9539A_I2C_ADDR 0x76
 
 #define PCAL6416A_INPUT 0x00          /* Input port [RO] */
+#define PCAL6416A_INPUT1 0x01          /* Input port [RO] */
 #define PCAL6416A_DAT_OUT 0x02        /* GPIO DATA OUT [R/W] */
 #define PCAL6416A_POLARITY 0x04       /* Polarity Inversion port [R/W] */
 #define PCAL6416A_CONFIG 0x06         /* Configuration port [R/W] */
@@ -70,7 +71,7 @@ u16 pcal_read(u8 reg) {
   sunxi_i2c_start(twi);
 
   int ret = sunxi_i2c_write_data(twi, &msg);
-  kprintf("pcal read write ret=%x\n", ret);
+  //kprintf("pcal read write ret=%x\n", ret);
 
   buf[0] = 0;
   buf[1] = 0;
@@ -91,11 +92,8 @@ static size_t read(device_t* dev, void* buf, size_t len) {
   u32 ret = 0;
 
   u16 data = pcal_read(PCAL6416A_INPUT);
-
-  *((u16*) buf)=data;
-
-  kprintf("read buf ==>%x\n", data);
-
+  u16 data1 = pcal_read(PCAL6416A_INPUT1);
+  *((u16*) buf)=data&0xff| data1<<8;
   return ret;
 }
 
