@@ -257,7 +257,9 @@ void go_start(entry_fn entry, long* args) {
     ret = entry(args);
   } else {
     log_error("entry not found\n");
-    syscall1(SYS_EXIT, -1);
+    for(;;){
+      syscall1(SYS_EXIT, -1);
+    }
   }
 }
 
