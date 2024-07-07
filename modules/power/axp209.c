@@ -32,3 +32,11 @@
 void axp209_init(){
 
 }
+
+
+void power_init_device(device_t* dev){
+
+
+ axp209_init();
+
+}

@@ -35,6 +35,7 @@ enum {
   DEVICE_NULL,
   DEVICE_TRACE,
   DEVICE_LCD,
+  DEVICE_POWER,
 };
 
 enum {
