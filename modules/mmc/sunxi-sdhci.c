@@ -327,8 +327,7 @@ static int sdhci_sunxi_update_clk(sdhci_sunxi_pdata_t *pdat) {
   int timeout = 10000;
 
   io_write32(pdat->virt + SD_CMDR, cmd);
-  while ((io_read32(pdat->virt + SD_CMDR) & 0x80000000) && timeout--)
-    ;
+  while ((io_read32(pdat->virt + SD_CMDR) & 0x80000000) && timeout--);
   if (!timeout) return FALSE;
   io_write32(pdat->virt + SD_RISR, io_read32(pdat->virt + SD_RISR));
   return TRUE;
@@ -381,8 +380,8 @@ uint32_t clk_sdc_config(uint32_t reg, uint32_t freq) {
     out_phase = 0;
     samp_phase = 0;
   } else { /* freq > 52000000 */
-    out_phase = 3;
-    samp_phase = 4;
+    out_phase = 0;
+    samp_phase = 0;
   }
   reg_val |= (samp_phase << 20) | (out_phase << 8);
   reg_val |= (prediv << 16) | ((div - 1) << 0);
@@ -433,7 +432,10 @@ static int sd_send_op_cond(sdhci_device_t *hci) {
     cmd.cmdidx = MMC_APP_CMD;
     cmd.cmdarg = 0;
     cmd.resptype = MMC_RSP_R1;
-    if (!sdhci_sunxi_transfer(hci, &cmd, NULL)) continue;
+    if (!sdhci_sunxi_transfer(hci, &cmd, NULL)) {
+      log_warn("sd_send_op_cond continue\n");
+      continue;
+    }
 
     cmd.cmdidx = SD_CMD_APP_SEND_OP_COND;
     if (pdat->isspi) {
@@ -451,19 +453,28 @@ static int sd_send_op_cond(sdhci_device_t *hci) {
       if (pdat->version == SD_VERSION_2) cmd.cmdarg |= OCR_HCS;
       cmd.resptype = MMC_RSP_R3;
       if (!sdhci_sunxi_transfer(hci, &cmd, NULL) ||
-          (cmd.response[0] & OCR_BUSY))
+          (cmd.response[0] & OCR_BUSY)) {
         break;
+      }else{
+       log_warn("sd_send_op_cond app op cond %x\n",cmd.response[0]);
+      }
     }
   } while (retries--);
 
-  if (retries <= 0) return FALSE;
+  if (retries <= 0) {
+    log_error("sd_send_op_cond error %x\n", cmd.response[0]);
+    return FALSE;
+  }
 
   if (pdat->version != SD_VERSION_2) pdat->version = SD_VERSION_1_0;
   if (pdat->isspi) {
     cmd.cmdidx = MMC_SPI_READ_OCR;
     cmd.cmdarg = 0;
     cmd.resptype = MMC_RSP_R3;
-    if (!sdhci_sunxi_transfer(hci, &cmd, NULL)) return FALSE;
+    if (!sdhci_sunxi_transfer(hci, &cmd, NULL)) {
+      log_error("sd_send_op_cond 2 error %x\n", cmd.response[0]);
+      return FALSE;
+    }
   }
   pdat->ocr = cmd.response[0];
   pdat->high_capacity = ((pdat->ocr & OCR_HCS) == OCR_HCS);
@@ -523,9 +534,15 @@ static int sd_send_if_cond(sdhci_device_t *hci) {
     cmd.cmdarg = (0x0 << 8);
   cmd.cmdarg |= 0xaa;
   cmd.resptype = MMC_RSP_R7;
-  if (!sdhci_sunxi_transfer(hci, &cmd, NULL)) return FALSE;
+  if (!sdhci_sunxi_transfer(hci, &cmd, NULL)) {
+    log_error("send if cond transfer error %x\n", cmd.response[0]);
+    return FALSE;
+  }
 
-  if ((cmd.response[0] & 0xff) != 0xaa) return FALSE;
+  if ((cmd.response[0] & 0xff) != 0xaa) {
+    log_error("send if cond error %x\n", cmd.response[0]);
+    return FALSE;
+  }
   pdat->version = SD_VERSION_2;
   return TRUE;
 }
