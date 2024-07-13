@@ -314,7 +314,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     i++;
   }
 
-  long* args = kmalloc(sizeof(long*) * argc + 4 + 38, KERNEL_TYPE);
+  long* args = kmalloc(sizeof(long*) * (argc + 4 + 38), DEFAULT_TYPE);
   args[0] = argc;
   i = 0;
   int pos = 1;
@@ -322,13 +322,16 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     args[pos] = argv[i];
     pos++;
   }
-  log_debug("envp %x argc %d\n", envp, argc);
+  log_debug("envp %x argc %d filename %s\n", envp, argc, filename);
 
   long* p = args;
   char** pargv = (void*)(p + 1);
   char** penvp = pargv + argc + 1;
 
   args[1] = filename;
+  if (pos == 1) {
+    pos++;
+  }
   args[pos++] = 0;
   if (envp != NULL) {
     for (i = 0; i < 38 && envp[i]; i++) {

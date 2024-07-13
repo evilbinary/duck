@@ -216,13 +216,13 @@ void run_elf_thread(long* p) {
     ;
   build_env(envp);
 
+  log_debug("envp==>%x filename %x p0 %x p1 %x\n", envp,filename,&p[0],&p[1]);
+
   if(filename==NULL){
     log_error("error elf load file name is null\n");
     syscall1(SYS_EXIT, -1);
     return;
   }
-
-  log_debug("envp==>%x filename %x\n", envp,filename);
 
   log_debug("run load elf %s\n", filename);
 
