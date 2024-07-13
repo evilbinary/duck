@@ -50,18 +50,21 @@ SECTIONS {
     KEEP(*(.irq*))  
   } > iram
 
+
   .iram0 : ALIGN(4) {
+    KEEP(*(.text.boot .text.boot.*)) 
+    *(.literal*)
+    *(.text .text.*)
+
     *(.iram0.literal*)
     KEEP(*(.kernel_excetpion_handler*))
   } > iram
 
   .text : ALIGN(4) {
-    *(.text.boot)
-    *(.literal*)
-    *(.text .text.*)
+ 
   } > irom
 
- 
+
 
   .bss : ALIGN(4) {
      _bss_start = .;
