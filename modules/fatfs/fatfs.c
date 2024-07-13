@@ -176,6 +176,9 @@ u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   }
   // kprintf("read file-->%s fil: %x offset %d\n", node->name, &file_info->fil,
   //         offset);
+  
+  //FFOBJID* obj=&file_info->fil.obj;
+  //kprintf("read =>%x %x type %x %x %x\n",obj, obj->fs , obj->fs->fs_type , obj->id , obj->fs->id);
 
   int readbytes = 0;
   int res = f_read(&file_info->fil, buffer, nbytes, &readbytes);
@@ -254,7 +257,8 @@ u32 fat_op_open(vnode_t *node, u32 mode) {
   } else {
     kstrcpy(buf, VOLUME);
     vfs_path_append(node, NULL, &buf[2]);
-    // kprintf("file_info->fil->%x\n", &file_info->fil);
+
+    // kprintf("file_info->fil->%x path: %s\n", &file_info->fil,buf);
 
     if (file_info->fil.obj.fs == NULL) {
       int res = f_open(&file_info->fil, buf, FA_READ | FA_WRITE);
@@ -265,7 +269,9 @@ u32 fat_op_open(vnode_t *node, u32 mode) {
       //dont not foget length
       node->length = file_info->file.fsize;
     }else{
-      log_error("get fil is null\n");
+      //kprintf("2file_info->fil->%x path: %s\n", &file_info->fil,buf);
+      log_error("get fil %x  path: %s\n",&file_info->fil,buf);
+
     }
   }
   return 1;
