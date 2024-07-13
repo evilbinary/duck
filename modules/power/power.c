@@ -4,7 +4,7 @@
 * 邮箱: rootdebug@163.com
 ********************************************************************/
 #include "kernel/kernel.h"
-
+#include "dev/devfs.h"
 
 
 int power_init(void) {

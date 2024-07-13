@@ -79,6 +79,10 @@ void modules_init(void) {
   REGISTER_MODULE(sound);
 #endif
 
+#ifdef POWER_MODULE
+  REGISTER_MODULE(power);
+#endif
+
 #elif defined(DUMMY)
   REGISTER_MODULE(hello);
 

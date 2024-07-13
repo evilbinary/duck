@@ -51,10 +51,10 @@ plat_source={
 }
 arch_source={
     'arm':[ 
-        
+        'power.c'
     ],
     'x86':[
-        
+        'power.c'
     ],
 }
 common_source=[

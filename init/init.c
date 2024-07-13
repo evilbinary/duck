@@ -290,8 +290,8 @@ void load_config() {
   // try_run("shell", shell_argv, NULL);
 
 
-  char* etk_argv[] = {"etk", NULL};
-  try_run("etk", etk_argv, NULL);
+  // char* etk_argv[] = {"etk", NULL};
+  // try_run("etk", etk_argv, NULL);
 
   // char* config_argv[] = {"lvgl", NULL};
   // try_run("lvgl", config_argv, NULL);

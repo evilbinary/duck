@@ -36,6 +36,9 @@ plat_source={
     't113-s3':[
         't113-s3.c'
     ],
+    'versatilepb':[
+        'pl031.c'
+    ]
 }
 arch_source={
     'arm': [
