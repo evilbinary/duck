@@ -552,6 +552,7 @@ int sys_chdir(const char* path) {
   thread_t* current = thread_current();
   int fd = sys_open(path, 0);
   if (fd < 0) {
+    log_error("chdir error\n");
     return -1;
   }
   sys_fchdir(fd);
@@ -899,6 +900,10 @@ int sys_stat(const char* path, struct stat* stat) {
     return -1;
   }
   int fd = sys_open(path, 0);
+  if (fd < 0) {
+    log_error("open file error %s\n", path);
+    return -1;
+  }
   return sys_fstat(fd, stat);
 }
 
@@ -1006,7 +1011,6 @@ int sys_statx(int dirfd, const char* restrict pathname, int flags,
 
   return 0;
 }
-
 
 u32 sys_time(time_t* t) {
   vnode_t* time_node = vfs_find(NULL, "/dev/time");

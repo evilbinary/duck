@@ -19,6 +19,7 @@
 #else
 #define log_debug
 #endif
+
 #define log_error kprintf
 
 static void print_hex(u8 *addr, u32 size) {
@@ -215,11 +216,17 @@ void run_elf_thread(long* p) {
     ;
   build_env(envp);
 
-  log_debug("envp==>%x\n", envp);
+  if(filename==NULL){
+    log_error("error elf load file name is null\n");
+    syscall1(SYS_EXIT, -1);
+    return;
+  }
+
+  log_debug("envp==>%x filename %x\n", envp,filename);
 
   log_debug("run load elf %s\n", filename);
 
-  u32 fd = syscall2(SYS_OPEN, filename, 0);
+  int fd = syscall2(SYS_OPEN, filename, 0);
 #ifdef LOAD_ELF_NAME_DEBUG
   log_debug("load elf %s fd:%d tid:%d\n", filename, fd, current->id);
 #endif
@@ -228,7 +235,7 @@ void run_elf_thread(long* p) {
     syscall1(SYS_EXIT, -1);
     return;
   }
-  log_debug("run load elf1\n");
+  log_debug("run load elf1 fd %d\n",fd);
 
   u32 nbytes = syscall3(SYS_READ, fd, &elf, sizeof(Elf32_Ehdr));
 

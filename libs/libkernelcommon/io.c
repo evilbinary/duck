@@ -41,8 +41,8 @@ int kprintf(const char* fmt, ...) {
 
   int len = kstrlen(printf_buffer);
   if (i > KPRINT_BUF) {
-    len = KPRINT_BUF;
-    // OVER
+    len = KPRINT_BUF-1;
+    // OVER PRINT
     print_char('O');
     print_char('V');
     print_char('E');

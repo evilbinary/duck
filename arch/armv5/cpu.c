@@ -271,7 +271,9 @@ void cpu_enable_page() {
   asm("mrc p15, 0, %0, c1, c0, 0" : "=r"(reg) : : "cc");  // SCTLR
   reg |= 0x1;                                             // M enable mmu
   // reg |= 1 << 1;  // Alignment check enable.
-  reg |= 1 << 2;  // Cache enable.
+  reg |= 1 << 2;  // Data Cache enable.
+  reg |=  1<<3; //enable write buffer;
+
   reg |= 1 << 8;  // System protection bit.
   reg |= 1 << 9;  // ROM protection bit.
   // reg|= 1<<23; //0 = VMSAv4/v5 and VMSAv6, subpages enabled 1 = VMSAv6,

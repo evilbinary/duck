@@ -195,7 +195,6 @@ void context_switch_page(context_t* context, u32 page_table) {
   cpu_invalid_tlb();
   // cp15_invalidate_icache();
   // asm volatile("mcr p15, 0, %0, c8, c7, 0" : : "r"(0));
-  dmb();
 
   //cpu_set_page(page_dir);
 
