@@ -17,4 +17,10 @@ typedef u32 page_dir_t;
 #define PAGE_RW_NC   0
 
 
+
+#define PAGE_SYS   (0) //系统级
+#define PAGE_USR   (0) //用户级
+#define PAGE_DEV   (0) //设备级
+
+
 #endif
