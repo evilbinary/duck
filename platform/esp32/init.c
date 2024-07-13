@@ -1,4 +1,5 @@
 #include "gpio.h"
+#include "arch/arch.h"
 #include "hal/clk_gate_ll.h"
 #include "hal/timer_ll.h"
 #include "soc/timer_group_struct.h"
@@ -67,3 +68,9 @@ void platform_init() { io_add_write_channel(&uart_send); }
 void platform_end() { kprintf("platform_end %x\n", &uart_send); }
 
 void platform_map() {}
+
+
+int interrupt_get_source(u32 no) {
+  no=EX_TIMER;
+  return no;
+}

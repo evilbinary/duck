@@ -9,6 +9,57 @@
 #include "cpu.h"
 
 extern boot_info_t* boot_info;
+u32 cpus_id[MAX_CPU];
+
+int cpu_get_number() { return boot_info->tss_number; }
+
+u32 cpu_get_id() {
+  int cpu = 0;
+#if MP_ENABLE
+  // __asm__ volatile("mrc p15, #0, %0, c0, c0, #5\n" : "=r"(cpu));
+#endif
+  return cpu & 0xf;
+}
+
+u32 cpu_get_index(int idx) {
+  if (idx < 0 || idx > cpu_get_number()) {
+    kprintf("out of bound get cpu idx\n");
+    return 0;
+  }
+  return cpus_id[idx];
+}
+
+
+// cpu 初始化
+int cpu_init_id(u32 id) { return 0; }
+
+//启动cpu
+int cpu_start_id(u32 id, u32 entry) { return 0; }
+
+// cpu 延迟
+void cpu_delay(int n) {
+  for (int i = 0; i < 10000 * n; i++)
+    ;
+}
+
+
+int cpu_pmu_version() {
+  u32 pmu_id = 0;
+
+  return (pmu_id >> 4) & 0xF;
+}
+
+void cpu_pmu_enable(int enable, u32 timer) {
+  if (enable == 1) {
+  } else if (enable == 0) {
+  }
+}
+
+unsigned int cpu_cyclecount(void) {
+  unsigned int value = 0;
+
+  return value;
+}
 
 u32 read_pc() {
   u32 val = 0;
@@ -60,15 +111,6 @@ void cpu_wait(){
   __asm__ volatile("waiti 0" : : : "memory");
 }
 
-int cpu_get_id(){
-    // u32 id;
-    // asm volatile (
-    //     "rsr.prid %0\n"
-    //     "extui %0,%0,13,1"
-    //     :"=r"(id));
-    // return id;
-  return 0;
-}
 
 u32 cpu_get_fault(){
   return 0;
