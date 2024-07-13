@@ -27,6 +27,9 @@
 #define AXP209_INTERRUPT_BANK_5_ENABLE 0x44
 #define AXP209_INTERRUPT_BANK_5_STATUS 0x4C
 
+#define AXP209_REG_ADC_5A 0x5A  // VBUS 电压 ADC 数据高 8 位
+#define AXP209_REG_ADC_5B 0x5B  // VBUS 电压 ADC 数据低 4 位
+
 /* Masks */
 #define AXP209_INTERRUPT_PEK_SHORT_PRESS 0x02
 #define AXP209_INTERRUPT_PEK_LONG_PRESS 0x01
@@ -116,6 +119,15 @@ void axp209_init() {
   } else {
     kprintf("finsh charge \n");
   }
+
+  u16 hight = axp209_read(AXP209_REG_ADC_5A);
+  kprintf("axp209 0x5a reg ret =%x\n", hight);
+
+  u16 low = axp209_read(AXP209_REG_ADC_5B);
+  kprintf("axp209 0x5b reg ret =%x\n", low);
+
+  kprintf("voltage vbus %d\n", (hight & 0xff) << 8 | (low & 0xf));
+
 }
 
 void power_init_device(device_t* dev) { axp209_init(); }
