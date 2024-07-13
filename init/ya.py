@@ -35,7 +35,7 @@ add_rules("kernel-objcopy")
 if has_config('single-kernel'):
     add_deps('boot-init.elf')
     add_defines('SINGLE_KERNEL')
-    if arch_type in['riscv']:
+    if arch_type in['riscv','xtensa']:
         add_files(
                 '../../boot/'+arch_type+'/boot.s',
                 '../../boot/'+arch_type+'/init.c',
