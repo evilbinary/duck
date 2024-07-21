@@ -4347,4 +4347,13 @@
 
 
 
+#define UART0_BASE 0x3FF40000
+
+#define UART0_FIFO (UART0_BASE+ 0x00)
+#define UART0_INT_RAW   (UART0_BASE + 0x04)
+#define UART0_INT_ST    (UART0_BASE + 0x08)
+#define UART0_INT_ENA   (UART0_BASE + 0x0C)
+#define UART0_INT_CLR   (UART0_BASE + 0x10)
+#define UART0_STATUS    (UART0_BASE + 0x1C)
+
 #endif

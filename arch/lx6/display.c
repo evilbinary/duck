@@ -24,7 +24,7 @@ void putch(u8 c) {
 
 void puts(char* text) {
   for (; *text != 0; text++) {
-    putch(*text);
+    uart_send(*text);
   }
 }
 
@@ -34,10 +34,9 @@ void test_display() {
 }
 
 void display_init() {
-  puts("Hello,YiYiYa OS\n\r");
-  puts("display init\n\r");
-  if (boot_info->disply.mode == 1) {
-    
-  }
-  test_display();
+  //uart_send('a');
+  // puts("Hello,YiYiYa OS\n\r");
+  // uart_send('b');
+  // puts("display init\n\r");
+  // test_display();
 }

@@ -15,16 +15,20 @@
 extern boot_info_t* boot_info;
 
 interrupt_handler_t* interrutp_handlers[IDT_NUMBER];
-extern u64 _idt[IDT_NUMBER] __attribute__((aligned(16)));
+extern u64 _idt[IDT_NUMBER] __attribute__((aligned(64)));
 
 void interrupt_init() {
   u64* pidt = _idt;
-  kprintf("interrupt init %x\n", pidt);
+  
   boot_info->idt_base = pidt;
+  
   boot_info->idt_number = IDT_NUMBER;
+
+  
   for (int i = 0; i < boot_info->idt_number; i++) {
     interrutp_set(i);
   }
+  
   cpu_set_vector(pidt);
 }
 
@@ -36,7 +40,7 @@ void interrupt_regist(u32 vec, interrupt_handler_t handler) {
 void interrutp_set(int i) {
   u32 base = (u32)interrutp_handlers[i];
   u64* idt_base = boot_info->idt_base;
-  // idt_base[i] = base;
+  //idt_base[i] = base;
 }
 
 INTERRUPT_SERVICE
@@ -133,8 +137,22 @@ void exception_info(interrupt_context_t* ic) {
   }
 }
 
+extern void window_overflow_4();
+extern void window_underflow_4();
+extern void window_overflow_8();
+extern void window_underflow_8();
+extern void window_overflow_12();
+extern void window_underflow_12();
+
 void interrupt_regist_all() {
-  interrupt_regist(0, reset_handler);  // reset
+  interrupt_regist(0, window_overflow_4);  // reset
+  interrupt_regist(1, window_underflow_4);
+  interrupt_regist(2, window_overflow_8);
+  interrupt_regist(3, window_underflow_8);
+  interrupt_regist(4, window_overflow_12);
+  interrupt_regist(5, window_underflow_12);
+
+
   interrupt_regist(6, l2_handler);
   interrupt_regist(7, l3_handler);
   interrupt_regist(8, l4_handler);

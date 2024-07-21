@@ -84,4 +84,7 @@ void page_unmap_on(page_dir_t* page, u32 virtualaddr) {
   }
 }
 
-void mm_init_default() { kprintf("mm_init_default\n"); }
+void mm_init_default() { 
+
+
+ }

@@ -29,19 +29,14 @@ u32 cpu_get_index(int idx) {
   return cpus_id[idx];
 }
 
-
 // cpu 初始化
 int cpu_init_id(u32 id) { return 0; }
 
-//启动cpu
+// 启动cpu
 int cpu_start_id(u32 id, u32 entry) { return 0; }
 
 // cpu 延迟
-void cpu_delay(int n) {
-  for (int i = 0; i < 10000 * n; i++)
-    ;
-}
-
+void cpu_delay(int n) { for (int i = 0; i < 10000 * n; i++); }
 
 int cpu_pmu_version() {
   u32 pmu_id = 0;
@@ -78,10 +73,18 @@ u32 cpu_get_sp() {
 }
 
 void cpu_set_vector(u32 addr) {
-  kprintf("set vector a %x\n", addr);
-	asm volatile ("wsr %0,vecbase" :: "r" (addr));
+  asm volatile("wsr %0,vecbase" ::"r"(addr));
   asm volatile("rsync\n");
 }
+
+cpsr_t cpu_read_ps() {
+  cpsr_t d ;
+  d.val = RSR(PS);
+
+  return d;
+}
+
+void cpu_write_ps(cpsr_t ps) { WSR(PS, ps.val); }
 
 void cpu_set_page(u32 page_table) {}
 
@@ -99,7 +102,10 @@ void cpu_enable_page() {
 
 inline void cpu_invalidate_tlbs(void) {}
 
-void cpu_init() {}
+void cpu_init() {
+  interrupt_init();
+  interrupt_regist_all();
+}
 
 void cpu_halt() {
   for (;;) {
@@ -107,15 +113,9 @@ void cpu_halt() {
   }
 }
 
-void cpu_wait(){
-  __asm__ volatile("waiti 0" : : : "memory");
-}
+void cpu_wait() { __asm__ volatile("waiti 0" : : : "memory"); }
 
-
-u32 cpu_get_fault(){
-  return 0;
-}
-
+u32 cpu_get_fault() { return 0; }
 
 ulong cpu_get_cs(void) {
   ulong result;

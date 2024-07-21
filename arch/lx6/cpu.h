@@ -48,4 +48,22 @@ typedef u32 (*sys_call_fn)(u32 arg1, u32 arg2, u32 arg3, u32 arg4, u32 arg5,
 #define cpu_faa(ptr) 1  //__sync_fetch_and_add(ptr, 1)
 
 
+
+#define _STR(x) #x
+#define STR(x) _STR(x)
+
+
+#define WSR(reg, value) \
+    do { \
+        asm volatile ("wsr %0, " STR(reg) :: "r"((uint32_t)value)); \
+    } while (0)
+
+#define RSR(reg) \
+    ({\
+        uint32_t value; \
+        asm volatile ("rsr %0, " STR(reg) : "=r"(value)); \
+        value; \
+    })
+
+
 #endif

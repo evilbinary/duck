@@ -3,6 +3,7 @@
 .section .vector.text
 
 .global _idt
+.global window_overflow_4,window_underflow_4,window_overflow_8,window_underflow_8,window_overflow_12,window_underflow_12
 
 .align 64
 _idt:

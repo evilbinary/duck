@@ -4,6 +4,7 @@
 #include "hal/timer_ll.h"
 #include "soc/timer_group_struct.h"
 
+
 #define XCHAL_TIMER0_INTERRUPT 6  /* CCOMPARE0 */
 #define XCHAL_TIMER1_INTERRUPT 15 /* CCOMPARE1 */
 #define XCHAL_TIMER2_INTERRUPT 16 /* CCOMPARE2 */
@@ -12,16 +13,17 @@
 #define XT_CLOCK_FREQ 50000000
 
 
-typedef void (*rom_write_char_uart_fn)(char c);
-rom_write_char_uart_fn send = 0x40007cf8;
+void uart_send_char(char c) {
+  while ((io_read32(UART0_STATUS) >>16 )  >= 128);
+  io_write32(UART0_FIFO, c);
+}
 
 void uart_send(unsigned int c) {
-  send(c);
-  //   if (c == '\n') {
-  //     uart_send_ch(c);
-  //     c = '\r';
-  //   }
-  //   uart_send_ch(c);
+  if (c == '\n') {
+    uart_send_char(c);
+    c = '\r';
+  }
+  uart_send_char(c);
 }
 
 u32 timer_get_count() {
@@ -41,7 +43,7 @@ void timer_init(int hz) {
 
   u32 count = timer_get_count();
   reset_count();
-  kprintf("count=%d\n", count);
+  //kprintf("count=%d\n", count);
 
   count += xt_tick_cycles;
 
@@ -59,13 +61,31 @@ void timer_init(int hz) {
 }
 
 void timer_end() {
-  kprintf("timer end %d\n", timer_count++);
+  //kprintf("timer end %d\n", timer_count++);
   reset_count();
 }
 
-void platform_init() { io_add_write_channel(&uart_send); }
+void platform_init() { 
+  
+  cpsr_t ps;
+  ps.val = cpu_read_ps();
+  ps.EXCM = 0;         // normal exception mode
+  ps.LINTLEVEL = 0xF;  // interrupts disabled
+  ps.UM = 1;           // usermode
+  ps.WOE = 1;          // window overflow enabled
+  cpu_write_ps(ps);
 
-void platform_end() { kprintf("platform_end %x\n", &uart_send); }
+  io_write32(UART0_INT_ENA, 0);
+
+  io_add_write_channel(&uart_send);
+
+ }
+
+void platform_end() { 
+  
+  uart_send_char('v');
+
+}
 
 void platform_map() {}
 

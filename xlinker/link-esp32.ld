@@ -2,12 +2,14 @@ MEMORY {
   /*iram : org = 0x40082000, len = 0xFC00*/
   /* dram : org = 0x3ffc0000, len = 0x20000 */
   dram   (rw)   : ORIGIN = 0x3FFC0000, LENGTH = 0x20000  /* 0x3FFAE000-0x40000000 */
-  iram   (rwx)  : ORIGIN = 0x40084000, LENGTH = 0x20000  /* 0x40080000-0x400A0000  */
+  iram   (rwx)  : ORIGIN = 0x40080000, LENGTH = 0x20000  /* 0x40080000-0x400A0000  */
   irom   (rx)   : ORIGIN = 0x400D0000, LENGTH = 0x20000 /* 0x400D0000-0x40400000  */
-  drom   (r)    : ORIGIN = 0x3F400000, LENGTH = 0x20000 /* 0x3F400000-0x3F800000 */
+  /*drom   (r)    : ORIGIN = 0x3F400000, LENGTH = 0x20000*/ /* 0x3F400000-0x3F800000 */
 }
 
-ENTRY(_kstart)
+STACK_SIZE = 0x400;
+
+ENTRY(_start)
 
 SECTIONS {
 
@@ -50,19 +52,15 @@ SECTIONS {
     KEEP(*(.irq*))  
   } > iram
 
-
-  .iram0 : ALIGN(4) {
+  .text : ALIGN(64) {
+   *(.literal*)
     KEEP(*(.text.boot .text.boot.*)) 
-    *(.literal*)
-    *(.text .text.*)
 
+    *(.text .text.*)
+    
     *(.iram0.literal*)
     KEEP(*(.kernel_excetpion_handler*))
   } > iram
-
-  .text : ALIGN(4) {
- 
-  } > irom
 
 
 
@@ -79,16 +77,42 @@ SECTIONS {
     _data_start = .;
     *(.data)
     *(.data*)
+    
+    *(.rodata .rodata.*)
+
     *(.init_array*)
     *(.fini_array*)
     *(.preinit_array*)
   	_data_end = .;
   } > dram
 
+  .stack :  ALIGN(4K) {
+      _estack = .;
+      . = . + STACK_SIZE;
+      _stack_abt = .;
 
-  .rodata : ALIGN(4) {
-    *(.rodata .rodata.*)
-  } > drom
+      . = . + STACK_SIZE;
+      _stack_undf = .;
+
+      . = . + STACK_SIZE;
+      _stack_irq = .;
+
+      . = . + STACK_SIZE;
+      _stack_svc = .;
+
+      . = . + STACK_SIZE;
+      _stack_sys = .;
+
+      . = . + STACK_SIZE*4*4 ;
+      _stack_other = .;
+
+      
+      . = ALIGN(4);
+      _sstack = .;
+        }
+
+
+
 }
 
 PROVIDE ( UART0 = 0x3ff40000 );
@@ -127,4 +151,13 @@ PROVIDE ( TWAI = 0x3ff6B000 );
 PROVIDE ( MCPWM1 = 0x3ff6C000 );
 PROVIDE ( I2S1 = 0x3ff6D000 );
 PROVIDE ( UART2 = 0x3ff6E000 );
+
+
+TIMG0 = 0x3FF5F000;
+TIMG1 = 0x3FF60000;
+RTC = 0x3FF48000;
+
+TIMG0_Tx_WDTCONFIG0 = TIMG0 + 0x48;
+TIMG1_Tx_WDTCONFIG0 = TIMG1 + 0x48;
+RTC_CNTL_WDTCONFIG0 = RTC + 0x8c;
 
