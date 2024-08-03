@@ -15,7 +15,7 @@
 extern boot_info_t* boot_info;
 
 interrupt_handler_t* interrutp_handlers[IDT_NUMBER];
-extern u64 _idt[IDT_NUMBER] __attribute__((aligned(64)));
+extern u64 _idt[IDT_NUMBER];
 
 void interrupt_init() {
   u64* pidt = _idt;
@@ -161,6 +161,6 @@ void interrupt_regist_all() {
   interrupt_regist(10, debug_excetpion_handler);
   interrupt_regist(11, nmi_excetpion_handler);
   interrupt_regist(12, kernel_excetpion_handler);
-  interrupt_regist(15, user_excetpion_handler);
+  interrupt_regist(13, user_excetpion_handler);
   interrupt_regist(16, double_excetpion_handler);
 }

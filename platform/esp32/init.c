@@ -12,8 +12,7 @@
 #define XT_TICK_PER_SEC 1000
 #define XT_CLOCK_FREQ 50000000
 
-
-void uart_send_char(char c) {
+static inline void uart_send_char(char c) {
   while ((io_read32(UART0_STATUS) >>16 )  >= 128);
   io_write32(UART0_FIFO, c);
 }
@@ -70,20 +69,21 @@ void platform_init() {
   cpsr_t ps;
   ps.val = cpu_read_ps();
   ps.EXCM = 0;         // normal exception mode
-  ps.LINTLEVEL = 0xF;  // interrupts disabled
-  ps.UM = 1;           // usermode
+  ps.LINTLEVEL = 0;  // interrupts disabled
+  ps.UM = 0;           // usermode
   ps.WOE = 1;          // window overflow enabled
   cpu_write_ps(ps);
 
-  io_write32(UART0_INT_ENA, 0);
+  WSR(INTCLEAR,1);
+  rsync();
 
+  io_write32(UART0_INT_ENA, 0);
   io_add_write_channel(&uart_send);
 
  }
 
 void platform_end() { 
   
-  uart_send_char('v');
 
 }
 

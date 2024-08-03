@@ -2,7 +2,7 @@ MEMORY {
   /*iram : org = 0x40082000, len = 0xFC00*/
   /* dram : org = 0x3ffc0000, len = 0x20000 */
   dram   (rw)   : ORIGIN = 0x3FFC0000, LENGTH = 0x20000  /* 0x3FFAE000-0x40000000 */
-  iram   (rwx)  : ORIGIN = 0x40080000, LENGTH = 0x20000  /* 0x40080000-0x400A0000  */
+  iram   (rwx)  : ORIGIN = 0x40080000, LENGTH = 0x40000  /* 0x40080000-0x400C0000  */
   irom   (rx)   : ORIGIN = 0x400D0000, LENGTH = 0x20000 /* 0x400D0000-0x40400000  */
   /*drom   (r)    : ORIGIN = 0x3F400000, LENGTH = 0x20000*/ /* 0x3F400000-0x3F800000 */
 }
@@ -14,15 +14,14 @@ ENTRY(_start)
 SECTIONS {
 
    .text.vectors : ALIGN(4) {
+    . = ALIGN(0x1000);
+    KEEP(*(.window_overflow_4.text));
     . = ALIGN(64);
-    _idt = .;
-    KEEP(*(.WindowOverflow4.text));
+    KEEP(*(.window_underflow_4.text));
     . = ALIGN(64);
-    KEEP(*(.WindowUnderflow4.text));
+    KEEP(*(.window_overflow_8.text));
     . = ALIGN(64);
-    KEEP(*(.WindowOverflow8.text));
-    . = ALIGN(64);
-    KEEP(*(.WindowUnderflow8.text));
+    KEEP(*(.window_underflow_8.text));
     . = ALIGN(64);
     KEEP(*(.WindowOverflow12.text));
     . = ALIGN(64);
@@ -40,9 +39,9 @@ SECTIONS {
     . = ALIGN(64);
     KEEP(*(.NMIExceptionVector.text));
     . = ALIGN(64);
-    KEEP(*(.KernelExceptionVector.text));
+    KEEP(*(.kernel_exception.text));
     . = ALIGN(64);
-    KEEP(*(.UserExceptionVector.text));
+    KEEP(*(.user_exception.text));
     . = ALIGN(128);
     KEEP(*(.DoubleExceptionVector.text));
     . = ALIGN(64);
@@ -53,9 +52,6 @@ SECTIONS {
   } > iram
 
   .text : ALIGN(64) {
-   *(.literal*)
-    KEEP(*(.text.boot .text.boot.*)) 
-
     *(.text .text.*)
     
     *(.iram0.literal*)

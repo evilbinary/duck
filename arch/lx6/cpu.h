@@ -48,6 +48,8 @@ typedef u32 (*sys_call_fn)(u32 arg1, u32 arg2, u32 arg3, u32 arg4, u32 arg5,
 #define cpu_faa(ptr) 1  //__sync_fetch_and_add(ptr, 1)
 
 
+#define rsync() asm volatile ("rsync");
+
 
 #define _STR(x) #x
 #define STR(x) _STR(x)
@@ -64,6 +66,10 @@ typedef u32 (*sys_call_fn)(u32 arg1, u32 arg2, u32 arg3, u32 arg4, u32 arg5,
         asm volatile ("rsr %0, " STR(reg) : "=r"(value)); \
         value; \
     })
+
+
+#define WITLB(at, as) asm volatile ("witlb  %0, %1; \n isync \n " : : "r" (at), "r" (as))
+#define WDTLB(at, as) asm volatile ("wdtlb  %0, %1; \n dsync \n " : : "r" (at), "r" (as))
 
 
 #endif
