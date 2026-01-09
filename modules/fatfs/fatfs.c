@@ -449,12 +449,13 @@ size_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args) {
     if ((fno.fattrib & AM_DIR) == AM_DIR) {
       stat->st_size = fno.fsize;
       stat->st_mtim = fno.fdate << 16 | fno.ftime;
-      stat->st_mode = S_IFREG;
-      stat->st_mode |= S_IFDIR;
+      stat->st_mode = S_IFDIR;
+      stat->st_mode |= 0755;  // rwxr-xr-x
     } else {
       stat->st_size = fno.fsize;
       stat->st_mtim = fno.fdate << 16 | fno.ftime;
       stat->st_mode = S_IFREG;
+      stat->st_mode |= 0644;  // rw-r--r--
     }
 
     return 0;
