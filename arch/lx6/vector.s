@@ -31,10 +31,10 @@ window_overflow_8:
     s32e	a1, a9, -12
     s32e	a2, a9, -8
     s32e	a3, a9, -4
-    s32e	a4, a0, -32
-    s32e	a5, a0, -28
-    s32e	a6, a0, -24
-    s32e	a7, a0, -20
+    s32e	a4, a9, -32
+    s32e	a5, a9, -28
+    s32e	a6, a9, -24
+    s32e	a7, a9, -20
     rfwo
 
 .align 64
@@ -59,14 +59,14 @@ window_overflow_12:
     s32e	a1, a13, -12
     s32e	a2, a13, -8
     s32e	a3, a13, -4
-    s32e	a4, a0, -48
-    s32e	a5, a0, -44
-    s32e	a6, a0, -40
-    s32e	a7, a0, -36
-    s32e	a8, a0, -32
-    s32e	a9, a0, -28
-    s32e	a10, a0, -24
-    s32e	a11, a0, -20
+    s32e	a4, a13, -48
+    s32e	a5, a13, -44
+    s32e	a6, a13, -40
+    s32e	a7, a13, -36
+    s32e	a8, a13, -32
+    s32e	a9, a13, -28
+    s32e	a10, a13, -24
+    s32e	a11, a13, -20
     rfwo
 
 .align 64

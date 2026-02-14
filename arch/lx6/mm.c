@@ -30,11 +30,12 @@ void* page_v2p(void* page, void* vaddr) {
   u32* l1 = page;
   u32 l1_index = (u32)vaddr >> 20;
   u32 l2_index = (u32)vaddr >> 12 & 0xFF;
-  u32* l2 = ((u32)l1[l1_index]) & 0xFFFFFC00;
-  if (l2 != NULL) {
-    // kprintf("l2 %x\n",l2);
-    phyaddr = (l2[l2_index] >> 12) << 12;
+  u32 l2_addr = l1[l1_index] & 0xFFFFFC00;
+  if (l2_addr == 0) {
+    return NULL;
   }
+  u32* l2 = (u32*)l2_addr;
+  phyaddr = (void*)((l2[l2_index] >> 12) << 12);
   // kprintf("page_v2p vaddr %x paddr %x\n",vaddr,phyaddr);
   return phyaddr;
 }

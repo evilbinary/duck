@@ -19,17 +19,17 @@ extern u64 _idt[IDT_NUMBER];
 
 void interrupt_init() {
   u64* pidt = _idt;
-  
+
   boot_info->idt_base = pidt;
-  
+
   boot_info->idt_number = IDT_NUMBER;
 
-  
-  for (int i = 0; i < boot_info->idt_number; i++) {
-    interrutp_set(i);
-  }
-  
-  cpu_set_vector(pidt);
+  // Register all interrupt handlers including window overflow/underflow
+  interrupt_regist_all();
+
+  // Set vecbase to _idt address where window overflow/underflow vectors are located
+  // Note: Due to linker script ALIGN(0x1000), _idt is at 0x40081000, not 0x40080000
+  cpu_set_vector((u32)_idt);
 }
 
 void interrupt_regist(u32 vec, interrupt_handler_t handler) {
