@@ -259,6 +259,17 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
   if (type == MEMORY_STACK) {
     addr = vm->alloc_addr;
     end_addr = addr + vm->alloc_size;
+    // 边界检查：确保不超过栈顶
+    if (end_addr > vm->vend) {
+      log_warn("tid %d stack copy range overflow: %x > %x, correcting\n",
+               vm_copy->tid, end_addr, vm->vend);
+      end_addr = vm->vend;
+    }
+    if (addr < vm->vaddr) {
+      log_warn("tid %d stack copy range underflow: %x < %x, correcting\n",
+               vm_copy->tid, addr, vm->vaddr);
+      addr = vm->vaddr;
+    }
     type_str = "stack";
   } else if (type == MEMORY_HEAP) {
     addr = vm->vaddr;
@@ -270,6 +281,8 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
             type_str, addr, end_addr, vm->alloc_size);
 
 #ifdef VM_ENABLE
+  u32 copy_start = addr;
+  u32 copied_pages = 0;
   for (; addr < end_addr; addr += PAGE_SIZE) {
     void* phy = page_v2p(vm_src->upage, addr);
     if (phy != NULL) {
@@ -278,10 +291,19 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
                PAGE_SIZE);  // fix v3s crash copy use current page addr
       log_debug("-copy vaddr %x addr %x to %x\n", addr, phy, copy_addr);
       vmemory_map(vm_copy->upage, addr, copy_addr, PAGE_SIZE);
+      copied_pages++;
     } else {
       log_warn("thread %d vm copy data,vaddr %x phy is null\n", vm_copy->tid,
                addr);
     }
+  }
+  // 更新新线程的分配信息
+  if (type == MEMORY_STACK) {
+    cvm->alloc_addr = copy_start;
+    cvm->alloc_size = copied_pages * PAGE_SIZE;
+  } else if (type == MEMORY_HEAP) {
+    cvm->alloc_addr = copy_start + copied_pages * PAGE_SIZE;
+    cvm->alloc_size = copied_pages * PAGE_SIZE;
   }
 #endif
 }
