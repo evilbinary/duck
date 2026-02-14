@@ -105,7 +105,7 @@ inline void cpu_invalidate_tlbs(void) {}
 void cpu_init() {
 
     static const uint32_t illegal_regions[] = {
-        0x00000000,
+        // 0x00000000,
         0x80000000,
         0xa0000000,
         0xc0000000,

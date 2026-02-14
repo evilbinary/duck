@@ -40,15 +40,15 @@ window_overflow_8:
 .align 64
 window_underflow_8:
 /* windows underflow 8 - 0xc0 3*/
-    l32e	a0, a9, -16
-    l32e	a1, a9, -12
-    l32e	a2, a9, -8
-    l32e	a7, a1, -12
-    l32e	a3, a9, -4
-    l32e	a4, a7, -32
-    l32e	a5, a7, -28
-    l32e	a6, a7, -24
-    l32e	a7, a7, -20
+  l32e    a0, a9, -16
+    l32e    a8, a9, -12  
+    l32e    a2, a9, -8
+    l32e    a7, a8, -12  
+    l32e    a3, a9, -4
+    l32e    a4, a7, -32
+    l32e    a5, a7, -28
+    l32e    a6, a7, -24
+    l32e    a7, a7, -20
     rfwu
 
 .align 64
