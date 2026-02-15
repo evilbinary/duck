@@ -16,7 +16,7 @@
 
 static void* syscall_table[SYSCALL_NUMBER] = {0};
 
-// #define log_debug  // 取消注释以禁用调试日志
+#define log_debug  // 取消注释以禁用调试日志
 
 int sys_print(char* s) {
   thread_t* current = thread_current();

@@ -33,10 +33,27 @@ int schedule_state(int cpu) {
 thread_t* schedule_next(int cpu) {
   thread_t* current = thread_current();
   thread_t* v = thread_head();
-  thread_t* next = v;
-  // find next priority
+  thread_t* next = NULL;
+  
+  // find first runnable thread
   for (; v != NULL; v = v->next) {
-    if (v->state != THREAD_RUNNING || v == next) {
+    if (v->state == THREAD_RUNNING && v != current) {
+      next = v;
+      break;
+    }
+  }
+  
+  // if no other runnable thread, return current if it's runnable
+  if (next == NULL) {
+    if (current != NULL && current->state == THREAD_RUNNING) {
+      return current;
+    }
+    return NULL;
+  }
+  
+  // find thread with lowest counter (highest priority)
+  for (v = thread_head(); v != NULL; v = v->next) {
+    if (v->state != THREAD_RUNNING || v == current) {
       continue;
     }
     if (v->counter < next->counter) {
@@ -52,6 +69,12 @@ void schedule(interrupt_context_t* ic) {
   int cpu = cpu_get_id();
   schedule_state(cpu);
   thread_t* next_thread = schedule_next(cpu);
+  
+  // if no next thread or same as current, don't switch
+  if (next_thread == NULL || next_thread == current_thread) {
+    return;
+  }
+  
   interrupt_context_t* next_ic =
       context_switch(ic, current_thread->ctx, next_thread->ctx);
   thread_set_current(next_thread);
@@ -66,15 +89,20 @@ void schedule_switch() {
   int cpu = cpu_get_id();
   schedule_state(cpu);
   thread_t* next_thread = schedule_next(cpu);
+  
+  // if no next thread or same as current, just exit
+  if (next_thread == NULL || next_thread == current_thread) {
+    interrupt_exit_context(ic);
+    return;
+  }
+  
   thread_set_current(next_thread);
 
   interrupt_context_t* next_ic =
       context_switch(ic, current_thread->ctx, next_thread->ctx);
 
 #ifdef VM_ENABLE
-  if (current_thread != next_thread) {
-    context_switch_page(next_thread->ctx, next_thread->vm->upage);
-  }
+  context_switch_page(next_thread->ctx, next_thread->vm->upage);
 #endif
   interrupt_exit_context(next_ic);
 }
@@ -98,50 +126,39 @@ void schedule_sleep(u32 nsec) {
 void* do_schedule(interrupt_context_t* ic) {
   int cpu = cpu_get_id();
   thread_t* current_thread = thread_current();
-  thread_t* next_thread = current_thread;
 
   if (current_thread == NULL) {
     log_debug("schedule current is null\n");
-    return NULL;
+    return ic;
   }
 
   int count = schedule_state(cpu);
 
-  // if (timer_ticks[cpu] % (count * 2) == 1) {
-    next_thread = schedule_next(cpu);
-    if (next_thread == NULL) {
-      log_debug("schedule error next\n");
-      return NULL;
-    }
-  // }
+  thread_t* next_thread = schedule_next(cpu);
+  if (next_thread == NULL) {
+    log_debug("schedule error next\n");
+    timer_end();
+    return ic;
+  }
+  
+  // if same thread, just update stats and return
+  if (next_thread == current_thread) {
+    next_thread->counter++;
+    next_thread->ticks++;
+    timer_ticks[cpu]++;
+    timer_end();
+    return ic;
+  }
 
   next_thread->counter++;
   next_thread->ticks++;
   timer_ticks[cpu]++;
 
-  if (next_thread->id >= 0) {
-    // log_debug("next tid %d\n",next_thread->id);
-    //   int i = 0;
-    // log_debug("next tid %d ksp %x ksp->pc %x ic->pc %x inst:%x\n",
-    //           next_thread->id, next_thread->ctx->ksp,
-    //           next_thread->ctx->ksp->sepc, ic->sepc, *(u32*)ic->sepc);
-    // log_debug("next tid %d ksp->pc %x ic->pc %x inst:%x\n", next_thread->id,
-    //           next_thread->ctx->ksp->pc, ic->pc, *(u32*)ic->pc);
-
-    //   log_debug("next tid %d ksp->pc %x ic->pc %x inst:%x\n",
-    //   next_thread->id,
-    //             next_thread->ctx->ksp->eip, ic->eip, *(u32*)ic->eip);
-    //   log_debug("upage %x ic %x ksp
-    //   %x\n",next_thread->vm->upage,ic,next_thread->ctx->ksp);
-    //   //  mmu_dump();
-  }
   interrupt_context_t* next_ic =
       context_switch(ic, current_thread->ctx, next_thread->ctx);
   thread_set_current(next_thread);
 #ifdef VM_ENABLE
-  if (current_thread != next_thread) {
-    context_switch_page(next_thread->ctx, next_thread->vm->upage);
-  }
+  context_switch_page(next_thread->ctx, next_thread->vm->upage);
 #endif
   timer_end();
   return next_ic;
