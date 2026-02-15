@@ -180,6 +180,10 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
     root = root_node;
   }
   u32 path_len = kstrlen(path);
+  // 处理根路径 "/" 或空路径
+  if (path_len == 0 || (path_len == 1 && path[0] == '/')) {
+    return root;
+  }
   if (path_len == 1 && kstrcmp(root->name, path) == 0) {
     return root;
   }
@@ -191,11 +195,32 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
   token = kstrtok(s, split);
 
   vnode_t *parent = root;
-  vnode_t *node = NULL;
+  vnode_t *node = parent;  // 默认返回当前目录
   if (token == NULL) {
-    // node = parent;
+    // 空路径，返回 root
+    if (path_len >= MAX_PATH_BUFFER) {
+      kfree(start);
+    }
+    return root;
   }
   while (token != NULL) {
+    // 处理 .. 返回上一级
+    if (kstrcmp(token, "..") == 0) {
+      if (parent->parent != NULL) {
+        parent = parent->parent;
+      } else {
+        // 已经是根目录，保持不变
+        parent = root;
+      }
+      token = kstrtok(NULL, split);
+      continue;
+    }
+    // 处理 . 保持当前目录
+    if (kstrcmp(token, ".") == 0) {
+      token = kstrtok(NULL, split);
+      continue;
+    }
+    
     vnode_t *find_one = vfs_find_child(parent, token);
     if (find_one != NULL) {
       parent = find_one;
@@ -218,6 +243,11 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
   }
   if (path_len >= MAX_PATH_BUFFER) {
     kfree(start);
+  }
+
+  // 如果所有 token 都处理完了，返回最后的 parent
+  if (node == NULL && token == NULL) {
+    node = parent;
   }
 
   if (node == NULL) {
@@ -373,6 +403,129 @@ int vfs_path_append(vnode_t *node, char *name, char *buf) {
   }
   buf[len] = 0;
   return len;
+}
+
+// 规范化路径，处理 . 和 ..
+int vfs_normalize_path(char *result, const char *path) {
+  if (path == NULL || result == NULL) {
+    return -1;
+  }
+
+  int len = kstrlen(path);
+  if (len == 0) {
+    result[0] = '/';
+    result[1] = '\0';
+    return 0;
+  }
+
+  // 临时存储路径组件
+  char *components[64];
+  int comp_count = 0;
+
+  char buf[512];
+  kstrcpy(buf, path);
+
+  char *token;
+  const char *split = "/";
+  token = kstrtok(buf, split);
+
+  while (token != NULL) {
+    if (kstrcmp(token, ".") == 0) {
+      // 忽略当前目录
+    } else if (kstrcmp(token, "..") == 0) {
+      // 返回上一级目录
+      if (comp_count > 0) {
+        comp_count--;
+      }
+    } else {
+      components[comp_count++] = token;
+    }
+    token = kstrtok(NULL, split);
+  }
+
+  // 构建结果路径
+  int pos = 0;
+  result[pos++] = '/';
+
+  for (int i = 0; i < comp_count; i++) {
+    int comp_len = kstrlen(components[i]);
+    kstrcpy(result + pos, components[i]);
+    pos += comp_len;
+    if (i < comp_count - 1) {
+      result[pos++] = '/';
+    }
+  }
+
+  if (pos == 1) {
+    result[1] = '\0';
+  } else {
+    result[pos] = '\0';
+  }
+
+  return 0;
+}
+
+// 从指定节点开始查找路径（支持相对路径和 ..）
+vnode_t *vfs_find_relative(vnode_t *root, vnode_t *pwd, const char *path) {
+  if (path == NULL) {
+    return NULL;
+  }
+
+  // 绝对路径从根目录开始
+  if (path[0] == '/') {
+    return vfs_find(root, (u8 *)path);
+  }
+
+  // 相对路径从当前目录开始
+  if (pwd == NULL) {
+    pwd = root;
+  }
+
+  // 简化处理：直接从当前目录开始遍历
+  char buf[512];
+  kstrcpy(buf, path);
+  
+  vnode_t *current = pwd;
+  char *token;
+  const char *split = "/";
+  token = kstrtok(buf, split);
+  
+  while (token != NULL) {
+    log_debug("vfs_find_relative: token='%s' len=%d\n", token, kstrlen(token));
+    if (kstrcmp(token, "..") == 0) {
+      log_debug("vfs_find_relative: found .., current=%s parent=%x root=%x\n", current->name, current->parent, root);
+      // 返回上一级
+      if (current->parent != NULL) {
+        current = current->parent;
+        log_debug("vfs_find_relative: move to parent %s\n", current->name);
+      } else {
+        // 已经是根目录或 parent 为空，保持不变
+        log_debug("vfs_find_relative: at root or no parent, keeping current\n");
+      }
+    } else if (kstrcmp(token, ".") == 0) {
+      // 保持当前目录
+      log_debug("vfs_find_relative: found ., keeping current\n");
+    } else {
+      log_debug("vfs_find_relative: searching for '%s' in %s\n", token, current->name);
+      // 查找子节点
+      vnode_t *found = vfs_find_child(current, token);
+      if (found == NULL) {
+        // 尝试从底层文件系统查找
+        vnode_t *op_node = current->super != NULL ? current->super : current;
+        found = vfind(op_node, token);
+        if (found != NULL) {
+          vfs_add_child(current, found);
+        } else {
+          log_error("vfs_find_relative: cannot find %s\n", token);
+          return NULL;
+        }
+      }
+      current = found;
+    }
+    token = kstrtok(NULL, split);
+  }
+  
+  return current;
 }
 
 int vfs_init() {

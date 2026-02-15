@@ -16,7 +16,7 @@
 
 static void* syscall_table[SYSCALL_NUMBER] = {0};
 
-#define log_debug
+// #define log_debug  // 取消注释以禁用调试日志
 
 int sys_print(char* s) {
   thread_t* current = thread_current();
@@ -78,20 +78,23 @@ u32 sys_open(char* name, int attr, ...) {
     return -1;
   }
   // current pwd
-  vnode_t* pwd = NULL;
+  vnode_t* pwd = current->vfs->pwd;
+  vnode_t* root = current->vfs->root;
 
-  if (kstrlen(name) >= 2 && name[0] == '.' && name[1] == '/') {
-    kstrcpy(name, &name[2]);
-    pwd = current->vfs->pwd;
-  } else if (kstrlen(name) == 1 && name[0] == '/') {
-    pwd = current->vfs->root;
-  } else if (name[0] == '/') {
-  } else {
-    pwd = current->vfs->pwd;
+  // 使用 vfs_find_relative 支持相对路径和 ..
+  vnode_t* file = vfs_find_relative(root, pwd, name);
+  if (file == NULL && (attr & O_CREAT) == O_CREAT) {
+    // 文件不存在但需要创建
+    file = vfs_open_attr(pwd, name, attr);
   }
+  if (file == NULL) {
+    log_error("sys open file %s error, attr %x \n", name, attr);
+    return -1;
+  }
+
+  // 构建路径名用于 fd 缓存
   char path_name[256];
-  // char* path_name= kmalloc(256, KERNEL_TYPE);
-  vfs_path_append(pwd, name, path_name);
+  vfs_path_append(file, "", path_name);
 
   log_debug("path name %s to %s\n", name, path_name);
 
@@ -102,11 +105,9 @@ u32 sys_open(char* name, int attr, ...) {
     log_debug("sys open name return : %s fd: %d\n", path_name, f);
     return f;
   }
-  vnode_t* file = vfs_open_attr(pwd, name, attr);
-  if (file == NULL) {
-    log_error("sys open file %s error, attr %x \n", name, attr);
-    return -1;
-  }
+
+  // 打开文件
+  vfs_open(file, attr);
 
   fd_t* fd = fd_open(file, DEVICE_TYPE_FILE, path_name);
   if (fd == NULL) {
@@ -553,13 +554,27 @@ int sys_writev(int fd, iovec_t* vector, int count) {
 int sys_chdir(const char* path) {
   int ret = 0;
   thread_t* current = thread_current();
-  int fd = sys_open(path, 0);
-  if (fd < 0) {
-    log_error("chdir error\n");
+
+  if (path == NULL) {
     return -1;
   }
-  sys_fchdir(fd);
-  sys_close(fd);
+
+  log_debug("sys_chdir: path='%s' len=%d\n", path, kstrlen(path));
+
+  // 使用相对路径查找
+  vnode_t* node = vfs_find_relative(current->vfs->root, current->vfs->pwd, path);
+  if (node == NULL) {
+    log_error("chdir: cannot find %s\n", path);
+    return -1;
+  }
+
+  // 检查是否是目录
+  if ((node->flags & V_DIRECTORY) != V_DIRECTORY) {
+    log_error("chdir: not a directory %s\n", path);
+    return -1;
+  }
+
+  current->vfs->pwd = node;
   return ret;
 }
 
