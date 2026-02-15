@@ -127,6 +127,10 @@ void page_init() {
 #ifdef VM_ENABLE
   // create kernel page
   kernel_page_dir = page_create(0);
+  if (kernel_page_dir == NULL) {
+    log_warn("page_create returned NULL, virtual memory not available\n");
+    return;
+  }
   // parse
   mm_parse_map(kernel_page_dir);
 
