@@ -18,43 +18,117 @@
 .align 11
 exception_vectors:
 // Current EL with SP0 (shouldn't happen)
-.balign 128
     b exception_sp0_sync     // 0x00: Synchronous
-.balign 32
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
     b exception_sp0_irq      // 0x20: IRQ
-.balign 32
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
     b exception_sp0_fiq      // 0x40: FIQ
-.balign 32
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
     b exception_sp0_serror   // 0x60: SError
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
 
 // Current EL with SPx (kernel exceptions)
-.balign 128
     b exception_current_sync // 0x80: Synchronous
-.balign 32
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
     b exception_current_irq  // 0xA0: IRQ
-.balign 32
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
     b exception_current_fiq  // 0xC0: FIQ
-.balign 32
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
     b exception_current_serror // 0xE0: SError
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
 
 // Lower EL using AArch64 (user mode exceptions)
-.balign 128
     b exception_lower_sync   // 0x100: Synchronous
-.balign 32
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
     b exception_lower_irq    // 0x120: IRQ
-.balign 32
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
     b exception_lower_fiq    // 0x140: FIQ
-.balign 32
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
     b exception_lower_serror // 0x160: SError
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
 
 // Lower EL using AArch32
-.balign 128
     b exception_lower_sync   // 0x180: Synchronous (reuse AArch64 handler)
-.balign 32
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
     b exception_lower_irq    // 0x1A0: IRQ
-.balign 32
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
     b exception_lower_fiq    // 0x1C0: FIQ
-.balign 32
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
     b exception_lower_serror // 0x1E0: SError
 
 // ========================================
@@ -70,30 +144,35 @@ exception_sp0_serror:
 // Current EL exceptions (kernel mode)
 // ========================================
 .macro save_context
-    // Save all general purpose registers
-    stp     x29, x30, [sp, #-16]!
-    stp     x27, x28, [sp, #-16]!
-    stp     x25, x26, [sp, #-16]!
-    stp     x23, x24, [sp, #-16]!
-    stp     x21, x22, [sp, #-16]!
-    stp     x19, x20, [sp, #-16]!
-    stp     x17, x18, [sp, #-16]!
-    stp     x15, x16, [sp, #-16]!
-    stp     x13, x14, [sp, #-16]!
-    stp     x11, x12, [sp, #-16]!
-    stp     x9, x10, [sp, #-16]!
-    stp     x7, x8, [sp, #-16]!
-    stp     x5, x6, [sp, #-16]!
-    stp     x3, x4, [sp, #-16]!
-    stp     x1, x2, [sp, #-16]!
+    // Save all general purpose registers (order matches interrupt_context_t)
+    // Stack grows down: save x0-x29 first (at lower addresses)
+    // then psr,pc, finally no,code at sp (top of struct)
     stp     x0, x1, [sp, #-16]!
+    stp     x2, x3, [sp, #-16]!
+    stp     x4, x5, [sp, #-16]!
+    stp     x6, x7, [sp, #-16]!
+    stp     x8, x9, [sp, #-16]!
+    stp     x10, x11, [sp, #-16]!
+    stp     x12, x13, [sp, #-16]!
+    stp     x14, x15, [sp, #-16]!
+    stp     x16, x17, [sp, #-16]!
+    stp     x18, x19, [sp, #-16]!
+    stp     x20, x21, [sp, #-16]!
+    stp     x22, x23, [sp, #-16]!
+    stp     x24, x25, [sp, #-16]!
+    stp     x26, x27, [sp, #-16]!
+    stp     x28, x29, [sp, #-16]!
     
-    // Save PSTATE and exception info
+    // Save lr and sp_el0 (user stack pointer)
+    mrs     x0, sp_el0
+    stp     lr, x0, [sp, #-16]!
+    
+    // Save PSTATE and exception return address
     mrs     x0, spsr_el1
     mrs     x1, elr_el1
     stp     x0, x1, [sp, #-16]!
     
-    // Reserve space for no and code
+    // Reserve space for no and code (at top of struct, sp points here)
     sub     sp, sp, #16
 .endm
 
@@ -106,23 +185,26 @@ exception_sp0_serror:
     msr     spsr_el1, x0
     msr     elr_el1, x1
     
+    // Restore lr and sp_el0 (user stack pointer)
+    ldp     lr, x0, [sp], #16
+    msr     sp_el0, x0
+    
     // Restore general purpose registers
+    ldp     x28, x29, [sp], #16
+    ldp     x26, x27, [sp], #16
+    ldp     x24, x25, [sp], #16
+    ldp     x22, x23, [sp], #16
+    ldp     x20, x21, [sp], #16
+    ldp     x18, x19, [sp], #16
+    ldp     x16, x17, [sp], #16
+    ldp     x14, x15, [sp], #16
+    ldp     x12, x13, [sp], #16
+    ldp     x10, x11, [sp], #16
+    ldp     x8, x9, [sp], #16
+    ldp     x6, x7, [sp], #16
+    ldp     x4, x5, [sp], #16
+    ldp     x2, x3, [sp], #16
     ldp     x0, x1, [sp], #16
-    ldp     x1, x2, [sp], #16
-    ldp     x3, x4, [sp], #16
-    ldp     x5, x6, [sp], #16
-    ldp     x7, x8, [sp], #16
-    ldp     x9, x10, [sp], #16
-    ldp     x11, x12, [sp], #16
-    ldp     x13, x14, [sp], #16
-    ldp     x15, x16, [sp], #16
-    ldp     x17, x18, [sp], #16
-    ldp     x19, x20, [sp], #16
-    ldp     x21, x22, [sp], #16
-    ldp     x23, x24, [sp], #16
-    ldp     x25, x26, [sp], #16
-    ldp     x27, x28, [sp], #16
-    ldp     x29, x30, [sp], #16
     
     eret
 .endm
@@ -130,59 +212,59 @@ exception_sp0_serror:
 // Current EL synchronous exception
 exception_current_sync:
     save_context
-    
-    // Set exception number
-    mov     x0, #4              // EX_SYNC_EL1
+
+    // Set exception number - use EX_DATA_FAULT as base, sync_handler will refine
+    mov     x0, #2              // EX_DATA_FAULT
     str     x0, [sp]
     mov     x1, #0
     str     x1, [sp, #8]        // code = 0
-    
+
     // Call C handler
     mov     x0, sp
     bl      sync_handler
-    
+
     restore_context
 
 // Current EL IRQ
 exception_current_irq:
     save_context
-    
-    mov     x0, #5              // EX_IRQ_EL1
+
+    mov     x0, #4              // EX_IRQ
     str     x0, [sp]
     mov     x1, #0
     str     x1, [sp, #8]
-    
+
     mov     x0, sp
     bl      irq_handler
-    
+
     restore_context
 
 // Current EL FIQ
 exception_current_fiq:
     save_context
-    
-    mov     x0, #6              // EX_FIQ_EL1
+
+    mov     x0, #6              // EX_OTHER (for FIQ)
     str     x0, [sp]
     mov     x1, #0
     str     x1, [sp, #8]
-    
+
     mov     x0, sp
     bl      fiq_handler
-    
+
     restore_context
 
 // Current EL SError
 exception_current_serror:
     save_context
-    
-    mov     x0, #7              // EX_SERROR_EL1
+
+    mov     x0, #6              // EX_OTHER (for SError)
     str     x0, [sp]
     mov     x1, #0
     str     x1, [sp, #8]
-    
+
     mov     x0, sp
     bl      serror_handler
-    
+
     restore_context
 
 // ========================================
@@ -192,58 +274,58 @@ exception_current_serror:
 // Lower EL synchronous exception
 exception_lower_sync:
     save_context
-    
-    mov     x0, #0              // EX_SYNC_EL0
+
+    mov     x0, #3              // EX_SYS_CALL (for syscall from user)
     str     x0, [sp]
-    
+
     // Get exception class from ESR
     mrs     x1, esr_el1
     lsr     x1, x1, #26         // Extract EC field
     str     x1, [sp, #8]
-    
+
     mov     x0, sp
     bl      sync_handler
-    
+
     restore_context
 
 // Lower EL IRQ
 exception_lower_irq:
     save_context
-    
-    mov     x0, #1              // EX_IRQ_EL0
+
+    mov     x0, #4              // EX_IRQ
     str     x0, [sp]
     mov     x1, #0
     str     x1, [sp, #8]
-    
+
     mov     x0, sp
     bl      irq_handler
-    
+
     restore_context
 
 // Lower EL FIQ
 exception_lower_fiq:
     save_context
-    
-    mov     x0, #2              // EX_FIQ_EL0
+
+    mov     x0, #6              // EX_OTHER
     str     x0, [sp]
     mov     x1, #0
     str     x1, [sp, #8]
-    
+
     mov     x0, sp
     bl      fiq_handler
-    
+
     restore_context
 
 // Lower EL SError
 exception_lower_serror:
     save_context
-    
-    mov     x0, #3              // EX_SERROR_EL0
+
+    mov     x0, #6              // EX_OTHER
     str     x0, [sp]
     mov     x1, #0
     str     x1, [sp, #8]
-    
+
     mov     x0, sp
     bl      serror_handler
-    
+
     restore_context

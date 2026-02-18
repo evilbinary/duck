@@ -2,7 +2,7 @@
 #define TYPES_H
 
 #define _Addr int
-#define _Int64 __INT64_TYPE__
+#define _Int64 long long
 #define _Reg int
 
 typedef char i8;
@@ -12,11 +12,11 @@ typedef unsigned short u16;
 typedef int i32;
 typedef unsigned int u32;
 
-typedef __INT64_TYPE__ i64;
-typedef unsigned __INT64_TYPE__ u64;
+typedef long long i64;
+typedef unsigned long long u64;
 
-typedef __INT64_TYPE__ illong;
-typedef unsigned __INT64_TYPE__ ullong;
+typedef long long illong;
+typedef unsigned long long ullong;
 
 typedef float f32;
 typedef double f64;
@@ -37,58 +37,47 @@ typedef unsigned long ulong;
 
 typedef unsigned int u_int;
 
-#ifndef _INT8_T
-#define _INT8_T
+#if !defined(_INT8_T) && !defined(int8_t)
 typedef signed char int8_t;
 #endif
 
-#ifndef _INT16_T
-#define _INT16_T
+#if !defined(_INT16_T) && !defined(int16_t)
 typedef signed short int16_t;
 #endif
 
-#ifndef _INT32_T
-#define _INT32_T
+#if !defined(_INT32_T) && !defined(int32_t)
 typedef signed int int32_t;
 #endif
 
-#ifndef _INT64_T
-#define _INT64_T
-typedef signed _Int64 int64_t;
+#if !defined(_INT64_T) && !defined(int64_t)
+typedef signed long long int64_t;
 #endif
 
-#ifndef _UINT8_T
-#define _UINT8_T
+#if !defined(_UINT8_T) && !defined(uint8_t)
 typedef unsigned char uint8_t;
 #endif
 
-#ifndef _UINT16_T
-#define _UINT16_T
+#if !defined(_UINT16_T) && !defined(uint16_t)
 typedef unsigned short uint16_t;
 #endif
 
-#ifndef _UINT32_T
-#define _UINT32_T
+#if !defined(_UINT32_T) && !defined(uint32_t)
 typedef unsigned int uint32_t;
 #endif
 
-#ifndef _UINT64_T
-#define _UINT64_T
-typedef unsigned _Int64 uint64_t;
+#if !defined(_UINT64_T) && !defined(uint64_t)
+typedef unsigned long long uint64_t;
 #endif
 
-#ifndef _INTPTR_T
-#define _INTPTR_T
+#if !defined(_INTPTR_T) && !defined(intptr_t)
 typedef _Addr intptr_t;
 #endif
 
-#ifndef _UINTPTR_T
-#define _UINTPTR_T
+#if !defined(_UINTPTR_T) && !defined(uintptr_t)
 typedef unsigned _Addr uintptr_t;
 #endif
 
-#ifndef _SIZE_T 
-#define _SIZE_T 
+#if !defined(_SIZE_T) && !defined(size_t)
 typedef unsigned size_t;
 #endif
 

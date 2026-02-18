@@ -11,21 +11,18 @@
 #include "platform/platform.h"
 
 // ARM64 (AArch64) interrupt context
-// X0-X30 are 64-bit registers
-// SP, PC, LR are also 64-bit
-// PSTATE is 32-bit
+// Layout matches save_context/restore_context in exception.S
+// Following armv7-a pattern: no,code at sp, then psr,pc, then registers
 typedef struct interrupt_context {
-  // Manual push by exception handler
+  // At sp+0, sp+8 (pushed last)
   u64 no;
   u64 code;
-
-  // Saved by exception entry
-  u32 psr;        // PSTATE (32-bit)
-  u64 pc;         // Exception return address
-  u64 sp;         // Stack pointer (SP_EL0)
-  u64 lr;         // Link register (X30)
   
-  // General purpose registers
+  // At sp+16, sp+24
+  u64 psr;        // PSTATE (stored as u64)
+  u64 pc;         // Exception return address (from ELR_EL1)
+  
+  // At sp+32 onwards (pushed first, at lowest addresses)
   u64 x0;
   u64 x1;
   u64 x2;
@@ -55,7 +52,9 @@ typedef struct interrupt_context {
   u64 x26;
   u64 x27;
   u64 x28;
-  u64 x29;        // Frame pointer (FP)
+  u64 x29;
+  u64 lr;         // Link register (X30)
+  u64 sp;         // User stack pointer (SP_EL0)
 } __attribute__((packed)) interrupt_context_t;
 
 typedef struct context_t {

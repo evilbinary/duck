@@ -76,7 +76,7 @@ int context_init(context_t* context, u64* ksp_top, u64* usp_top, u64* entry,
   ic->x11 = 0x00110011;  // fp
   ic->x29 = 0x00110011;  // fp (x29)
   
-  context->usp = usp_top;
+  context->usp = (u64)usp_top;
   context->ksp = ic;
   
   return 0;

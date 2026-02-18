@@ -84,13 +84,12 @@ void sync_handler(interrupt_context_t* ic) {
   }
 }
 
+extern void* interrupt_default_handler(interrupt_context_t* ic);
+
 void irq_handler(interrupt_context_t* ic) {
-  // Check interrupt source
-  // For Raspberry Pi 3, check local interrupt controller
-  if (interrutp_handlers[EX_IRQ_EL1] != NULL) {
-    interrutp_handlers[EX_IRQ_EL1](ic);
-  } else {
-    kprintf("Unhandled IRQ\n");
+  // Call the default handler which dispatches to exception_process
+  if (interrupt_default_handler != NULL) {
+    interrupt_default_handler(ic);
   }
 }
 

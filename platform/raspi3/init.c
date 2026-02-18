@@ -51,8 +51,11 @@ void timer_init(int hz) {
 
 void timer_end(void) {
   int cpu = cpu_get_id();
-  if (read_core_timer_pending(cpu) & 0x08) {
+  // Always reset timer to clear interrupt
+  if (cntfrq[cpu] != 0) {
     write_cntv_tval(cntfrq[cpu]);
+  } else if (cntfrq[0] != 0) {
+    write_cntv_tval(cntfrq[0]);
   }
 }
 
