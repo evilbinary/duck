@@ -44,7 +44,7 @@
 
 
 #if defined(ARM64)
-int context_init(context_t* context, u64* ksp_top, u64* usp_top, u64* entry,
+int context_init(context_t* context, u64 ksp_top, u64 usp_top, u64 entry,
                  u32 level, int cpu);
 #else
 int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,

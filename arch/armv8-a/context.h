@@ -28,9 +28,10 @@ typedef struct interrupt_context {
   u64 psr;        // PSTATE (from SPSR_EL1)
   u64 pc;         // Exception return address (from ELR_EL1)
   
-  // At sp+32, sp+40 (lr, sp_el0)
-  u64 lr;         // Link register (X30)
-  u64 sp;         // User stack pointer (SP_EL0)
+  // At sp+32, sp+40 (from: stp lr, x0, [sp, #-16]! where x0=sp_el0)
+  // Note: stp stores first operand at lower address, so lr is at sp+32, sp_el0 at sp+40
+  u64 lr;         // Link register (X30) at sp+32
+  u64 sp;         // User stack pointer (SP_EL0) at sp+40
   
   // At sp+48 onwards (general registers, pushed first)
   u64 x28;
@@ -185,7 +186,7 @@ typedef struct context_t {
 #define context_restore(duck_context) interrupt_exit_context(duck_context->ksp);
 
 int context_clone(context_t* des, context_t* src);
-int context_init(context_t* context, u64* ksp_top, u64* usp_top, u64* entry,
+int context_init(context_t* context, u64 ksp_top, u64 usp_top, u64 entry,
                  u32 level, int cpu);
 void context_dump(context_t* c);
 void context_dump_interrupt(interrupt_context_t* ic);

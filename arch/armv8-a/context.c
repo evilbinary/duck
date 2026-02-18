@@ -23,16 +23,16 @@ int context_get_mode(context_t* context) {
   return mode;
 }
 
-int context_init(context_t* context, u64* ksp_top, u64* usp_top, u64* entry,
+int context_init(context_t* context, u64 ksp_top, u64 usp_top, u64 entry,
                  u32 level, int cpu) {
   if (context == NULL) {
     return -1;
   }
-  if (ksp_top == NULL) {
+  if (ksp_top == 0) {
     log_error("ksp is null\n");
     return -1;
   }
-  if (usp_top == NULL) {
+  if (usp_top == 0) {
     log_error("usp end is null\n");
     return -1;
   }
