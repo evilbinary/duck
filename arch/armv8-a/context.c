@@ -41,12 +41,14 @@ int context_init(context_t* context, u64* ksp_top, u64* usp_top, u64* entry,
   context->level = level;
 
   // Setup PSTATE based on level
+  // PSTATE bits: D(bit9) A(bit8) I(bit7) F(bit6) mode(bits 3:0)
+  // Mode: EL0t=0x0, EL1t=0x4, EL1h=0x5
   u32 pstate = 0;
   if (level == 0) {
-    // Kernel mode (EL1)
-    pstate = 0x1D0;  // D=1, A=1, I=1, F=0, mode=0 (EL1t)
+    // Kernel mode (EL1h) with interrupts disabled
+    pstate = 0x3C5;  // D=1, A=1, I=1, F=1, mode=EL1h(0x5)
   } else if (level == 3) {
-    // User mode (EL0)
+    // User mode (EL0t)
     pstate = 0x0;    // EL0t
   } else {
     kprintf("not support level %d\n", level);

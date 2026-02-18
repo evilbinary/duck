@@ -12,49 +12,57 @@
 
 // ARM64 (AArch64) interrupt context
 // Layout matches save_context/restore_context in exception.S
-// Following armv7-a pattern: no,code at sp, then psr,pc, then registers
+// Stack layout (from high to low address):
+//   sp+0:   no, code (reserved)
+//   sp+16:  psr (SPSR_EL1), pc (ELR_EL1)
+//   sp+32:  lr (X30), sp (SP_EL0)
+//   sp+48:  x28, x29
+//   ...     x26-x0
+//   sp+288: x0, x1 (at lowest address)
 typedef struct interrupt_context {
-  // At sp+0, sp+8 (pushed last)
+  // At sp+0, sp+8 (pushed last in save_context)
   u64 no;
   u64 code;
   
-  // At sp+16, sp+24
-  u64 psr;        // PSTATE (stored as u64)
+  // At sp+16, sp+24 (saved from SPSR_EL1, ELR_EL1)
+  u64 psr;        // PSTATE (from SPSR_EL1)
   u64 pc;         // Exception return address (from ELR_EL1)
   
-  // At sp+32 onwards (pushed first, at lowest addresses)
-  u64 x0;
-  u64 x1;
-  u64 x2;
-  u64 x3;
-  u64 x4;
-  u64 x5;
-  u64 x6;
-  u64 x7;
-  u64 x8;
-  u64 x9;
-  u64 x10;
-  u64 x11;
-  u64 x12;
-  u64 x13;
-  u64 x14;
-  u64 x15;
-  u64 x16;
-  u64 x17;
-  u64 x18;
-  u64 x19;
-  u64 x20;
-  u64 x21;
-  u64 x22;
-  u64 x23;
-  u64 x24;
-  u64 x25;
-  u64 x26;
-  u64 x27;
-  u64 x28;
-  u64 x29;
+  // At sp+32, sp+40 (lr, sp_el0)
   u64 lr;         // Link register (X30)
   u64 sp;         // User stack pointer (SP_EL0)
+  
+  // At sp+48 onwards (general registers, pushed first)
+  u64 x28;
+  u64 x29;
+  u64 x26;
+  u64 x27;
+  u64 x24;
+  u64 x25;
+  u64 x22;
+  u64 x23;
+  u64 x20;
+  u64 x21;
+  u64 x18;
+  u64 x19;
+  u64 x16;
+  u64 x17;
+  u64 x14;
+  u64 x15;
+  u64 x12;
+  u64 x13;
+  u64 x10;
+  u64 x11;
+  u64 x8;
+  u64 x9;
+  u64 x6;
+  u64 x7;
+  u64 x4;
+  u64 x5;
+  u64 x2;
+  u64 x3;
+  u64 x0;
+  u64 x1;
 } __attribute__((packed)) interrupt_context_t;
 
 typedef struct context_t {
@@ -82,10 +90,9 @@ typedef struct context_t {
       :                      \
       :)
 
-// Save context on exception entry
+// Save context on exception entry (matches save_context in exception.S)
 #define interrupt_entering_code(VEC, CODE) \
   asm volatile(                                  \
-      "stp x29, x30, [sp, #-16]!\n" \
       "stp x0, x1, [sp, #-16]!\n" \
       "stp x2, x3, [sp, #-16]!\n" \
       "stp x4, x5, [sp, #-16]!\n" \
@@ -101,6 +108,11 @@ typedef struct context_t {
       "stp x24, x25, [sp, #-16]!\n" \
       "stp x26, x27, [sp, #-16]!\n" \
       "stp x28, x29, [sp, #-16]!\n" \
+      "mrs x0, sp_el0\n" \
+      "stp lr, x0, [sp, #-16]!\n" \
+      "mrs x0, spsr_el1\n" \
+      "mrs x1, elr_el1\n" \
+      "stp x0, x1, [sp, #-16]!\n" \
       "mov x0, %0\n" \
       "mov x1, %1\n" \
       "stp x0, x1, [sp, #-16]!\n" \
@@ -110,7 +122,12 @@ typedef struct context_t {
 #define interrupt_exit_context(ksp) \
   asm volatile(                              \
       "mov sp, %0 \n"                         \
-      "ldp x0, x1, [sp], #16\n" \
+      "add sp, sp, #16\n"                    /* skip no, code */ \
+      "ldp x0, x1, [sp], #16\n"              /* load psr, pc */ \
+      "msr spsr_el1, x0\n"                   /* restore SPSR_EL1 */ \
+      "msr elr_el1, x1\n"                    /* restore ELR_EL1 */ \
+      "ldp lr, x0, [sp], #16\n"              /* load lr, sp_el0 */ \
+      "msr sp_el0, x0\n"                     /* restore SP_EL0 */ \
       "ldp x28, x29, [sp], #16\n" \
       "ldp x26, x27, [sp], #16\n" \
       "ldp x24, x25, [sp], #16\n" \
@@ -126,14 +143,18 @@ typedef struct context_t {
       "ldp x4, x5, [sp], #16\n" \
       "ldp x2, x3, [sp], #16\n" \
       "ldp x0, x1, [sp], #16\n" \
-      "ldp x29, x30, [sp], #16\n" \
       "eret\n" \
       :                                      \
       : "r"(ksp))
 
 #define interrupt_exit()           \
   asm volatile(                    \
-      "ldp x0, x1, [sp], #16\n" \
+      "add sp, sp, #16\n"                    /* skip no, code */ \
+      "ldp x0, x1, [sp], #16\n"              /* load psr, pc */ \
+      "msr spsr_el1, x0\n"                   /* restore SPSR_EL1 */ \
+      "msr elr_el1, x1\n"                    /* restore ELR_EL1 */ \
+      "ldp lr, x0, [sp], #16\n"              /* load lr, sp_el0 */ \
+      "msr sp_el0, x0\n"                     /* restore SP_EL0 */ \
       "ldp x28, x29, [sp], #16\n" \
       "ldp x26, x27, [sp], #16\n" \
       "ldp x24, x25, [sp], #16\n" \
@@ -149,7 +170,6 @@ typedef struct context_t {
       "ldp x4, x5, [sp], #16\n" \
       "ldp x2, x3, [sp], #16\n" \
       "ldp x0, x1, [sp], #16\n" \
-      "ldp x29, x30, [sp], #16\n" \
       "eret\n" \
       :                            \
       :)
