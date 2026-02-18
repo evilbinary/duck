@@ -47,7 +47,9 @@
 #define MEM_SHARE 4
 #define MEM_HEAD 5
 
+#ifndef PAGE_SIZE
 #define PAGE_SIZE 0x1000
+#endif
 
 typedef struct mem_block {
   u32 addr;
@@ -93,7 +95,11 @@ typedef struct memory_manager {
   u32 extend_phy_count;
 } memory_manager_t;
 
+#if defined(ARM64)
+u64* page_create(u32 level);
+#else
 u32* page_create(u32 level);
+#endif
 
 #ifdef MALLOC_TRACE
 #define kmalloc(size) kmalloc_trace(size, __FILE__, __LINE__, __FUNCTION__)

@@ -4,51 +4,116 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 
-#include "../interrupt.h"
-
+#include "arch/interrupt.h"
+#include "interrupt.h"
 #include "context.h"
 #include "cpu.h"
 
 extern boot_info_t* boot_info;
 
-interrupt_handler_t* interrutp_handlers[IDT_NUMBER];
-u32 idt[IDT_NUMBER * 2] __attribute__((aligned(32)));
+interrupt_handler_t interrutp_handlers[IDT_NUMBER];
 
-void interrupt_init() {
+// Exception vector table
+// Each entry is 128 bytes (32 instructions)
+// We have 16 entries: 4 exception types × 4 combinations (EL0/EL1 + AArch64/AArch32)
+extern void exception_vectors(void);
+
+void interrupt_init(void) {
   kprintf("interrupt init\n");
-  boot_info->idt_base = idt;
-  boot_info->idt_number = IDT_NUMBER;
-  for (int i = 0; i < boot_info->idt_number; i++) {
-    interrutp_set(i);
+
+  // Set exception vector table
+  asm volatile("msr vbar_el1, %0" : : "r"((u64)exception_vectors) : "memory");
+  isb();
+
+  // Initialize handler table
+  for (int i = 0; i < IDT_NUMBER; i++) {
+    interrutp_handlers[i] = NULL;
   }
-  u32 val = idt;
-  
+
+  boot_info->idt_base = (void*)exception_vectors;
+  boot_info->idt_number = IDT_NUMBER;
 }
- 
+
 void interrupt_regist(u32 vec, interrupt_handler_t handler) {
   interrutp_handlers[vec] = handler;
-  interrutp_set(vec);
 }
 
-void interrutp_set(int i) {
-  idt[i] = 0xe59ff000 +
-           (IDT_NUMBER-2) * 4;  // ldr	pc, [pc, #24] 0x24=36=4*8=32+4
-  u32 base = (u32)interrutp_handlers[i];
-  idt[i + IDT_NUMBER] = base;
+// Default exception handlers
+void default_handler(interrupt_context_t* ic) {
+  kprintf("Unhandled exception: no=%x code=%x pc=%x\n", ic->no, ic->code, ic->pc);
+  context_dump_interrupt(ic);
+  cpu_halt();
 }
 
+void sync_handler(interrupt_context_t* ic) {
+  u64 esr = read_esr();
+  u32 ec = get_exception_class(esr);
+  u64 far = read_far();
+
+  ic->code = ec;
+
+  switch (ec) {
+    case ESR_ELx_EC_SVC64:
+      // System call
+      if (interrutp_handlers[0x80] != NULL) {
+        interrutp_handlers[0x80](ic);
+      }
+      break;
+    case ESR_ELx_EC_DABT_LOW:
+    case ESR_ELx_EC_DABT_CUR:
+      // Data abort (page fault)
+      kprintf("Data abort at %x, far=%x\n", ic->pc, far);
+      context_dump_fault(ic, far);
+      if (interrutp_handlers[EX_SYNC_EL1] != NULL) {
+        interrutp_handlers[EX_SYNC_EL1](ic);
+      } else {
+        cpu_halt();
+      }
+      break;
+    case ESR_ELx_EC_IABT_LOW:
+    case ESR_ELx_EC_IABT_CUR:
+      // Instruction abort
+      kprintf("Instruction abort at %x, far=%x\n", ic->pc, far);
+      context_dump_fault(ic, far);
+      cpu_halt();
+      break;
+    default:
+      kprintf("Unknown sync exception: ec=%x esr=%x\n", ec, esr);
+      context_dump_interrupt(ic);
+      cpu_halt();
+  }
+}
+
+void irq_handler(interrupt_context_t* ic) {
+  // Check interrupt source
+  // For Raspberry Pi 3, check local interrupt controller
+  if (interrutp_handlers[EX_IRQ_EL1] != NULL) {
+    interrutp_handlers[EX_IRQ_EL1](ic);
+  } else {
+    kprintf("Unhandled IRQ\n");
+  }
+}
+
+void fiq_handler(interrupt_context_t* ic) {
+  if (interrutp_handlers[EX_FIQ_EL1] != NULL) {
+    interrutp_handlers[EX_FIQ_EL1](ic);
+  } else {
+    kprintf("Unhandled FIQ\n");
+  }
+}
+
+void serror_handler(interrupt_context_t* ic) {
+  kprintf("SError exception at pc=%x\n", ic->pc);
+  context_dump_interrupt(ic);
+  cpu_halt();
+}
 
 void exception_info(interrupt_context_t* ic) {
-
+  kprintf("Exception: no=%d code=%d pc=%x psr=%x\n",
+          ic->no, ic->code, ic->pc, ic->psr);
 }
 
-void interrupt_regist_all() {
-  // interrupt_regist(0, reset_handler);       // reset
-  // interrupt_regist(1, undefined_handler);   // undefined
-  // interrupt_regist(2, svc_handler);         // svc
-  // interrupt_regist(3, pref_abort_handler);  // pref abort
-  // interrupt_regist(4, data_abort_handler);  // data abort
-  // interrupt_regist(5, unuse_handler);       // not use
-  // interrupt_regist(6, irq_handler);         // irq
-  // interrupt_regist(7, fiq_handler);         // fiq
+void interrupt_regist_all(void) {
+  // Register default handlers
+  // Specific handlers can be registered later
 }

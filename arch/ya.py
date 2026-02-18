@@ -18,7 +18,8 @@ add_files(
 
 add_files(
         "./{arch}/*.c",
-        "./{arch}/*.s")
+        "./{arch}/*.s",
+        "./{arch}/*.S")
 add_includedirs(
     '../platform/{plat}',
     '../libs/include',
@@ -36,4 +37,3 @@ def_arch_type=arch_type.replace( "-", "_").upper()
 
 add_defines(def_arch)
 add_defines(def_arch_type)
-

@@ -25,6 +25,8 @@
 #elif defined(ARM64)
   #if defined(ARMV8_A)
     #include "armv8-a/cpu.h"
+  #else
+    #error "ARM64 defined but no specific architecture (e.g., ARMV8_A)"
   #endif
 #elif defined(X86)
   #ifdef X86_DUCK

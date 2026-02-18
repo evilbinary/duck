@@ -1,15 +1,16 @@
-ENTRY(_kstart)
+ENTRY(_start)
 K_VIR_ADDR = 0x100000;
 K_PHY_ADDR = 0x100000;
 PAGE_SIZE    = 0x100;
-STACK_SIZE = 0x200;
+STACK_SIZE = 0x2000;
 SECTIONS
 {
         /* Code. */
-        __start = .;
         .text K_VIR_ADDR : AT(K_PHY_ADDR)
         {
 		. = ALIGN(PAGE_SIZE);
+                __start = .;
+                KEEP(*(.text.boot))    /* Boot code must be first */
                 *(.text*)
         }
 
@@ -32,31 +33,17 @@ SECTIONS
                 *(.bss*)
         }
         __bss_end = .;
-        .stack :  ALIGN(4) {
-                . = 0x6000;
-                _estack = .;
-                . = . + STACK_SIZE;
-                _stack_abt = .;
 
-                . = . + STACK_SIZE;
-                _stack_undf = .;
+        . = ALIGN(16);
+        _estack = . + STACK_SIZE;           /* Core 0 stack */
+        _stack_abt = _estack + STACK_SIZE;
+        _stack_undf = _stack_abt + STACK_SIZE;
+        _stack_irq = _stack_undf + STACK_SIZE;
+        _stack_svc = _stack_irq + STACK_SIZE;
+        _stack_sys = _stack_svc + STACK_SIZE;
+        _stack_other = _stack_sys;          /* AP stacks follow */
+        _sstack = _stack_other + STACK_SIZE * 4;
 
-                . = . + STACK_SIZE;
-                _stack_irq = .;
-
-                . = . + STACK_SIZE;
-                _stack_svc = .;
-
-                . = . + STACK_SIZE;
-                _stack_sys = .;
-
-                . = . + STACK_SIZE*4*4 ;
-                _stack_other = .;
-
-                
-                . = ALIGN(4);
-                _sstack = .;
-        }
-        
-       __end = .;
+        . = _sstack;                        /* Advance . past all stacks */
+        __end = .;
 }

@@ -4,205 +4,249 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "cpu.h"
-
 #include "context.h"
+#include "libs/include/kernel/common.h"
+#include "libs/include/types.h"
 
 extern boot_info_t* boot_info;
-u32 cpus_id[MAX_CPU];
+u64 cpus_id[MAX_CPU];
 
-#define TTBCRN_4K 0b010
-#define TTBCRN_16K 0b000
-#define TTBCR_LPAE 1 << 31
+// Page table control
+#define TCR_T0SZ(x)   ((64 - (x)) & 0x3F)
+#define TCR_IRGN0(x)  ((x) << 8)
+#define TCR_ORGN0(x)  ((x) << 10)
+#define TCR_SH0(x)    ((x) << 12)
+#define TCR_TG0_4K    (0 << 14)
+#define TCR_TG0_16K   (1 << 14)
+#define TCR_TG0_64K   (2 << 14)
+#define TCR_IPS(x)    ((x) << 32)
 
-static inline void write_ttbcr(u32 val) {
-  asm volatile("msr tcr_el1, %0" : : "r"(val) : "memory");
-}
-
-static inline void write_ttbr0(u32 val) {
+// Write page table registers
+static inline void write_ttbr0(u64 val) {
   asm volatile("msr ttbr0_el1, %0" : : "r"(val) : "memory");
+  isb();
 }
 
-static inline void write_ttbr1(u32 val) {
+static inline void write_ttbr1(u64 val) {
   asm volatile("msr ttbr1_el1, %0" : : "r"(val) : "memory");
+  isb();
 }
 
+static inline void write_tcr(u64 val) {
+  asm volatile("msr tcr_el1, %0" : : "r"(val) : "memory");
+  isb();
+}
+
+static inline u64 read_tcr(void) {
+  u64 val;
+  asm volatile("mrs %0, tcr_el1" : "=r"(val));
+  return val;
+}
+
+// Invalidate instruction cache
 void cp15_invalidate_icache(void) {
   asm volatile(
-      "ic iallu\n"  // 清除指令缓存中的所有条目
-      "dsb ish\n"   // 等待指令流水线中的操作完成
-      "isb\n"       // 同步处理器流水线
+      "ic iallu\n"
+      "dsb ish\n"
+      "isb\n"
   );
 }
 
-void cpu_invalid_tlb() {
+// Invalidate TLB
+void cpu_invalid_tlb(void) {
   asm volatile(
-      "tlbi vmalle1is\n"  // 使当前 EL1 和更低特权级别的所有内存区域的 TLB 失效
-      "dsb ish\n"  // 等待指令流水线中的操作完成
-      "isb\n"      // 同步处理器流水线
+      "tlbi vmalle1is\n"
+      "dsb ish\n"
+      "isb\n"
   );
 }
 
-u32 cpu_set_domain(u32 val) {
-  u32 old;
-  // asm volatile("mrc p15, 0, %0, c3, c0,0\n" : "=r"(old));
-  // asm volatile("mcr p15, 0, %0, c3, c0,0\n" : : "r"(val) : "memory");
-  return old;
-}
-
-u32 read_dfar() {
-  u32 val = 0;
-  // asm volatile("mrc p15, 0, %0, c6, c0, 0" : "=r"(val));
+// Read fault address register (DFAR equivalent)
+u64 read_far_el1(void) {
+  u64 val;
+  asm volatile("mrs %0, far_el1" : "=r"(val));
   return val;
 }
 
-u32 cpu_get_fault() { return read_dfar(); }
+u64 cpu_get_fault(void) { 
+  return read_far_el1(); 
+}
 
-u32 read_dfsr() {
-  u32 val = 0;
-  // asm volatile("mrc p15, 0, %0, c5, c0, 0" : "=r"(val));
+// Read ESR (exception syndrome)
+u64 read_esr_el1(void) {
+  u64 val;
+  asm volatile("mrs %0, esr_el1" : "=r"(val));
   return val;
 }
 
-u32 read_pc() {
-  u32 val = 0;
-  // asm volatile("ldr %0,[r15]" : "=r"(val));
-  return val;
-}
-
-u32 read_ifsr() {
-  u32 val = 0;
-  // asm volatile("mrc p15, 0, %0, c5, c0, 1" : "=r"(val));
-  return val;
-}
-
-u32 read_fp() {
-  u32 val = 0;
-  asm volatile("mov %0,fp" : "=r"(val));
-  return val;
-}
-
-void cpu_set_page(u32 page_table) {
-  // cpu_invalid_tlb();
-  // cp15_invalidate_icache();
-
-  // dccmvac(page_table);
-  // set ttbcr0
+// Set page table
+void cpu_set_page(u64 page_table) {
   write_ttbr0(page_table);
-  // isb();
-  write_ttbr1(page_table);
-  // isb();
-  write_ttbcr(TTBCRN_16K);
   cpu_invalid_tlb();
+  cp15_invalidate_icache();
   dmb();
   isb();
-  dsb();
-  // set all permission
-  // cpu_set_domain(~0);
-  // cpu_set_domain(0);
 }
 
-void cpu_enable_smp_mode() {
-  // Enable SMP mode for CPU0
-  // asm volatile(
-  //   "mrc p15, 1, r0, R1, C15\n" // Read CPUECTLR.
-  //   "orr r0, r0, #1 << 6 \n" // Set SMPEN.
-  //   "mcr p15, 1, R0, R1, C15"); // Write CPUECTLR.
-
-  // asm volatile(
-  //     "mrc p15, 0, r0, c1, c0, 1\n"
-  //     "orr r0, r0, #1 << 6\n"
-  //     "mcr p15, 0, r0, c1, c0, 1\n");
+// Enable SMP mode (for cache coherency)
+void cpu_enable_smp_mode(void) {
+  // Enable SMP mode for cache coherency
+  // On ARM64, this is done via ACTLR_EL3 or similar
+  // For simplicity, we assume firmware has set this up
 }
 
-void cpu_enable_page() {
+// Enable MMU and caches
+void cpu_enable_page(void) {
   cpu_enable_smp_mode();
-  cache_inv_range(0, ~0);
-  // mmu_inv_tlb();
-
-  // u32 reg;
-  // // read mmu
-  // asm("mrc p15, 0, %0, c1, c0, 0" : "=r"(reg) : : "cc");  // SCTLR
-  // reg |= 0x1;                                             // M enable mmu
-  // // reg|=(1<<29);//AFE
-  // // reg |= 1 << 28; //TEX remap enable.
-  // reg |= 1 << 12;  // Instruction cache enable:
-  // reg |= 1 << 2;   // Cache enable.
-  // // reg |= 1 << 1;   // Alignment check enable.
-  // reg |= 1 << 11;  // Branch prediction enable
-  // asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");  // SCTLR
-  // dsb();
-  // isb();
-}
-
-static inline uint32_t get_ccsidr(void) {
-  uint32_t ccsidr;
-
-  // __asm__ __volatile__("mrc p15, 1, %0, c0, c0, 0" : "=r"(ccsidr));
-  return ccsidr;
-}
-
-static inline void __v7_cache_inv_range(uint32_t start, uint32_t stop,
-                                        uint32_t line) {
-  uint32_t mva;
-
-  // start &= ~(line - 1);
-  // if (stop & (line - 1)) stop = (stop + line) & ~(line - 1);
-  // for (mva = start; mva < stop; mva = mva + line) {
-  //   __asm__ __volatile__("mcr p15, 0, %0, c7, c6, 1" : : "r"(mva));
-  // }
-}
-/*
- * Invalidate range, affects the range [start, stop - 1]
- */
-void cache_inv_range(unsigned long start, unsigned long stop) {
-  uint32_t ccsidr;
-  uint32_t line;
-
-  // ccsidr = get_ccsidr();
-  // line = ((ccsidr & 0x7) >> 0) + 2;
-  // line += 2;
-  // line = 1 << line;
-  // __v7_cache_inv_range(start, stop, line);
+  
+  u64 sctlr;
+  asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+  
+  // Enable MMU (M bit)
+  sctlr |= (1 << 0);
+  // Enable data cache (C bit)
+  sctlr |= (1 << 2);
+  // Enable instruction cache (I bit)
+  sctlr |= (1 << 12);
+  
+  asm volatile("msr sctlr_el1, %0" : : "r"(sctlr) : "memory");
+  isb();
   dsb();
 }
 
-int cpu_get_number() { return boot_info->tss_number; }
-
-u32 cpu_get_id() {
-  int cpu = 0;
-#if MP_ENABLE
-  // __asm__ volatile("mrc p15, #0, %0, c0, c0, #5\n" : "=r"(cpu));
-#endif
-  return cpu & 0xf;
+// Get CPU number from boot info
+int cpu_get_number(void) { 
+  return boot_info->tss_number; 
 }
 
-u32 cpu_get_index(int idx) {
-  if (idx < 0 || idx > cpu_get_number()) {
+// Get current CPU ID
+u32 cpu_get_id(void) {
+  u64 mpidr;
+  asm volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
+  return mpidr & 0xF;
+}
+
+// Get CPU index
+u64 cpu_get_index(int idx) {
+  if (idx < 0 || idx >= cpu_get_number()) {
     kprintf("out of bound get cpu idx\n");
     return 0;
   }
   return cpus_id[idx];
 }
 
-void cpu_init() {}
+// Initialize CPU
+void cpu_init(void) {
+  // Initialize CPU state
+  // Clear any pending interrupts, etc.
+}
 
-void cpu_halt() {
+// Halt CPU
+void cpu_halt(void) {
   for (;;) {
-  };
+    asm volatile("wfi");
+  }
 }
 
-void cpu_wait() {}
-
-ulong cpu_get_cs(void) {
-  ulong result;
-
-  return result;
+// Wait for interrupt
+void cpu_wait(void) {
+  asm volatile("wfi");
 }
 
+// Get CS (code segment) - not really applicable on ARM64
+u64 cpu_get_cs(void) {
+  return 0;
+}
+
+// Test and set (atomic)
 int cpu_tas(volatile int* addr, int newval) {
-  int result = newval;
-
-  return result;
+  int oldval;
+  int result;
+  // Use LDAXR/STLXR for atomic operation
+  asm volatile(
+      "1: ldaxr %w0, [%2]\n"
+      "stlxr %w1, %w3, [%2]\n"
+      "cbnz %w1, 1b\n"
+      : "=&r"(oldval), "=&r"(result)
+      : "r"(addr), "r"(newval)
+      : "memory"
+  );
+  return oldval;
 }
 
-void cpu_backtrace(void) {}
+// Backtrace (simplified)
+void cpu_backtrace(void* fp, u64* buf, int max) {
+  u64* frame = (u64*)fp;
+  int i = 0;
+  
+  while (frame != NULL && i < max) {
+    buf[i++] = frame[1];  // LR is at frame+1
+    frame = (u64*)frame[0];  // Previous FP is at frame
+  }
+}
+
+// PMU functions for ARM64
+int cpu_pmu_version(void) {
+  u64 pmcr;
+  asm volatile("mrs %0, pmcr_el0" : "=r"(pmcr));
+  return (pmcr >> 11) & 0xF;  // PMU version bits
+}
+
+void cpu_pmu_enable(int enable, u32 counter) {
+  if (enable) {
+    // Enable PMU
+    asm volatile("msr pmcr_el0, %0" : : "r"(0x1 | (1 << 1) | (1 << 2)) : "memory");
+    // Enable counter
+    u64 cntenset;
+    asm volatile("mrs %0, pmcntenset_el0" : "=r"(cntenset));
+    cntenset |= (1ULL << counter);
+    asm volatile("msr pmcntenset_el0, %0" : : "r"(cntenset) : "memory");
+    // Enable user access
+    asm volatile("msr pmuserenr_el0, %0" : : "r"(1) : "memory");
+  } else {
+    u64 cntenclr = (1ULL << counter);
+    asm volatile("msr pmcntenclr_el0, %0" : : "r"(cntenclr) : "memory");
+  }
+}
+
+unsigned int cpu_cyclecount(void) {
+  u64 count;
+  asm volatile("mrs %0, pmccntr_el0" : "=r"(count));
+  return (unsigned int)count;
+}
+
+// Multi-processor functions
+int cpu_init_id(u32 id) {
+  // Initialize IPI for this CPU
+  // For Raspberry Pi 3, use mailbox interrupts
+  return 0;
+}
+
+int cpu_start_id(u32 id, u32 entry) {
+  // Start secondary CPU via mailbox
+  // For Raspberry Pi 3, write to mailbox
+  return 0;
+}
+
+void cpu_delay(int n) {
+  while (n > 0) {
+    for (volatile int i = 0; i < 10000; i++);
+    n--;
+  }
+}
+
+void cpu_delay_usec(uint64_t count) {
+  u64 freq = read_cntfrq();
+  u64 cycles = (freq * count) / 1000000ULL;
+  u64 start = read_cntvct();
+  while ((read_cntvct() - start) < cycles);
+}
+
+void cpu_delay_msec(uint32_t count) {
+  cpu_delay_usec(count * 1000ULL);
+}
+
+uint64_t cpu_read_ms(void) {
+  u64 freq = read_cntfrq();
+  return read_cntvct() / (freq / 1000ULL);
+}

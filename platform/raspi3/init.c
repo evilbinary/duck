@@ -1,67 +1,101 @@
+#include "arch/arch.h"
 #include "gpio.h"
 #include "libs/include/types.h"
 
-static void io_write32(uint port, u32 data) {
-  *(u32 *) port = data;
+static void io_write32(volatile unsigned int* port, u32 data) {
+  *port = data;
 }
 
-static u32 io_read32(uint port) {
-  u32 data;
-  data=*(u32 *) port;
-  return data;
+static u32 io_read32(volatile unsigned int* port) {
+  return *port;
 }
 
-static u32 cntfrq = 0;
+static u64 cntfrq[MAX_CPU] = {0};
 
 void uart_send(unsigned int c) {
-  while(io_read32(UART0_FR)&0x20){}
-  io_write32(UART0_DR,c);
+  while (io_read32(UART0_FR) & 0x20) {
+  }
+  io_write32(UART0_DR, c);
 }
 
-unsigned int uart_receive() {
+unsigned int uart_receive(void) {
   unsigned int c;
-  while(io_read32(UART0_FR) & 0x10){}
-  c=io_read32(UART0_DR);
+  while (io_read32(UART0_FR) & 0x10) {
+  }
+  c = io_read32(UART0_DR);
   return c;
 }
 
-u32 read_core0timer_pending(void) {
+u32 read_core_timer_pending(int cpu) {
   u32 tmp;
-  tmp = io_read32(CORE0_IRQ_SOURCE);
+  tmp = io_read32((volatile unsigned int*)(CORE0_IRQ_SOURCE + 4 * cpu));
   return tmp;
 }
 
 void timer_init(int hz) {
-  // kprintf("timer init\n");
-  // cntfrq = read_cntfrq();
-  // cntfrq=cntfrq/hz;
-  // kprintf("cntfrq %d\n", cntfrq);
-  // write_cntv_tval(cntfrq);
+  int cpu = cpu_get_id();
+  kprintf("cpu %d timer init\n", cpu);
 
-  // u32 val = read_cntv_tval();
-  // kprintf("val %d\n", val);
-  // io_write32(CORE0_TIMER_IRQCNTL, 0x08);
-  // enable_cntv(1);
+  if (cpu == 0) {
+    cntfrq[cpu] = read_cntfrq();
+    cntfrq[cpu] = cntfrq[cpu] / hz;
+    kprintf("cntfrq %d\n", cntfrq[cpu]);
+    write_cntv_tval(cntfrq[cpu]);
+
+    u64 val = read_cntv_tval();
+    kprintf("val %d\n", val);
+    io_write32((volatile unsigned int*)(CORE0_TIMER_IRQCNTL + 0x4 * cpu), 0x08);
+    enable_cntv(1);
+  }
 }
 
-void timer_end() {
-  // if (read_core0timer_pending() & 0x08) {
-  //   write_cntv_tval(cntfrq);
-  //   // kprintf("cntfrq:%x cnt val:%x\n", read_cntvct(),read_cntv_tval());
-  //   // cpu_sti();
-  // }
+void timer_end(void) {
+  int cpu = cpu_get_id();
+  if (read_core_timer_pending(cpu) & 0x08) {
+    write_cntv_tval(cntfrq[cpu]);
+  }
 }
 
-
-void platform_init(){
-    
+void platform_init(void) {
+  io_add_write_channel(uart_send);
 }
 
-void platform_map(){
-  page_map(MMIO_BASE, MMIO_BASE, 0);
-  page_map(UART0_DR, UART0_DR, 0);
-  page_map(CORE0_TIMER_IRQCNTL & ~0xfff, CORE0_TIMER_IRQCNTL & ~0xfff, 0);
+void platform_end(void) {
 }
 
-void platform_end(){
+void platform_map(void) {
+  // Map MMIO region
+  page_map(MMIO_BASE, MMIO_BASE, PAGE_DEV);
+  page_map((u32)UART0_DR, (u32)UART0_DR, PAGE_DEV);
+  page_map(CORE0_TIMER_IRQCNTL & ~0xfff, CORE0_TIMER_IRQCNTL & ~0xfff, PAGE_DEV);
+}
+
+int interrupt_get_source(u32 no) {
+  no = EX_TIMER;
+  return no;
+}
+
+void ipi_enable(int cpu) {
+  if (cpu < 0 || cpu >= MAX_CPU) return;
+  io_write32((volatile unsigned int*)(CORE0_MBOX_IRQCNTL + cpu * 4), 1);
+}
+
+void lcpu_send_start(u32 cpu, u64 entry) {
+  if (cpu < 0 || cpu >= MAX_CPU) return;
+  u32 mailbox = 3;
+  io_write32((volatile unsigned int*)(CORE0_MBOX0_SET + cpu * 0x10 + 4 * mailbox), entry);
+}
+
+void ipi_send(int cpu, int vec) {
+  if (cpu < 0 || cpu >= MAX_CPU) return;
+  io_write32((volatile unsigned int*)(CORE0_MBOX0_SET + cpu * 0x10 + 0x80), 1 << vec);
+  dsb();
+}
+
+void ipi_clear(int cpu) {
+  if (cpu < 0 || cpu >= MAX_CPU) return;
+  volatile unsigned int* addr = (volatile unsigned int*)(CORE0_MBOX0_RDCLR + cpu * 0x10 + 0xC0);
+  u32 val = io_read32(addr);
+  val = 0xFFFFFFFF;
+  io_write32(addr, val);
 }

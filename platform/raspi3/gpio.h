@@ -1,6 +1,9 @@
 #ifndef GPIO_H
 #define GPIO_H
 
+#include "libs/include/types.h"
+
+// MMIO base addresses for different Pi versions
 #if defined(RASPI_Z_W)
 #define MMIO_BASE 0x20000000
 #elif defined(RASPI2)
@@ -9,10 +12,13 @@
 #define MMIO_BASE 0x3F000000
 #elif defined(RASPI4)
 #define MMIO_BASE 0xFE000000
+#else
+#define MMIO_BASE 0x3F000000
 #endif
 
 #define MMIO_LENGTH 0x01000000
 
+// GPIO registers
 #define GPFSEL0         ((volatile unsigned int*)(MMIO_BASE+0x00200000))
 #define GPFSEL1         ((volatile unsigned int*)(MMIO_BASE+0x00200004))
 #define GPFSEL2         ((volatile unsigned int*)(MMIO_BASE+0x00200008))
@@ -32,7 +38,7 @@
 #define GPPUDCLK0       ((volatile unsigned int*)(MMIO_BASE+0x00200098))
 #define GPPUDCLK1       ((volatile unsigned int*)(MMIO_BASE+0x0020009C))
 
-/* PL011 UART registers */
+// PL011 UART registers
 #define UART0_DR        ((volatile unsigned int*)(MMIO_BASE+0x00201000))
 #define UART0_FR        ((volatile unsigned int*)(MMIO_BASE+0x00201018))
 #define UART0_IBRD      ((volatile unsigned int*)(MMIO_BASE+0x00201024))
@@ -42,8 +48,19 @@
 #define UART0_IMSC      ((volatile unsigned int*)(MMIO_BASE+0x00201038))
 #define UART0_ICR       ((volatile unsigned int*)(MMIO_BASE+0x00201044))
 
+// Core local interrupt controller
+#define CORE0_TIMER_IRQCNTL  0x40000040
+#define CORE0_TIMER_CTRL     0x40000044
+#define CORE0_IRQ_SOURCE     0x40000060
+#define CORE0_MBOX_IRQCNTL   0x40000070
+#define CORE0_MBOX0_SET      0x40000080
+#define CORE0_MBOX0_RDCLR    0x400000C0
 
-#define CORE0_TIMER_IRQCNTL 0x40000040
-#define CORE0_IRQ_SOURCE 0x40000060
+// Function declarations
+void uart_send(unsigned int c);
+unsigned int uart_receive(void);
+void timer_init(int hz);
+void timer_end(void);
+u32 read_core_timer_pending(int cpu);
 
 #endif

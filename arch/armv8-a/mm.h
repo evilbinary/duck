@@ -6,40 +6,103 @@
 #ifndef ARM_MM_H
 #define ARM_MM_H
 
+#include "libs/include/types.h"
 
+// ARM64 Page Table Entry bits
+// For block and page descriptors
 
+// Attribute fields
+#define PTE_VALID       (1UL << 0)      // Entry is valid
+#define PTE_TABLE       (1UL << 1)      // Entry is a table descriptor
+#define PTE_PAGE        (1UL << 1)      // Entry is a page descriptor (for level 3)
+#define PTE_BLOCK       (0UL << 1)      // Entry is a block descriptor
 
-#define L2_XN (0 << 0)  // The Execute-never bit
-#define L2_CB (3 << 2)  // 0b11 cache write-back
-#define L2_NCNB (0 << 2) // 0b00 Non-cacheable
-#define L2_NCB (1 << 2) // 0b01 Write-Back, Write-Allocate
-#define L2_CNB (0 << 2) // 0b10 Write-Through, no Write-Allocate
+// Memory attributes index (MAIR_EL1)
+#define PTE_ATTR_IDX(x)     ((u64)(x) << 2)
+#define PTE_ATTR_NORMAL     PTE_ATTR_IDX(0)  // Normal memory
+#define PTE_ATTR_DEVICE     PTE_ATTR_IDX(1)  // Device memory
+#define PTE_ATTR_NORMAL_NC  PTE_ATTR_IDX(2)  // Normal non-cacheable
 
+// Access permissions
+#define PTE_AP_RW       (0UL << 6)      // Read/Write
+#define PTE_AP_RO       (1UL << 6)      // Read-only
+#define PTE_AP_RW_USER  (2UL << 6)      // Read/Write, user access
+#define PTE_AP_RO_USER  (3UL << 6)      // Read-only, user access
 
-#define L2_TEXT_0 (0 << 6)
-#define L2_TEXT_1 (1 << 6)
-#define L2_TEXT_2 (2 << 6)
+// Shareability
+#define PTE_SH_NS       (0UL << 8)      // Non-shareable
+#define PTE_SH_OS       (2UL << 8)      // Outer shareable
+#define PTE_SH_IS       (3UL << 8)      // Inner shareable
 
-#define PAGE_P   0
-#define PAGE_R  0
-#define PAGE_RX   (L2_TEXT_1 | L2_CB) //读执行
-#define PAGE_RW   (L2_CB)
-#define PAGE_RWX  (L2_TEXT_1 | L2_CB) //读/写/执行
-#define PAGE_RW_NC   (L2_NCB)
+// Access flag
+#define PTE_AF          (1UL << 10)     // Access flag
 
-#define PAGE_P   0
-#define PAGE_R  0
-#define PAGE_RX   (L2_TEXT_1 | L2_CB) //读执行
-#define PAGE_RW   (L2_CB)
-#define PAGE_RWX  (L2_TEXT_1 | L2_CB) //读/写/执行
-#define PAGE_RW_NC   (L2_NCB)
+// Execute-never bits
+#define PTE_PXN         (1UL << 53)     // Privileged execute-never
+#define PTE_UXN         (1UL << 54)     // User execute-never
 
+// Physical address mask (bits 12-47 for 4KB granule)
+#define PTE_ADDR_MASK   (0x0000FFFFFFFFF000UL)
 
-#define PAGE_SYS   (L2_TEXT_1|L2_CB) //系统级
-#define PAGE_USR   (L2_TEXT_1|L2_CB) //用户级
-#define PAGE_DEV   (L2_TEXT_0|L2_NCNB) //设备级
+// Page table levels for 4KB pages, 48-bit VA
+#define PTE_SHIFT       12
+#define PMD_SHIFT       21
+#define PUD_SHIFT       30
+#define PGD_SHIFT       39
 
+// Number of entries per table (512 for 4KB pages)
+#define PTRS_PER_TABLE  512
 
-typedef u32 page_dir_t;
+// TCR_EL1 field definitions
+#define TCR_T0SZ(x)     ((64 - (x)) & 0x3F)
+#define TCR_IRGN0(x)    ((u64)(x) << 8)
+#define TCR_ORGN0(x)    ((u64)(x) << 10)
+#define TCR_SH0(x)      ((u64)(x) << 12)
+#define TCR_TG0_4K      (0ULL << 14)
+#define TCR_TG0_16K     (1ULL << 14)
+#define TCR_TG0_64K     (2ULL << 14)
+#define TCR_IPS(x)      ((u64)(x) << 32)
+
+// Convenience macros for page flags
+#define PAGE_P          PTE_VALID
+#define PAGE_RW         (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW | PTE_SH_IS | PTE_ATTR_NORMAL)
+#define PAGE_RX         (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RO | PTE_SH_IS | PTE_ATTR_NORMAL)
+#define PAGE_RWX        (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW | PTE_SH_IS | PTE_ATTR_NORMAL)
+#define PAGE_RO         (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RO | PTE_SH_IS | PTE_ATTR_NORMAL)
+
+// Device memory
+#define PAGE_DEV        (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW | PTE_SH_OS | PTE_ATTR_DEVICE)
+
+// User accessible pages
+#define PAGE_USR_RW     (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW_USER | PTE_SH_IS | PTE_ATTR_NORMAL)
+#define PAGE_USR_RX     (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RO_USER | PTE_SH_IS | PTE_ATTR_NORMAL)
+#define PAGE_USR_RWX    (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW_USER | PTE_SH_IS | PTE_ATTR_NORMAL)
+
+// System and user level (for compatibility)
+#define PAGE_SYS        (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW | PTE_SH_IS | PTE_ATTR_NORMAL)
+#define PAGE_USR        (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW_USER | PTE_SH_IS | PTE_ATTR_NORMAL)
+
+// Non-cacheable pages
+#define PAGE_RW_NC      (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW | PTE_SH_OS | PTE_ATTR_NORMAL_NC)
+
+// Page directory type (64-bit entries)
+typedef u64 page_dir_t;
+
+// Function prototypes
+u64* page_create(u32 level);
+void page_copy(u64* old_page, u64* new_page);
+u64* page_clone(u64* old_page_dir, u32 level);
+void page_map_on(u64* pgd, u64 virtualaddr, u64 physaddr, u64 flags);
+void page_unmap_on(u64* page, u64 virtualaddr);
+void* page_v2p(u64* page_dir_ptr_tab, void* vaddr);
+void mm_page_enable(u64 page_dir);
+void mm_init_default(u64 kernel_page_dir);
+void* page_kernel_dir(void);
+
+// Helper to get index at each level
+static inline u64 pgd_index(u64 addr) { return (addr >> PGD_SHIFT) & 0x1FF; }
+static inline u64 pud_index(u64 addr) { return (addr >> PUD_SHIFT) & 0x1FF; }
+static inline u64 pmd_index(u64 addr) { return (addr >> PMD_SHIFT) & 0x1FF; }
+static inline u64 pte_index(u64 addr) { return (addr >> PTE_SHIFT) & 0x1FF; }
 
 #endif
