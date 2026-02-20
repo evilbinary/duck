@@ -120,7 +120,7 @@ void context_dump_interrupt(interrupt_context_t* ic) {
 
 void context_dump_fault(interrupt_context_t* context, u64 fault_addr) {
   kprintf("----------------------------\n");
-  kprintf("ESR: %lx FAR: %lx\n", read_esr(), read_far());
+  kprintf("ESR: %lx FAR: %lx\n", read_esr(), fault_addr);
   kprintf("current pc: %lx\n", read_pc());
   context_dump_interrupt(context);
   kprintf("fault: 0x%lx \n", fault_addr);

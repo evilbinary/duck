@@ -18,7 +18,7 @@
 // __res; })
 #define do_div(n, base)   \
   ({                      \
-    int __rem = n % base; \
+    unsigned long long __rem = n % base; \
     n /= base;            \
     __rem;                \
   })
@@ -172,6 +172,11 @@ int kvsprintf(char *buf, const char *fmt, va_list args) {
     if (*fmt == 'h' || *fmt == 'l' || *fmt == 'L') {
       qualifier = *fmt;
       ++fmt;
+      /* handle 'll' (long long) */
+      if (qualifier == 'l' && *fmt == 'l') {
+        qualifier = 'L';  /* use 'L' to represent 'll' */
+        ++fmt;
+      }
     }
 
     switch (*fmt) {

@@ -2,9 +2,9 @@
 #define TYPES_H
 
 #if defined(ARM64) || defined(__aarch64__)
-#define _Addr long long
+#define _Addr long
 #define _Int64 long long
-#define _Reg long long
+#define _Reg long
 #else
 #define _Addr int
 #define _Int64 long long

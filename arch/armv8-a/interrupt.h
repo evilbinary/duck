@@ -39,6 +39,11 @@
 // IDT number for compatibility
 #define IDT_NUMBER 256
 
+// ARM64 interrupt service routine attribute
+// GCC supports interrupt attribute for ARM64 since version 7
+// This automatically saves/restores registers and calls eret
+// #define INTERRUPT_SERVICE __attribute__((interrupt("IRQ")))
+
 // Use interrupt_handler_t from arch/interrupt.h
 
 // Functions
@@ -46,12 +51,6 @@ void interrupt_init(void);
 void interrupt_regist(u32 vec, interrupt_handler_t handler);
 void interrupt_regist_all(void);
 void exception_info(interrupt_context_t* ic);
-
-// Handlers called from assembly
-void sync_handler(interrupt_context_t* ic);
-void irq_handler(interrupt_context_t* ic);
-void fiq_handler(interrupt_context_t* ic);
-void serror_handler(interrupt_context_t* ic);
 
 // Get exception class from ESR
 static inline u32 get_exception_class(u64 esr) {

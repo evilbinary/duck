@@ -346,10 +346,12 @@ char* kstrerror(int errnum) {
 }
 
 size_t kstrlen(const char* s) {
+  const char* p = s;  // Use local variable to avoid stack spill
   size_t ans = 0;
-  while (s[ans++] != '\0') {
+  while (p[ans] != '\0') {
+    ans++;
   };
-  return (ans - 1);
+  return ans;
 }
 
 char* kstrtok(char* restrict s, const char* restrict sep) {
