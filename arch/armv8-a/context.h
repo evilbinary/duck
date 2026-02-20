@@ -91,14 +91,14 @@ typedef struct context_t {
 // ARM64 exception macros
 // interrupt_process calls the handler with x0 = interrupt_context_t*
 // The handler returns the (possibly new) context pointer in x0
-// x0-x18 are caller-saved in AAPCS64, so we need to preserve them if needed
+// Note: naked functions don't need clobber list as compiler doesn't manage registers
 #define interrupt_process(X) \
   asm volatile(              \
       "bl " #X              \
       "\n"                   \
       :                      \
       :                      \
-      : "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17", "x18", "x30", "memory")
+      : "memory")
 
 // Save context on exception entry (matches armv7-a style)
 // After this macro:
@@ -135,7 +135,7 @@ typedef struct context_t {
       "mov x0, sp\n" \
       :                                          \
       : "i"(VEC), "i"(CODE) \
-      : "x0", "x1", "x2", "x3", "x4", "memory")
+      : "memory")
 
 #define interrupt_exit_context(ksp) \
   asm volatile(                              \

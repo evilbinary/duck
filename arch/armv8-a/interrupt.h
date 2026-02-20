@@ -40,9 +40,8 @@
 #define IDT_NUMBER 256
 
 // ARM64 interrupt service routine attribute
-// GCC supports interrupt attribute for ARM64 since version 7
-// This automatically saves/restores registers and calls eret
-// #define INTERRUPT_SERVICE __attribute__((interrupt("IRQ")))
+// Use naked attribute to have full control over assembly code
+#define INTERRUPT_SERVICE __attribute__((naked))
 
 // Use interrupt_handler_t from arch/interrupt.h
 
