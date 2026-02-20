@@ -41,7 +41,7 @@
 
 // ARM64 interrupt service routine attribute
 // Use naked attribute to have full control over assembly code
-#define INTERRUPT_SERVICE __attribute__((naked, interrupt("IRQ")))
+#define INTERRUPT_SERVICE __attribute__((naked))
 
 // Use interrupt_handler_t from arch/interrupt.h
 

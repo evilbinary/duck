@@ -23,8 +23,12 @@ SECTIONS
         /* Read-write data (initialized) */
         .data BLOCK(4K) : ALIGN(4K)
         {
+                _sdata = .;
                 *(.data*)
+                _edata = .;
         }
+        /* Load address of .data section (in FLASH/ROM) */
+        _sidata = LOADADDR(.data);
         __bss_start = .;
         /* Read-write data (uninitialized) and stack */
         .bss BLOCK(4K) : ALIGN(4K)
