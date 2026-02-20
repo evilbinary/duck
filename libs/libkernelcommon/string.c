@@ -64,6 +64,29 @@ void* kmemcpy(void* /* restrict */ s1, const void* /* restrict */ s2,
   return s1;
 }
 
+// 64-bit version for ARM64 context switching
+void* kmemcpy64(void* s1, const void* s2, size_t n) {
+  uint64_t* ldest = (uint64_t*)s1;
+  uint64_t* lsrc = (uint64_t*)s2;
+  char* cdest;
+  char* csrc;
+
+  while (n >= 8) {
+    *ldest++ = *lsrc++;
+    n -= 8;
+  }
+
+  cdest = (char*)ldest;
+  csrc = (char*)lsrc;
+
+  while (n > 0) {
+    *cdest++ = *csrc++;
+    n -= 1;
+  }
+
+  return s1;
+}
+
 void* kmemmove(void* dest, const void* src, size_t n) {
   char* d = dest;
   const char* s = src;

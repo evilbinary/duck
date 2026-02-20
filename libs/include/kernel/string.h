@@ -11,6 +11,7 @@ void    *kmemccpy(void *, const void *, int, size_t);
 void    *kmemchr(const void *, int, size_t);
 int      kmemcmp(const void *, const void *, size_t);
 void    *kmemcpy(void *, const void *, size_t);
+void    *kmemcpy64(void *, const void *, size_t);  // 64-bit version for ARM64
 void    *kmemmove(void *, const void *, size_t);
 void    *kmemset(void *, int, size_t);
 char    *kstrcat(char *, const char *);
