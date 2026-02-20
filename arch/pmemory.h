@@ -52,11 +52,11 @@
 #endif
 
 typedef struct mem_block {
-  u32 addr;
+  uintptr_t addr;
   u32 type;
   u32 size;
   u32 origin_size;
-  u32 origin_addr;
+  uintptr_t origin_addr;
   struct mem_block* next;
 } __attribute__((packed)) mem_block_t;
 
@@ -91,7 +91,7 @@ typedef struct memory_manager {
   
   u32 alloc_count;
   u32 alloc_size;
-  u32 last_map_addr;
+  uintptr_t last_map_addr;
   u32 extend_phy_count;
 } memory_manager_t;
 

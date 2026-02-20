@@ -167,7 +167,7 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   u32 kstack_size = thread->ctx->ksp_size;
   u32 ustack_size = thread->ctx->usp_size;
 
-  u32 ksp = kmalloc(kstack_size, KERNEL_TYPE);
+  uintptr_t ksp = (uintptr_t)kmalloc(kstack_size, KERNEL_TYPE);
   ctx->ksp_start = ksp;
   ctx->ksp_end = ksp + kstack_size;
   ctx->ksp_size = kstack_size;

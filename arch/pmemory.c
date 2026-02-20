@@ -15,7 +15,7 @@ memory_manager_t mmt;
 
 #ifdef MM_YA_ALLOC
 
-void mm_add_block(u32 addr, u32 len);
+void mm_add_block(uintptr_t addr, uintptr_t len);
 
 void ya_alloc_init() {
   memory_info_t* first_mem = (memory_info_t*)&boot_info->memory[0];
@@ -91,7 +91,7 @@ void* ya_sbrk(size_t size) {
   kassert(found > 0);
   kassert(addr != NULL);
   if (mmt.last_map_addr > 0 &&
-      ((u32)addr + PAGE_SIZE * 900) > mmt.last_map_addr) {
+      ((uintptr_t)addr + PAGE_SIZE * 900) > mmt.last_map_addr) {
     kprintf("extend kernel phy mem addr:%x last addr:%x extend count:%d\n",
             addr, mmt.last_map_addr, mmt.extend_phy_count);
     // extend 400k*mmt.extend_phy_count phy mem
@@ -350,9 +350,9 @@ int is_line_intersect(int a1, int a2, int b1, int b2) {
   return !(b2 < a1 || b1 > a2);
 }
 
-void mm_add_block(u32 addr, u32 len) {
-  mem_block_t* block = addr;
-  block->addr = (u32)block + sizeof(mem_block_t);
+void mm_add_block(uintptr_t addr, uintptr_t len) {
+  mem_block_t* block = (mem_block_t*)addr;
+  block->addr = (uintptr_t)block + sizeof(mem_block_t);
   block->size = len - sizeof(mem_block_t);
   block->origin_size = block->size;
   block->origin_addr = addr;
@@ -509,9 +509,9 @@ int is_line_intersect(int a1, int a2, int b1, int b2) {
   return !(b2 < a1 || b1 > a2);
 }
 
-void mm_add_block(u32 addr, u32 len) {
-  mem_block_t* block = addr;
-  block->addr = (u32)block + sizeof(mem_block_t);
+void mm_add_block(uintptr_t addr, uintptr_t len) {
+  mem_block_t* block = (mem_block_t*)addr;
+  block->addr = (uintptr_t)block + sizeof(mem_block_t);
   block->size = len - sizeof(mem_block_t);
   block->origin_size = block->size;
   block->origin_addr = addr;
@@ -569,8 +569,8 @@ void mm_alloc_init() {
 void* mm_alloc(size_t size) {
   mem_block_t* p = mmt.blocks;
   debug("malloc count %d size %d\n", count, size);
-  u32 pre_alloc_size = size + sizeof(mem_block_t);
-  pre_alloc_size = (pre_alloc_size + 8) & ~0x3;
+  size_t pre_alloc_size = size + sizeof(mem_block_t);
+  pre_alloc_size = (pre_alloc_size + 15) & ~0xF;  // 16-byte alignment for ARM64
   for (; p != NULL; p = p->next) {
     debug("p=>:%x type:%d size:%x\n", p, p->type, p->size);
     if ((p->type != MEM_FREE)) {
@@ -584,7 +584,7 @@ void* mm_alloc(size_t size) {
       if (new_block == NULL) continue;
       p->addr += pre_alloc_size;
       p->size -= pre_alloc_size;
-      new_block->addr = (u32)new_block + sizeof(mem_block_t);
+      new_block->addr = (uintptr_t)new_block + sizeof(mem_block_t);
       new_block->size = size;
       new_block->next = NULL;
       new_block->type = MEM_USED;
@@ -705,15 +705,15 @@ ullong mm_get_free() {
 }
 
 size_t mm_get_size(void* addr) {
-  if (addr == NULL) return;
-  mem_block_t* block = (mem_block_t*)((u32)addr - sizeof(mem_block_t));
+  if (addr == NULL) return 0;
+  mem_block_t* block = (mem_block_t*)((uintptr_t)addr - sizeof(mem_block_t));
   return block->size;
 }
 
 void mm_free(void* addr) {
   debug("free %x\n", addr);
   if (addr == NULL) return;
-  mem_block_t* block = (mem_block_t*)((u32)addr);
+  mem_block_t* block = (mem_block_t*)((uintptr_t)addr);
   if (block->addr == 0) {
     kprintf("mm free error %x\n", addr);
     return;

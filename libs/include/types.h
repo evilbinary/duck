@@ -1,9 +1,15 @@
 #ifndef TYPES_H
 #define TYPES_H
 
+#if defined(ARM64) || defined(__aarch64__)
+#define _Addr long long
+#define _Int64 long long
+#define _Reg long long
+#else
 #define _Addr int
 #define _Int64 long long
 #define _Reg int
+#endif
 
 typedef char i8;
 typedef unsigned char u8;
