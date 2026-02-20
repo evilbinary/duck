@@ -213,8 +213,13 @@ int kvsprintf(char *buf, const char *fmt, va_list args) {
       case 'x':
         flags |= SMALL;
       case 'X':
-        str = number(str, va_arg(args, unsigned long), 16, field_width,
-                     precision, flags);
+        if (qualifier == 'l' || qualifier == 'L') {
+          str = number(str, va_arg(args, unsigned long long), 16, field_width,
+                       precision, flags);
+        } else {
+          str = number(str, va_arg(args, unsigned int), 16, field_width,
+                       precision, flags);
+        }
         break;
 
       case 'd':

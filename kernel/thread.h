@@ -106,6 +106,7 @@ void thread_exit(thread_t* thread, int code);
 
 void thread_yield();
 thread_t* thread_current();
+context_t* thread_current_context();
 thread_t* thread_copy(thread_t* thread, u32 flags);
 int thread_add_fd(thread_t* thread, fd_t* fd);
 fd_t* thread_find_fd_id(thread_t* thread, u32 fd);

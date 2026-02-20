@@ -87,9 +87,9 @@ int context_init(context_t* context, u64 ksp_top, u64 usp_top, u64 entry,
 
 void context_dump(context_t* c) {
   kprintf("tid: %8x\n", c->tid);
-  kprintf("eip: %8x\n", c->eip);
-  kprintf("ksp: %8x\n", c->ksp);
-  kprintf("usp: %8x\n", c->usp);
+  kprintf("eip: %8lx\n", c->eip);
+  kprintf("ksp: %8lx\n", c->ksp);
+  kprintf("usp: %8lx\n", c->usp);
 
   kprintf("--interrupt context--\n");
   interrupt_context_t* ic = c->ksp;
@@ -99,31 +99,31 @@ void context_dump(context_t* c) {
 }
 
 void context_dump_interrupt(interrupt_context_t* ic) {
-  kprintf("pc:  %x\n", ic->pc);
-  kprintf("psr:  %x\n", ic->psr);
-  kprintf("sp:  %x\n", ic->sp);
-  kprintf("lr:  %x\n", ic->lr);
-  kprintf("x0:  %x\n", ic->x0);
-  kprintf("x1:  %x\n", ic->x1);
-  kprintf("x2:  %x\n", ic->x2);
-  kprintf("x3:  %x\n", ic->x3);
-  kprintf("x4:  %x\n", ic->x4);
-  kprintf("x5:  %x\n", ic->x5);
-  kprintf("x6:  %x\n", ic->x6);
-  kprintf("x7:  %x\n", ic->x7);
-  kprintf("x8:  %x\n", ic->x8);
-  kprintf("x9:  %x\n", ic->x9);
-  kprintf("x10: %x\n", ic->x10);
-  kprintf("x11: %x\n", ic->x11);
-  kprintf("x29(fp): %x\n", ic->x29);
+  kprintf("pc:  %lx\n", ic->pc);
+  kprintf("psr:  %lx\n", ic->psr);
+  kprintf("sp:  %lx\n", ic->sp);
+  kprintf("lr:  %lx\n", ic->lr);
+  kprintf("x0:  %lx\n", ic->x0);
+  kprintf("x1:  %lx\n", ic->x1);
+  kprintf("x2:  %lx\n", ic->x2);
+  kprintf("x3:  %lx\n", ic->x3);
+  kprintf("x4:  %lx\n", ic->x4);
+  kprintf("x5:  %lx\n", ic->x5);
+  kprintf("x6:  %lx\n", ic->x6);
+  kprintf("x7:  %lx\n", ic->x7);
+  kprintf("x8:  %lx\n", ic->x8);
+  kprintf("x9:  %lx\n", ic->x9);
+  kprintf("x10: %lx\n", ic->x10);
+  kprintf("x11: %lx\n", ic->x11);
+  kprintf("x29(fp): %lx\n", ic->x29);
 }
 
 void context_dump_fault(interrupt_context_t* context, u64 fault_addr) {
   kprintf("----------------------------\n");
-  kprintf("ESR: %x FAR: %x\n", read_esr(), read_far());
-  kprintf("current pc: %x\n", read_pc());
+  kprintf("ESR: %lx FAR: %lx\n", read_esr(), read_far());
+  kprintf("current pc: %lx\n", read_pc());
   context_dump_interrupt(context);
-  kprintf("fault: 0x%x \n", fault_addr);
+  kprintf("fault: 0x%lx \n", fault_addr);
   kprintf("----------------------------\n\n");
 }
 

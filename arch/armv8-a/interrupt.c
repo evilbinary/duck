@@ -62,7 +62,7 @@ void sync_handler(interrupt_context_t* ic) {
     case ESR_ELx_EC_DABT_LOW:
     case ESR_ELx_EC_DABT_CUR:
       // Data abort (page fault)
-      kprintf("Data abort at %x, far=%x\n", ic->pc, far);
+      kprintf("Data abort at %lx, far=%lx\n", ic->pc, far);
       context_dump_fault(ic, far);
       if (interrutp_handlers[EX_SYNC_EL1] != NULL) {
         interrutp_handlers[EX_SYNC_EL1](ic);
@@ -73,12 +73,12 @@ void sync_handler(interrupt_context_t* ic) {
     case ESR_ELx_EC_IABT_LOW:
     case ESR_ELx_EC_IABT_CUR:
       // Instruction abort
-      kprintf("Instruction abort at %x, far=%x\n", ic->pc, far);
+      kprintf("Instruction abort at %lx, far=%lx\n", ic->pc, far);
       context_dump_fault(ic, far);
       cpu_halt();
       break;
     default:
-      kprintf("Unknown sync exception: ec=%x esr=%x\n", ec, esr);
+      kprintf("Unknown sync exception: ec=%x esr=%lx\n", ec, esr);
       context_dump_interrupt(ic);
       cpu_halt();
   }
