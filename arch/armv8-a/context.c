@@ -55,7 +55,8 @@ int context_init(context_t* context, u64 ksp_top, u64 usp_top, u64 entry,
   }
 
   // Allocate interrupt context at top of kernel stack
-  interrupt_context_t* ic = (u64)ksp_top - sizeof(interrupt_context_t);
+  // Reserve space for TWO contexts (like armv7-a)
+  interrupt_context_t* ic = (u64)ksp_top - sizeof(interrupt_context_t) * 2;
 
   kmemset(ic, 0, sizeof(interrupt_context_t));
   ic->lr = (u64)entry;
@@ -162,14 +163,9 @@ interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
   }
   current->ic = ic;
 
-  // Save current context to current->ksp
-  // Load next context from next->ksp
-  // Note: In ARM64, context switch is typically done via exception return
-  
-  // Copy current context to stack
-  kmemcpy(++current->ksp, ic, sizeof(interrupt_context_t));
-  // Copy next context to ic for eret
-  kmemcpy(ic, next->ksp--, sizeof(interrupt_context_t));
+  // Same pattern as armv7-a: use alternating context slots
+  kmemcpy64(++current->ksp, ic, sizeof(interrupt_context_t));
+  kmemcpy64(ic, next->ksp--, sizeof(interrupt_context_t));
 
   return ic;
 }

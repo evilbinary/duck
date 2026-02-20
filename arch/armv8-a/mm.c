@@ -75,49 +75,42 @@ static u64* get_next_table(u64* table, u64 index, u8 create) {
   return new_table;
 }
 
-// Map a virtual address to physical address
+// Map a virtual address to physical address (3-level: PGD->PMD->PTE)
+// Similar to ARMv7-A 2-level page table
 void page_map_on(u64* pgd, u64 virtualaddr, u64 physaddr, u64 flags) {
   if (pgd == NULL) {
     kprintf("page_map_on: pgd is null\n");
     return;
   }
   
-  // Get indices for each level
+  // Get indices for each level (39-bit VA: PGD->PMD->PTE)
   u64 pgd_idx = pgd_index(virtualaddr);
-  u64 pud_idx = pud_index(virtualaddr);
   u64 pmd_idx = pmd_index(virtualaddr);
   u64 pte_idx = pte_index(virtualaddr);
   
   // Walk through levels
-  u64* pud = get_next_table(pgd, pgd_idx, 1);
-  if (pud == NULL) return;
-  
-  u64* pmd = get_next_table(pud, pud_idx, 1);
+  u64* pmd = get_next_table(pgd, pgd_idx, 1);
   if (pmd == NULL) return;
   
   u64* pte = get_next_table(pmd, pmd_idx, 1);
   if (pte == NULL) return;
   
-  // Set final PTE
-  pte[pte_idx] = (physaddr & PTE_ADDR_MASK) | flags;
+  // Set final PTE - ensure PTE_VALID is set
+  pte[pte_idx] = (physaddr & PTE_ADDR_MASK) | flags | PTE_VALID;
   
   // Invalidate TLB for this address
   asm volatile("tlbi vaae1, %0" : : "r"(virtualaddr >> 12) : "memory");
 }
 
-// Unmap a virtual address
+// Unmap a virtual address (3-level: PGD->PMD->PTE)
 void page_unmap_on(u64* pgd, u64 virtualaddr) {
   if (pgd == NULL) return;
   
   u64 pgd_idx = pgd_index(virtualaddr);
-  u64 pud_idx = pud_index(virtualaddr);
   u64 pmd_idx = pmd_index(virtualaddr);
   u64 pte_idx = pte_index(virtualaddr);
   
-  u64* pud = get_next_table(pgd, pgd_idx, 0);
-  if (pud == NULL) return;
-  
-  u64* pmd = get_next_table(pud, pud_idx, 0);
+  u64* pmd = get_next_table(pgd, pgd_idx, 0);
   if (pmd == NULL) return;
   
   u64* pte = get_next_table(pmd, pmd_idx, 0);
@@ -130,7 +123,7 @@ void page_unmap_on(u64* pgd, u64 virtualaddr) {
   asm volatile("tlbi vaae1, %0" : : "r"(virtualaddr >> 12) : "memory");
 }
 
-// Translate virtual address to physical
+// Translate virtual address to physical (3-level: PGD->PMD->PTE)
 void* page_v2p(u64* page_dir_ptr_tab, void* vaddr) {
   u64* pgd = page_dir_ptr_tab;
   u64 addr = (u64)vaddr;
@@ -138,14 +131,10 @@ void* page_v2p(u64* page_dir_ptr_tab, void* vaddr) {
   if (pgd == NULL) return NULL;
   
   u64 pgd_idx = pgd_index(addr);
-  u64 pud_idx = pud_index(addr);
   u64 pmd_idx = pmd_index(addr);
   u64 pte_idx = pte_index(addr);
   
-  u64* pud = get_next_table(pgd, pgd_idx, 0);
-  if (pud == NULL) return NULL;
-  
-  u64* pmd = get_next_table(pud, pud_idx, 0);
+  u64* pmd = get_next_table(pgd, pgd_idx, 0);
   if (pmd == NULL) return NULL;
   
   u64* pte = get_next_table(pmd, pmd_idx, 0);
@@ -176,14 +165,14 @@ void mm_page_enable(u64 page_dir) {
   setup_mair();
   
   // Set TCR_EL1
-  // 4KB granule, Inner/Outer WB, Inner shareable, 48-bit VA
+  // 4KB granule, Inner/Outer WB, Inner shareable, 39-bit VA (3-level page table)
   u64 tcr = 
-    TCR_T0SZ(48) |          // 48-bit virtual address
+    TCR_T0SZ(39) |          // 39-bit virtual address (3-level page table)
     TCR_IRGN0(1) |          // Inner WB
     TCR_ORGN0(1) |          // Outer WB
     TCR_SH0(3) |            // Inner shareable
     TCR_TG0_4K |            // 4KB granule
-    TCR_IPS(0);             // 32-bit PA (adjust for your platform)
+    TCR_IPS(1);             // 40-bit PA for RPi3
   
   asm volatile("msr tcr_el1, %0" : : "r"(tcr) : "memory");
   isb();

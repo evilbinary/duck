@@ -84,7 +84,7 @@ void event_wait(thread_t* t, source_t* source) {
     return;
   }
   if (all_events_count <= 0) {
-    thread_t* t1 = thread_create_name_level("event", (u32*)&do_event_thread,
+    thread_t* t1 = thread_create_name_level("event", (void*)&do_event_thread,
                                             NULL, LEVEL_KERNEL);
     thread_run(t1);
   }

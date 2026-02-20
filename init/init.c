@@ -85,7 +85,7 @@ int run_exec(char* cmd, char** argv, char** env) {
     syscall1(SYS_EXIT, 0);
   }
 #else
-  thread_t* t = syscall3(SYS_THREAD_CREATE, cmd, (u32*)&hello_thread, NULL);
+  thread_t* t = syscall3(SYS_THREAD_CREATE, cmd, (void*)&hello_thread, NULL);
 #endif
 }
 

@@ -13,7 +13,7 @@ static void do_read_thread() {
 
 void test_kernel_thread() {
   thread_t* read_thread = thread_create_name_level(
-      "poll", (u32*)&do_read_thread, NULL, LEVEL_KERNEL);
+      "poll", (void*)&do_read_thread, NULL, LEVEL_KERNEL);
   thread_run(read_thread);
 }
 

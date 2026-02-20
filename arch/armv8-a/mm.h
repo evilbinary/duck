@@ -44,22 +44,22 @@
 // Physical address mask (bits 12-47 for 4KB granule)
 #define PTE_ADDR_MASK   (0x0000FFFFFFFFF000UL)
 
-// Page table levels for 4KB pages, 48-bit VA
-#define PTE_SHIFT       12
-#define PMD_SHIFT       21
-#define PUD_SHIFT       30
-#define PGD_SHIFT       39
+// Page table levels for 4KB pages, 39-bit VA (3-level: PGD->PMD->PTE)
+// Similar to ARMv7-A 2-level structure
+#define PTE_SHIFT       12              // 4KB pages
+#define PMD_SHIFT       21              // 2MB blocks
+#define PGD_SHIFT       30              // 1GB sections
 
 // Number of entries per table (512 for 4KB pages)
 #define PTRS_PER_TABLE  512
 
-// TCR_EL1 field definitions
+// TCR_EL1 field definitions - 39-bit VA with 16KB granule
 #define TCR_T0SZ(x)     ((64 - (x)) & 0x3F)
 #define TCR_IRGN0(x)    ((u64)(x) << 8)
 #define TCR_ORGN0(x)    ((u64)(x) << 10)
 #define TCR_SH0(x)      ((u64)(x) << 12)
 #define TCR_TG0_4K      (0ULL << 14)
-#define TCR_TG0_16K     (1ULL << 14)
+#define TCR_TG0_16K     (1ULL << 14)    // 16KB granule
 #define TCR_TG0_64K     (2ULL << 14)
 #define TCR_IPS(x)      ((u64)(x) << 32)
 
@@ -99,9 +99,8 @@ void mm_page_enable(u64 page_dir);
 void mm_init_default(u64 kernel_page_dir);
 void* page_kernel_dir(void);
 
-// Helper to get index at each level
+// Helper to get index at each level (3-level: PGD->PMD->PTE)
 static inline u64 pgd_index(u64 addr) { return (addr >> PGD_SHIFT) & 0x1FF; }
-static inline u64 pud_index(u64 addr) { return (addr >> PUD_SHIFT) & 0x1FF; }
 static inline u64 pmd_index(u64 addr) { return (addr >> PMD_SHIFT) & 0x1FF; }
 static inline u64 pte_index(u64 addr) { return (addr >> PTE_SHIFT) & 0x1FF; }
 
