@@ -59,7 +59,7 @@ int context_init(context_t* context, u64 ksp_top, u64 usp_top, u64 entry,
 
   // Allocate interrupt context at top of kernel stack
   // Reserve space for TWO contexts (like armv7-a)
-  interrupt_context_t* ic = (u64)ksp_top - sizeof(interrupt_context_t) * 2;
+  interrupt_context_t* ic = (interrupt_context_t*)((u64)ksp_top - sizeof(interrupt_context_t) * 2);
 
   kmemset(ic, 0, sizeof(interrupt_context_t));
   ic->lr = (u64)entry;

@@ -241,7 +241,7 @@ typedef struct context_t {
       :                            \
       : "memory")
 
-#define context_switch_page(ctx, page_dir) cpu_set_page(page_dir)
+#define context_switch_page(ctx, page_dir) cpu_set_page((u64)(page_dir))
 
 #define context_fn(context) context->x7
 #define context_ret(context) context->x0

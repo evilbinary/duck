@@ -17,7 +17,7 @@ interrupt_handler_t interrutp_handlers[IDT_NUMBER];
 // Exception vector table - must be 2KB aligned
 // ARM64 requires 16 entries: 4 groups x 4 types (Sync/IRQ/FIQ/SError)
 // Each entry is at a 0x80 (128) byte boundary
-__attribute__((aligned(2048)))
+__attribute__((naked, aligned(2048)))
 void exception_vectors(void) {
   __asm__ volatile(
     // Group 0: Current EL with SP0 (shouldn't happen in normal operation)
@@ -69,7 +69,7 @@ void exception_vectors(void) {
 // SP0 exceptions (should not happen)
 INTERRUPT_SERVICE
 void exception_sp0_sync(void) {
-  while (1);
+  asm volatile("b .");
 }
 
 // Current EL synchronous exception (kernel mode)
