@@ -17,41 +17,38 @@ void page_error_exit() {
 }
 
 void page_fault_handle(interrupt_context_t *ic) {
-  u32 *fault_addr = cpu_get_fault();
+  vaddr_t fault_addr = (vaddr_t)cpu_get_fault();
   thread_t *current = thread_current();
   if (current != NULL) {
     current->faults++;
     int mode = context_get_mode(current->ctx);
 #ifdef DEBUG
-    log_debug("page fault at %x\n", fault_addr);
-    // context_dump_fault(ic, fault_addr);
+    log_debug("page fault at %lx\n", fault_addr);
 #endif
-    vmemory_area_t *area = vmemory_area_find(current->vm->vma, fault_addr, 0);
+    vmemory_area_t *area = vmemory_area_find(current->vm->vma, (void*)fault_addr, 0);
     if (area == NULL) {
-      void *phy = page_v2p(current->vm->kpage, fault_addr);
+      void *phy = page_v2p((u64*)current->vm->kpage, (void*)fault_addr);
 #ifdef DEBUG
-      log_debug("page area not found %x\n", fault_addr);
+      log_debug("page area not found %lx\n", fault_addr);
       vmemory_dump(current->vm);
 #endif
       if (phy != NULL) {
 #ifdef DEBUG
-        log_debug("page lookup kernel found phy: %x\n", phy);
+        log_debug("page lookup kernel found phy: %lx\n", phy);
 #endif
-        // 内核地址，进行映射,todo 进行检查
-        page_map_on(current->vm->upage, fault_addr, phy,
+        page_map_on((u64*)current->vm->upage, fault_addr, (u64)phy,
                     PAGE_P | PAGE_USR | PAGE_RWX);
       } else {
         if (current->fault_count < 1) {
           thread_exit(current, -1);
-          log_error("%s memory fault at %x\n", current->name, fault_addr);
+          log_error("%s memory fault at %lx\n", current->name, fault_addr);
           context_dump_fault(ic, fault_addr);
           thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
           current->fault_count++;
-          // cpu_halt();
           exception_process_error(current, ic, (void *)&page_error_exit);
           schedule(ic);
         } else if (current->fault_count == 3) {
-          log_error("%s memory fault at %x too many\n", current->name,
+          log_error("%s memory fault at %lx too many\n", current->name,
                     fault_addr);
           current->fault_count++;
           thread_exit(current, -1);
@@ -65,29 +62,27 @@ void page_fault_handle(interrupt_context_t *ic) {
       }
       return;
     }
-    u32 *page = current->vm->upage;
-    void *phy = page_v2p(page, fault_addr);
+    u64 *page = (u64*)current->vm->upage;
+    void *phy = page_v2p(page, (void*)fault_addr);
 
-    //process
     if (area->flags == MEMORY_DEV) {
       if (phy == NULL) {
-        phy = page_v2p(current->vm->kpage, fault_addr);
+        phy = page_v2p((u64*)current->vm->kpage, (void*)fault_addr);
       }
       if (phy != NULL) {
-        page_map_on(current->vm->upage, fault_addr, phy, PAGE_DEV);
+        page_map_on((u64*)current->vm->upage, fault_addr, (u64)phy, PAGE_DEV);
       }
       return;
     } else {
       if (phy == NULL) {
         if (area->flags == MEMORY_STACK) {
-          extend_stack(fault_addr, PAGE_SIZE);
+          extend_stack((void*)fault_addr, PAGE_SIZE);
         } else {
-          valloc(fault_addr, PAGE_SIZE);
+          valloc((void*)fault_addr, PAGE_SIZE);
         }
       } else {
-        log_error("%s remap memory fault at %x phy: %x\n", current->name,
+        log_error("%s remap memory fault at %lx phy: %lx\n", current->name,
                   fault_addr, phy);
-        // mmu_dump_page(page, page, 0);
         context_dump_fault(ic, fault_addr);
         thread_exit(current, -1);
         exception_process_error(current, ic, (void *)&page_error_exit);
@@ -101,21 +96,20 @@ void page_fault_handle(interrupt_context_t *ic) {
 
 void *kernel_page_dir = NULL;
 
-void page_map(u32 virtualaddr, u32 physaddr, u32 flags) {
+void page_map(vaddr_t virtualaddr, vaddr_t physaddr, u32 flags) {
 #ifdef VM_ENABLE
   if (kernel_page_dir == NULL) {
     log_error("kernel_page_dir is null\n");
     return;
   }
-  page_map_on(kernel_page_dir, virtualaddr, physaddr, flags);
+  page_map_on((u64*)kernel_page_dir, virtualaddr, physaddr, flags);
 #endif
 }
 
-void page_map_current(u32 virtualaddr, u32 physaddr, u32 flags) {
+void page_map_current(vaddr_t virtualaddr, vaddr_t physaddr, u32 flags) {
 #ifdef VM_ENABLE
   thread_t* current=thread_current();
-  // log_error("page_map_current %d %x %x\n",current->id,virtualaddr,virtualaddr);
-  page_map_on(current->vm->upage, virtualaddr, physaddr, flags);
+  page_map_on((u64*)current->vm->upage, virtualaddr, physaddr, flags);
 #endif
 }
 
@@ -136,7 +130,7 @@ void page_init() {
 
   // enable page
   log_info("page enable page: %x\n", kernel_page_dir);
-  mm_page_enable(kernel_page_dir);
+  mm_page_enable((u64)kernel_page_dir);
   log_info("page enable end\n");
 #endif
 }

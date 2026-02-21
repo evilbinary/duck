@@ -15,41 +15,49 @@ extern boot_info_t* boot_info;
 interrupt_handler_t interrutp_handlers[IDT_NUMBER];
 
 // Exception vector table - must be 2KB aligned
+// ARM64 requires 16 entries: 4 groups x 4 types (Sync/IRQ/FIQ/SError)
+// Each entry is at a 0x80 (128) byte boundary
 __attribute__((aligned(2048)))
 void exception_vectors(void) {
   __asm__ volatile(
-    // Current EL with SP0 (shouldn't happen)
-    "b exception_sp0_sync\n"
-    
-    // Current EL with SPx (kernel exceptions)
+    // Group 0: Current EL with SP0 (shouldn't happen in normal operation)
+    "b exception_sp0_sync\n"       // 0x000: Sync
     ".align 7\n"
-    "b exception_current_sync\n"
+    "b .\n"                        // 0x080: IRQ
     ".align 7\n"
-    "b exception_current_irq\n"
+    "b .\n"                        // 0x100: FIQ
     ".align 7\n"
-    "b exception_current_fiq\n"
+    "b .\n"                        // 0x180: SError
+
+    // Group 1: Current EL with SPx (kernel exceptions)
     ".align 7\n"
-    "b exception_current_serror\n"
-    
-    // Lower EL using AArch64 (user mode exceptions)
+    "b exception_current_sync\n"   // 0x200: Sync
     ".align 7\n"
-    "b exception_lower_sync\n"
+    "b exception_current_irq\n"    // 0x280: IRQ
     ".align 7\n"
-    "b exception_lower_irq\n"
+    "b exception_current_fiq\n"    // 0x300: FIQ
     ".align 7\n"
-    "b exception_lower_fiq\n"
+    "b exception_current_serror\n" // 0x380: SError
+
+    // Group 2: Lower EL using AArch64 (user mode exceptions)
     ".align 7\n"
-    "b exception_lower_serror\n"
-    
-    // Lower EL using AArch32 (not supported)
+    "b exception_lower_sync\n"     // 0x400: Sync
     ".align 7\n"
-    "b .\n"
+    "b exception_lower_irq\n"      // 0x480: IRQ
     ".align 7\n"
-    "b .\n"
+    "b exception_lower_fiq\n"      // 0x500: FIQ
     ".align 7\n"
-    "b .\n"
+    "b exception_lower_serror\n"   // 0x580: SError
+
+    // Group 3: Lower EL using AArch32 (not supported)
     ".align 7\n"
-    "b .\n"
+    "b .\n"                        // 0x600: Sync
+    ".align 7\n"
+    "b .\n"                        // 0x680: IRQ
+    ".align 7\n"
+    "b .\n"                        // 0x700: FIQ
+    ".align 7\n"
+    "b .\n"                        // 0x780: SError
   );
 }
 

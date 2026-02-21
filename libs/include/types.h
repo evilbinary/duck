@@ -11,6 +11,7 @@
 #define _Reg int
 #endif
 
+
 typedef char i8;
 typedef unsigned char u8;
 typedef short i16;
@@ -39,6 +40,15 @@ typedef unsigned long ulong;
 #define bool char
 #else
 #define bool _Bool
+#endif
+
+
+
+// Address-sized integer type: u64 on ARM64, u32 on 32-bit platforms
+#ifdef ARM64
+typedef u64 vaddr_t;
+#else
+typedef u32 vaddr_t;
 #endif
 
 typedef unsigned int u_int;
@@ -83,8 +93,10 @@ typedef _Addr intptr_t;
 typedef unsigned _Addr uintptr_t;
 #endif
 
-#if !defined(_SIZE_T) && !defined(size_t)
-typedef unsigned size_t;
+#if !defined(_SIZE_T) && !defined(size_t) && !defined(_HAVE_SIZE_T)
+#define _HAVE_SIZE_T
+#define _SIZE_T
+typedef unsigned _Addr size_t;
 #endif
 
 

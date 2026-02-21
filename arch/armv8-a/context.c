@@ -36,6 +36,8 @@ int context_init(context_t* context, u64 ksp_top, u64 usp_top, u64 entry,
     log_error("usp end is null\n");
     return -1;
   }
+  
+  // Skip verbose logging to avoid kvsprintf issues
 
   context->eip = entry;
   context->level = level;
@@ -51,7 +53,8 @@ int context_init(context_t* context, u64 ksp_top, u64 usp_top, u64 entry,
     // User mode (EL0t)
     pstate = 0x0;    // EL0t
   } else {
-    kprintf("not support level %d\n", level);
+    // Unsupported level, set to safe default
+    pstate = 0x3C5;
   }
 
   // Allocate interrupt context at top of kernel stack
@@ -81,6 +84,9 @@ int context_init(context_t* context, u64 ksp_top, u64 usp_top, u64 entry,
   
   context->usp = (u64)usp_top;
   context->ksp = ic;
+  
+  // Initialize ctx->ic to point to the interrupt context
+  context->ic = ic;
   
   return 0;
 }
@@ -163,9 +169,8 @@ interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
   }
   current->ic = ic;
 
-  // Same pattern as armv7-a: use alternating context slots
-  kmemcpy64(++current->ksp, ic, sizeof(interrupt_context_t));
-  kmemcpy64(ic, next->ksp--, sizeof(interrupt_context_t));
+  kmemcpy(++current->ksp, ic, sizeof(interrupt_context_t));
+  kmemcpy(ic, next->ksp--, sizeof(interrupt_context_t));
 
   return ic;
 }

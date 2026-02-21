@@ -54,8 +54,8 @@
 typedef struct mem_block {
   uintptr_t addr;
   u32 type;
-  u32 size;
-  u32 origin_size;
+  size_t size;
+  size_t origin_size;
   uintptr_t origin_addr;
   struct mem_block* next;
 } __attribute__((packed)) mem_block_t;
@@ -121,6 +121,6 @@ void mm_alloc_init();
 void mm_dump_phy();
 void mm_dump();
 
-void page_map_range(u32* page, u32 vaddr, u32 paddr, u32 size, u32 flag);
+void page_map_range(void* page, vaddr_t vaddr, vaddr_t paddr, vaddr_t size, u64 flag);
 
 #endif

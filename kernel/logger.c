@@ -35,11 +35,15 @@ static size_t log_write(u32 fd, void* buf, size_t nbytes) {
 
 
 void log_default(int tag, const char* message, va_list args) {
-  int ticks = schedule_get_ticks();
+  int ticks = 0;
   int tid = 0;
-  thread_t* current = thread_current();
-  if (current != NULL) {
-    tid = current->id;
+  // 仅在系统初始化完成后才获取 tick 和线程信息
+  if (log_info_mod.logger_size > 0) {
+    ticks = schedule_get_ticks();
+    thread_t* current = thread_current();
+    if (current != NULL) {
+      tid = current->id;
+    }
   }
   kmemset(logger_buf, 0, LOG_MSG_BUF);
   char* tag_msg = (char*)log_level_strings[tag];
@@ -57,11 +61,15 @@ void log_default(int tag, const char* message, va_list args) {
 }
 
 void log_default_color(int tag, const char* message, va_list args) {
-  int ticks = schedule_get_ticks();
+  int ticks = 0;
   int tid = 0;
-  thread_t* current = thread_current();
-  if (current != NULL) {
-    tid = current->id;
+  // 仅在系统初始化完成后才获取 tick 和线程信息
+  if (log_info_mod.logger_size > 0) {
+    ticks = schedule_get_ticks();
+    thread_t* current = thread_current();
+    if (current != NULL) {
+      tid = current->id;
+    }
   }
   kmemset(logger_buf, 0, LOG_MSG_BUF);
   char* tag_msg = (char*)log_level_strings[tag];
@@ -97,6 +105,14 @@ void log_default_color(int tag, const char* message, va_list args) {
 }
 
 void log_format(int tag, const char* message, va_list args) {
+  // 早期启动阶段：日志系统未初始化，直接回退到 kprintf
+  if (log_info_mod.logger_size == 0) {
+    kprintf("[early] ");
+    char buf[256];
+    kvsprintf(buf, message, args);
+    kprintf("%s", buf);
+    return;
+  }
   for (int i = 0; i < log_info_mod.logger_size; i++) {
     log_info_mod.loggers[i](tag, message, args);
   }

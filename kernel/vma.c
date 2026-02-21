@@ -5,21 +5,21 @@
  ********************************************************************/
 #include "memory.h"
 #include "thread.h"
+#include "libs/include/kernel/string.h"
 
 #define log_debug
 
 void vmemory_area_free(vmemory_area_t* area) {
   if (area == NULL) return;
-  u32 vaddr = area->vaddr;
-  // todo fix me
+  vaddr_t vaddr = area->vaddr;
   area->flags = MEMORY_FREE;
-  log_debug("vmemory area free %x - %x\n", vaddr, area->vend);
-  vfree(vaddr, area->size);
+  log_debug("vmemory area free %lx - %lx\n", vaddr, area->vend);
+  vfree((void*)vaddr, area->size);
 }
 
 // alloc by page fault
 vmemory_area_t* vmemory_area_alloc(vmemory_area_t* areas, void* addr,
-                                   u32 size) {
+                                   vaddr_t size) {
   vmemory_area_t* area = vmemory_area_find(areas, addr, size);
   if (area != NULL) {
     return area;
@@ -29,13 +29,13 @@ vmemory_area_t* vmemory_area_alloc(vmemory_area_t* areas, void* addr,
   return area;
 }
 
-vmemory_area_t* vmemory_area_create(void* addr, u32 size, u8 flags) {
+vmemory_area_t* vmemory_area_create(void* addr, vaddr_t size, u8 flags) {
   vmemory_area_t* area = kmalloc(sizeof(vmemory_area_t), KERNEL_TYPE);
   area->size = size;
   area->next = NULL;
-  area->vaddr = addr;
-  area->vend = addr + size;
-  area->alloc_addr = addr;
+  area->vaddr = (vaddr_t)addr;
+  area->vend = (vaddr_t)addr + size;
+  area->alloc_addr = (vaddr_t)addr;
   area->alloc_size = 0;
   area->flags = flags;
   area->child = NULL;
@@ -60,12 +60,11 @@ vmemory_area_t* vmemory_area_find_last(vmemory_area_t* areas) {
 }
 
 vmemory_area_t* vmemory_area_find(vmemory_area_t* areas, void* addr,
-                                  size_t size) {
+                                  vaddr_t size) {
   vmemory_area_t* p = areas;
+  vaddr_t a = (vaddr_t)addr;
   for (; p != NULL; p = p->next) {
-    // kprintf("vmemory_area_find addr: %x p->vaddr:%x
-    // p->size:%x\n",addr,p->vaddr,p->size);
-    if ((addr >= p->vaddr) && ((addr + size) <= p->vend)) {
+    if ((a >= p->vaddr) && ((a + size) <= p->vend)) {
       return p;
     }
   }
@@ -92,7 +91,7 @@ vmemory_area_t* vmemory_area_clone(vmemory_area_t* areas, int flag) {
   vmemory_area_t* current = NULL;
   vmemory_area_t* p = areas;
   for (; p != NULL; p = p->next) {
-    vmemory_area_t* c = vmemory_area_create(p->vaddr, p->size, p->flags);
+    vmemory_area_t* c = vmemory_area_create((void*)p->vaddr, p->size, p->flags);
     if (flag == 1) {
       c->alloc_addr = p->alloc_addr;
       c->alloc_size = p->alloc_size;
@@ -108,13 +107,13 @@ vmemory_area_t* vmemory_area_clone(vmemory_area_t* areas, int flag) {
   return new_area;
 }
 
-vmemory_area_t* vmemory_create_default(u32 koffset) {
+vmemory_area_t* vmemory_create_default(vaddr_t koffset) {
   vmemory_area_t* vmm =
-      vmemory_area_create(HEAP_ADDR + koffset, MEMORY_HEAP_SIZE, MEMORY_HEAP);
+      vmemory_area_create((void*)(HEAP_ADDR + koffset), MEMORY_HEAP_SIZE, MEMORY_HEAP);
   vmemory_area_t* vmexec =
-      vmemory_area_create(EXEC_ADDR + koffset, MEMORY_EXEC_SIZE, MEMORY_EXEC);
+      vmemory_area_create((void*)(EXEC_ADDR + koffset), MEMORY_EXEC_SIZE, MEMORY_EXEC);
   vmemory_area_add(vmm, vmexec);
-  vmemory_area_t* stack = vmemory_area_create(STACK_ADDR + koffset,
+  vmemory_area_t* stack = vmemory_area_create((void*)(STACK_ADDR + koffset),
                                               MEMORY_STACK_SIZE, MEMORY_STACK);
   vmemory_area_add(vmm, stack);
 
@@ -122,21 +121,21 @@ vmemory_area_t* vmemory_create_default(u32 koffset) {
 
   // default kernel info
   for (int i = 0; i < boot_info->segments_number; i++) {
-    u32 size = boot_info->segments[i].size;
-    u32 address = boot_info->segments[i].start;
+    vaddr_t size = boot_info->segments[i].size;
+    vaddr_t address = (vaddr_t)(uintptr_t)boot_info->segments[i].start;
     u32 type = boot_info->segments[i].type;
 
     vmemory_area_t* vmmk = NULL;
     if (type == 2) {
-      vmmk = vmemory_area_create(address, size, MEMORY_HEAP);
+      vmmk = vmemory_area_create((void*)address, size, MEMORY_HEAP);
     } else {
-      vmmk = vmemory_area_create(address, size, MEMORY_EXEC);
+      vmmk = vmemory_area_create((void*)address, size, MEMORY_EXEC);
     }
     vmemory_area_add(vmm, vmmk);
   }
   // add dev info
   vmemory_area_t* vmmdev =
-      vmemory_area_create(0xfb000000, 1024 * 768 * 4, MEMORY_DEV);
+      vmemory_area_create((void*)0xfb000000, 1024 * 768 * 4, MEMORY_DEV);
   vmemory_area_add(vmm, vmmdev);
 
   return vmm;
@@ -167,44 +166,44 @@ void vmemory_dump_area(vmemory_area_t* area) {
 
 #define DEBUG
 
-void vmemory_map_type(u32* page_dir, u32 virt_addr, u32 phy_addr, u32 size,
+void vmemory_map_type(void* page_dir, vaddr_t virt_addr, vaddr_t phy_addr, vaddr_t size,
                       u32 type) {
   if (page_dir == NULL) {
     log_error("vm map faild for page_dir is null\n");
     return;
   }
-  u32 offset = 0;
-  u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
+  vaddr_t offset = 0;
+  vaddr_t pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
   for (int i = 0; i < pages; i++) {
-    page_map_on(page_dir, virt_addr + offset, phy_addr + offset, type);
+    page_map_on((u64*)page_dir, virt_addr + offset, phy_addr + offset, type);
 #ifdef DEBUG
-    log_debug("-page:%x map %d vaddr: %x - paddr: %x\n", page_dir, i,
+    log_debug("-page:%lx map %d vaddr: %lx - paddr: %lx\n", page_dir, i,
               virt_addr + offset, phy_addr + offset);
 #endif
     offset += PAGE_SIZE;
   }
 }
 
-void vmemory_map(u32* page_dir, u32 virt_addr, u32 phy_addr, u32 size) {
+void vmemory_map(void* page_dir, vaddr_t virt_addr, vaddr_t phy_addr, vaddr_t size) {
   if (page_dir == NULL) {
     log_error("vm map faild for page_dir is null\n");
     return;
   }
-  u32 offset = 0;
-  u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
+  vaddr_t offset = 0;
+  vaddr_t pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
   for (int i = 0; i < pages; i++) {
-    page_map_on(page_dir, virt_addr + offset, phy_addr + offset,
+    page_map_on((u64*)page_dir, virt_addr + offset, phy_addr + offset,
                 PAGE_P | PAGE_RW);
 #ifdef DEBUG
-    log_debug("-page:%x map %d vaddr: %x - paddr: %x\n", page_dir, i,
+    log_debug("-page:%lx map %d vaddr: %lx - paddr: %lx\n", page_dir, i,
               virt_addr + offset, phy_addr + offset);
 #endif
     offset += PAGE_SIZE;
   }
 }
 
-void vmemory_init(vmemory_t* vm, u32 level, u32 usp, u32 usp_size, u32 flags) {
-  u32 koffset = 0;
+void vmemory_init(vmemory_t* vm, u32 level, vaddr_t usp, u32 usp_size, u32 flags) {
+  vaddr_t koffset = 0;
   if (level == LEVEL_KERNEL || level == LEVEL_KERNEL_SHARE) {
     koffset += KERNEL_OFFSET;
   }
@@ -221,13 +220,12 @@ void vmemory_init(vmemory_t* vm, u32 level, u32 usp, u32 usp_size, u32 flags) {
   if (level == LEVEL_KERNEL_SHARE) {
     vm->upage = vm->kpage;
   } else if (level == LEVEL_KERNEL) {
-    vm->upage = page_clone(vm->kpage, KERNEL_MODE);
+    vm->upage = page_clone((u64*)vm->kpage, KERNEL_MODE);
   } else {
-    vm->upage = page_clone(vm->kpage, level);
-    // vm->upage = page_create(0);
+    vm->upage = page_clone((u64*)vm->kpage, level);
   }
 
-  log_debug("tid %d init vm level %d kpage: %x upage: %x\n", vm->tid, level,
+  log_debug("tid %d init vm level %d kpage: %lx upage: %lx\n", vm->tid, level,
             vm->kpage, vm->upage);
 
   // 映射栈
@@ -253,20 +251,19 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
   cvm->vend = vm->vend;
   cvm->size = vm->size;
 
-  u32 addr = NULL;
-  u32 end_addr = NULL;
+  vaddr_t addr = 0;
+  vaddr_t end_addr = 0;
   char* type_str = NULL;
   if (type == MEMORY_STACK) {
     addr = vm->alloc_addr;
     end_addr = addr + vm->alloc_size;
-    // 边界检查：确保不超过栈顶
     if (end_addr > vm->vend) {
-      log_warn("tid %d stack copy range overflow: %x > %x, correcting\n",
+      log_warn("tid %d stack copy range overflow: %lx > %lx, correcting\n",
                vm_copy->tid, end_addr, vm->vend);
       end_addr = vm->vend;
     }
     if (addr < vm->vaddr) {
-      log_warn("tid %d stack copy range underflow: %x < %x, correcting\n",
+      log_warn("tid %d stack copy range underflow: %lx < %lx, correcting\n",
                vm_copy->tid, addr, vm->vaddr);
       addr = vm->vaddr;
     }
@@ -277,27 +274,25 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
     type_str = "heap";
   }
 
-  log_debug("tid %d vm copy %s range: %x - %x size: %d\n", vm_copy->tid,
+  log_debug("tid %d vm copy %s range: %lx - %lx size: %d\n", vm_copy->tid,
             type_str, addr, end_addr, vm->alloc_size);
 
 #ifdef VM_ENABLE
-  u32 copy_start = addr;
+  vaddr_t copy_start = addr;
   u32 copied_pages = 0;
   for (; addr < end_addr; addr += PAGE_SIZE) {
-    void* phy = page_v2p(vm_src->upage, addr);
+    void* phy = page_v2p((u64*)vm_src->upage, (void*)addr);
     if (phy != NULL) {
-      u32* copy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
-      kmemmove(copy_addr, addr,
-               PAGE_SIZE);  // fix v3s crash copy use current page addr
-      log_debug("-copy vaddr %x addr %x to %x\n", addr, phy, copy_addr);
-      vmemory_map(vm_copy->upage, addr, copy_addr, PAGE_SIZE);
+      void* copy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
+      kmemmove(copy_addr, (void*)addr, PAGE_SIZE);
+      log_debug("-copy vaddr %lx addr %lx to %lx\n", addr, phy, copy_addr);
+      vmemory_map(vm_copy->upage, addr, (vaddr_t)copy_addr, PAGE_SIZE);
       copied_pages++;
     } else {
-      log_warn("thread %d vm copy data,vaddr %x phy is null\n", vm_copy->tid,
+      log_warn("thread %d vm copy data,vaddr %lx phy is null\n", vm_copy->tid,
                addr);
     }
   }
-  // 更新新线程的分配信息
   if (type == MEMORY_STACK) {
     cvm->alloc_addr = copy_start;
     cvm->alloc_size = copied_pages * PAGE_SIZE;
@@ -313,8 +308,7 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
 
   vmcopy->vma = vmemory_area_clone(vmthread->vma, 1);
   vmcopy->kpage = page_kernel_dir();
-  // vmcopy->upage = page_clone(vmcopy->kpage, 3);
-  vmcopy->upage = page_clone(vmthread->upage, 3);
+  vmcopy->upage = page_clone((u64*)vmthread->upage, 3);
 
   // 栈拷贝并映射
   vmemory_copy_data(vmcopy, vmthread, MEMORY_STACK);

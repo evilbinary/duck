@@ -26,18 +26,16 @@ void ya_alloc_init() {
     if (mem->type != 1) {  // normal ram
       continue;
     }
-    // skip
-    u32 addr = mem->base;
-    u32 len = mem->length;
-    // mm_add_block(addr, len);
-    u32 kernel_start = boot_info->kernel_base;
-    u32 kernel_end = kernel_start + boot_info->kernel_size;
-    kprintf("kernel base %x end %x\n", kernel_start, kernel_end);
+    uintptr_t addr = mem->base;
+    uintptr_t len = mem->length;
+    uintptr_t kernel_start = (uintptr_t)boot_info->kernel_base;
+    uintptr_t kernel_end = kernel_start + boot_info->kernel_size;
+    kprintf("kernel base %lx end %lx\n", kernel_start, kernel_end);
     if (is_line_intersect(addr, addr + len, kernel_start, kernel_end)) {
-      int a1 = addr;
-      int a2 = addr + len;
-      int b1 = kernel_start;
-      int b2 = kernel_end;
+      uintptr_t a1 = addr;
+      uintptr_t a2 = addr + len;
+      uintptr_t b1 = kernel_start;
+      uintptr_t b2 = kernel_end;
       if (b1 > a1) {
         addr = a1;
         len = b1 - a1;
@@ -92,11 +90,10 @@ void* ya_sbrk(size_t size) {
   kassert(addr != NULL);
   if (mmt.last_map_addr > 0 &&
       ((uintptr_t)addr + PAGE_SIZE * 900) > mmt.last_map_addr) {
-    kprintf("extend kernel phy mem addr:%x last addr:%x extend count:%d\n",
+    kprintf("extend kernel phy mem addr:%lx last addr:%lx extend count:%d\n",
             addr, mmt.last_map_addr, mmt.extend_phy_count);
-    // extend 400k*mmt.extend_phy_count phy mem
     int len = 0;
-    u32 baddr = mmt.last_map_addr;
+    uintptr_t baddr = mmt.last_map_addr;
     mmt.extend_phy_count++;
     for (int i = 0; i < 1000; i++) {
       page_map(mmt.last_map_addr, mmt.last_map_addr,
@@ -734,34 +731,33 @@ u32 mm_get_block_size(void* addr) {
 }
 #endif
 
-void map_mem_block(u32* page, u32 size, u32 flags) {
+void map_mem_block(void* page, vaddr_t size, u64 flags) {
   mem_block_t* p = mmt.blocks;
   for (; p != NULL; p = p->next) {
-    u32 address = p->origin_addr;
+    vaddr_t address = p->origin_addr;
     page_map_range(page, address, address, size, flags);
-    kprintf("map mem block addr range %x - %x\n", p->origin_addr,
+    kprintf("map mem block addr range %lx - %lx\n", p->origin_addr,
             p->origin_addr + size);
     mmt.last_map_addr = address + size;
   }
 }
 
-void page_map_range(u32* page, u32 vaddr, u32 paddr, u32 size, u32 flag) {
+void page_map_range(void* page, vaddr_t vaddr, vaddr_t paddr, vaddr_t size, u64 flag) {
   int pages = size / PAGE_SIZE + (size % PAGE_SIZE > 0 ? 1 : 0);
   for (int j = 0; j < pages; j++) {
-    page_map_on(page, vaddr, paddr, flag);
+    page_map_on((u64*)page, vaddr, paddr, flag);
     vaddr += PAGE_SIZE;
     paddr += PAGE_SIZE;
   }
 }
 
-void page_map_kernel(u32* page, u32 flag_x, u32 flag_rw) {
-  unsigned int address = 0;
-  // map kernel
+void page_map_kernel(void* page, u64 flag_x, u64 flag_rw) {
+  vaddr_t address = 0;
   kprintf("map kernel start\n");
   for (int i = 0; i < boot_info->segments_number; i++) {
-    u32 size = boot_info->segments[i].size;
-    address = boot_info->segments[i].start;
-    u32 flag = flag_x;
+    vaddr_t size = boot_info->segments[i].size;
+    address = (vaddr_t)(uintptr_t)boot_info->segments[i].start;
+    u64 flag = flag_x;
     u32 type = boot_info->segments[i].type;
     if (type == 2) {
       flag = flag_rw;
@@ -770,27 +766,21 @@ void page_map_kernel(u32* page, u32 flag_x, u32 flag_rw) {
 
     kassert(address != 0);
     kassert(size != 0);
-    kprintf("map kernel %d range %x  - %x type %d\n", i, address,
+    kprintf("map kernel %d range %lx  - %lx type %d\n", i, address,
             address + size, type);
   }
   kprintf("map kernel end %d\n", boot_info->segments_number);
 }
 
-void mm_parse_map(u32* kernel_page_dir) {
+void mm_parse_map(void* kernel_page_dir) {
   kprintf("map mem block start\n");
-  // map mem block 100 page 4000k
   map_mem_block(kernel_page_dir, PAGE_SIZE * 10000, PAGE_RW_NC);
 
   int size = PAGE_SIZE * 200;
   kprintf("map mem range %x %x\n", 0, size);
-  // map 0 - 0x80000
-  // page_map_range(kernel_page_dir, 0, 0, size, PAGE_RW);
 
   kprintf("map mem kernel\n");
-  // map kernel
   page_map_kernel(kernel_page_dir, PAGE_RWX, PAGE_RW);
-  // page_map_kernel(kernel_page_dir, 0, 0);
 
-  // platform_end
   platform_map();
 }

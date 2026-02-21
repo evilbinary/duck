@@ -97,10 +97,10 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
 
   void* ksp = kmalloc(kstack_size, KERNEL_TYPE);
   void* usp = kmalloc_alignment(ustack_size, PAGE_SIZE, KERNEL_TYPE);
-  ctx->ksp_start = ksp;
-  ctx->ksp_end = ksp + kstack_size;
+  ctx->ksp_start = (u64)ksp;
+  ctx->ksp_end = (u64)ksp + kstack_size;
   ctx->ksp_size = kstack_size;
-  ctx->usp = usp + ustack_size;
+  ctx->usp = (u64)usp + ustack_size;
   ctx->usp_size = ustack_size;
 
   u32 mode = USER_MODE;
@@ -113,13 +113,12 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   vmemory_t* vm = kmalloc(sizeof(vmemory_t), KERNEL_TYPE);
   thread->vm = vm;
   vm->tid = thread->id;
-  // init vm include stack heap exec
-  vmemory_init(vm, level, usp, ustack_size, flags);
+  vmemory_init(vm, level, (vaddr_t)usp, ustack_size, flags);
 
   vmemory_area_t* vm_stack = vmemory_area_find_flag(vm->vma, MEMORY_STACK);
-  context_init(ctx, ctx->ksp_end, vm_stack->vend, entry, mode, thread->cpu_id);
+  context_init(ctx, ctx->ksp_end, vm_stack->vend, (u64)entry, mode, thread->cpu_id);
 #else
-  context_init(ctx, ctx->ksp_end, ctx->usp, entry, mode, thread->cpu_id);
+  context_init(ctx, ctx->ksp_end, ctx->usp, (u64)entry, mode, thread->cpu_id);
 #endif
 
   // vfs
@@ -164,14 +163,14 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   copy->ctx = ctx;
   ctx->tid = copy->id;
 
-  u32 kstack_size = thread->ctx->ksp_size;
-  u32 ustack_size = thread->ctx->usp_size;
+  u64 kstack_size = thread->ctx->ksp_size;
+  u64 ustack_size = thread->ctx->usp_size;
 
-  uintptr_t ksp = (uintptr_t)kmalloc(kstack_size, KERNEL_TYPE);
+  u64 ksp = (u64)kmalloc(kstack_size, KERNEL_TYPE);
   ctx->ksp_start = ksp;
   ctx->ksp_end = ksp + kstack_size;
   ctx->ksp_size = kstack_size;
-  ctx->usp = NULL;
+  ctx->usp = 0;
   ctx->usp_size = ustack_size;
 
   context_clone(copy->ctx, thread->ctx);
@@ -253,12 +252,12 @@ int thread_check(thread_t* thread) {
   }
 
   if (thread->ctx->usp < vm_stack->vaddr || thread->ctx->usp > vm_stack->vend) {
-    log_error("create thread %d faild for ustack %x range [%x - %x] error\n",
+    log_error("create thread %d faild for ustack %lx range [%lx - %lx] error\n",
               thread->id, thread->ctx->usp, vm_stack->vaddr, vm_stack->vend);
     return -1;
   }
 
-  void* phy = page_v2p(thread->vm->upage, vm_stack->alloc_addr);
+  void* phy = page_v2p((u64*)thread->vm->upage, (void*)vm_stack->alloc_addr);
   if (phy == NULL) {
     log_error("thread map have error\n");
     return -1;
@@ -569,9 +568,9 @@ fd_t* thread_set_fd(thread_t* thread, u32 fd, fd_t* nfd) {
   return thread->fds[fd] = nfd;
 }
 
-int thread_map(thread_t* thread, u32 virt_addr, u32 phy_addr, u32 size) {
-  log_debug("thread map %x %x %d\n", virt_addr, phy_addr, size);
-  vmemory_map(thread->vm->upage, virt_addr, phy_addr, size);
+int thread_map(thread_t* thread, vaddr_t virt_addr, vaddr_t phy_addr, vaddr_t size) {
+  log_debug("thread map %lx %lx %ld\n", virt_addr, phy_addr, size);
+  vmemory_map((u64*)thread->vm->upage, virt_addr, phy_addr, size);
   return 0;
 }
 

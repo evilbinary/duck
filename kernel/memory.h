@@ -73,20 +73,19 @@ typedef struct memory {
 } memory_t;
 
 typedef struct vmemory_area {
-  u32 vaddr;
-  u32 vend;
-  u32 size;
+  vaddr_t vaddr;
+  vaddr_t vend;
+  vaddr_t size;
   u8 flags;
-  u32 alloc_addr;
-  u32 alloc_size;
+  vaddr_t alloc_addr;
+  vaddr_t alloc_size;
   struct vmemory_area* next;
   struct vmemory_area* child;
 } vmemory_area_t;
 
-
 typedef struct vmemory{
-  u32* upage;
-  u32* kpage;
+  void* upage;
+  void* kpage;
   vmemory_area_t* vma;
   u32 tid;
 }vmemory_t;
@@ -127,12 +126,12 @@ void* kpage_v2p(void* addr, int size);
 
 void memory_init();
 
-vmemory_area_t* vmemory_area_create(void* addr, u32 size, u8 flags);
+vmemory_area_t* vmemory_area_create(void* addr, vaddr_t size, u8 flags);
 vmemory_area_t* vmemory_area_destroy(vmemory_area_t* area);
 
-vmemory_area_t* vmemory_area_alloc(vmemory_area_t* areas, void* addr, u32 size);
+vmemory_area_t* vmemory_area_alloc(vmemory_area_t* areas, void* addr, vaddr_t size);
 vmemory_area_t* vmemory_area_find(vmemory_area_t* areas, void* addr,
-                                  size_t size);
+                                  vaddr_t size);
 void vmemory_area_add(vmemory_area_t* areas, vmemory_area_t* area);
 void vmemory_area_free(vmemory_area_t* area);
 void memory_static(u32 size, int type);
