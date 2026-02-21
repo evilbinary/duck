@@ -247,38 +247,65 @@ typedef struct context_t {
 #define context_ret(context) context->x0
 #define context_set_entry(context, entry) (((interrupt_context_t*)context)->pc = entry);
 
-// For first thread start (no exception, just jump to entry)
+// For first thread start: restore full context and eret into the thread.
+// interrupt_context_t offsets (all u64, 8 bytes each):
+//   +0:  no   +8:  code  +16: psr  +24: pc   +32: lr   +40: sp_el0
+//   +48: x28  +56: x29   +64: x26  +72: x27  +80: x24  +88: x25
+//   +96: x22  +104:x23   +112:x20  +120:x21  +128:x18  +136:x19
+//   +144:x16  +152:x17   +160:x14  +168:x15  +176:x12  +184:x13
+//   +192:x10  +200:x11   +208:x8   +216:x9   +224:x6   +232:x7
+//   +240:x4   +248:x5    +256:x2   +264:x3   +272:x0   +280:x1
+// %0 = ic ptr, %1 = ksp_end (kernel stack top for SP_EL1)
 #define context_start(duck_context) \
-  asm volatile(                              \
-      "mov sp, %0 \n"                         \
-      /* Skip no, code, psr, pc, lr, sp_el0 */ \
-      "add sp, sp, #48\n" \
-      /* Load x28-x29, ..., x0-x1 */ \
-      "ldp x28, x29, [sp], #16\n" \
-      "ldp x26, x27, [sp], #16\n" \
-      "ldp x24, x25, [sp], #16\n" \
-      "ldp x22, x23, [sp], #16\n" \
-      "ldp x20, x21, [sp], #16\n" \
-      "ldp x18, x19, [sp], #16\n" \
-      "ldp x16, x17, [sp], #16\n" \
-      "ldp x14, x15, [sp], #16\n" \
-      "ldp x12, x13, [sp], #16\n" \
-      "ldp x10, x11, [sp], #16\n" \
-      "ldp x8, x9, [sp], #16\n" \
-      "ldp x6, x7, [sp], #16\n" \
-      "ldp x4, x5, [sp], #16\n" \
-      "ldp x2, x3, [sp], #16\n" \
-      "ldp x0, x1, [sp], #16\n" \
-      /* Get entry point */ \
-      "mov sp, %0 \n" \
-      "add sp, sp, #32\n" \
-      "ldr x0, [sp]\n" \
-      "mov lr, x0\n" \
-      /* Jump to entry */ \
-      "ret lr\n" \
-      :                                      \
-      : "r"(duck_context->ksp) \
-      : "memory", "x0")
+  asm volatile(                                    \
+      /* Restore SPSR_EL1 and ELR_EL1 */ \
+      "ldr x0, [%0, #16]\n"  /* psr */            \
+      "msr spsr_el1, x0\n"                         \
+      "ldr x0, [%0, #24]\n"  /* pc/entry */        \
+      "msr elr_el1, x0\n"                          \
+      /* Restore LR */ \
+      "ldr lr,  [%0, #32]\n"                       \
+      /* Restore SP_EL0 (user stack) */ \
+      "ldr x0, [%0, #40]\n"                        \
+      "msr sp_el0, x0\n"                           \
+      /* Set SP_EL1 = ksp_end (clean kernel stack for this thread) */ \
+      "mov sp, %1\n"                               \
+      /* Restore general registers (using fixed offsets from ic) */ \
+      "ldr x28, [%0, #48]\n"                       \
+      "ldr x29, [%0, #56]\n"                       \
+      "ldr x26, [%0, #64]\n"                       \
+      "ldr x27, [%0, #72]\n"                       \
+      "ldr x24, [%0, #80]\n"                       \
+      "ldr x25, [%0, #88]\n"                       \
+      "ldr x22, [%0, #96]\n"                       \
+      "ldr x23, [%0, #104]\n"                      \
+      "ldr x20, [%0, #112]\n"                      \
+      "ldr x21, [%0, #120]\n"                      \
+      "ldr x18, [%0, #128]\n"                      \
+      "ldr x19, [%0, #136]\n"                      \
+      "ldr x16, [%0, #144]\n"                      \
+      "ldr x17, [%0, #152]\n"                      \
+      "ldr x14, [%0, #160]\n"                      \
+      "ldr x15, [%0, #168]\n"                      \
+      "ldr x12, [%0, #176]\n"                      \
+      "ldr x13, [%0, #184]\n"                      \
+      "ldr x10, [%0, #192]\n"                      \
+      "ldr x11, [%0, #200]\n"                      \
+      "ldr x8,  [%0, #208]\n"                      \
+      "ldr x9,  [%0, #216]\n"                      \
+      "ldr x6,  [%0, #224]\n"                      \
+      "ldr x7,  [%0, #232]\n"                      \
+      "ldr x4,  [%0, #240]\n"                      \
+      "ldr x5,  [%0, #248]\n"                      \
+      "ldr x2,  [%0, #256]\n"                      \
+      "ldr x3,  [%0, #264]\n"                      \
+      /* Load x0/x1 last (x0 is the ic base register) */ \
+      "ldr x1,  [%0, #280]\n"                      \
+      "ldr x0,  [%0, #272]\n"                      \
+      "eret\n"                                      \
+      :                                             \
+      : "r"(duck_context->ksp), "r"(duck_context->ksp_end) \
+      : "memory")
 
 #define context_restore(duck_context) interrupt_exit_context(duck_context->ksp);
 
