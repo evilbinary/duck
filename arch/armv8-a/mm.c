@@ -10,192 +10,161 @@
 
 extern boot_info_t* boot_info;
 
-// Kernel page directory
-static u64* kernel_pgd = NULL;
-
-// Allocate a page table (512 entries, 4KB)
+// Allocate a zeroed 4KB-aligned page table (512 × 8 bytes = 4096 bytes)
 u64* page_create(u32 level) {
-  u64* page_dir = (u64*)mm_alloc_zero_align(sizeof(u64) * PTRS_PER_TABLE, PAGE_SIZE);
-  return page_dir;
+  return (u64*)mm_alloc_zero_align(sizeof(u64) * PTRS_PER_TABLE, PAGE_SIZE);
 }
 
-// Copy page table
-void page_copy(u64* old_page, u64* new_page) {
-  if (old_page == NULL || new_page == NULL) {
-    kprintf("page copy error: null page\n");
+// Deep copy a 3-level (PGD→PMD→PTE) page table, mirroring armv7-a page_copy.
+// For each valid PGD entry, allocate a new PMD table and deep-copy it.
+// For each valid PMD entry, allocate a new PTE table and copy leaf entries.
+void page_copy(u64* old_pgd, u64* new_pgd) {
+  if (old_pgd == NULL || new_pgd == NULL) {
+    kprintf("page_copy: null argument\n");
     return;
   }
-  
-  // Copy all entries
-  for (int i = 0; i < PTRS_PER_TABLE; i++) {
-    u64 entry = old_page[i];
-    if (entry & PTE_VALID) {
-      // Mark as read-only for copy-on-write
-      // For now, just copy
-      new_page[i] = entry;
+
+  for (int gi = 0; gi < PTRS_PER_TABLE; gi++) {
+    u64 pgd_entry = old_pgd[gi];
+    if (!(pgd_entry & PTE_VALID))
+      continue;
+
+    // Allocate a new PMD table
+    u64* old_pmd = (u64*)(pgd_entry & PTE_ADDR_MASK);
+    u64* new_pmd = (u64*)mm_alloc_zero_align(sizeof(u64) * PTRS_PER_TABLE, PAGE_SIZE);
+    new_pgd[gi] = ((u64)new_pmd & PTE_ADDR_MASK) | PTE_VALID | PTE_TABLE;
+
+    for (int mi = 0; mi < PTRS_PER_TABLE; mi++) {
+      u64 pmd_entry = old_pmd[mi];
+      if (!(pmd_entry & PTE_VALID))
+        continue;
+
+      // Allocate a new PTE table
+      u64* old_pte = (u64*)(pmd_entry & PTE_ADDR_MASK);
+      u64* new_pte = (u64*)mm_alloc_zero_align(sizeof(u64) * PTRS_PER_TABLE, PAGE_SIZE);
+      new_pmd[mi] = ((u64)new_pte & PTE_ADDR_MASK) | PTE_VALID | PTE_TABLE;
+
+      // Copy leaf entries (share physical pages, like armv7-a)
+      for (int pi = 0; pi < PTRS_PER_TABLE; pi++) {
+        if (old_pte[pi] & PTE_VALID) {
+          new_pte[pi] = old_pte[pi];
+        }
+      }
     }
   }
 }
 
-// Clone a page table
-u64* page_clone(u64* old_page_dir, u32 level) {
-  u64* new_page_dir = page_create(level);
-  if (new_page_dir == NULL) {
-    return NULL;
-  }
-  
-  page_copy(old_page_dir, new_page_dir);
-  return new_page_dir;
+// Clone page table
+u64* page_clone(u64* old_pgd, u32 level) {
+  u64* new_pgd = page_create(level);
+  if (new_pgd == NULL) return NULL;
+  page_copy(old_pgd, new_pgd);
+  return new_pgd;
 }
 
-// Get next level table, create if not exists
+// Get or create next-level table at index
 static u64* get_next_table(u64* table, u64 index, u8 create) {
   u64 entry = table[index];
-  
+
   if (entry & PTE_VALID) {
-    if (entry & PTE_TABLE) {
+    if (entry & PTE_TABLE)
       return (u64*)(entry & PTE_ADDR_MASK);
-    }
-    // It's a block, can't traverse further
-    return NULL;
+    return NULL;  // block entry, can't traverse
   }
-  
-  if (!create) {
-    return NULL;
-  }
-  
-  // Create new table
+
+  if (!create) return NULL;
+
   u64* new_table = page_create(0);
-  if (new_table == NULL) {
-    return NULL;
-  }
-  
-  // Set as table descriptor
+  if (new_table == NULL) return NULL;
+
   table[index] = ((u64)new_table & PTE_ADDR_MASK) | PTE_VALID | PTE_TABLE;
   return new_table;
 }
 
-// Map a virtual address to physical address (3-level: PGD->PMD->PTE)
-// Similar to ARMv7-A 2-level page table
+// Map virtualaddr → physaddr with flags (3-level walk)
 void page_map_on(u64* pgd, u64 virtualaddr, u64 physaddr, u64 flags) {
   if (pgd == NULL) {
-    kprintf("page_map_on: pgd is null\n");
+    kprintf("page_map_on: pgd null\n");
     return;
   }
-  
-  // Get indices for each level (39-bit VA: PGD->PMD->PTE)
-  u64 pgd_idx = pgd_index(virtualaddr);
-  u64 pmd_idx = pmd_index(virtualaddr);
-  u64 pte_idx = pte_index(virtualaddr);
-  
-  // Walk through levels
-  u64* pmd = get_next_table(pgd, pgd_idx, 1);
+
+  u64* pmd = get_next_table(pgd, pgd_index(virtualaddr), 1);
   if (pmd == NULL) return;
-  
-  u64* pte = get_next_table(pmd, pmd_idx, 1);
+  u64* pte = get_next_table(pmd, pmd_index(virtualaddr), 1);
   if (pte == NULL) return;
-  
-  // Set final PTE - ensure PTE_VALID is set
-  pte[pte_idx] = (physaddr & PTE_ADDR_MASK) | flags | PTE_VALID;
-  
-  // Invalidate TLB for this address
+
+  pte[pte_index(virtualaddr)] = (physaddr & PTE_ADDR_MASK) | flags | PTE_VALID;
+
   asm volatile("tlbi vaae1, %0" : : "r"(virtualaddr >> 12) : "memory");
+  dsb();
 }
 
-// Unmap a virtual address (3-level: PGD->PMD->PTE)
+// Unmap virtualaddr
 void page_unmap_on(u64* pgd, u64 virtualaddr) {
   if (pgd == NULL) return;
-  
-  u64 pgd_idx = pgd_index(virtualaddr);
-  u64 pmd_idx = pmd_index(virtualaddr);
-  u64 pte_idx = pte_index(virtualaddr);
-  
-  u64* pmd = get_next_table(pgd, pgd_idx, 0);
+
+  u64* pmd = get_next_table(pgd, pgd_index(virtualaddr), 0);
   if (pmd == NULL) return;
-  
-  u64* pte = get_next_table(pmd, pmd_idx, 0);
+  u64* pte = get_next_table(pmd, pmd_index(virtualaddr), 0);
   if (pte == NULL) return;
-  
-  // Clear PTE
-  pte[pte_idx] = 0;
-  
-  // Invalidate TLB
+
+  pte[pte_index(virtualaddr)] = 0;
+
   asm volatile("tlbi vaae1, %0" : : "r"(virtualaddr >> 12) : "memory");
+  dsb();
 }
 
-// Translate virtual address to physical (3-level: PGD->PMD->PTE)
-void* page_v2p(u64* page_dir_ptr_tab, void* vaddr) {
-  u64* pgd = page_dir_ptr_tab;
-  u64 addr = (u64)vaddr;
-  
+// Translate virtual → physical
+void* page_v2p(u64* pgd, void* vaddr) {
   if (pgd == NULL) return NULL;
-  
-  u64 pgd_idx = pgd_index(addr);
-  u64 pmd_idx = pmd_index(addr);
-  u64 pte_idx = pte_index(addr);
-  
-  u64* pmd = get_next_table(pgd, pgd_idx, 0);
+
+  u64 addr = (u64)vaddr;
+  u64* pmd = get_next_table(pgd, pgd_index(addr), 0);
   if (pmd == NULL) return NULL;
-  
-  u64* pte = get_next_table(pmd, pmd_idx, 0);
+  u64* pte = get_next_table(pmd, pmd_index(addr), 0);
   if (pte == NULL) return NULL;
-  
-  u64 entry = pte[pte_idx];
+
+  u64 entry = pte[pte_index(addr)];
   if (!(entry & PTE_VALID)) return NULL;
-  
-  u64 phys = entry & PTE_ADDR_MASK;
-  u64 offset = addr & (PAGE_SIZE - 1);
-  
-  return (void*)(phys | offset);
+
+  return (void*)((entry & PTE_ADDR_MASK) | (addr & (PAGE_SIZE - 1)));
 }
 
-// Set up MAIR_EL1 (Memory Attribute Indirection Register)
+// Setup MAIR_EL1
 static void setup_mair(void) {
-  u64 mair = 
-    (0xFFUL << 0) |   // Attr0: Normal memory, Outer WB, Inner WB
-    (0x04UL << 8) |   // Attr1: Device memory, nGnRE
-    (0x44UL << 16);   // Attr2: Normal memory, non-cacheable
-  
+  u64 mair =
+    (0xFFUL <<  0) |   // Attr0: Normal memory, WB/WA
+    (0x04UL <<  8) |   // Attr1: Device nGnRE
+    (0x44UL << 16);    // Attr2: Normal non-cacheable
   asm volatile("msr mair_el1, %0" : : "r"(mair) : "memory");
 }
 
-// Enable MMU
+// Enable MMU with given page table
 void mm_page_enable(u64 page_dir) {
-  // Setup MAIR
   setup_mair();
-  
-  // Set TCR_EL1
-  // 4KB granule, Inner/Outer WB, Inner shareable, 39-bit VA (3-level page table)
-  u64 tcr = 
-    TCR_T0SZ(39) |          // 39-bit virtual address (3-level page table)
-    TCR_IRGN0(1) |          // Inner WB
-    TCR_ORGN0(1) |          // Outer WB
-    TCR_SH0(3) |            // Inner shareable
-    TCR_TG0_4K |            // 4KB granule
-    TCR_IPS(1);             // 40-bit PA for RPi3
-  
+
+  // TCR_EL1: 4KB granule, 39-bit VA, inner/outer WB, inner-shareable
+  u64 tcr =
+    TCR_T0SZ(39) |
+    TCR_IRGN0(1) |
+    TCR_ORGN0(1) |
+    TCR_SH0(3)   |
+    TCR_TG0_4K   |
+    TCR_IPS(1);
+
   asm volatile("msr tcr_el1, %0" : : "r"(tcr) : "memory");
   isb();
-  
-  // Set TTBR0
+
   asm volatile("msr ttbr0_el1, %0" : : "r"(page_dir) : "memory");
   isb();
-  
-  // Invalidate TLB
+
   cpu_invalid_tlb();
-  
-  kprintf("enable page at %x\n", page_dir);
-  
-  // Enable MMU and caches
+
+  kprintf("enable page at %lx\n", page_dir);
   cpu_enable_page();
-  
   kprintf("paging success\n");
 }
 
-// Initialize default page tables
 void mm_init_default(u64 kernel_page_dir) {
-  kernel_pgd = (u64*)kernel_page_dir;
-  
-  // Map kernel code, data, and device memory
-  // This will be called by kernel initialization
+  // Called after mm_page_enable; nothing more to do here.
 }

@@ -13,16 +13,18 @@ int context_get_mode(context_t* context) {
   if (context != NULL) {
     interrupt_context_t* c = context->ksp;
     if (c != NULL) {
-      // In ARM64, check DAIF bits in PSTATE for EL0
-      // EL0 user mode: lower bits indicate
+      // EL0 (user mode): PSTATE bits [3:0] == 0x0
       if ((c->psr & 0xF) == 0x0) {
-        return 3;  // user mode (EL0)
+        return 3;
       }
     }
   }
   return mode;
 }
 
+// context_init: mirrors armv7-a design exactly.
+//   ic is placed at ksp_top - sizeof(interrupt_context_t) * 2
+//   so there is one slot of space below it for context_switch to use ++ksp.
 int context_init(context_t* context, u64 ksp_top, u64 usp_top, u64 entry,
                  u32 level, int cpu) {
   if (context == NULL) {
@@ -36,65 +38,48 @@ int context_init(context_t* context, u64 ksp_top, u64 usp_top, u64 entry,
     log_error("usp end is null\n");
     return -1;
   }
-  
-  // Skip verbose logging to avoid kvsprintf issues
 
   context->eip = entry;
   context->level = level;
 
-  // Setup PSTATE based on level
-  // PSTATE bits: D(bit9) A(bit8) I(bit7) F(bit6) mode(bits 3:0)
-  // Mode: EL0t=0x0, EL1t=0x4, EL1h=0x5
-  u32 pstate = 0;
+  // PSTATE: EL1h (0x5) with D/A/I/F masked = 0x3C5  → kernel thread
+  //         EL0t (0x0) with no masks               → user thread
+  u64 pstate;
   if (level == 0) {
-    // Kernel mode (EL1h) with interrupts disabled
-    pstate = 0x3C5;  // D=1, A=1, I=1, F=1, mode=EL1h(0x5)
+    // kernel mode: EL1h, all interrupts masked
+    pstate = 0x3C5;
   } else if (level == 3) {
-    // User mode (EL0t)
-    pstate = 0x0;    // EL0t
+    // user mode: EL0t
+    pstate = 0x0;
   } else {
-    // Unsupported level, set to safe default
+    kprintf("context_init: unsupported level %d\n", level);
     pstate = 0x3C5;
   }
 
-  // Place ic at ksp_top - sizeof(ic) so that after interrupt_exit_context
-  // consumes all fields with [sp],#16, sp lands exactly at ksp_top (stack top).
-  interrupt_context_t* ic = (interrupt_context_t*)((u64)ksp_top - sizeof(interrupt_context_t));
+  // Place ic two slots below ksp_top, matching armv7-a:
+  //   ksp_top - 1 slot: scratch space used by ++current->ksp in context_switch
+  //   ksp_top - 2 slots: the initial ic that context_restore reads
+  interrupt_context_t* ic =
+      (interrupt_context_t*)((u64)ksp_top - sizeof(interrupt_context_t) * 2);
 
   kmemset(ic, 0, sizeof(interrupt_context_t));
-  ic->lr = (u64)entry;
-  ic->pc = ic->lr;
+  ic->lr  = (u64)entry;
+  ic->pc  = ic->lr;
   ic->psr = pstate;
-  ic->sp = (u64)usp_top;
-  
-  // Initialize general registers with debug values
-  ic->x0 = 0;
-  ic->x1 = 0x00010001;
-  ic->x2 = 0x00020002;
-  ic->x3 = 0x00030003;
-  ic->x4 = 0x00040004;
-  ic->x5 = 0x00050005;
-  ic->x6 = 0x00060006;
-  ic->x7 = 0x00070007;
-  ic->x8 = 0x00080008;
-  ic->x9 = 0x00090009;
-  ic->x10 = 0x00100010;
-  ic->x11 = 0x00110011;  // fp
-  ic->x29 = 0x00110011;  // fp (x29)
-  
-  context->usp = (u64)usp_top;
-  context->ksp = ic;
-  
-  // Initialize ctx->ic to point to the interrupt context
-  context->ic = ic;
-  
+  ic->sp  = (u64)usp_top;   // SP_EL0: user stack (or kernel stack for kthreads)
+
+  // General-purpose registers start at 0
+  context->usp  = (u64)usp_top;
+  context->ksp  = ic;
+  context->ic   = ic;
+
   return 0;
 }
 
 void context_dump(context_t* c) {
   kprintf("tid: %8x\n", c->tid);
   kprintf("eip: %8lx\n", c->eip);
-  kprintf("ksp: %8lx\n", c->ksp);
+  kprintf("ksp: %8lx\n", (u64)c->ksp);
   kprintf("usp: %8lx\n", c->usp);
 
   kprintf("--interrupt context--\n");
@@ -135,48 +120,55 @@ void context_dump_fault(interrupt_context_t* context, u64 fault_addr) {
 
 int context_clone(context_t* des, context_t* src) {
   if (src->ksp_start == 0) {
-    log_error("ksp top is null\n");
+    log_error("src ksp_start is null\n");
     return -1;
   }
   if (des->ksp_start == 0) {
-    log_error("des ksp top is null\n");
+    log_error("des ksp_start is null\n");
     return -1;
   }
 
-  // Copy normal fields
-  des->usp = src->usp;
-  des->eip = src->eip;
-  des->level = src->level;
+  des->usp      = src->usp;
+  des->eip      = src->eip;
+  des->level    = src->level;
   des->usp_size = src->usp_size;
-  des->ic = src->ic;
+  des->ic       = src->ic;
 
-  // Copy kernel stack
+  // Copy entire kernel stack
   kmemmove((void*)des->ksp_start, (void*)src->ksp_start, src->ksp_size);
 
-  // Calculate ksp offset
+  // Recalculate ksp in destination with same offset from ksp_end
   u64 offset = src->ksp_end - (u64)src->ksp;
   interrupt_context_t* ic = (interrupt_context_t*)(des->ksp_end - offset);
-
   des->ksp = ic;
 
   return 0;
 }
 
+// context_switch: identical logic to armv7-a.
+//   ++current->ksp  saves current ic one slot higher (the scratch slot).
+//   next->ksp--     reads next ic then moves pointer back to scratch slot.
+// This way ksp always points at the "live" ic, and the slot above is free
+// for the next save.  No use of ic->no to carry ksp_end.
 interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
                                     context_t* next) {
   if (ic == NULL || current == next) {
     return ic;
   }
-  // Save current thread's register state into its own ic slot
   current->ic = ic;
-  kmemcpy(current->ksp, ic, sizeof(interrupt_context_t));
 
-  // Load next thread's register state into the current exception frame
-  kmemcpy(ic, next->ksp, sizeof(interrupt_context_t));
+  // Save current state into current's scratch slot (++ksp moves up one)
+  kmemcpy(++current->ksp, ic, sizeof(interrupt_context_t));
 
-  // Stash next's ksp_end in ic->no (offset 0). interrupt_exit_ret reads it
-  // to set SP_EL1 correctly before eret, since ic is NOT at ksp_end-288.
-  ic->no = next->ksp_end;
+  // Load next state from next's saved slot, then move next->ksp back down
+  kmemcpy(ic, next->ksp--, sizeof(interrupt_context_t));
 
   return ic;
+}
+
+void context_switch_page(context_t* context, u64 page_table) {
+  cpu_set_page(page_table);
+  cpu_invalid_tlb();
+  cp15_invalidate_icache();
+  dmb();
 }

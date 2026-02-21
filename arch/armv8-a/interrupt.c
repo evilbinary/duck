@@ -4,82 +4,76 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 
-#include "arch/interrupt.h"
+#include "../interrupt.h"
 #include "interrupt.h"
 #include "context.h"
 #include "cpu.h"
-#include "kernel/kernel.h"
 
 extern boot_info_t* boot_info;
 
 interrupt_handler_t interrutp_handlers[IDT_NUMBER];
 
-// Forward declarations
-extern void* interrupt_default_handler(interrupt_context_t* ic);
 void* sync_handler(interrupt_context_t* ic);
 
-// Exception vector table - must be 2KB aligned
-// ARM64 requires 16 entries: 4 groups x 4 types (Sync/IRQ/FIQ/SError)
-// Each entry is at a 0x80 (128) byte boundary
+// ============================================================
+// Exception vector table - 2KB aligned, entries at 0x80 steps
+// ============================================================
 __attribute__((naked, aligned(2048)))
 void exception_vectors(void) {
   __asm__ volatile(
-    // Group 0: Current EL with SP0 (shouldn't happen in normal operation)
-    "b exception_sp0_sync\n"       // 0x000: Sync
+    // Group 0: Current EL with SP_EL0 (unused)
+    "b exception_sp0_sync\n"
     ".align 7\n"
-    "b .\n"                        // 0x080: IRQ
+    "b .\n"
     ".align 7\n"
-    "b .\n"                        // 0x100: FIQ
+    "b .\n"
     ".align 7\n"
-    "b .\n"                        // 0x180: SError
+    "b .\n"
 
-    // Group 1: Current EL with SPx (kernel exceptions)
+    // Group 1: Current EL with SP_ELx (kernel exceptions)
     ".align 7\n"
-    "b exception_current_sync\n"   // 0x200: Sync
+    "b exception_current_sync\n"   // 0x200: kernel sync (SVC / data abort)
     ".align 7\n"
-    "b exception_current_irq\n"    // 0x280: IRQ
+    "b exception_current_irq\n"    // 0x280: kernel IRQ
     ".align 7\n"
-    "b exception_current_fiq\n"    // 0x300: FIQ
+    "b exception_current_fiq\n"    // 0x300: kernel FIQ
     ".align 7\n"
-    "b exception_current_serror\n" // 0x380: SError
+    "b .\n"                        // 0x380: SError (halt)
 
-    // Group 2: Lower EL using AArch64 (user mode exceptions)
+    // Group 2: Lower EL AArch64 (user → EL1)
     ".align 7\n"
-    "b exception_lower_sync\n"     // 0x400: Sync
+    "b exception_lower_sync\n"     // 0x400: user sync (SVC / page fault)
     ".align 7\n"
-    "b exception_lower_irq\n"      // 0x480: IRQ
+    "b exception_lower_irq\n"      // 0x480: user IRQ
     ".align 7\n"
-    "b exception_lower_fiq\n"      // 0x500: FIQ
+    "b exception_lower_fiq\n"      // 0x500: user FIQ
     ".align 7\n"
-    "b exception_lower_serror\n"   // 0x580: SError
+    "b .\n"                        // 0x580: SError (halt)
 
-    // Group 3: Lower EL using AArch32 (not supported)
+    // Group 3: Lower EL AArch32 (unsupported)
     ".align 7\n"
-    "b .\n"                        // 0x600: Sync
+    "b .\n"
     ".align 7\n"
-    "b .\n"                        // 0x680: IRQ
+    "b .\n"
     ".align 7\n"
-    "b .\n"                        // 0x700: FIQ
+    "b .\n"
     ".align 7\n"
-    "b .\n"                        // 0x780: SError
+    "b .\n"
   );
 }
 
-// ========================================
-// Exception handlers using INTERRUPT_SERVICE
-// Similar to armv7-a style
-// ========================================
-
-// SP0 exceptions (should not happen)
+// ============================================================
+// SP_EL0 sync (should never fire)
+// ============================================================
 INTERRUPT_SERVICE
 void exception_sp0_sync(void) {
   asm volatile("b .");
 }
 
-// Current EL synchronous exception (kernel mode svc / data abort / instruction abort)
-// Uses sync_handler to dispatch based on ESR_EL1 exception class.
-// Returns to same thread (no context switch), so use interrupt_exit()
-// which restores registers without touching SP_EL1.
+// ============================================================
+// Current EL synchronous (kernel SVC / kernel data abort)
+// Mirrors armv7-a svc_handler / data_abort_handler pattern.
+// ============================================================
 INTERRUPT_SERVICE
 void exception_current_sync(void) {
   interrupt_entering_code(EX_SYS_CALL, 0, 0);
@@ -87,7 +81,9 @@ void exception_current_sync(void) {
   interrupt_exit();
 }
 
-// Current EL IRQ
+// ============================================================
+// Current EL IRQ - may cause context switch → use exit_ret
+// ============================================================
 INTERRUPT_SERVICE
 void exception_current_irq(void) {
   interrupt_entering_code(EX_IRQ, 0, 0);
@@ -95,7 +91,9 @@ void exception_current_irq(void) {
   interrupt_exit_ret();
 }
 
+// ============================================================
 // Current EL FIQ
+// ============================================================
 INTERRUPT_SERVICE
 void exception_current_fiq(void) {
   interrupt_entering_code(EX_OTHER, 0, 0);
@@ -103,19 +101,10 @@ void exception_current_fiq(void) {
   interrupt_exit();
 }
 
-// Current EL SError
-INTERRUPT_SERVICE
-void exception_current_serror(void) {
-  interrupt_entering_code(EX_OTHER, 0, 0);
-  interrupt_process(interrupt_default_handler);
-  interrupt_exit();
-}
-
-// Lower EL synchronous exception (user mode -> EL1)
-// svc from EL0: may context-switch (yield syscall) or return to same thread.
-// sync_handler sets ic->no=ksp_end only when context_switch is called.
-// Use interrupt_exit_ret() which reads ic->no for the switched-to ksp_end,
-// but for same-thread return ic->no must be set to current ksp_end too.
+// ============================================================
+// Lower EL synchronous (user SVC / user page fault)
+// Syscalls may switch context → use exit_ret
+// ============================================================
 INTERRUPT_SERVICE
 void exception_lower_sync(void) {
   interrupt_entering_code(EX_SYS_CALL, 0, 0);
@@ -123,7 +112,9 @@ void exception_lower_sync(void) {
   interrupt_exit_ret();
 }
 
-// Lower EL IRQ
+// ============================================================
+// Lower EL IRQ - may context switch → use exit_ret
+// ============================================================
 INTERRUPT_SERVICE
 void exception_lower_irq(void) {
   interrupt_entering_code(EX_IRQ, 0, 0);
@@ -131,7 +122,9 @@ void exception_lower_irq(void) {
   interrupt_exit_ret();
 }
 
+// ============================================================
 // Lower EL FIQ
+// ============================================================
 INTERRUPT_SERVICE
 void exception_lower_fiq(void) {
   interrupt_entering_code(EX_OTHER, 0, 0);
@@ -139,31 +132,58 @@ void exception_lower_fiq(void) {
   interrupt_exit();
 }
 
-// Lower EL SError
-INTERRUPT_SERVICE
-void exception_lower_serror(void) {
-  interrupt_entering_code(EX_OTHER, 0, 0);
-  interrupt_process(interrupt_default_handler);
-  interrupt_exit();
+// ============================================================
+// C-level synchronous exception dispatch.
+//
+// Design mirrors armv7-a: just set ic->no to the right exception
+// number and call interrupt_default_handler.  No ksp_end tricks.
+// interrupt_exit / interrupt_exit_ret restore from sp directly
+// (same thread) or from x0 (switched thread).
+// ============================================================
+void* sync_handler(interrupt_context_t* ic) {
+  u64 esr = read_esr();
+  u32 ec  = get_exception_class(esr);
+  u64 far = read_far();
+
+  ic->code = ec;
+
+  switch (ec) {
+    case ESR_ELx_EC_SVC64:
+      ic->no = EX_SYS_CALL;
+      break;
+    case ESR_ELx_EC_DABT_LOW:
+    case ESR_ELx_EC_DABT_CUR:
+      ic->no = EX_DATA_FAULT;
+      break;
+    case ESR_ELx_EC_IABT_LOW:
+    case ESR_ELx_EC_IABT_CUR:
+      ic->no = EX_PREF_ABORT;
+      break;
+    default:
+      kprintf("sync: unknown ec=%x esr=%lx pc=%lx\n", ec, esr, ic->pc);
+      context_dump_interrupt(ic);
+      cpu_halt();
+      break;
+  }
+
+  return interrupt_default_handler(ic);
 }
 
-// ========================================
-// C functions
-// ========================================
+// ============================================================
+// C support functions
+// ============================================================
 
 void interrupt_init(void) {
   kprintf("interrupt init\n");
 
-  // Set exception vector table
   asm volatile("msr vbar_el1, %0" : : "r"((u64)exception_vectors) : "memory");
   isb();
 
-  // Initialize handler table
   for (int i = 0; i < IDT_NUMBER; i++) {
     interrutp_handlers[i] = NULL;
   }
 
-  boot_info->idt_base = (void*)exception_vectors;
+  boot_info->idt_base   = (void*)exception_vectors;
   boot_info->idt_number = IDT_NUMBER;
 }
 
@@ -171,75 +191,21 @@ void interrupt_regist(u32 vec, interrupt_handler_t handler) {
   interrutp_handlers[vec] = handler;
 }
 
-// Default exception handlers
-void default_handler(interrupt_context_t* ic) {
-  kprintf("Unhandled exception: no=%x code=%x pc=%x\n", ic->no, ic->code, ic->pc);
-  context_dump_interrupt(ic);
-  cpu_halt();
-}
-
-// Synchronous exception handler (called from interrupt_process)
-void* sync_handler(interrupt_context_t* ic) {
-  u64 esr = read_esr();
-  u32 ec = get_exception_class(esr);
-  u64 far = read_far();
-
-  ic->code = ec;
-
-  switch (ec) {
-    case ESR_ELx_EC_SVC64:
-      // System call: ic->no is already EX_SYS_CALL, dispatch via exception_process
-      ic->no = EX_SYS_CALL;
-      return interrupt_default_handler(ic);
-    case ESR_ELx_EC_DABT_LOW:
-    case ESR_ELx_EC_DABT_CUR:
-      // Data abort: route through exception_process so page_fault_handle
-      // (registered via exception_regist) is invoked.
-      ic->no = EX_DATA_FAULT;
-      return exception_process(ic);
-    case ESR_ELx_EC_IABT_LOW:
-    case ESR_ELx_EC_IABT_CUR:
-      // Instruction abort: same routing
-      ic->no = EX_PREF_ABORT;
-      return exception_process(ic);
-    default:
-      ic->no = EX_OTHER;
-      kprintf("Unknown sync exception: ec=%x esr=%lx\n", ec, esr);
-      context_dump_interrupt(ic);
-      cpu_halt();
-  }
-  return ic;
-}
-
-void* irq_handler(interrupt_context_t* ic) {
-  // Call the default handler which dispatches to exception_process
-  if (interrupt_default_handler != NULL) {
-    return interrupt_default_handler(ic);
-  }
-  return ic;
-}
-
-void* fiq_handler(interrupt_context_t* ic) {
-  if (interrutp_handlers[EX_FIQ_EL1] != NULL) {
-    return interrutp_handlers[EX_FIQ_EL1](ic);
-  } else {
-    kprintf("Unhandled FIQ\n");
-  }
-  return ic;
-}
-
-void* serror_handler(interrupt_context_t* ic) {
-  kprintf("SError exception at pc=%x\n", ic->pc);
-  context_dump_interrupt(ic);
-  cpu_halt();
-  return ic;
-}
-
 void exception_info(interrupt_context_t* ic) {
-  kprintf("Exception: no=%d code=%d pc=%x psr=%x\n",
-          ic->no, ic->code, ic->pc, ic->psr);
+  static const char* msgs[] = {
+    "", "RESET", "DATA FAULT", "SYS CALL",
+    "IRQ",  "UNDEF", "OTHER", "PREF ABORT", "PERMISSION"
+  };
+  int cpu = cpu_get_id();
+  if (ic->no < sizeof(msgs) / sizeof(msgs[0])) {
+    kprintf("exception cpu %d no %d: %s\n", cpu, ic->no, msgs[ic->no]);
+  } else {
+    kprintf("exception cpu %d no %lld\n", cpu, ic->no);
+  }
+  kprintf("esr: %lx far: %lx\n", read_esr(), read_far());
+  context_dump_interrupt(ic);
 }
 
 void interrupt_regist_all(void) {
-  // Handlers are registered via interrupt_regist
+  // handlers registered via interrupt_regist()
 }

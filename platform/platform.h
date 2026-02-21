@@ -79,6 +79,17 @@
 
 // #define MP_ENABLE 1  //多cpu
 
+#elif defined(RASPI3) || defined(ARMV8_A)
+
+#define ISR_TIMER 5
+#define ISR_KEYBOARD 0x21
+#define ISR_MOUSE 0x2c
+
+#define IDT_NUMBER 256
+#define EXCEPTION_NUMBER 32
+
+#define MP_ENABLE 1
+
 #else
 
 #define ISR_TIMER 5
