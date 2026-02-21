@@ -13,7 +13,6 @@ extern boot_info_t* boot_info;
 
 interrupt_handler_t interrutp_handlers[IDT_NUMBER];
 
-void* sync_handler(interrupt_context_t* ic);
 
 // ============================================================
 // Exception vector table - 2KB aligned, entries at 0x80 steps
@@ -171,7 +170,12 @@ void* sync_handler(interrupt_context_t* ic) {
       break;
   }
 
-  return interrupt_default_handler(ic);
+  void* ret = interrupt_default_handler(ic);
+  // interrupt_default_handler / exception_process may return NULL when no
+  // handler is registered.  interrupt_exit_ret() does "mov sp, x0" so a
+  // NULL return would set SP_EL1 = 0 and corrupt the kernel stack on the
+  // next exception.  Always return a valid ic pointer.
+  return (ret != NULL) ? ret : ic;
 }
 
 // ============================================================

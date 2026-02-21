@@ -51,6 +51,14 @@ void interrupt_regist(u32 vec, interrupt_handler_t handler);
 void interrupt_regist_all(void);
 void exception_info(interrupt_context_t* ic);
 
+// Defined in arch/interrupt.c - must be declared here so the compiler
+// knows the return type is void* (not int).  Without this declaration
+// the compiler generates sxtw on the return value, sign-extending a
+// pointer and corrupting SP_EL1 inside interrupt_exit_ret().
+void* interrupt_default_handler(interrupt_context_t* ic);
+void* sync_handler(interrupt_context_t* ic);
+void* exception_process(interrupt_context_t* ic);
+
 // Get exception class from ESR
 static inline u32 get_exception_class(u64 esr) {
   return (esr >> ESR_ELx_EC_SHIFT) & 0x3F;
