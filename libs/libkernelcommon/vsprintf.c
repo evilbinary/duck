@@ -46,6 +46,9 @@ static int skip_atoi(const char **s) {
 ------------------------------------------------------------------------*/
 static char *number(char *str, unsigned long long num, int base, int size,
                     int precision, int type) {
+  // Guard against corrupted size from va_arg misread
+  if (size > 64) size = 64;
+  if (precision > 64) precision = 64;
   int i;
   char c, sign, tmp[36];
   const char *digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -202,37 +205,44 @@ int kvsprintf(char *buf, const char *fmt, va_list args) {
         break;
 
       case 'o':
-        str = number(str, va_arg(args, unsigned long), 8, field_width,
-                     precision, flags);
+        str = number(str, (unsigned long long)va_arg(args, unsigned long), 8,
+                     field_width, precision, flags);
         break;
 
       case 'p':
         if (field_width == -1) {
-          field_width = 8;
+          field_width = 16;   // ARM64: 64-bit pointer = 16 hex chars
           flags |= ZEROPAD;
         }
-        str = number(str, (unsigned long)va_arg(args, void *), 16, field_width,
-                     precision, flags);
+        str = number(str, (unsigned long long)(uintptr_t)va_arg(args, void *),
+                     16, field_width, precision, flags);
         break;
 
       case 'x':
         flags |= SMALL;
+        // fall through
       case 'X':
-        if (qualifier == 'l' || qualifier == 'L') {
+        if (qualifier == 'L') {
           str = number(str, va_arg(args, unsigned long long), 16, field_width,
                        precision, flags);
+        } else if (qualifier == 'l') {
+          str = number(str, (unsigned long long)va_arg(args, unsigned long), 16,
+                       field_width, precision, flags);
         } else {
-          str = number(str, va_arg(args, unsigned int), 16, field_width,
-                       precision, flags);
+          // Promote to 64-bit to avoid va_arg misread on ARM64
+          str = number(str, (unsigned long long)va_arg(args, unsigned int), 16,
+                       field_width, precision, flags);
         }
         break;
 
       case 'd':
       case 'i':
         flags |= SIGN;
+        // fall through
       case 'u':
         if (qualifier == 'L') {
-          num = va_arg(args, long long);
+          num = va_arg(args, unsigned long long);
+          if (flags & SIGN) num = (long long)num;
         } else if (qualifier == 'l') {
           num = va_arg(args, unsigned long);
           if (flags & SIGN) num = (signed long)num;

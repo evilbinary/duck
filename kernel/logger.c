@@ -48,8 +48,9 @@ void log_default(int tag, const char* message, va_list args) {
   kmemset(logger_buf, 0, LOG_MSG_BUF);
   char* tag_msg = (char*)log_level_strings[tag];
   if (log_info_mod.fd < 0) {
+    kprintf("[%08d] tid: %d %s ", ticks, tid, tag_msg);
     kvsprintf(logger_buf, message, args);
-    kprintf("[%08d] tid: %d %s %s", ticks, tid, tag_msg, logger_buf);
+    kprintf("%s", logger_buf);
   } else {
     kmemset(logger_buf, 0, LOG_MSG_BUF);
     kvsprintf(logger_buf, "[%08d] tid: %d ", ticks, tid);
@@ -76,16 +77,14 @@ void log_default_color(int tag, const char* message, va_list args) {
   char* tag_color = log_level_color[tag];
 
   if (log_info_mod.fd < 0) {
+    // Print header and message separately to avoid nesting logger_buf inside printf_buffer
+    kprintf("%s[%08d] %stid:%d %s%-5s %s", LOG_GRAY, ticks,
+            LOG_WHITE_BOLD, tid, tag_color, tag_msg, LOG_WHITE);
     int size = kvsprintf(logger_buf, message, args);
     if (size > LOG_MSG_BUF) {
-      kprintf("log overflow %d\n",size);
+      kprintf("log overflow %d\n", size);
     }
-    size = kprintf("%s[%08d] %stid:%d %s%-5s %s%s%s", LOG_GRAY, ticks,
-                   LOG_WHITE_BOLD, tid, tag_color, tag_msg, LOG_WHITE,
-                   logger_buf, LOG_NONE);
-    if (size > LOG_MSG_BUF) {
-      kprintf("log overflow %d\n",size);
-    }
+    kprintf("%s%s", logger_buf, LOG_NONE);
   } else {
     kmemset(logger_buf, 0, LOG_MSG_BUF);
     int size =
@@ -105,6 +104,7 @@ void log_default_color(int tag, const char* message, va_list args) {
 }
 
 void log_format(int tag, const char* message, va_list args) {
+  if (tag < LOG_MIN_LEVEL) return;
   // 早期启动阶段：日志系统未初始化，直接回退到 kprintf
   if (log_info_mod.logger_size == 0) {
     kprintf("[early] ");

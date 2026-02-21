@@ -23,6 +23,10 @@
 
 enum { LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR };
 
+#ifndef LOG_MIN_LEVEL
+#define LOG_MIN_LEVEL LOG_DEBUG
+#endif
+
 typedef void (*log_format_fn)(int tag, const char* message, va_list args);
 
 typedef struct log {

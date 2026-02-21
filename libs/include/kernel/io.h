@@ -7,7 +7,7 @@
 #define IO_H
 
 #include "libs/include/types.h"
-#define KPRINT_BUF 512
+#define KPRINT_BUF 2048
 
 int kprintf(const char* format, ...);
 
