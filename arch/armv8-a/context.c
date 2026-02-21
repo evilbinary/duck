@@ -57,9 +57,9 @@ int context_init(context_t* context, u64 ksp_top, u64 usp_top, u64 entry,
     pstate = 0x3C5;
   }
 
-  // Allocate interrupt context at top of kernel stack
-  // Reserve space for TWO contexts (like armv7-a)
-  interrupt_context_t* ic = (interrupt_context_t*)((u64)ksp_top - sizeof(interrupt_context_t) * 2);
+  // Place ic at ksp_top - sizeof(ic) so that after interrupt_exit_context
+  // consumes all fields with [sp],#16, sp lands exactly at ksp_top (stack top).
+  interrupt_context_t* ic = (interrupt_context_t*)((u64)ksp_top - sizeof(interrupt_context_t));
 
   kmemset(ic, 0, sizeof(interrupt_context_t));
   ic->lr = (u64)entry;
@@ -167,10 +167,16 @@ interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
   if (ic == NULL || current == next) {
     return ic;
   }
+  // Save current thread's register state into its own ic slot
   current->ic = ic;
+  kmemcpy(current->ksp, ic, sizeof(interrupt_context_t));
 
-  kmemcpy(++current->ksp, ic, sizeof(interrupt_context_t));
-  kmemcpy(ic, next->ksp--, sizeof(interrupt_context_t));
+  // Load next thread's register state into the current exception frame
+  kmemcpy(ic, next->ksp, sizeof(interrupt_context_t));
+
+  // Stash next's ksp_end in ic->no (offset 0). interrupt_exit_ret reads it
+  // to set SP_EL1 correctly before eret, since ic is NOT at ksp_end-288.
+  ic->no = next->ksp_end;
 
   return ic;
 }
