@@ -17,7 +17,7 @@ interrupt_handler_t interrutp_handlers[IDT_NUMBER];
 // ============================================================
 // Exception vector table - 2KB aligned, entries at 0x80 steps
 // ============================================================
-__attribute__((naked, aligned(2048)))
+__attribute__((naked, aligned(2048), section(".text.vectors")))
 void exception_vectors(void) {
   __asm__ volatile(
     // Group 0: Current EL with SP_EL0 (unused)

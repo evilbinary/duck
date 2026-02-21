@@ -198,7 +198,7 @@ typedef struct context_t {
 // ---------------------------------------------------------------------------
 #define interrupt_exit_ret()                            \
   asm volatile(                                         \
-      "mov  sp,  x0\n"           /* sp = returned ic */ \
+      "add  sp,  x0, #0\n"       /* sp = x0 (ic ptr)*/ \
       "add  sp,  sp, #16\n"      /* skip no, code   */  \
       "ldp  x0,  x1,  [sp], #16\n"                      \
       "msr  spsr_el1, x0\n"                              \

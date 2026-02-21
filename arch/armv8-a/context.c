@@ -60,11 +60,12 @@ int context_init(context_t* context, u64 ksp_top, u64 usp_top, u64 entry,
   // ARM64 SP must be 16-byte aligned. Round ksp_top down before placing ic.
   u64 aligned_top = ksp_top & ~(u64)0xF;
 
-  // Place ic two slots below aligned_top, matching armv7-a:
-  //   aligned_top - 1 slot: scratch space used by ++current->ksp in context_switch
-  //   aligned_top - 2 slots: the initial ic that context_restore reads
+  // Place ic one slot below aligned_top.
+  // context_switch copies in/out of this fixed slot; no ++/-- pointer games.
+  // interrupt_exit_context pops from ic → SP_EL1 ends up at aligned_top,
+  // and the thread's runtime stack grows down from there.
   interrupt_context_t* ic =
-      (interrupt_context_t*)(aligned_top - sizeof(interrupt_context_t) * 2);
+      (interrupt_context_t*)(aligned_top - sizeof(interrupt_context_t));
 
   kmemset(ic, 0, sizeof(interrupt_context_t));
   ic->lr  = (u64)entry;
@@ -151,11 +152,13 @@ int context_clone(context_t* des, context_t* src) {
   return 0;
 }
 
-// context_switch: identical logic to armv7-a.
-//   ++current->ksp  saves current ic one slot higher (the scratch slot).
-//   next->ksp--     reads next ic then moves pointer back to scratch slot.
-// This way ksp always points at the "live" ic, and the slot above is free
-// for the next save.  No use of ic->no to carry ksp_end.
+// context_switch: save current ic to current->ksp (fixed slot), load next's.
+// ARM64 kstack is large; we must NOT use ++/-- pointer arithmetic because the
+// slots adjacent to ic are inside the thread's runtime stack and will be
+// overwritten by normal function calls.  Instead each thread has exactly one
+// fixed save slot (the ic pointer set by context_init) and we copy in/out of
+// that fixed slot directly, returning the original ic address so
+// interrupt_exit_ret()'s "mov sp, x0" sets SP_EL1 back to that fixed address.
 interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
                                     context_t* next) {
   if (ic == NULL || current == next) {
@@ -163,11 +166,12 @@ interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
   }
   current->ic = ic;
 
-  // Save current state into current's scratch slot (++ksp moves up one)
-  kmemcpy(++current->ksp, ic, sizeof(interrupt_context_t));
+  // Save current thread's register state into its fixed save slot.
+  kmemcpy(current->ksp, ic, sizeof(interrupt_context_t));
 
-  // Load next state from next's saved slot, then move next->ksp back down
-  kmemcpy(ic, next->ksp--, sizeof(interrupt_context_t));
+  // Restore next thread's register state from its fixed save slot into ic
+  // (which is the live ic on the current SP_EL1 stack).
+  kmemcpy(ic, next->ksp, sizeof(interrupt_context_t));
 
   return ic;
 }

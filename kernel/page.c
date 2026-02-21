@@ -16,7 +16,7 @@ void page_error_exit() {
   // never jmp here
 }
 
-void page_fault_handle(interrupt_context_t *ic) {
+void* page_fault_handle(interrupt_context_t *ic) {
   vaddr_t fault_addr = (vaddr_t)cpu_get_fault();
   thread_t *current = thread_current();
   if (current != NULL) {
@@ -60,7 +60,7 @@ void page_fault_handle(interrupt_context_t *ic) {
           schedule(ic);
         }
       }
-      return;
+      return ic;
     }
     u64 *page = (u64*)current->vm->upage;
     void *phy = page_v2p(page, (void*)fault_addr);
@@ -72,7 +72,7 @@ void page_fault_handle(interrupt_context_t *ic) {
       if (phy != NULL) {
         page_map_on((u64*)current->vm->upage, fault_addr, (u64)phy, PAGE_DEV);
       }
-      return;
+      return ic;
     } else {
       if (phy == NULL) {
         if (area->flags == MEMORY_STACK) {
@@ -92,6 +92,7 @@ void page_fault_handle(interrupt_context_t *ic) {
   } else {
     page_map(fault_addr, fault_addr, PAGE_P | PAGE_USR | PAGE_RWX);
   }
+  return ic;
 }
 
 void *kernel_page_dir = NULL;
