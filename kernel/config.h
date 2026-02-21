@@ -8,7 +8,27 @@
 
 #include "platform/platform.h"
 
-#ifdef X86
+#if defined(ARM64) || defined(__aarch64__)
+
+#define MAX_FD_NUMBER 64
+#define MAX_PHDR 12
+#define MAX_SHDR 25
+
+#define MAX_DEVICE 40
+
+#define EXEC_FILE_NAME_LEN 256
+
+#define MAX_MODULES 40
+
+#define SYSCALL_NUMBER 600
+
+#define KERNEL_THREAD_STACK_SIZE 1024 * 32  // 32k: ARM64 deep call chains need more stack
+#define THREAD_STACK_SIZE 1024 * 4          // 4k
+
+#define PAGE_SIZE 0x1000
+#define VM_ENABLE 1
+
+#elif defined(X86)
 
 #define MAX_FD_NUMBER 200
 #define MAX_PHDR 16
@@ -63,8 +83,8 @@
 
 #define SYSCALL_NUMBER 600
 
-#define KERNEL_THREAD_STACK_SIZE 1024 * 4
-#define THREAD_STACK_SIZE 1024*4  // 4k
+#define KERNEL_THREAD_STACK_SIZE 1024 * 32  // 32k，ARM64 调用链深，4k 不够
+#define THREAD_STACK_SIZE 1024 * 4          // 4k
 #define PAGE_SIZE 0x1000
 
 #elif defined(RISCV_VIRT)

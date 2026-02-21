@@ -77,12 +77,14 @@ void exception_sp0_sync(void) {
 }
 
 // Current EL synchronous exception (kernel mode svc / data abort / instruction abort)
-// Uses sync_handler to dispatch based on ESR_EL1 exception class
+// Uses sync_handler to dispatch based on ESR_EL1 exception class.
+// Returns to same thread (no context switch), so use interrupt_exit()
+// which restores registers without touching SP_EL1.
 INTERRUPT_SERVICE
 void exception_current_sync(void) {
   interrupt_entering_code(EX_SYS_CALL, 0, 0);
   interrupt_process(sync_handler);
-  interrupt_exit_ret();
+  interrupt_exit();
 }
 
 // Current EL IRQ
@@ -110,6 +112,10 @@ void exception_current_serror(void) {
 }
 
 // Lower EL synchronous exception (user mode -> EL1)
+// svc from EL0: may context-switch (yield syscall) or return to same thread.
+// sync_handler sets ic->no=ksp_end only when context_switch is called.
+// Use interrupt_exit_ret() which reads ic->no for the switched-to ksp_end,
+// but for same-thread return ic->no must be set to current ksp_end too.
 INTERRUPT_SERVICE
 void exception_lower_sync(void) {
   interrupt_entering_code(EX_SYS_CALL, 0, 0);
@@ -187,24 +193,15 @@ void* sync_handler(interrupt_context_t* ic) {
       return interrupt_default_handler(ic);
     case ESR_ELx_EC_DABT_LOW:
     case ESR_ELx_EC_DABT_CUR:
-      // Data abort (page fault)
+      // Data abort: route through exception_process so page_fault_handle
+      // (registered via exception_regist) is invoked.
       ic->no = EX_DATA_FAULT;
-      if (interrutp_handlers[EX_DATA_FAULT] != NULL) {
-        return interrutp_handlers[EX_DATA_FAULT](ic);
-      } else {
-        kprintf("Data abort at %lx, far=%lx\n", ic->pc, far);
-        context_dump_fault(ic, far);
-        cpu_halt();
-      }
-      break;
+      return exception_process(ic);
     case ESR_ELx_EC_IABT_LOW:
     case ESR_ELx_EC_IABT_CUR:
-      // Instruction abort
+      // Instruction abort: same routing
       ic->no = EX_PREF_ABORT;
-      kprintf("Instruction abort at %lx, far=%lx\n", ic->pc, far);
-      context_dump_fault(ic, far);
-      cpu_halt();
-      break;
+      return exception_process(ic);
     default:
       ic->no = EX_OTHER;
       kprintf("Unknown sync exception: ec=%x esr=%lx\n", ec, esr);
