@@ -74,6 +74,12 @@ u64 cpu_get_fault(void) {
   return val;
 }
 
+u64 cpu_read_ttbr0(void) {
+  u64 val;
+  asm volatile("mrs %0, ttbr0_el1" : "=r"(val));
+  return val;
+}
+
 // Read ESR (exception syndrome)
 u64 read_esr_el1(void) {
   u64 val;

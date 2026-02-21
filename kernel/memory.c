@@ -271,7 +271,7 @@ void memory_static(u32 size, int type) {
 void* extend_stack(void* addr, size_t size) {
   thread_t* current = thread_current();
   u32 page_alignt = PAGE_SIZE - 1;
-  void* vaddr = (u32)addr & (~page_alignt);
+  void* vaddr = (vaddr_t)addr & (~page_alignt);
   void* aaddr = valloc(addr, size);
 
   vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_STACK);
@@ -292,7 +292,7 @@ void* extend_stack(void* addr, size_t size) {
 void* valloc(void* addr, size_t size) {
   thread_t* current = thread_current();
   u32 page_alignt = PAGE_SIZE - 1;
-  void* vaddr = (u32)addr & (~page_alignt);
+  void* vaddr = (vaddr_t)addr & (~page_alignt);
   // void* vaddr = ALIGN((u32)addr, PAGE_SIZE);
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
   for (int i = 0; i < pages; i++) {
@@ -321,7 +321,7 @@ void vfree(void* addr, size_t size) {
   thread_t* current = thread_current();
 
   u32 page_alignt = PAGE_SIZE - 1;
-  void* vaddr = (u32)addr & (~page_alignt);
+  void* vaddr = (vaddr_t)addr & (~page_alignt);
 
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
   for (int i = 0; i < pages; i++) {

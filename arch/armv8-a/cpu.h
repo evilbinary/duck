@@ -231,5 +231,6 @@ void cpu_invalid_tlb(void);
 void cp15_invalidate_icache(void);
 void cpu_enable_page(void);
 u64 cpu_get_fault(void);
+u64 cpu_read_ttbr0(void);
 
 #endif
