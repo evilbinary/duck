@@ -72,13 +72,15 @@ void exception_sp0_sync(void) {
 
 // ============================================================
 // Current EL synchronous (kernel SVC / kernel data abort)
-// Mirrors armv7-a svc_handler / data_abort_handler pattern.
+// Kernel threads can call schedule() via SVC (e.g. thread_yield),
+// which may invoke context_switch.  Use interrupt_exit_ret() so
+// SP_EL1 is reset to ic base from x0 before popping, same as IRQ.
 // ============================================================
 INTERRUPT_SERVICE
 void exception_current_sync(void) {
   interrupt_entering_code(EX_SYS_CALL, 0, 0);
   interrupt_process(sync_handler);
-  interrupt_exit();
+  interrupt_exit_ret();
 }
 
 // ============================================================
@@ -103,7 +105,10 @@ void exception_current_fiq(void) {
 
 // ============================================================
 // Lower EL synchronous (user SVC / user page fault)
-// Syscalls may switch context → use exit_ret
+// User syscalls go through schedule() which may call context_switch,
+// replacing ic contents with next thread's registers.
+// interrupt_exit_ret() does "mov sp, x0" first so SP_EL1 is reset
+// to the ic base before popping — identical to armv7-a irq_handler.
 // ============================================================
 INTERRUPT_SERVICE
 void exception_lower_sync(void) {

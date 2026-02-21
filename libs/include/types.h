@@ -45,7 +45,7 @@ typedef unsigned long ulong;
 
 
 // Address-sized integer type: u64 on ARM64, u32 on 32-bit platforms
-#ifdef ARM64
+#if defined(ARM64) || defined(__aarch64__)
 typedef u64 vaddr_t;
 #else
 typedef u32 vaddr_t;

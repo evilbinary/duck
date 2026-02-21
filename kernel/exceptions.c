@@ -55,17 +55,21 @@ void exception_process_error(thread_t *current, interrupt_context_t *ic,
   kprintf("--dump thread--\n");
   thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT | DUMP_STACK);
 
-  // set exit handl
+  // Point pc at exception_error_exit which lives in the kernel's exec segment.
+  // On ARM64 (and any arch with VM), the kernel code segment is mapped into the
+  // user page table by page_clone, so EL0 can reach it via on-demand mapping.
+  // If the mapping isn't present yet, page_fault_handle will fill it in because
+  // the address falls inside a MEMORY_EXEC vmemory_area.
   context_set_entry(ic, entry);
   thread_set_entry(current, entry);
   kprintf("exception process error end\n");
 }
 
-// in user mode
+// Called in user mode (EL0) after an unrecoverable page fault.
+// Issues an exit syscall so the kernel can clean up.
 void exception_error_exit() {
-  log_debug("exception erro exit ^_^!!\n");
+  log_debug("exception error exit\n");
   syscall1(1, 555);
-  kprintf("exception exit loop\n");
   for (;;) {
   }
 }
