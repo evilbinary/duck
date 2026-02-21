@@ -16,10 +16,13 @@
 #define KERNEL_OFFSET 0x10000000
 
 #elif defined(ARM64) || defined(__aarch64__)
-#define KERNEL_OFFSET 0x20000000 //
-#define EXEC_ADDR  0x60000000   // 0x60000000-0x66400000 0xc0000000
-#define STACK_ADDR 0x70000000   // 0x70000000-0x70100000 0xd0000000
-#define HEAP_ADDR  0x70100000   // 0x70100000-0x76500000 0xd0000000
+// UL suffix is required: without it, constants like 0x90000000 (STACK_ADDR +
+// KERNEL_OFFSET) are signed int on 32-bit arithmetic, and when cast to a
+// 64-bit pointer they get sign-extended to 0xffffffff90000000.
+#define KERNEL_OFFSET 0x20000000UL
+#define EXEC_ADDR     0x60000000UL
+#define STACK_ADDR    0x70000000UL
+#define HEAP_ADDR     0x70100000UL
 
 #elif defined(ARM)
 #define KERNEL_OFFSET 0x20000000 //

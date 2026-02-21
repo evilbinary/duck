@@ -69,7 +69,9 @@ u64 read_far_el1(void) {
 }
 
 u64 cpu_get_fault(void) { 
-  return read_far_el1(); 
+  u64 val=0;
+  val=read_far_el1(); 
+  return val;
 }
 
 // Read ESR (exception syndrome)

@@ -230,5 +230,6 @@ void cpu_set_page(u64 page_table);
 void cpu_invalid_tlb(void);
 void cp15_invalidate_icache(void);
 void cpu_enable_page(void);
+u64 cpu_get_fault(void);
 
 #endif
