@@ -243,7 +243,7 @@ typedef struct context_t {
 
 #define context_switch_page(ctx, page_dir) cpu_set_page((u64)(page_dir))
 
-#define context_fn(context) context->x7
+#define context_fn(context) context->x8
 #define context_ret(context) context->x0
 #define context_set_entry(context, entry) (((interrupt_context_t*)context)->pc = entry);
 

@@ -14,6 +14,10 @@ extern boot_info_t* boot_info;
 
 interrupt_handler_t interrutp_handlers[IDT_NUMBER];
 
+// Forward declarations
+extern void* interrupt_default_handler(interrupt_context_t* ic);
+void* sync_handler(interrupt_context_t* ic);
+
 // Exception vector table - must be 2KB aligned
 // ARM64 requires 16 entries: 4 groups x 4 types (Sync/IRQ/FIQ/SError)
 // Each entry is at a 0x80 (128) byte boundary
@@ -72,12 +76,13 @@ void exception_sp0_sync(void) {
   asm volatile("b .");
 }
 
-// Current EL synchronous exception (kernel mode)
+// Current EL synchronous exception (kernel mode svc / data abort / instruction abort)
+// Uses sync_handler to dispatch based on ESR_EL1 exception class
 INTERRUPT_SERVICE
 void exception_current_sync(void) {
-  interrupt_entering_code(EX_SYNC_EL1, 0, 0);
-  interrupt_process(interrupt_default_handler);
-  interrupt_exit();
+  interrupt_entering_code(EX_SYS_CALL, 0, 0);
+  interrupt_process(sync_handler);
+  interrupt_exit_ret();
 }
 
 // Current EL IRQ
@@ -108,7 +113,7 @@ void exception_current_serror(void) {
 INTERRUPT_SERVICE
 void exception_lower_sync(void) {
   interrupt_entering_code(EX_SYS_CALL, 0, 0);
-  interrupt_process(interrupt_default_handler);
+  interrupt_process(sync_handler);
   interrupt_exit_ret();
 }
 
@@ -177,14 +182,13 @@ void* sync_handler(interrupt_context_t* ic) {
 
   switch (ec) {
     case ESR_ELx_EC_SVC64:
-      // System call
-      if (interrutp_handlers[0x80] != NULL) {
-        return interrutp_handlers[0x80](ic);
-      }
-      break;
+      // System call: ic->no is already EX_SYS_CALL, dispatch via exception_process
+      ic->no = EX_SYS_CALL;
+      return interrupt_default_handler(ic);
     case ESR_ELx_EC_DABT_LOW:
     case ESR_ELx_EC_DABT_CUR:
       // Data abort (page fault)
+      ic->no = EX_DATA_FAULT;
       if (interrutp_handlers[EX_DATA_FAULT] != NULL) {
         return interrutp_handlers[EX_DATA_FAULT](ic);
       } else {
@@ -196,19 +200,19 @@ void* sync_handler(interrupt_context_t* ic) {
     case ESR_ELx_EC_IABT_LOW:
     case ESR_ELx_EC_IABT_CUR:
       // Instruction abort
+      ic->no = EX_PREF_ABORT;
       kprintf("Instruction abort at %lx, far=%lx\n", ic->pc, far);
       context_dump_fault(ic, far);
       cpu_halt();
       break;
     default:
+      ic->no = EX_OTHER;
       kprintf("Unknown sync exception: ec=%x esr=%lx\n", ec, esr);
       context_dump_interrupt(ic);
       cpu_halt();
   }
   return ic;
 }
-
-extern void* interrupt_default_handler(interrupt_context_t* ic);
 
 void* irq_handler(interrupt_context_t* ic) {
   // Call the default handler which dispatches to exception_process
