@@ -193,7 +193,7 @@ void vmemory_map(void* page_dir, vaddr_t virt_addr, vaddr_t phy_addr, vaddr_t si
   vaddr_t pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
   for (int i = 0; i < pages; i++) {
     page_map_on((u64*)page_dir, virt_addr + offset, phy_addr + offset,
-                PAGE_P | PAGE_RW);
+                PAGE_USR_RW);
 #ifdef DEBUG
     log_debug("-page:%lx map %d vaddr: %lx - paddr: %lx\n", page_dir, i,
               virt_addr + offset, phy_addr + offset);

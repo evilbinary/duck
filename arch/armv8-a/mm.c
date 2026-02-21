@@ -143,16 +143,30 @@ static void setup_mair(void) {
 void mm_page_enable(u64 page_dir) {
   setup_mair();
 
-  // TCR_EL1: 4KB granule, 39-bit VA, inner/outer WB, inner-shareable
+  // TCR_EL1: 4KB granule, 39-bit VA, inner/outer WB, inner-shareable.
+  // Set T1SZ same as T0SZ so the upper half (TTBR1) is also 39-bit;
+  // without T1SZ the CPU may fault on EL1 accesses that hit the upper range.
   u64 tcr =
     TCR_T0SZ(39) |
+    TCR_T1SZ(39) |
     TCR_IRGN0(1) |
     TCR_ORGN0(1) |
     TCR_SH0(3)   |
     TCR_TG0_4K   |
+    TCR_TG1_4K   |
     TCR_IPS(1);
 
   asm volatile("msr tcr_el1, %0" : : "r"(tcr) : "memory");
+  isb();
+
+  // SCTLR_EL1.SPAN (bit23) = 1: do not set PSTATE.PAN on exception entry.
+  // This lets EL1 access user-mapped pages (AP=0b10) without faulting.
+  // Without this, the hardware default may set PAN=1 on entry to EL1,
+  // causing permission faults on any AP=0b10/11 page from EL1 code.
+  u64 sctlr;
+  asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+  sctlr |= (1UL << 23);  // SPAN = 1: don't auto-set PAN
+  asm volatile("msr sctlr_el1, %0" : : "r"(sctlr) : "memory");
   isb();
 
   asm volatile("msr ttbr0_el1, %0" : : "r"(page_dir) : "memory");

@@ -54,36 +54,49 @@
 #define PTRS_PER_TABLE  512
 
 // TCR_EL1 field definitions - 39-bit VA with 16KB granule
-#define TCR_T0SZ(x)     ((64 - (x)) & 0x3F)
+#define TCR_T0SZ(x)     ((u64)((64 - (x)) & 0x3F))
+#define TCR_T1SZ(x)     ((u64)((64 - (x)) & 0x3F) << 16)
 #define TCR_IRGN0(x)    ((u64)(x) << 8)
 #define TCR_ORGN0(x)    ((u64)(x) << 10)
 #define TCR_SH0(x)      ((u64)(x) << 12)
 #define TCR_TG0_4K      (0ULL << 14)
-#define TCR_TG0_16K     (1ULL << 14)    // 16KB granule
+#define TCR_TG0_16K     (1ULL << 14)
 #define TCR_TG0_64K     (2ULL << 14)
+#define TCR_TG1_4K      (2ULL << 30)    // TTBR1 4KB granule (TG1: 10=4K)
+#define TCR_TG1_16K     (1ULL << 30)
+#define TCR_TG1_64K     (3ULL << 30)
 #define TCR_IPS(x)      ((u64)(x) << 32)
 
-// Convenience macros for page flags
+// ARM64 AP bits (PTE[7:6]):
+//   AP=0b00  → EL1 RW,  EL0 no access  (kernel-only pages)
+//   AP=0b01  → EL1 RO,  EL0 no access
+//   AP=0b10  → EL1+EL0 RW              (user-accessible pages)
+//   AP=0b11  → EL1+EL0 RO
+//
+// PSTATE.PAN (bit21): when set, EL1 faults on AP=0b10/11 pages.
+// We disable PAN in mm_page_enable via SCTLR_EL1.SPAN so EL1 can
+// access user-mapped pages (needed for kernel↔user data copies).
+// Kernel pages use AP=0b00 so they remain inaccessible from EL0.
 #define PAGE_P          PTE_VALID
-#define PAGE_RW         (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW | PTE_SH_IS | PTE_ATTR_NORMAL)
-#define PAGE_RX         (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RO | PTE_SH_IS | PTE_ATTR_NORMAL)
-#define PAGE_RWX        (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW | PTE_SH_IS | PTE_ATTR_NORMAL)
-#define PAGE_RO         (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RO | PTE_SH_IS | PTE_ATTR_NORMAL)
+#define PAGE_RW         (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW  | PTE_SH_IS | PTE_ATTR_NORMAL)
+#define PAGE_RX         (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RO  | PTE_SH_IS | PTE_ATTR_NORMAL)
+#define PAGE_RWX        (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW  | PTE_SH_IS | PTE_ATTR_NORMAL)
+#define PAGE_RO         (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RO  | PTE_SH_IS | PTE_ATTR_NORMAL)
 
-// Device memory
-#define PAGE_DEV        (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW | PTE_SH_OS | PTE_ATTR_DEVICE)
+// Device memory (non-shareable, device attribute, kernel-only)
+#define PAGE_DEV        (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW  | PTE_SH_OS | PTE_ATTR_DEVICE)
 
-// User accessible pages
+// User-accessible pages (EL0+EL1 RW/RO)
 #define PAGE_USR_RW     (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW_USER | PTE_SH_IS | PTE_ATTR_NORMAL)
 #define PAGE_USR_RX     (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RO_USER | PTE_SH_IS | PTE_ATTR_NORMAL)
 #define PAGE_USR_RWX    (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW_USER | PTE_SH_IS | PTE_ATTR_NORMAL)
 
-// System and user level (for compatibility)
-#define PAGE_SYS        (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW | PTE_SH_IS | PTE_ATTR_NORMAL)
-#define PAGE_USR        (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW_USER | PTE_SH_IS | PTE_ATTR_NORMAL)
+// Aliases for source compatibility with armv7-a callers
+#define PAGE_SYS        PAGE_RW
+#define PAGE_USR        PAGE_USR_RW
 
-// Non-cacheable pages
-#define PAGE_RW_NC      (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW | PTE_SH_OS | PTE_ATTR_NORMAL_NC)
+// Non-cacheable kernel pages
+#define PAGE_RW_NC      (PTE_VALID | PTE_TABLE | PTE_AF | PTE_AP_RW  | PTE_SH_OS | PTE_ATTR_NORMAL_NC)
 
 // Page directory type (64-bit entries)
 typedef u64 page_dir_t;

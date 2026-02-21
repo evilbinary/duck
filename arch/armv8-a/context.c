@@ -5,6 +5,7 @@
  ********************************************************************/
 #include "context.h"
 #include "cpu.h"
+#include "arch/cpu.h"
 
 extern boot_info_t* boot_info;
 
@@ -56,19 +57,24 @@ int context_init(context_t* context, u64 ksp_top, u64 usp_top, u64 entry,
     pstate = 0x3C5;
   }
 
-  // Place ic two slots below ksp_top, matching armv7-a:
-  //   ksp_top - 1 slot: scratch space used by ++current->ksp in context_switch
-  //   ksp_top - 2 slots: the initial ic that context_restore reads
+  // ARM64 SP must be 16-byte aligned. Round ksp_top down before placing ic.
+  u64 aligned_top = ksp_top & ~(u64)0xF;
+
+  // Place ic two slots below aligned_top, matching armv7-a:
+  //   aligned_top - 1 slot: scratch space used by ++current->ksp in context_switch
+  //   aligned_top - 2 slots: the initial ic that context_restore reads
   interrupt_context_t* ic =
-      (interrupt_context_t*)((u64)ksp_top - sizeof(interrupt_context_t) * 2);
+      (interrupt_context_t*)(aligned_top - sizeof(interrupt_context_t) * 2);
 
   kmemset(ic, 0, sizeof(interrupt_context_t));
   ic->lr  = (u64)entry;
   ic->pc  = ic->lr;
   ic->psr = pstate;
-  ic->sp  = (u64)usp_top;   // SP_EL0: user stack (or kernel stack for kthreads)
+  // SP_EL0: kernel threads never drop to EL0, use ksp_end as a safe
+  // non-zero value so that if SP_EL0 is ever read it won't fault.
+  // User threads use their own user stack top.
+  ic->sp  = (level == KERNEL_MODE) ? aligned_top : (u64)usp_top;
 
-  // General-purpose registers start at 0
   context->usp  = (u64)usp_top;
   context->ksp  = ic;
   context->ic   = ic;
