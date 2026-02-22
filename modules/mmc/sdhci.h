@@ -45,21 +45,21 @@
 #define SDHCI_INT_ADMA_ERROR 0x02000000
 
 typedef struct sdhci_device {
-  u32 offsetl;
-  u32 offseth;
-  u32* cached_blocks;
+  uint offsetl;
+  uint offseth;
+  uint* cached_blocks;
   u8* cache_buffer;
   void* data;
-  u32 port;
-  u32 read_buf_size;
-  u32 write_buf_size;
+  uint port;
+  uint read_buf_size;
+  uint write_buf_size;
   u8* read_buf;
   u8* write_buf;
 } sdhci_device_t;
 
 typedef struct sector {
-  u32 startl;
-  u32 starth;
+  uint startl;
+  uint starth;
 } sector_t;
 
 #endif

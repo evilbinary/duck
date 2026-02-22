@@ -6,7 +6,7 @@
 #include "posix/sysfn.h"
 #include "rtc/rtc.h"
 
-#ifdef ARM
+#if defined(ARM) || defined(ARM64) || defined(__aarch64__)
 #include "mmc/sdhci.h"
 #else
 #include "ahci/ahci.h"

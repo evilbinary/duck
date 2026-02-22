@@ -719,7 +719,15 @@ static void emmc_issue_command(uint32_t cmd_reg, uint32_t argument,
   BCM2835_EMMC->BLKSIZECNT = blksizecnt;
 
   // Set argument 1 reg
+  kprintf("EMMC: setting ARG1=%x, CMD=%x, BLKSIZECNT=%x\n", argument, cmd_reg, blksizecnt);
   BCM2835_EMMC->ARG1 = argument;
+  dmb();
+  
+  // Verify ARG1 was set
+  uint32_t arg1_read = BCM2835_EMMC->ARG1;
+  if (arg1_read != argument) {
+    kprintf("EMMC ERROR: ARG1 write failed! wrote=%x, read=%x\n", argument, arg1_read);
+  }
 
   // Set command reg
   BCM2835_EMMC->CMDTM = cmd_reg;
@@ -796,6 +804,15 @@ static void emmc_issue_command(uint32_t cmd_reg, uint32_t argument,
         }
         cur_byte_no += 4;
         cur_buf_addr++;
+      }
+      // Memory barrier to ensure data is written to memory
+      dsb();
+      
+      // Debug: print first 16 bytes of read data for sector 2080
+      if (dev->buf && cur_block == 0 && dev->blocks_to_transfer == 1) {
+        u8 *p = (u8 *)dev->buf;
+        kprintf("EMMC read data: %02x %02x %02x %02x %02x %02x %02x %02x\n",
+                p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
       }
 
       EMMC_TRACE("block %d transfer complete", cur_block);
@@ -1714,12 +1731,12 @@ int sd_write(uint8_t *buf, size_t buf_size, uint32_t block_no) {
 
 void sdhci_dev_prob(sdhci_device_t *sdhci_dev) { sd_card_init(); }
 
-int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
-  u32 ret = 0;
-  u32 bno = sdhci_dev->offsetl / BYTE_PER_SECTOR;
-  u32 boffset = sdhci_dev->offsetl % BYTE_PER_SECTOR;
-  u32 bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
-  u32 bsize = bcount * BYTE_PER_SECTOR;
+int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, char *buf, uint len) {
+  uint ret = 0;
+  uint bno = sdhci_dev->offsetl / BYTE_PER_SECTOR;
+  uint boffset = sdhci_dev->offsetl % BYTE_PER_SECTOR;
+  uint bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
+  uint bsize = bcount * BYTE_PER_SECTOR;
 
   if (bsize > sdhci_dev->write_buf_size) {
     kfree(sdhci_dev->write_buf);
@@ -1742,7 +1759,7 @@ int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
   return ret;
 }
 
-static void print_hex(u8 *addr, u32 size) {
+static void print_hex(u8 *addr, uint size) {
   for (int x = 0; x < size; x++) {
     kprintf("%x ", addr[x]);
     if (x != 0 && (x % 32) == 0) {
@@ -1752,13 +1769,20 @@ static void print_hex(u8 *addr, u32 size) {
   kprintf("\n\r");
 }
 
-int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
-  u32 ret = 0;
+int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, uint len) {
+  uint ret = 0;
 
-  u32 bno = sdhci_dev->offsetl / BYTE_PER_SECTOR;
-  u32 boffset = sdhci_dev->offsetl % BYTE_PER_SECTOR;
-  u32 bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
-  u32 bsize = bcount * BYTE_PER_SECTOR;
+  uint bno = sdhci_dev->offsetl / BYTE_PER_SECTOR;
+  uint boffset = sdhci_dev->offsetl % BYTE_PER_SECTOR;
+  uint bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
+  uint bsize = bcount * BYTE_PER_SECTOR;
+
+  static uint dbg;
+  if (dbg < 12 || (dbg & 0x3FF) == 0) {
+    log_debug("bcm2836 sdhci_read offset=%x bno=%d boff=%d len=%d\n",
+              sdhci_dev->offsetl, bno, boffset, len);
+  }
+  dbg++;
 
   if (bsize > sdhci_dev->read_buf_size) {
     kfree(sdhci_dev->read_buf);

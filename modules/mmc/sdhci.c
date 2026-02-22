@@ -5,11 +5,14 @@
  ********************************************************************/
 #include "sdhci.h"
 
+static inline uint ioc_type(uint cmd) { return (cmd >> 8) & 0xFF; }
+static inline uint ioc_nr(uint cmd) { return cmd & 0xFF; }
+
 static size_t sdhci_read(device_t* dev, void* buf, size_t len) {
   if (len <= 0 || buf == NULL) {
     return -1;
   }
-  u32 ret = 0;
+  uint ret = 0;
   sdhci_device_t* sdhci_dev = dev->data;
   ret = sdhci_dev_port_read(sdhci_dev, buf, len);
   return ret;
@@ -19,28 +22,30 @@ static size_t sdhci_write(device_t* dev, void* buf, size_t len) {
   if (len <= 0 || buf == NULL) {
     return -1;
   }
-  u32 ret = 0;
+  uint ret = 0;
   sdhci_device_t* sdhci_dev = dev->data;
   ret = sdhci_dev_port_write(sdhci_dev, buf, len);
   return ret;
 }
 
-static size_t sdhci_ioctl(device_t* dev, u32 cmd, ...) {
-  u32 ret = 0;
+static size_t sdhci_ioctl(device_t* dev, uint cmd, ...) {
+  uint ret = 0;
   sdhci_device_t* sdhci_dev = dev->data;
-  int no = dev->id - DEVICE_SATA;
   if (sdhci_dev == NULL) {
     kprintf("not found sdhci\n");
     return ret;
   }
   va_list ap;
   va_start(ap, cmd);
-  u32 offset = va_arg(ap, u32);
-  if (cmd == IOC_READ_OFFSET) {
-    ret = sdhci_dev->offsetl | sdhci_dev->offseth << 32;
-  } else if (cmd == IOC_WRITE_OFFSET) {
+  uint offset = va_arg(ap, uint);
+  // Decode ioctl by (type,nr) instead of raw compare: more tolerant across arches/encodings.
+  uint type = ioc_type(cmd);
+  uint nr = ioc_nr(cmd);
+
+  if (type == (uint)IOC_SDHCI_MAGIC && nr == 3) {  // IOC_READ_OFFSET
+    ret = sdhci_dev->offsetl;
+  } else if (type == (uint)IOC_SDHCI_MAGIC && nr == 4) {  // IOC_WRITE_OFFSET
     sdhci_dev->offsetl = offset;
-    // sdhci_dev->offseth = (u32*)va_arg(ap, u32);
   }
   va_end(ap);
 

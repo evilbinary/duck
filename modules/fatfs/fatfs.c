@@ -6,7 +6,9 @@
 #include "posix/sysfn.h"
 #include "rtc/rtc.h"
 
-#ifdef ARM
+// Select the block-device IOCTL encoding that matches the active block driver.
+// ARM32/ARM64 use SDHCI (magic 's'); non-ARM platforms typically use AHCI (magic 'a').
+#if defined(ARM) || defined(ARM64) || defined(__aarch64__)
 #include "mmc/sdhci.h"
 #else
 #include "ahci/ahci.h"
@@ -50,9 +52,9 @@ typedef struct file_info {
 
 vnode_t *default_node = NULL;
 
-static u32 fat_device_read(vnode_t *node, u32 offset, size_t nbytes,
+static uint fat_device_read(vnode_t *node, uint offset, size_t nbytes,
                            u8 *buffer) {
-  u32 ret = 0;
+  uint ret = 0;
   device_t *dev = (device_t *)node->device;
   if (dev == NULL) {
     return ret;
@@ -62,9 +64,9 @@ static u32 fat_device_read(vnode_t *node, u32 offset, size_t nbytes,
   return ret;
 }
 
-static u32 fat_device_write(vnode_t *node, u32 offset, size_t nbytes,
+static uint fat_device_write(vnode_t *node, uint offset, size_t nbytes,
                             u8 *buffer) {
-  u32 ret = 0;
+  uint ret = 0;
   device_t *dev = (device_t *)node->device;
   if (dev == NULL) {
     return ret;
@@ -82,29 +84,51 @@ int MMC_disk_initialize() {
 int MMC_disk_status() { return RES_OK; }
 
 int MMC_disk_read(char *buffer, LBA_t sector, int count) {
-  // log_debug("MMC_disk_read %x %d buffer %x\n", sector, count, buffer);
+  log_debug("MMC_disk_read sector=%d count=%d buffer=%x\n", sector, count, buffer);
 
-  u32 offset = sector * FF_MIN_SS;
-  u32 length = count * FF_MIN_SS;
-  u32 ret = RES_OK;
-  fat_device_read(default_node, offset, length, buffer);
-  // log_debug("MMC_disk_read end %x %d buffer %x\n", sector, count, buffer);
-  return ret;
+  uint offset = sector * FF_MIN_SS;
+  uint length = count * FF_MIN_SS;
+  
+  if (default_node == NULL) {
+    log_error("MMC_disk_read: default_node is NULL\n");
+    return RES_ERROR;
+  }
+  
+  log_debug("MMC_disk_read: default_node=%x device=%x\n", default_node, default_node->device);
+  
+  uint ret = fat_device_read(default_node, offset, length, buffer);
+  if (ret != length) {
+    log_error("MMC_disk_read: read failed at sector %d, expected %d bytes, got %d\n", 
+              sector, length, ret);
+    return RES_ERROR;
+  }
+  log_debug("MMC_disk_read end sector=%d\n", sector);
+  return RES_OK;
 }
 
 int MMC_disk_write(char *buffer, LBA_t sector, int count) {
-  u32 ret = RES_OK;
   if (sector < 0 || count < 0) {
-    return ret;
+    return RES_PARERR;
   }
-  u32 offset = sector * FF_MIN_SS;
-  u32 length = count * FF_MIN_SS;
+  
+  if (default_node == NULL) {
+    log_error("MMC_disk_write: default_node is NULL\n");
+    return RES_ERROR;
+  }
+  
+  uint offset = sector * FF_MIN_SS;
+  uint length = count * FF_MIN_SS;
 
   // log_debug("MMC_disk_write %x %d buffer %x\n", sector, count, buffer);
 
-  fat_device_write(default_node, offset, length, buffer);
+  uint ret = fat_device_write(default_node, offset, length, buffer);
+  if (ret != length) {
+    log_error("MMC_disk_write: write failed at sector %d, expected %d bytes, got %d\n", 
+              sector, length, ret);
+    return RES_ERROR;
+  }
 
-  return ret;
+  return RES_OK;
 }
 
 int MMC_disk_ioctl(u8 pdrv, u8 cmd, void *buff) {
@@ -134,7 +158,7 @@ int MMC_disk_ioctl(u8 pdrv, u8 cmd, void *buff) {
   return RES_OK;
 }
 
-u32 get_fattime(void) {
+uint get_fattime(void) {
   rtc_time_t time;
   time.day = 1;
   time.hour = 0;
@@ -153,12 +177,12 @@ u32 get_fattime(void) {
     return 0;
   }
 
-  return (u32)(time.year - 80) << 25 | (u32)(time.month + 1) << 21 |
-         (u32)time.day << 16 | (u32)time.hour << 11 | (u32)time.minute << 5 |
-         (u32)time.second >> 1;
+  return (uint)(time.year - 80) << 25 | (uint)(time.month + 1) << 21 |
+         (uint)time.day << 16 | (uint)time.hour << 11 | (uint)time.minute << 5 |
+         (uint)time.second >> 1;
 }
 
-static void print_hex(u8 *addr, u32 size) {
+static void print_hex(u8 *addr, uint size) {
   for (int x = 0; x < size; x++) {
     kprintf("%02x ", addr[x]);
     if (x != 0 && (x % 32) == 0) {
@@ -168,7 +192,7 @@ static void print_hex(u8 *addr, u32 size) {
   kprintf("\n\r");
 }
 
-u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
+uint fat_op_read(vnode_t *node, uint offset, size_t nbytes, u8 *buffer) {
   file_info_t *file_info = node->data;
 
   if (offset >= 0) {
@@ -194,7 +218,7 @@ u32 fat_op_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   return readbytes;
 }
 
-u32 fat_op_write(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
+uint fat_op_write(vnode_t *node, uint offset, size_t nbytes, u8 *buffer) {
   file_info_t *file_info = node->data;
   if (file_info == NULL) {
     log_error("write file info faild not opend\n");
@@ -215,7 +239,7 @@ u32 fat_op_write(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   return readbytes;
 }
 
-u32 fat_op_open(vnode_t *node, u32 mode) {
+uint fat_op_open(vnode_t *node, uint mode) {
   char *name = node->name;
   file_info_t *file_info = node->data;
   char buf[MAX_FILE_PATH];
@@ -299,7 +323,7 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
   DIR dir;
   FILINFO find_file;
 
-  u32 res = -1;
+  uint res = -1;
   char buf[MAX_FILE_PATH];
   if ((node->flags & V_BLOCKDEVICE) == V_BLOCKDEVICE) {
     res = f_opendir(&dir, VOLUME_ROOT);
@@ -314,7 +338,7 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
     log_error("bad dir %s code %d\n", name, res);
     return NULL;
   }
-  u32 type = V_FILE;
+  uint type = V_FILE;
 
   file_info_t *new_file_info = kmalloc(sizeof(file_info_t), DEFAULT_TYPE);
   // find file in dir
@@ -353,7 +377,7 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
   return file;
 }
 
-u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
+uint fat_op_read_dir(vnode_t *node, struct vdirent *dirent, uint count) {
   if (!((node->flags & V_FILE) == V_FILE ||
         (node->flags & V_DIRECTORY) == V_DIRECTORY)) {
     log_debug("read dir failed for not file flags is %x\n", node->flags);
@@ -370,9 +394,9 @@ u32 fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 count) {
     res = f_opendir(&file_info->dir, buf);
   }
 
-  u32 i = 0;
-  u32 nbytes = 0;
-  u32 read_count = 0;
+  uint i = 0;
+  uint nbytes = 0;
+  uint read_count = 0;
   FILINFO fno;
 
   while (true) {
@@ -423,8 +447,8 @@ int fat_op_close(vnode_t *node) {
   return 0;
 }
 
-size_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args) {
-  u32 ret = 0;
+size_t fat_op_ioctl(struct vnode *node, uint cmd, void *args) {
+  uint ret = 0;
   // log_debug("fat_op_ioctl %x\n", cmd);
 
   file_info_t *file_info = node->data;
@@ -538,6 +562,26 @@ void fat_init(void) {
   int res = f_mount(&file_info->fs, VOLUME, 0);
   if (res != FR_OK) {
     log_error("mount fs error code %d\n", res);
+  } else {
+    log_info("mount fs success\n");
+  }
+  
+  // Test reading root directory
+  DIR test_dir;
+  res = f_opendir(&test_dir, VOLUME_ROOT);
+  if (res != FR_OK) {
+    log_error("f_opendir root failed code %d\n", res);
+  } else {
+    log_info("f_opendir root success\n");
+    FILINFO fno;
+    int count = 0;
+    while (count < 10) {
+      res = f_readdir(&test_dir, &fno);
+      if (res != FR_OK || fno.fname[0] == 0) break;
+      log_info("  file: %s\n", fno.fname);
+      count++;
+    }
+    f_closedir(&test_dir);
   }
 
   node->data = file_info;
