@@ -26,8 +26,7 @@
 #define THREAD_STACK_SIZE 1024 * 4          // 4k
 
 #define PAGE_SIZE 0x1000
-// #define VM_ENABLE 1
-
+#define VM_ENABLE 1
 #elif defined(X86)
 
 #define MAX_FD_NUMBER 200
