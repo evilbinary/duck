@@ -14,8 +14,10 @@ int context_get_mode(context_t* context) {
   if (context != NULL) {
     interrupt_context_t* c = context->ksp;
     if (c != NULL) {
-      // EL0 (user mode): PSTATE bits [3:0] == 0x0
-      if ((c->psr & 0xF) == 0x0) {
+      // Treat both EL0t (0x0) and EL1t (0x4) as "user mode" for the VM/page-fault path.
+      // We run "user" threads at EL1t during early bring-up to avoid EL0-writable→EL1-exec restrictions.
+      u64 m = (c->psr & 0xF);
+      if (m == 0x0 || m == 0x4) {
         return 3;
       }
     }
@@ -50,8 +52,9 @@ int context_init(context_t* context, u64 ksp_top, u64 usp_top, u64 entry,
     // kernel mode: EL1h, all interrupts masked
     pstate = 0x005;
   } else if (level == 3) {
-    // user mode: EL0t
-    pstate = 0x0;
+    // user mode: run at EL1t to bypass ARMv8 implicit PXN restriction on EL0 pages.
+    // EL1t (0x004) gives EL1 permissions but uses SP_EL0 for the user stack.
+    pstate = 0x004;
   } else {
     kprintf("context_init: unsupported level %d\n", level);
     pstate = 0x3C5;

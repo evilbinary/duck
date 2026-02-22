@@ -10,175 +10,132 @@
 
 extern boot_info_t* boot_info;
 
-// Allocate a zeroed 4KB-aligned page table (512 × 8 bytes = 4096 bytes)
-u64* page_create(u32 level) {
-  return (u64*)mm_alloc_zero_align(sizeof(u64) * PTRS_PER_TABLE, PAGE_SIZE);
+static u64 v2p_internal(void* vaddr) {
+    return (u64)vaddr;
 }
 
-// Deep copy a 3-level (PGD→PMD→PTE) page table, mirroring armv7-a page_copy.
-// For each valid PGD entry, allocate a new PMD table and deep-copy it.
-// For each valid PMD entry, allocate a new PTE table and copy leaf entries.
-void page_copy(u64* old_pgd, u64* new_pgd) {
-  if (old_pgd == NULL || new_pgd == NULL) {
-    kprintf("page_copy: null argument\n");
-    return;
+u64* page_create(u32 level) {
+  u64* table = (u64*)mm_alloc_zero_align(PAGE_SIZE, PAGE_SIZE);
+  return table;
+}
+
+static u64* get_next_level(u64* table, u32 index, int alloc) {
+  u64 entry = table[index];
+  if (entry & PTE_VALID) {
+    return (u64*)(entry & PTE_ADDR_MASK);
   }
+  if (!alloc) return NULL;
 
-  for (int gi = 0; gi < PTRS_PER_TABLE; gi++) {
-    u64 pgd_entry = old_pgd[gi];
-    if (!(pgd_entry & PTE_VALID))
-      continue;
+  u64* next = page_create(0);
+  if (next) {
+    u64 paddr = v2p_internal(next);
+    table[index] = (paddr & PTE_ADDR_MASK) | PTE_TYPE_TABLE | PTE_VALID;
+  }
+  return next;
+}
 
-    // Allocate a new PMD table
-    u64* old_pmd = (u64*)(pgd_entry & PTE_ADDR_MASK);
-    u64* new_pmd = (u64*)mm_alloc_zero_align(sizeof(u64) * PTRS_PER_TABLE, PAGE_SIZE);
-    new_pgd[gi] = ((u64)new_pmd & PTE_ADDR_MASK) | PTE_VALID | PTE_TABLE;
+void page_map_on(u64* pgd, u64 vaddr, u64 paddr, u64 flags) {
+  if (!pgd) return;
 
-    for (int mi = 0; mi < PTRS_PER_TABLE; mi++) {
-      u64 pmd_entry = old_pmd[mi];
-      if (!(pmd_entry & PTE_VALID))
-        continue;
+  u64* pmd = get_next_level(pgd, pgd_index(vaddr), 1);
+  if (!pmd) return;
 
-      // Allocate a new PTE table
-      u64* old_pte = (u64*)(pmd_entry & PTE_ADDR_MASK);
-      u64* new_pte = (u64*)mm_alloc_zero_align(sizeof(u64) * PTRS_PER_TABLE, PAGE_SIZE);
-      new_pmd[mi] = ((u64)new_pte & PTE_ADDR_MASK) | PTE_VALID | PTE_TABLE;
+  u64* pte = get_next_level(pmd, pmd_index(vaddr), 1);
+  if (!pte) return;
 
-      // Copy leaf entries (share physical pages, like armv7-a)
-      for (int pi = 0; pi < PTRS_PER_TABLE; pi++) {
-        if (old_pte[pi] & PTE_VALID) {
-          new_pte[pi] = old_pte[pi];
+  pte[pte_index(vaddr)] = (paddr & PTE_ADDR_MASK) | flags | PTE_TYPE_PAGE | PTE_VALID | PTE_AF;
+
+  asm volatile("dsb sy" : : : "memory");
+  asm volatile("tlbi vaae1is, %0" : : "r"(vaddr >> 12) : "memory");
+  asm volatile("dsb sy" : : : "memory");
+  asm volatile("isb" : : : "memory");
+}
+
+void page_unmap_on(u64* pgd, u64 vaddr) {
+  if (!pgd) return;
+
+  u64* pmd = get_next_level(pgd, pgd_index(vaddr), 0);
+  if (!pmd) return;
+
+  u64* pte = get_next_level(pmd, pmd_index(vaddr), 0);
+  if (!pte) return;
+
+  pte[pte_index(vaddr)] = 0;
+
+  asm volatile("dsb sy" : : : "memory");
+  asm volatile("tlbi vaae1is, %0" : : "r"(vaddr >> 12) : "memory");
+  asm volatile("dsb sy" : : : "memory");
+  asm volatile("isb" : : : "memory");
+}
+
+void* page_v2p(u64* pgd, void* vaddr) {
+  u64 addr = (u64)vaddr;
+  if (!pgd) return NULL;
+  u64* pmd = get_next_level(pgd, pgd_index(addr), 0);
+  if (!pmd) return NULL;
+  u64* pte = get_next_level(pmd, pmd_index(addr), 0);
+  if (!pte) return NULL;
+  u64 entry = pte[pte_index(addr)];
+  if (!(entry & PTE_VALID)) return NULL;
+  return (void*)((entry & PTE_ADDR_MASK) | (addr & (PAGE_SIZE - 1)));
+}
+
+void page_copy(u64* old_pgd, u64* new_pgd) {
+  for (int i = 0; i < PTRS_PER_TABLE; i++) {
+    if (old_pgd[i] & PTE_VALID) {
+      u64* old_pmd = (u64*)(old_pgd[i] & PTE_ADDR_MASK);
+      u64* new_pmd = page_create(0);
+      u64 p_pmd = v2p_internal(new_pmd);
+      new_pgd[i] = (p_pmd & PTE_ADDR_MASK) | PTE_TYPE_TABLE | PTE_VALID;
+      for (int j = 0; j < PTRS_PER_TABLE; j++) {
+        if (old_pmd[j] & PTE_VALID) {
+          u64* old_pte = (u64*)(old_pmd[j] & PTE_ADDR_MASK);
+          u64* new_pte = page_create(0);
+          u64 p_pte = v2p_internal(new_pte);
+          new_pmd[j] = (p_pte & PTE_ADDR_MASK) | PTE_TYPE_TABLE | PTE_VALID;
+          for (int k = 0; k < PTRS_PER_TABLE; k++) {
+            if (old_pte[k] & PTE_VALID) {
+              new_pte[k] = old_pte[k] | PTE_AF;
+            }
+          }
         }
       }
     }
   }
 }
 
-// Clone page table
 u64* page_clone(u64* old_pgd, u32 level) {
   u64* new_pgd = page_create(level);
-  if (new_pgd == NULL) return NULL;
-  page_copy(old_pgd, new_pgd);
+  if (new_pgd) page_copy(old_pgd, new_pgd);
   return new_pgd;
 }
 
-// Get or create next-level table at index
-static u64* get_next_table(u64* table, u64 index, u8 create) {
-  u64 entry = table[index];
-
-  if (entry & PTE_VALID) {
-    if (entry & PTE_TABLE)
-      return (u64*)(entry & PTE_ADDR_MASK);
-    return NULL;  // block entry, can't traverse
-  }
-
-  if (!create) return NULL;
-
-  u64* new_table = page_create(0);
-  if (new_table == NULL) return NULL;
-
-  table[index] = ((u64)new_table & PTE_ADDR_MASK) | PTE_VALID | PTE_TABLE;
-  return new_table;
-}
-
-// Map virtualaddr → physaddr with flags (3-level walk)
-void page_map_on(u64* pgd, u64 virtualaddr, u64 physaddr, u64 flags) {
-  if (pgd == NULL) {
-    kprintf("page_map_on: pgd null\n");
-    return;
-  }
-
-  u64* pmd = get_next_table(pgd, pgd_index(virtualaddr), 1);
-  if (pmd == NULL) return;
-  u64* pte = get_next_table(pmd, pmd_index(virtualaddr), 1);
-  if (pte == NULL) return;
-
-  pte[pte_index(virtualaddr)] = (physaddr & PTE_ADDR_MASK) | flags | PTE_VALID;
-
-  asm volatile("tlbi vaae1, %0" : : "r"(virtualaddr >> 12) : "memory");
-  dsb();
-}
-
-// Unmap virtualaddr
-void page_unmap_on(u64* pgd, u64 virtualaddr) {
-  if (pgd == NULL) return;
-
-  u64* pmd = get_next_table(pgd, pgd_index(virtualaddr), 0);
-  if (pmd == NULL) return;
-  u64* pte = get_next_table(pmd, pmd_index(virtualaddr), 0);
-  if (pte == NULL) return;
-
-  pte[pte_index(virtualaddr)] = 0;
-
-  asm volatile("tlbi vaae1, %0" : : "r"(virtualaddr >> 12) : "memory");
-  dsb();
-}
-
-// Translate virtual → physical
-void* page_v2p(u64* pgd, void* vaddr) {
-  if (pgd == NULL) return NULL;
-
-  u64 addr = (u64)vaddr;
-  u64* pmd = get_next_table(pgd, pgd_index(addr), 0);
-  if (pmd == NULL) return NULL;
-  u64* pte = get_next_table(pmd, pmd_index(addr), 0);
-  if (pte == NULL) return NULL;
-
-  u64 entry = pte[pte_index(addr)];
-  if (!(entry & PTE_VALID)) return NULL;
-
-  return (void*)((entry & PTE_ADDR_MASK) | (addr & (PAGE_SIZE - 1)));
-}
-
-// Setup MAIR_EL1
-static void setup_mair(void) {
-  u64 mair =
-    (0xFFUL <<  0) |   // Attr0: Normal memory, WB/WA
-    (0x04UL <<  8) |   // Attr1: Device nGnRE
-    (0x44UL << 16);    // Attr2: Normal non-cacheable
-  asm volatile("msr mair_el1, %0" : : "r"(mair) : "memory");
-}
-
-// Enable MMU with given page table
 void mm_page_enable(u64 page_dir) {
-  setup_mair();
+  u64 mair = (0xFFUL << 0) | (0x04UL << 8) | (0x44UL << 16);
+  asm volatile("msr mair_el1, %0" : : "r"(mair));
 
-  // TCR_EL1: 4KB granule, 39-bit VA, inner/outer WB, inner-shareable.
-  // Set T1SZ same as T0SZ so the upper half (TTBR1) is also 39-bit;
-  // without T1SZ the CPU may fault on EL1 accesses that hit the upper range.
-  u64 tcr =
-    TCR_T0SZ(39) |
-    TCR_T1SZ(39) |
-    TCR_IRGN0(1) |
-    TCR_ORGN0(1) |
-    TCR_SH0(3)   |
-    TCR_TG0_4K   |
-    TCR_TG1_4K   |
-    TCR_IPS(1);
+  u64 tcr = TCR_T0SZ(39) | TCR_T1SZ(39) | TCR_IRGN0_WBWA | TCR_ORGN0_WBWA | 
+            TCR_SH0_INNER | TCR_TG0_4KB | TCR_TG1_4KB | TCR_IPS_40BIT;
+  asm volatile("msr tcr_el1, %0" : : "r"(tcr));
+  asm volatile("isb");
 
-  asm volatile("msr tcr_el1, %0" : : "r"(tcr) : "memory");
-  isb();
+  u64 p_pgd = v2p_internal((void*)page_dir);
+  asm volatile("msr ttbr0_el1, %0" : : "r"(p_pgd));
+  asm volatile("isb");
 
-  // SCTLR_EL1.SPAN (bit23) = 1: do not set PSTATE.PAN on exception entry.
-  // This lets EL1 access user-mapped pages (AP=0b10) without faulting.
-  // Without this, the hardware default may set PAN=1 on entry to EL1,
-  // causing permission faults on any AP=0b10/11 page from EL1 code.
+  asm volatile("tlbi vmalle1is");
+  asm volatile("dsb sy");
+  asm volatile("isb");
+
   u64 sctlr;
   asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
-  sctlr |= (1UL << 23);  // SPAN = 1: don't auto-set PAN
-  asm volatile("msr sctlr_el1, %0" : : "r"(sctlr) : "memory");
-  isb();
+  // SPAN=1, I=1, M=1. Disable Data Cache (C=0) for stability during early boot.
+  // Clear WXN (19), UWXN (20), A (1), SA (3) to avoid unnecessary faults.
+  sctlr &= ~((1UL << 19) | (1UL << 20) | (1UL << 2) | (1UL << 1) | (1UL << 3));
+  sctlr |= (1UL << 0) | (1UL << 12) | (1UL << 23);
+  asm volatile("msr sctlr_el1, %0" : : "r"(sctlr));
+  asm volatile("dsb sy");
+  asm volatile("isb");
 
-  asm volatile("msr ttbr0_el1, %0" : : "r"(page_dir) : "memory");
-  isb();
-
-  cpu_invalid_tlb();
-
-  kprintf("enable page at %lx\n", page_dir);
-  cpu_enable_page();
-  kprintf("paging success\n");
-}
-
-void mm_init_default(u64 kernel_page_dir) {
-  // Called after mm_page_enable; nothing more to do here.
+  kprintf("VMSAv8-64 MMU enabled at %lx\n", p_pgd);
 }

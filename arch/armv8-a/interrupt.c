@@ -20,12 +20,14 @@ interrupt_handler_t interrutp_handlers[IDT_NUMBER];
 __attribute__((naked, aligned(2048), section(".text.vectors")))
 void exception_vectors(void) {
   __asm__ volatile(
-    // Group 0: Current EL with SP_EL0 (unused)
+    // Group 0: Current EL with SP_EL0 (EL1t uses SP_EL0)
+    // Route to the same handlers as "current EL with SP_ELx" so EL1t threads
+    // can use SVC/IRQ without falling into the old halt stubs.
     "b exception_sp0_sync\n"
     ".align 7\n"
-    "b .\n"
+    "b exception_sp0_irq\n"
     ".align 7\n"
-    "b .\n"
+    "b exception_sp0_fiq\n"
     ".align 7\n"
     "b .\n"
 
@@ -62,11 +64,27 @@ void exception_vectors(void) {
 }
 
 // ============================================================
-// SP_EL0 sync (should never fire)
+// Current EL with SP_EL0 (EL1t): switch to SP_EL1 stack first
 // ============================================================
 INTERRUPT_SERVICE
 void exception_sp0_sync(void) {
-  asm volatile("b .");
+  __asm__ volatile(
+      "msr spsel, #1\n"
+      "b exception_current_sync\n");
+}
+
+INTERRUPT_SERVICE
+void exception_sp0_irq(void) {
+  __asm__ volatile(
+      "msr spsel, #1\n"
+      "b exception_current_irq\n");
+}
+
+INTERRUPT_SERVICE
+void exception_sp0_fiq(void) {
+  __asm__ volatile(
+      "msr spsel, #1\n"
+      "b exception_current_fiq\n");
 }
 
 // ============================================================
