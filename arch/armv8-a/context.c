@@ -48,7 +48,7 @@ int context_init(context_t* context, u64 ksp_top, u64 usp_top, u64 entry,
   u64 pstate;
   if (level == 0) {
     // kernel mode: EL1h, all interrupts masked
-    pstate = 0x3C5;
+    pstate = 0x005;
   } else if (level == 3) {
     // user mode: EL0t
     pstate = 0x0;
@@ -166,12 +166,10 @@ interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
   }
   current->ic = ic;
 
-  // Save current thread's register state into its fixed save slot.
-  kmemcpy(current->ksp, ic, sizeof(interrupt_context_t));
+  current->ic = ic;
 
-  // Restore next thread's register state from its fixed save slot into ic
-  // (which is the live ic on the current SP_EL1 stack).
-  kmemcpy(ic, next->ksp, sizeof(interrupt_context_t));
+  kmemcpy(++current->ksp, ic, sizeof(interrupt_context_t));
+  kmemcpy(ic, next->ksp--, sizeof(interrupt_context_t));
 
   return ic;
 }

@@ -153,7 +153,6 @@ void* do_schedule(interrupt_context_t* ic) {
   next_thread->counter++;
   next_thread->ticks++;
   timer_ticks[cpu]++;
-
   interrupt_context_t* next_ic =
       context_switch(ic, current_thread->ctx, next_thread->ctx);
   thread_set_current(next_thread);

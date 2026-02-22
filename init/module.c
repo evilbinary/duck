@@ -43,7 +43,7 @@ void modules_init(void) {
   REGISTER_MODULE(test);
 
 
-#elif ARMV7_A
+#elif defined(ARMV7_A)
 
   // optional module
   REGISTER_MODULE(serial);
