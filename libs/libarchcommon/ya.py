@@ -9,6 +9,8 @@ target("archcommon")
 
 set_kind("static")
 
+print('Arch type:', get_arch_type())
+
 if get_arch_type():
     add_files(
                 "./"+get_arch_type()+"/*.c"

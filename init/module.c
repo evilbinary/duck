@@ -83,6 +83,17 @@ void modules_init(void) {
   REGISTER_MODULE(power);
 #endif
 
+#elif  defined(ARMV8_A)
+  // optional module
+  REGISTER_MODULE(serial);
+  // REGISTER_MODULE(gpio);
+  // REGISTER_MODULE(i2c);
+  // REGISTER_MODULE(spi);
+  // REGISTER_MODULE(gpu);
+  // REGISTER_MODULE(mouse);
+  // REGISTER_MODULE(sdhci);
+
+
 #elif defined(DUMMY)
   REGISTER_MODULE(hello);
 
