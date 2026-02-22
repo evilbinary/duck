@@ -34,7 +34,10 @@ typedef unsigned long ulong;
 #define true 1
 #define false 0
 
+// Avoid NULL conflict with musl and other C libraries
+#ifndef NULL
 #define NULL ((void *)0)
+#endif
 
 #ifdef LIBYC
 #define bool char
@@ -85,15 +88,15 @@ typedef unsigned int uint32_t;
 typedef unsigned long long uint64_t;
 #endif
 
-#if !defined(_INTPTR_T) && !defined(intptr_t)
+#if !defined(_INTPTR_T) && !defined(intptr_t) && !defined(__DEFINED_intptr_t)
 typedef _Addr intptr_t;
 #endif
 
-#if !defined(_UINTPTR_T) && !defined(uintptr_t)
+#if !defined(_UINTPTR_T) && !defined(uintptr_t) && !defined(__DEFINED_uintptr_t)
 typedef unsigned _Addr uintptr_t;
 #endif
 
-#if !defined(_SIZE_T) && !defined(size_t) && !defined(_HAVE_SIZE_T)
+#if !defined(_SIZE_T) && !defined(size_t) && !defined(_HAVE_SIZE_T) && !defined(__DEFINED_size_t)
 #define _HAVE_SIZE_T
 #define _SIZE_T
 typedef unsigned _Addr size_t;
