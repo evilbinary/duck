@@ -24,9 +24,30 @@ const char* welcome = "\nWelcome to YiYiYa Os ^_^! \n\n";
 
 void print_string(char* str) { syscall1(SYS_PRINT, str); }
 
+void print_cpu_info(void) {
+  char buf[128];
+  
+#if defined(ARM64) || defined(__aarch64__)
+  kstrcpy(buf, "CPU: ARM64 (ARMv8-A)\n");
+#elif defined(ARMV7_A)
+  kstrcpy(buf, "CPU: ARMv7-A\n");
+#elif defined(ARMV7)
+  kstrcpy(buf, "CPU: ARMv7\n");
+#elif defined(ARMV5)
+  kstrcpy(buf, "CPU: ARMv5\n");
+#elif defined(X86)
+  kstrcpy(buf, "CPU: x86\n");
+#else
+  kstrcpy(buf, "CPU: Unknown\n");
+#endif
+  
+  print_string(buf);
+}
+
 void print_logo() {
   print_string(logo);
   print_string(build_str);
+  print_cpu_info();
   print_string(welcome);
 }
 
