@@ -91,8 +91,16 @@ void modules_init(void) {
   // REGISTER_MODULE(spi);
   // REGISTER_MODULE(gpu);
   // REGISTER_MODULE(mouse);
-  // REGISTER_MODULE(sdhci);
+  REGISTER_MODULE(sdhci);
 
+
+  #ifdef FAT_MODULE
+  REGISTER_MODULE(fat);
+#endif
+
+#ifdef FATFS_MODULE
+  REGISTER_MODULE(fatfs);
+#endif
 
 #elif defined(DUMMY)
   REGISTER_MODULE(hello);

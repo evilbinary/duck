@@ -25,6 +25,10 @@ plat_source={
         'bcm2836.c',
         'bcm2835_vc.c',
     ],
+    'raspi3':[
+        'bcm2836.c',
+        'bcm2835_vc.c',
+    ],
     'rk3128':[
         'rk3128.c'
     ],
@@ -57,6 +61,9 @@ plat_source={
 }
 arch_source={
     'arm': [
+        'sdhci.c'
+    ],
+    'arm64': [
         'sdhci.c'
     ],
     'general':[

@@ -118,9 +118,15 @@ void platform_end(void) {
 }
 
 void platform_map(void) {
-  // Map MMIO region
-  page_map(MMIO_BASE, MMIO_BASE, PAGE_DEV);
-  page_map((u32)UART0_DR, (u32)UART0_DR, PAGE_DEV);
+  // Map entire MMIO region (MMU uses 4KB pages; page_map() maps a single page).
+  // Without this, accessing offsets inside MMIO_BASE will fault (e.g. 0x3f00b898).
+  for (u32 addr = (u32)MMIO_BASE; addr < (u32)(MMIO_BASE + MMIO_LENGTH);
+       addr += 0x1000) {
+    page_map(addr, addr, PAGE_DEV);
+  }
+
+  // Also ensure specific peripheral pages are mapped (redundant but harmless).
+  page_map(((u32)UART0_DR) & ~0xfff, ((u32)UART0_DR) & ~0xfff, PAGE_DEV);
   page_map(CORE0_TIMER_IRQCNTL & ~0xfff, CORE0_TIMER_IRQCNTL & ~0xfff, PAGE_DEV);
 }
 
