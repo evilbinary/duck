@@ -12,6 +12,56 @@ static u32 io_read32(volatile unsigned int* port) {
 
 static u64 cntfrq[MAX_CPU] = {0};
 
+static void delay_cycles(int n) {
+  for (volatile int i = 0; i < n; i++) {
+  }
+}
+
+static void uart_init(void) {
+  // GPIO14/15 -> ALT0 (TXD0/RXD0), disable pulls.
+  u32 r = io_read32(GPFSEL1);
+  r &= ~((7u << 12) | (7u << 15));   // clear fsel for gpio14/gpio15
+  r |=  (4u << 12) | (4u << 15);     // alt0
+  io_write32(GPFSEL1, r);
+
+  io_write32(GPPUD, 0);
+  delay_cycles(1500);
+  io_write32(GPPUDCLK0, (1u << 14) | (1u << 15));
+  delay_cycles(1500);
+  io_write32(GPPUDCLK0, 0);
+
+  // Make sure RX is enabled (do not disturb baud unless it looks uninitialized).
+  io_write32(UART0_ICR, 0x7FF);  // clear pending UART interrupts
+
+  u32 ibrd = io_read32(UART0_IBRD);
+  u32 fbrd = io_read32(UART0_FBRD);
+  if (ibrd == 0 && fbrd == 0) {
+    // Fallback for typical 48MHz UARTCLK -> 115200 baud: IBRD=26, FBRD=3.
+    io_write32(UART0_CR, 0);
+    io_write32(UART0_IBRD, 26);
+    io_write32(UART0_FBRD, 3);
+    io_write32(UART0_LCRH, (3u << 5) | (1u << 4));  // 8N1, FIFO enable
+  } else {
+    // Ensure 8-bit mode; keep existing divisors.
+    u32 lcrh = io_read32(UART0_LCRH);
+    lcrh &= ~(3u << 5);
+    lcrh |= (3u << 5);
+    io_write32(UART0_LCRH, lcrh);
+  }
+
+  io_write32(UART0_IMSC, 0);  // mask all UART interrupts (polling)
+
+  // Enable UART, TX and RX.
+  u32 cr = io_read32(UART0_CR);
+  cr |= (1u << 0) | (1u << 8) | (1u << 9);
+  io_write32(UART0_CR, cr);
+
+  // Drain any stale RX data.
+  while ((io_read32(UART0_FR) & (1u << 4)) == 0) {
+    (void)io_read32(UART0_DR);
+  }
+}
+
 void uart_send(unsigned int c) {
   while (io_read32(UART0_FR) & 0x20) {
   }
@@ -22,7 +72,7 @@ unsigned int uart_receive(void) {
   unsigned int c;
   while (io_read32(UART0_FR) & 0x10) {
   }
-  c = io_read32(UART0_DR);
+  c = io_read32(UART0_DR) & 0xFF;
   return c;
 }
 
@@ -60,6 +110,7 @@ void timer_end(void) {
 }
 
 void platform_init(void) {
+  uart_init();
   io_add_write_channel(uart_send);
 }
 

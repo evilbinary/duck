@@ -97,7 +97,7 @@ INTERRUPT_SERVICE
 void exception_current_sync(void) {
   interrupt_entering_code(EX_SYS_CALL, 0, 0);
   interrupt_process(sync_handler);
-  interrupt_exit_ret();
+  interrupt_exit_ret_safe();
 }
 
 // ============================================================
@@ -131,7 +131,7 @@ INTERRUPT_SERVICE
 void exception_lower_sync(void) {
   interrupt_entering_code(EX_SYS_CALL, 0, 0);
   interrupt_process(sync_handler);
-  interrupt_exit_ret();
+  interrupt_exit_ret_safe();
 }
 
 // ============================================================

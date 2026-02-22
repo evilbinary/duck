@@ -225,6 +225,50 @@ typedef struct context_t {
       :                                                  \
       : "memory")
 
+// ---------------------------------------------------------------------------
+// interrupt_exit_ret_safe: like interrupt_exit_ret(), but tolerates handlers
+// that return a non-pointer value in x0 (e.g. syscall returning fd=2).
+//
+// If x0 doesn't look like a valid interrupt_context_t* (too small or not 16B
+// aligned), fall back to the current sp (which already points at ic after
+// interrupt_entering_code).
+// ---------------------------------------------------------------------------
+#define interrupt_exit_ret_safe()                       \
+  asm volatile(                                         \
+      "mov  x9, x0\n"                                   \
+      "tst  x9, #0xF\n"                                 \
+      "b.ne 1f\n"                                       \
+      "cmp  x9, #0x1000\n"                              \
+      "b.lo 1f\n"                                       \
+      "b    2f\n"                                       \
+      "1: mov x9, sp\n"                                 \
+      "2: add sp, x9, #0\n"                             \
+      "add  sp,  sp, #16\n"      /* skip no, code   */  \
+      "ldp  x0,  x1,  [sp], #16\n"                      \
+      "msr  spsr_el1, x0\n"                              \
+      "msr  elr_el1,  x1\n"                              \
+      "ldp  x30, x0,  [sp], #16\n"                       \
+      "msr  sp_el0,   x0\n"                              \
+      "ldp  x28, x29, [sp], #16\n"                       \
+      "ldp  x26, x27, [sp], #16\n"                       \
+      "ldp  x24, x25, [sp], #16\n"                       \
+      "ldp  x22, x23, [sp], #16\n"                       \
+      "ldp  x20, x21, [sp], #16\n"                       \
+      "ldp  x18, x19, [sp], #16\n"                       \
+      "ldp  x16, x17, [sp], #16\n"                       \
+      "ldp  x14, x15, [sp], #16\n"                       \
+      "ldp  x12, x13, [sp], #16\n"                       \
+      "ldp  x10, x11, [sp], #16\n"                       \
+      "ldp  x8,  x9,  [sp], #16\n"                       \
+      "ldp  x6,  x7,  [sp], #16\n"                       \
+      "ldp  x4,  x5,  [sp], #16\n"                       \
+      "ldp  x2,  x3,  [sp], #16\n"                       \
+      "ldp  x0,  x1,  [sp], #16\n"                       \
+      "eret\n"                                            \
+      :                                                  \
+      :                                                  \
+      : "memory", "x9")
+
 #define interrupt_entering(VEC) interrupt_entering_code(VEC, 0, 0)
 
 // Syscall number is in x8 (Linux AArch64 ABI)
