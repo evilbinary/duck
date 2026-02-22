@@ -10,6 +10,23 @@ static u32 io_read32(volatile unsigned int* port) {
   return *port;
 }
 
+// BCM2835/6 peripheral IRQ controller (GPU interrupts)
+#define BCM2835_IRQ_BASE_ADDR   (MMIO_BASE + 0x00B200)
+#define IRQ_BASIC_PENDING       ((volatile unsigned int*)(BCM2835_IRQ_BASE_ADDR + 0x00))
+#define IRQ_PENDING1            ((volatile unsigned int*)(BCM2835_IRQ_BASE_ADDR + 0x04))
+#define IRQ_PENDING2            ((volatile unsigned int*)(BCM2835_IRQ_BASE_ADDR + 0x08))
+#define IRQ_DISABLE1            ((volatile unsigned int*)(BCM2835_IRQ_BASE_ADDR + 0x1C))
+#define IRQ_DISABLE2            ((volatile unsigned int*)(BCM2835_IRQ_BASE_ADDR + 0x20))
+#define IRQ_BASIC_DISABLE       ((volatile unsigned int*)(BCM2835_IRQ_BASE_ADDR + 0x24))
+
+// EMMC interrupt is peripheral IRQ 62 => pending2 bit (62-32)=30.
+#define IRQ2_EMMC_BIT           (1u << 30)
+
+// BCM2835 EMMC register block base
+#define BCM2835_EMMC_BASE_ADDR  (MMIO_BASE + 0x00300000)
+#define EMMC_INTERRUPT_REG      ((volatile unsigned int*)(BCM2835_EMMC_BASE_ADDR + 0x30))
+#define EMMC_IRPT_EN_REG        ((volatile unsigned int*)(BCM2835_EMMC_BASE_ADDR + 0x38))
+
 static u64 cntfrq[MAX_CPU] = {0};
 
 static void delay_cycles(int n) {
@@ -89,6 +106,10 @@ void timer_init(int hz) {
   if (cpu == 0) {
     cntfrq[cpu] = read_cntfrq();
     cntfrq[cpu] = cntfrq[cpu] / hz;
+    if (cntfrq[cpu] == 0) {
+      // Avoid IRQ storm if frequency calculation underflows.
+      cntfrq[cpu] = 1;
+    }
     kprintf("cntfrq %d\n", cntfrq[cpu]);
     write_cntv_tval(cntfrq[cpu]);
 
@@ -102,15 +123,18 @@ void timer_init(int hz) {
 void timer_end(void) {
   int cpu = cpu_get_id();
   // Always reset timer to clear interrupt
+  // If tval becomes 0, the virtual timer will keep firing immediately (IRQ storm).
   if (cntfrq[cpu] != 0) {
     write_cntv_tval(cntfrq[cpu]);
   } else if (cntfrq[0] != 0) {
     write_cntv_tval(cntfrq[0]);
+  } else {
+    write_cntv_tval(1);
   }
 }
 
 void platform_init(void) {
-  uart_init();
+  // uart_init();
   io_add_write_channel(uart_send);
 }
 
@@ -131,8 +155,55 @@ void platform_map(void) {
 }
 
 int interrupt_get_source(u32 no) {
-  no = EX_TIMER;
-  return no;
+  int cpu = cpu_get_id();
+  u32 src = read_core_timer_pending(cpu);
+
+  // Local interrupt controller: bit3 is CNTVIRQ when CORE0_TIMER_IRQCNTL routes it.
+  if (src & 0x08) {
+    return EX_TIMER;
+  }
+
+  // Mailbox interrupts (IPI) bits are typically in [4..7]. Clear them to avoid IRQ storms.
+  if (src & 0xF0) {
+    ipi_clear(cpu);
+    return EX_NONE;
+  }
+
+  // Any other local IRQ sources (GPU/peripheral/PMU/AXI...). If we don't decode/ack them, IRQ will storm.
+  if (src & ~(0x08u | 0xF0u)) {
+    u32 basic = io_read32(IRQ_BASIC_PENDING);
+    u32 p1 = io_read32(IRQ_PENDING1);
+    u32 p2 = io_read32(IRQ_PENDING2);
+
+    // Rate-limited debug: helps identify which source is storming.
+    static u32 storm;
+    if (storm < 8 || (storm & 0x3FF) == 0) {
+      u32 emmc_int = io_read32(EMMC_INTERRUPT_REG);
+      kprintf("raspi3 irq storm? src=%x basic=%x p1=%x p2=%x emmc_int=%x\n",
+              src, basic, p1, p2, emmc_int);
+    }
+    storm++;
+
+    // If EMMC is pending, clear its interrupt status and mask it until a real driver IRQ path exists.
+    if (p2 & IRQ2_EMMC_BIT) {
+      // Clear any latched EMMC interrupt sources.
+      io_write32(EMMC_INTERRUPT_REG, 0xFFFFFFFF);
+      // Ensure it can't signal IRQ line.
+      io_write32(EMMC_IRPT_EN_REG, 0);
+      // Mask at the peripheral IRQ controller too (bring-up safety).
+      io_write32(IRQ_DISABLE2, IRQ2_EMMC_BIT);
+      return EX_NONE;
+    }
+
+    // Unknown peripheral IRQ: mask what is currently pending to avoid hard lockups.
+    if (p1) io_write32(IRQ_DISABLE1, p1);
+    if (p2) io_write32(IRQ_DISABLE2, p2);
+    if (basic) io_write32(IRQ_BASIC_DISABLE, basic);
+    return EX_NONE;
+  }
+
+  // Unknown / unhandled source.
+  return EX_NONE;
 }
 
 void ipi_enable(int cpu) {

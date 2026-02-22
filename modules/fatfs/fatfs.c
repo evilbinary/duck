@@ -145,12 +145,12 @@ u32 get_fattime(void) {
 
   int time_fd = -1;
   time_fd = sys_open("/dev/time", 0);
-  if (time_fd < 0) return;
+  if (time_fd < 0) return 0;
 
   int ret = sys_read(time_fd, &time, sizeof(rtc_time_t));
   if (ret < 0) {
     log_error("erro read time\n");
-    return;
+    return 0;
   }
 
   return (u32)(time.year - 80) << 25 | (u32)(time.month + 1) << 21 |
@@ -504,12 +504,21 @@ void fat_init(void) {
     name[2] = 0x61 + i;
     name[3] = 0;
     vnode_t *node_sda = devfs_create_device(dev);
+    if (node_sda == NULL) {
+      log_error("fatfs: devfs_create_device failed for dev %d\n", dev->id);
+      continue;
+    }
     node_sda->name = name;
     vfs_mount(NULL, "/dev", node_sda);
     if (root_super == NULL) {
       root_super = node_sda;
       break;
     }
+  }
+
+  if (root_super == NULL) {
+    log_error("fatfs: no block device found (DEVICE_SATA..)\n");
+    return;
   }
 
   // auto mount first dev as root
@@ -520,6 +529,7 @@ void fat_init(void) {
   default_node = node;
   if (node == NULL) {
     log_error("not found sda\n");
+    return;
   }
   fat_init_op(node);
 

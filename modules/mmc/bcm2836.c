@@ -1786,8 +1786,10 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
 }
 
 void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
-  page_map(BCM2835_EMMC, BCM2835_EMMC, 0);
-  page_map(BCM2835_ST_BASE, BCM2835_ST_BASE, 0);
+  // Map EMMC + system timer as device memory.
+  // Using normal/cacheable attributes for MMIO can cause random hangs/timeouts.
+  page_map(BCM2835_EMMC_BASE & ~0xfff, BCM2835_EMMC_BASE & ~0xfff, PAGE_DEV);
+  page_map(BCM2835_ST_BASE & ~0xfff, BCM2835_ST_BASE & ~0xfff, PAGE_DEV);
   sdhci_dev_prob(sdhci_dev);
 
 #ifdef CACHE_ENABLED

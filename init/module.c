@@ -94,7 +94,7 @@ void modules_init(void) {
   REGISTER_MODULE(sdhci);
 
 
-  #ifdef FAT_MODULE
+#ifdef FAT_MODULE
   REGISTER_MODULE(fat);
 #endif
 

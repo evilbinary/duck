@@ -502,12 +502,21 @@ void fat_init(void) {
     name[2] = 0x61 + i;
     name[3] = 0;
     vnode_t *node_sda = devfs_create_device(dev);
+    if (node_sda == NULL) {
+      log_error("fat: devfs_create_device failed for dev %d\n", dev->id);
+      continue;
+    }
     node_sda->name = name;
     vfs_mount(NULL, "/dev", node_sda);
     if (root_super == NULL) {
       root_super = node_sda;
       break;
     }
+  }
+
+  if (root_super == NULL) {
+    log_error("fat: no block device found (DEVICE_SATA..)\n");
+    return;
   }
 
   // auto mount first dev as root
@@ -518,6 +527,7 @@ void fat_init(void) {
   default_node = node;
   if (node == NULL) {
     log_error("not found sda\n");
+    return;
   }
   fat_init_op(node);
   struct partition_struct *partition =
