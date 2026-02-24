@@ -566,6 +566,7 @@ void fat_init(void) {
     log_info("mount fs success\n");
   }
   
+#ifdef TEST
   // Test reading root directory
   DIR test_dir;
   res = f_opendir(&test_dir, VOLUME_ROOT);
@@ -583,6 +584,7 @@ void fat_init(void) {
     }
     f_closedir(&test_dir);
   }
+#endif
 
   node->data = file_info;
   log_info("fatfs init end\n");

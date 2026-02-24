@@ -199,6 +199,16 @@ void kfree_alignment_trace(void* ptr, void* name, void* no, void* fun) {
 
 void* kmalloc(size_t size, u32 flag) {
   void* addr = NULL;
+#if defined(ARM) && defined(ARMV5)
+  // ARM926/ARMv5: kernel often runs under a per-thread TTBR0 (user page table)
+  // during syscalls. If a kernel thread allocates via vm_alloc() (0x9xxxxxxx),
+  // that virtual mapping will not exist in user page tables and will fault.
+  // So: for non-user threads, always allocate from physical memory.
+  thread_t* current = thread_current();
+  if (current == NULL || current->level != LEVEL_USER) {
+    return phy_alloc(size);
+  }
+#endif
   if (flag & KERNEL_TYPE || flag & DEVICE_TYPE) {
     addr = phy_alloc(size);
   } else {
@@ -213,6 +223,12 @@ void* kmalloc(size_t size, u32 flag) {
 
 void* kmalloc_alignment(size_t size, int alignment, u32 flag) {
   void* addr = NULL;
+#if defined(ARM) && defined(ARMV5)
+  thread_t* current = thread_current();
+  if (current == NULL || current->level != LEVEL_USER) {
+    return phy_alloc_aligment(size, alignment);
+  }
+#endif
   if (flag & KERNEL_TYPE || flag & DEVICE_TYPE) {
     addr = phy_alloc_aligment(size, alignment);
   } else {

@@ -20,7 +20,7 @@ u32 recycle_head_thread_count = 0;
 u32 thread_ids = 0;
 lock_t thread_lock;
 
-// #define log_debug
+#define log_debug
 // #define DEBUG 1
 
 void thread_init() {  }
