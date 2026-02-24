@@ -84,7 +84,7 @@ int MMC_disk_initialize() {
 int MMC_disk_status() { return RES_OK; }
 
 int MMC_disk_read(char *buffer, LBA_t sector, int count) {
-  log_debug("MMC_disk_read sector=%d count=%d buffer=%x\n", sector, count, buffer);
+  //log_debug("MMC_disk_read sector=%d count=%d buffer=%x\n", sector, count, buffer);
 
   uint offset = sector * FF_MIN_SS;
   uint length = count * FF_MIN_SS;
@@ -94,7 +94,7 @@ int MMC_disk_read(char *buffer, LBA_t sector, int count) {
     return RES_ERROR;
   }
   
-  log_debug("MMC_disk_read: default_node=%x device=%x\n", default_node, default_node->device);
+  //log_debug("MMC_disk_read: default_node=%x device=%x\n", default_node, default_node->device);
   
   uint ret = fat_device_read(default_node, offset, length, buffer);
   if (ret != length) {
@@ -102,7 +102,7 @@ int MMC_disk_read(char *buffer, LBA_t sector, int count) {
               sector, length, ret);
     return RES_ERROR;
   }
-  log_debug("MMC_disk_read end sector=%d\n", sector);
+  //log_debug("MMC_disk_read end sector=%d\n", sector);
   return RES_OK;
 }
 

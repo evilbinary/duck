@@ -719,7 +719,7 @@ static void emmc_issue_command(uint32_t cmd_reg, uint32_t argument,
   BCM2835_EMMC->BLKSIZECNT = blksizecnt;
 
   // Set argument 1 reg
-  kprintf("EMMC: setting ARG1=%x, CMD=%x, BLKSIZECNT=%x\n", argument, cmd_reg, blksizecnt);
+  // kprintf("EMMC: setting ARG1=%x, CMD=%x, BLKSIZECNT=%x\n", argument, cmd_reg, blksizecnt);
   BCM2835_EMMC->ARG1 = argument;
   dmb();
   
@@ -811,8 +811,8 @@ static void emmc_issue_command(uint32_t cmd_reg, uint32_t argument,
       // Debug: print first 16 bytes of read data for sector 2080
       if (dev->buf && cur_block == 0 && dev->blocks_to_transfer == 1) {
         u8 *p = (u8 *)dev->buf;
-        kprintf("EMMC read data: %02x %02x %02x %02x %02x %02x %02x %02x\n",
-                p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
+        // kprintf("EMMC read data: %02x %02x %02x %02x %02x %02x %02x %02x\n",
+        //         p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
       }
 
       EMMC_TRACE("block %d transfer complete", cur_block);
@@ -1777,12 +1777,12 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, uint len) {
   uint bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
   uint bsize = bcount * BYTE_PER_SECTOR;
 
-  static uint dbg;
-  if (dbg < 12 || (dbg & 0x3FF) == 0) {
-    log_debug("bcm2836 sdhci_read offset=%x bno=%d boff=%d len=%d\n",
-              sdhci_dev->offsetl, bno, boffset, len);
-  }
-  dbg++;
+  // static uint dbg;
+  // if (dbg < 12 || (dbg & 0x3FF) == 0) {
+  //   log_debug("bcm2836 sdhci_read offset=%x bno=%d boff=%d len=%d\n",
+  //             sdhci_dev->offsetl, bno, boffset, len);
+  // }
+  // dbg++;
 
   if (bsize > sdhci_dev->read_buf_size) {
     kfree(sdhci_dev->read_buf);

@@ -46,8 +46,8 @@ void cpu_invalid_tlb() {
   asm volatile("mcr p15, 0, %0, c8, c6, 0" : : "r"(0));  // data tlb
   asm volatile("mcr p15, 0, %0, c8, c5, 0" : : "r"(0));  // instruction tlb
 
-  isb();
   dsb();
+  isb();
 }
 
 void cp15_invalidate_icache(void) {
@@ -137,9 +137,13 @@ void tlbimva(unsigned long mva) {
 void cpu_disable_l1_cache() {
   u32 reg;
   asm("mrc p15, 0, %0, c1, c0, 0" : "=r"(reg) : : "cc");  // SCTLR
-  reg |= 1 << 12;  // Instruction cache enable:
-  reg |= 1 << 2;   // Cache enable.
+  // Actually disable caches/buffers.
+  reg &= ~(1 << 12);  // Instruction cache disable.
+  reg &= ~(1 << 2);   // Data cache disable.
+  reg &= ~(1 << 3);   // Write buffer disable.
   asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");  // SCTLR
+  dsb();
+  isb();
 }
 
 void cpu_set_page(u32 page_table) {
@@ -271,35 +275,25 @@ void cpu_enable_page() {
   asm("mrc p15, 0, %0, c1, c0, 0" : "=r"(reg) : : "cc");  // SCTLR
   reg |= 0x1;                                             // M enable mmu
   // reg |= 1 << 1;  // Alignment check enable.
-  reg |= 1 << 2;  // Data Cache enable.
-  reg |=  1<<3; //enable write buffer;
+  // NOTE: keep D-cache/write-buffer disabled on ARMv5 for correctness
+  // until full page-table cache maintenance is implemented.
+  reg &= ~(1 << 2);  // Data Cache disable.
+  reg &= ~(1 << 3);  // Write buffer disable.
 
   reg |= 1 << 8;  // System protection bit.
   reg |= 1 << 9;  // ROM protection bit.
   // reg|= 1<<23; //0 = VMSAv4/v5 and VMSAv6, subpages enabled 1 = VMSAv6,
   // subpages disabled.
 
-  reg |= 1 << 12;  // Instruction cache enable:
+  reg |= 1 << 12;  // Instruction cache enable.
 
   // reg |= 1 << 13;  // vic low 0  vic hight 1
   asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");  // SCTLR
 
   kprintf("cpu_enable_page2\n");
 
-  // Disable L1 Cache
-  cpu_disable_l1_cache();
-
-  kprintf("cpu_enable_page3\n");
-
-  // Invalidate L1 Caches Invalidate Instruction cache
+  // Ensure I-cache clean state.
   cp15_invalidate_icache();
-
-  // Invalidate Data cache
-  // __builtin___clear_cache(0, ~0);
-  cache_inv_range(0, ~0);
-
-  kprintf("cpu_enable_page4\n");
-
   cpu_invalid_tlb();
 
   kprintf("cpu_enable_page3\n");
