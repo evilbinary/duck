@@ -4,6 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "dev/devfs.h"
+#include "kernel/device.h"
 #include "gpio.h"
 #include "serial.h"
 
@@ -51,12 +52,12 @@ static size_t write(device_t* dev, char* buf, size_t len) {
 }
 
 int serial_init(void) {
-  device_t* dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
-  dev->name = "serial";
+  // Use kernel memory for device object; syscalls run under user page tables.
+  device_t* dev = device_create("serial", DEVICE_SERIAL, DEVICE_TYPE_CHAR);
+  kprintf("sera init %p\n", dev);
+
   dev->read = read;
   dev->write = write;
-  dev->id = DEVICE_SERIAL;
-  dev->type = DEVICE_TYPE_CHAR;
   device_add(dev);
 
   // uart_init();

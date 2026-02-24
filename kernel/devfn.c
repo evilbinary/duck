@@ -33,6 +33,9 @@ size_t dev_write(int fd, void *buf, size_t nbytes) {
 
 u32 device_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   u32 ret = 0;
+  if(node==NULL){
+    return ret;
+  }
   device_t *dev = (device_t *)node->device;
   if (dev == NULL) {
     return ret;
