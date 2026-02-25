@@ -54,7 +54,7 @@ plat_source={
         '16450.c',
     ],
     'stm32f4xx':[
-        'general.c'
+        'stm32.c',
     ]
 }
 arch_source={
