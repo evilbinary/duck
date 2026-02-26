@@ -16,12 +16,21 @@
 // int __res; \
 // __asm__("divl %4":"=a" (n),"=d" (__res):"0" (n),"1" (0),"r" (base)); \
 // __res; })
+#if defined(ARMV7) || defined(ARMV5)
+#define do_div(n, base)                              \
+  ({                                                 \
+    unsigned int __rem = (unsigned int)(n) % (unsigned int)(base); \
+    (n) = (unsigned int)(n) / (unsigned int)(base);  \
+    __rem;                                           \
+  })
+#else
 #define do_div(n, base)   \
   ({                      \
     unsigned long long __rem = n % base; \
     n /= base;            \
     __rem;                \
   })
+#endif
 
 /*------------------------------------------------------------------------
  Procedure:     skip_atoi ID:1
