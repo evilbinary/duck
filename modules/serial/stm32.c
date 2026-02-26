@@ -3,6 +3,7 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
+#include "dev/devfs.h"
 #include "serial.h"
 
 
@@ -48,7 +49,7 @@ static size_t write(device_t* dev, void* buf, size_t len) {
 }
 
 int serial_init(void) {
-  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
+  device_t* dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
   dev->name = "serial";
   dev->read = read;
   dev->write = write;
@@ -56,7 +57,12 @@ int serial_init(void) {
   dev->type = DEVICE_TYPE_CHAR;
   device_add(dev);
 
-  // uart_init();
+  // devfs series
+  vnode_t* series = vfs_create_node("series", V_FILE);
+  vfs_mount(NULL, "/dev", series);
+  series->device = dev;
+  series->op = &device_operator;
+
   return 0;
 }
 
