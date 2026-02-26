@@ -589,7 +589,6 @@ void thread_dump(thread_t* thread, u32 flags) {
               THREAD_DUMP_STOP_COUNT);
     return;
   }
-  vmemory_area_t* vm = vmemory_area_find_flag(thread->vm->vma, MEMORY_STACK);
   thread->dump_count++;
   kprintf("id       %d\n", thread->id);
   if (thread->name != NULL) {
@@ -598,27 +597,35 @@ void thread_dump(thread_t* thread, u32 flags) {
   kprintf("priority %d\n", thread->priority);
   kprintf("counter  %d\n", thread->counter);
   kprintf("state    %d\n", thread->state);
-  kprintf("kpage    %08x\n", thread->vm->kpage);
-  kprintf("upage    %08x\n", thread->vm->upage);
   kprintf("ksp      %08x  [%8x - %8x]\n", thread->ctx->ksp,
           thread->ctx->ksp_start, thread->ctx->ksp_end);
-  kprintf("usp      %08x  [%8x - %8x]\n", thread->ctx->usp, vm->alloc_addr,
-          vm->alloc_addr + vm->alloc_size);
+  kprintf("usp      %08x\n", thread->ctx->usp);
   kprintf("pid      %d\n", thread->pid);
   kprintf("fd_num   %d\n", thread->fd_number);
   kprintf("code     %d\n", thread->code);
 
-  if (flags & DUMP_CONTEXT == DUMP_CONTEXT) {
+  if ((flags & DUMP_CONTEXT) == DUMP_CONTEXT) {
     kprintf("--context--\n");
     context_dump(thread->ctx);
   }
-  if (flags & DUMP_STACK == DUMP_STACK) {
+  if ((flags & DUMP_STACK) == DUMP_STACK) {
     kprintf("--kstack--\n");
     // thread_dump_stack(thread->ctx->ksp_start, thread->ctx->ksp_size);
     int dump_size = 0x10;
     thread_dump_stack(thread->ctx->ksp_end - dump_size, dump_size);
-    kprintf("--ustack--\n");
-    thread_dump_stack(vm->vend - dump_size, dump_size);
+#ifdef VM_ENABLE
+    if (thread->vm != NULL && thread->vm->vma != NULL) {
+      vmemory_area_t* vm = vmemory_area_find_flag(thread->vm->vma, MEMORY_STACK);
+      if (vm != NULL) {
+        kprintf("--ustack--\n");
+        thread_dump_stack(vm->vend - dump_size, dump_size);
+        kprintf("kpage    %08x\n", thread->vm->kpage);
+        kprintf("upage    %08x\n", thread->vm->upage);
+        kprintf("usp_rng  [%8x - %8x]\n", vm->alloc_addr,
+                vm->alloc_addr + vm->alloc_size);
+      }
+    }
+#endif
   }
   kprintf("\n");
 }
