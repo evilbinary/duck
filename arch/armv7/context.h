@@ -52,14 +52,18 @@ typedef struct context_t {
   u32 ksp_size;
 } context_t;
 
+// Call C handler and preserve r0 return value for interrupt_exit_ret().
+// Save r0-r12, call handler, then overwrite saved r0 with return value.
 #define interrupt_process(X) \
   asm volatile(              \
       "push {r0-r12} \n"     \
       "blx " #X              \
       "\n"                   \
+      "str r0, [sp]\n"       \
       "pop {r0-r12}\n"       \
       :                      \
-      :)
+      :                      \
+      : "memory")
 
 #define interrupt_entering_code(VEC, CODE) \
   asm volatile(                            \
@@ -115,7 +119,7 @@ typedef struct context_t {
   cpu_set_page(page_dir)  // asm volatile("mov %0, %%cr3" : : "r" (page_dir))
 
 #define context_fn(context) context->r6
-#define context_ret(context) context->r0
+#define context_ret(context) context
 #define context_set_entry(context, entry) \
   ((interrupt_context_t*)(context))->lr = entry + 4;
 
