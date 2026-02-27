@@ -48,11 +48,18 @@ static void stm32_spi_init() {
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
-  gpio_config(GPIOB, GPIO_PIN_11, GPIO_MODE_OUTPUT_PP);
-  gpio_config(GPIOB, GPIO_PIN_6 | GPIO_PIN_7, GPIO_MODE_OUTPUT_PP);
+  /**
+   * SPI1_MOSI PA7
+   * SPI1_MISO PB6 not use
+   * SPI1_SCK  PA5
+   * SPI1_CS   PA4
+   */
+  gpio_config(GPIOA, GPIO_PIN_5, GPIO_MODE_AF_PP);
+  gpio_config(GPIOA, GPIO_PIN_6 | GPIO_PIN_7, GPIO_MODE_AF_PP);
 
   /* Peripheral clock enable */
   __HAL_RCC_SPI1_CLK_ENABLE();
+
 
   /* SPI1 parameter configuration*/
   hspi1.Instance = SPI1;

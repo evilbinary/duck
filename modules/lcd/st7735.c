@@ -132,6 +132,19 @@ void st7735_test() {
 }
 
 void st7735_init() {
+  /**
+   * gpio pa11 - dc 
+   * pb7 - res
+   * pb6 - cs
+   *
+   * spi1
+   * SPI1_MOSI PA7
+   * SPI1_MISO PB6 not use
+   * SPI1_SCK  PA5
+   * SPI1_CS   PA4
+   */
+  
+
   gpio_config(ST7735_DC_GPIO_Port, ST7735_DC_Pin, GPIO_MODE_OUTPUT_PP);
   gpio_config(ST7735_RES_GPIO_Port, ST7735_RES_Pin, GPIO_MODE_OUTPUT_PP);
   gpio_config(ST7735_CS_GPIO_Port, ST7735_CS_Pin, GPIO_MODE_OUTPUT_PP);
@@ -178,7 +191,10 @@ void st7735_init() {
   kprintf("st7735 lcd end\n");
 
   st7735_fill(0, 0, 128, 128, BLACK);
-  // st7735_test();
+  // while(1){
+  //   // st7735_fill(0, 0, 128, 128, BLACK);
+  //   st7735_test();
+  // }
 }
 
 int st7735_write_pixel(vga_device_t* vga, const void* buf, size_t len) {
