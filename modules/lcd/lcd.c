@@ -7,6 +7,7 @@
 
 #include "dev/devfs.h"
 #include "vga/vga.h"
+#include "kernel/string.h"
 
 size_t lcd_read(device_t* dev, void* buf, size_t len) {
   u32 ret = 0;
@@ -20,6 +21,28 @@ size_t lcd_write(device_t* dev, const void* buf, size_t len) {
     kprintf("not found lcd\n");
     return ret;
   }
+  
+  // 解析FILL命令: "FILL x y w h color\n"
+  const char* cmd = (const char*)buf;
+  if (kstrncmp(cmd, "FILL ", 5) == 0) {
+    // 简单解析5个整数
+    const char* p = cmd + 5;
+    int x = katoi(&p);
+    while (*p == ' ') p++;
+    int y = katoi(&p);
+    while (*p == ' ') p++;
+    int w = katoi(&p);
+    while (*p == ' ') p++;
+    int h = katoi(&p);
+    while (*p == ' ') p++;
+    int color = katoi(&p);
+    
+    // 调用st7735_fill填充矩形
+    extern void st7735_fill(u16 xsta, u16 ysta, u16 xend, u16 yend, u16 color);
+    st7735_fill(x, y, x + w - 1, y + h - 1, color);
+    return len;
+  }
+  
   if (vga->frambuffer != NULL) {
     kstrncpy(vga->frambuffer, (const char*)buf, len);
   } else {
@@ -76,6 +99,14 @@ int lcd_init(void) {
   dev->type = DEVICE_TYPE_VGA;
   device_add(dev);
 
+  if (dev != NULL) {
+    vnode_t* frambuffer = vfs_create_node("lcd", V_FILE);
+    vfs_mount(NULL, "/dev", frambuffer);
+    frambuffer->device = dev;
+    frambuffer->op = &device_operator;
+  } else {
+    log_error("dev lcd not found\n");
+  }
 
   lcd_init_device(dev);
   return 0;
