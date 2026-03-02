@@ -18,6 +18,8 @@ void sleep_ms(int ms) {
 }
 
 void lcd_fill_rect_task(void) {
+
+#ifdef STM32F4XX
     // 延时等待LCD初始化完成
     sleep_ms(1000);
     
@@ -37,14 +39,17 @@ void lcd_fill_rect_task(void) {
     }
     // 最后绘制黄色矩形
     st7735_fill(60, 60, 100, 100, 0xffe0); // YELLOW
+#endif
+
+    syscall1(SYS_EXIT, 0);
 }
 
 void cmd_lcd(){
-#ifdef STM32F4XX
+
     // 创建LCD填充矩形演示线程
     thread_t* lcd_task = thread_create_name("lcd_rect", lcd_fill_rect_task, NULL);
     thread_run(lcd_task);
-#endif
+
 }
 
 // 命令表
