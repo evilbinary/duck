@@ -64,7 +64,12 @@ void build_env(char** env);
 
 extern int module_ready;
 
+// STM32F4XX不使用fork，使用线程
+#ifdef STM32F4XX
+// 使用cmd方式
+#else
 #define USE_FORK 1
+#endif
 
 void hello_thread(void) {
   print_string("hello\n");
@@ -95,6 +100,8 @@ void reopen(char* name) {
   }
 }
 
+extern int cmd_exec(const char* name);
+
 int run_exec(char* cmd, char** argv, char** env) {
 #ifdef USE_FORK
   char temp[128];  // 0xffffffb8 addr fix me
@@ -106,7 +113,8 @@ int run_exec(char* cmd, char** argv, char** env) {
     syscall1(SYS_EXIT, 0);
   }
 #else
-  thread_t* t = syscall3(SYS_THREAD_CREATE, cmd, (void*)&hello_thread, NULL);
+  // 先尝试从命令表查找
+  return cmd_exec(cmd);
 #endif
 }
 
@@ -126,8 +134,10 @@ int do_exec(char* cmd, int count, char** env) {
   if (i <= 0 || argv[1] == ' ' || argv[0] == NULL) {
     return 0;
   }
+  int ret =0;
+#ifdef USE_FORK
   sprintf(buf, "/bin/%s", argv[0]);
-  int ret = syscall2(SYS_ACESS, buf, 0);
+  ret = syscall2(SYS_ACESS, buf, 0);
   if (ret < 0) {
     sprintf(buf, "/%s", argv[0]);
     ret = syscall2(SYS_ACESS, buf, 0);
@@ -136,6 +146,9 @@ int do_exec(char* cmd, int count, char** env) {
       ret = syscall2(SYS_ACESS, buf, 0);
     }
   }
+#else
+sprintf(buf, "%s", argv[0]);
+#endif
   int pid = 0;
   if (ret == 0) {
     pid = run_exec(buf, argv, env);

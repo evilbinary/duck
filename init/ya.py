@@ -27,7 +27,8 @@ add_files(
     'module.c',
     'init.c',
     'monitor.c',
-    'test.c'
+    'test.c',
+    'cmd.c'
 )
 
 add_rules("kernel-objcopy")
