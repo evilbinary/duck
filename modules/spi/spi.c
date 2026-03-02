@@ -12,7 +12,7 @@ size_t spi_read(device_t* dev, void* buf, size_t len) {
     log_error("spi is null\n");
     return ret;
   }
-  spi->read(spi, buf, len);
+  ret = spi->read(spi, (u32*)buf, len);
   return ret;
 }
 
@@ -23,7 +23,7 @@ size_t spi_write(device_t* dev, const void* buf, size_t len) {
     log_error("spi is null\n");
     return ret;
   }
-  spi->write(spi, buf, len);
+  ret = spi->write(spi, (u32*)buf, len);
   return ret;
 }
 
