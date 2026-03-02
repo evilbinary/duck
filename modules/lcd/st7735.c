@@ -9,7 +9,7 @@
 #include "platform/stm32f4xx/gpio.h"
 #include "platform/stm32f4xx/stm32f4xx_hal.h"
 
-#define USE_BUFF 0
+#define USE_DMA 0  // 可以改为1启用DMA
 
 #define BLACK 0x0000
 #define WHITE 0xFFFF
@@ -23,28 +23,9 @@
 
 device_t* spi_dev = NULL;
 
-#ifdef USE_BUFF
-#define ST77XX_BUF_SIZE 2048
+// 使用更大的缓冲区批量发送，提高刷屏速度
+#define ST77XX_BUF_SIZE 4096
 static uint8_t st7735_buf[ST77XX_BUF_SIZE];
-static uint16_t st7735_buf_index = 0;
-
-static void st77xx_write_buffer(u8* buff, size_t buff_size) {
-  while (buff_size--) {
-    st7735_buf[st7735_buf_index++] = *buff++;
-    if (st7735_buf_index == ST77XX_BUF_SIZE) {
-      spi_dev->write(spi_dev, st7735_buf, st7735_buf_index);
-      st7735_buf_index = 0;
-    }
-  }
-}
-
-static void st77xx_flush_buffer(void) {
-  if (st7735_buf_index > 0) {
-    spi_dev->write(spi_dev, st7735_buf, st7735_buf_index);
-    st7735_buf_index = 0;
-  }
-}
-#endif
 
 void delay(int n) {
   // Use simple loop delay - ~1ms per 10000 iterations at 84MHz
@@ -70,30 +51,35 @@ void st7735_debug_gpio() {
 #define ROW_OFFSET 0
 
 void st7735_fill(u16 xsta, u16 ysta, u16 xend, u16 yend, u16 color) {
-  u32 pixel_count = (xend - xsta + 1) * (yend - ysta + 1);
+  u32 pixel_count = (u32)(xend - xsta + 1) * (u32)(yend - ysta + 1);
 
   // Apply offset correction for ST7735S
-  // st7735_address_set sends 0x2C and keeps CS low
   st7735_address_set(xsta + COL_OFFSET, ysta + ROW_OFFSET, xend + COL_OFFSET, yend + ROW_OFFSET);
 
   // Set DC high for pixel data
   gpio_output(ST7735_DC_GPIO_Port, ST7735_DC_Pin, GPIO_PIN_SET);
 
-  // Write all pixels
-  u8 color_bytes[2];
-  color_bytes[0] = (color >> 8) & 0xFF;  // High byte
-  color_bytes[1] = color & 0xFF;         // Low byte
-
-#ifdef USE_BUFF
+  // 准备颜色数据
+  u8 color_high = (color >> 8) & 0xFF;
+  u8 color_low = color & 0xFF;
+  
+  // 批量填充缓冲区并发送，大幅提高刷屏速度
+  u32 buf_pos = 0;
   for (u32 k = 0; k < pixel_count; k++) {
-    st77xx_write_buffer(color_bytes, 2);
+    st7735_buf[buf_pos++] = color_high;
+    st7735_buf[buf_pos++] = color_low;
+    
+    // 缓冲区满时发送
+    if (buf_pos >= ST77XX_BUF_SIZE) {
+      spi_dev->write(spi_dev, (u32*)st7735_buf, buf_pos);
+      buf_pos = 0;
+    }
   }
-  st77xx_flush_buffer();
-#else
-  for (u32 k = 0; k < pixel_count; k++) {
-    spi_dev->write(spi_dev, color_bytes, 2);
+  
+  // 发送剩余数据
+  if (buf_pos > 0) {
+    spi_dev->write(spi_dev, (u32*)st7735_buf, buf_pos);
   }
-#endif
 
   // Release CS after all pixel data is sent
   st7735_unselect();
@@ -264,23 +250,23 @@ void st7735_debug_spi() {
 
 void st7735_test() {
     // Fill screen with different colors (0-127 is valid range for 128x128 display)
-    kprintf("Filling WHITE...\n");
+    // kprintf("Filling WHITE...\n");
     st7735_fill(0, 0, 127, 127, WHITE);
-    delay(1000);
+    // delay(1000);
     
-    kprintf("Filling BLUE...\n");
+    // kprintf("Filling BLUE...\n");
     st7735_fill(0, 0, 127, 127, BLUE);
-    delay(1000);
+    // delay(1000);
     
-    kprintf("Filling GREEN...\n");
+    // kprintf("Filling GREEN...\n");
     st7735_fill(0, 0, 127, 127, GREEN);
-    delay(1000);
+    // delay(1000);
     
-    kprintf("Filling RED...\n");
+    // kprintf("Filling RED...\n");
     st7735_fill(0, 0, 127, 127, RED);
-    delay(1000);
+    // delay(1000);
     
-    kprintf("st7735 test lcd end\n");
+    // kprintf("st7735 test lcd end\n");
 }
 
 void st7735_init() {
@@ -516,28 +502,28 @@ void st7735_init() {
   st7735_write_data_no_cs(0x7F);  // Y end = 127
   st7735_unselect();
   
-  delay(100);
+  // delay(100);
 
-  kprintf("st7735 lcd init done, starting test...\n");
+  // kprintf("st7735 lcd init done, starting test...\n");
 
-  // First, test with a single pixel
-  kprintf("Setting single pixel at (10,10)...\n");
+  // // First, test with a single pixel
+  // kprintf("Setting single pixel at (10,10)...\n");
   st7735_set_pixel(10, 10, RED);
-  delay(500);
+  // delay(500);
   
-  // Try to fill a small area
-  kprintf("Filling small area (20,20) to (30,30)...\n");
-  st7735_fill(20, 20, 30, 30, GREEN);
-  delay(1000);
+  // // Try to fill a small area
+  // kprintf("Filling small area (20,20) to (30,30)...\n");
+  // st7735_fill(20, 20, 30, 30, GREEN);
+  // delay(1000);
   
-  // Fill entire screen
-  kprintf("Filling entire screen RED...\n");
-  st7735_fill(0, 0, 127, 127, RED);
-  delay(2000);
+  // // Fill entire screen
+  // kprintf("Filling entire screen RED...\n");
+  // st7735_fill(0, 0, 127, 127, RED);
+  // delay(2000);
   
-  while(1){
-    st7735_test();
-  }
+  // while(1){
+  //   st7735_test();
+  // }
 }
 
 int st7735_write_pixel(vga_device_t* vga, const void* buf, size_t len) {

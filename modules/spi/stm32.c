@@ -23,7 +23,7 @@
  *   - 时钟极性：低电平 (CPOL=LOW)
  *   - 时钟相位：第一个边沿 (CPHA=1EDGE) → SPI Mode 0
  *   - 数据位宽：8位 (SPI_DATASIZE_8BIT)
- *   - 波特率：PCLK/16 ≈ 5.25MHz @84MHz
+ *   - 波特率：PCLK/2 ≈ 42MHz @84MHz (最高速)
  *   - 首位：MSB先传
  ******************************************************************************/
 #include "platform/stm32f4xx/gpio.h"
@@ -102,7 +102,7 @@ static void stm32_spi_init() {
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;  // ~5.25MHz for ST7735 (safer)
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;   // ~42MHz for ST7735 (max speed)
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
