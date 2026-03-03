@@ -114,6 +114,12 @@ static void* irq_dispatch(interrupt_context_t* ic) {
     NVIC_ClearPendingIRQ((IRQn_Type)irqn);
 #endif
   }
+  
+  // 检查异常号是否为0，如果是则处理为未定义异常
+  if (ic->no == 0) {
+    ic->no = EX_UNDEF;
+  }
+  
   return interrupt_default_handler(ic);
 }
 

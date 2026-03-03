@@ -26,16 +26,16 @@ size_t lcd_write(device_t* dev, const void* buf, size_t len) {
   const char* cmd = (const char*)buf;
   if (kstrncmp(cmd, "FILL ", 5) == 0) {
     // 简单解析5个整数
-    const char* p = cmd + 5;
-    int x = katoi(&p);
+    char* p = (char*)cmd + 5;
+    int x = katoi((const char**)&p);
     while (*p == ' ') p++;
-    int y = katoi(&p);
+    int y = katoi((const char**)&p);
     while (*p == ' ') p++;
-    int w = katoi(&p);
+    int w = katoi((const char**)&p);
     while (*p == ' ') p++;
-    int h = katoi(&p);
+    int h = katoi((const char**)&p);
     while (*p == ' ') p++;
-    int color = katoi(&p);
+    int color = katoi((const char**)&p);
     
     // 调用st7735_fill填充矩形
     extern void st7735_fill(u16 xsta, u16 ysta, u16 xend, u16 yend, u16 color);

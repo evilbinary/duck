@@ -35,7 +35,6 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
   }
   context->eip = entry;
   context->level = level;
-  context->ksp = ksp_top;
   u32 cs, ds;
   cpsr_t cpsr;
   cpsr.val = 0x1000000;
@@ -49,6 +48,11 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
   } else {
     kprintf("not suppport level %d\n", level);
   }
+
+  // Allocate space for interrupt context on kernel stack
+  interrupt_context_t* ic = (u32)ksp_top - sizeof(interrupt_context_t);
+  kmemset(ic, 0, sizeof(interrupt_context_t));
+  context->ksp = ic;
 
   interrupt_context_t* user = usp_top;
   kmemset(user, 0, sizeof(interrupt_context_t));
@@ -70,7 +74,7 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
   user->r12 = 0x00120012;  // ip
 
   context->usp = usp_top;
-  context->ksp = ksp_top;
+  context->ksp = ic;
 
   return 0;
 }
@@ -106,7 +110,7 @@ void context_dump(context_t* c) {
   kprintf("usp: %8x\n", c->usp);
 
   kprintf("--interrupt context--\n");
-  interrupt_context_t* context = c->usp;
+  interrupt_context_t* context = c->ksp;
   context_dump_interrupt(context);
 }
 
