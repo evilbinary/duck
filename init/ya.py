@@ -33,12 +33,14 @@ add_files(
     'cmd.c'
 )
 
+
 # app+kernel
 if plat in ['stm32f4xx','esp32']:
-    for app in apps:
-        add_files(
-            app+'/*.c'
-        )
+    if get_config('em-apps'):
+        for app in get_config('em-apps'):
+            add_files(
+                '../../app/'+app+'/*.c'
+            )
 else:
     add_files('main.c')
 
