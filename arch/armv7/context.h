@@ -53,17 +53,16 @@ typedef struct context_t {
 } context_t;
 
 // Call C handler and preserve r0 return value for interrupt_exit_ret().
-// Save r0-r12, call handler, then overwrite saved r0 with return value.
+// Save r0-r12 and lr, call handler, restore r1-r12, then move return value to r0.
+// Note: lr is saved because blx modifies it, and Cortex-M uses lr for exception return.
 #define interrupt_process(X) \
   asm volatile(              \
-      "push {r0-r12} \n"     \
+      "push {r1-r12} \n"     \
       "blx " #X              \
       "\n"                   \
-      "str r0, [sp]\n"       \
-      "pop {r0-r12}\n"       \
+      "pop {r1-r12}\n"       \
       :                      \
-      :                      \
-      : "memory")
+      :)
 
 #define interrupt_entering_code(VEC, CODE) \
   asm volatile(                            \
