@@ -11,6 +11,7 @@ set_kind("binary")
 
 arch=get_arch()
 arch_type=get_arch_type()
+plat=get_plat()
 
 add_deps(
     'modules',
@@ -22,14 +23,27 @@ add_deps(
     'algorithm',
     'gcc'
 )
+
+
 add_files(
-    'main.c',
     'module.c',
     'init.c',
     'monitor.c',
     'test.c',
     'cmd.c'
 )
+
+# app+kernel
+if plat in ['stm32f4xx','esp32']:
+    for app in apps:
+        add_files(
+            app+'/*.c'
+        )
+else:
+    add_files('main.c')
+
+
+
 
 add_rules("kernel-objcopy")
 
