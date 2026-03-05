@@ -38,9 +38,7 @@ add_files(
 if plat in ['stm32f4xx','esp32']:
     if get_config('em-apps'):
         for app in get_config('em-apps'):
-            add_files(
-                '../../app/'+app+'/*.c'
-            )
+            add_deps(app)
 else:
     add_files('main.c')
 
