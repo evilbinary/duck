@@ -144,7 +144,7 @@ u64 cpu_get_index(int idx) {
 }
 
 // Initialize CPU
-void cpu_init(void) {
+void cpu_init(int cpu_id) {
   // Initialize CPU state
   // Clear any pending interrupts, etc.
 }

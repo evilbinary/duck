@@ -221,7 +221,7 @@ static inline u64 read_current_el(void) {
 // CPU functions
 u32 cpu_get_id(void);
 int cpu_get_number(void);
-void cpu_init(void);
+void cpu_init(int cpu_id);
 void cpu_halt(void);
 void cpu_wait(void);
 u64 cpu_get_cs(void);
