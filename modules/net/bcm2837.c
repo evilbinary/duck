@@ -127,7 +127,7 @@ static int smsc_lan95xx_init(bcm2837_net_t* net) {
 }
 
 // Initialize network device
-int bcm2837_net_init(device_t* dev) {
+int net_init_device(device_t* dev) {
     kprintf("[BCM2837-Net] Initializing network device\n");
     
     bcm2837_net_t* net = &net_device;
@@ -148,12 +148,17 @@ int bcm2837_net_init(device_t* dev) {
     net->is_initialized = 1;
     dev->data = net;
     
+    // 设置设备回调函数
+    dev->read = net_read;
+    dev->write = net_write;
+    dev->ioctl = net_ioctl;
+    
     kprintf("[BCM2837-Net] Network device initialized successfully\n");
     return 0;
 }
 
 // Read data from network (receive packet)
-size_t bcm2837_net_read(device_t* dev, void* buf, size_t len) {
+size_t net_read(device_t* dev, void* buf, size_t len) {
     if(!dev || !dev->data) {
         return 0;
     }
@@ -176,7 +181,7 @@ size_t bcm2837_net_read(device_t* dev, void* buf, size_t len) {
 }
 
 // Write data to network (send packet)
-size_t bcm2837_net_write(device_t* dev, const void* buf, size_t len) {
+size_t net_write(device_t* dev, const void* buf, size_t len) {
     if(!dev || !dev->data || !buf) {
         return 0;
     }
@@ -205,7 +210,7 @@ size_t bcm2837_net_write(device_t* dev, const void* buf, size_t len) {
 }
 
 // Handle network device control commands
-int bcm2837_net_ioctl(device_t* dev, u32 cmd, void* args) {
+int net_ioctl(device_t* dev, u32 cmd, void* args) {
     if(!dev || !dev->data) {
         return -1;
     }

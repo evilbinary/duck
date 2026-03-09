@@ -33,10 +33,10 @@ typedef struct bcm2837_net {
     u8 duplex; // 0=half, 1=full
 } bcm2837_net_t;
 
-// Function declarations
-int bcm2837_net_init(device_t* dev);
-size_t bcm2837_net_read(device_t* dev, void* buf, size_t len);
-size_t bcm2837_net_write(device_t* dev, const void* buf, size_t len);
-int bcm2837_net_ioctl(device_t* dev, u32 cmd, void* args);
+// Function declarations (统一接口，与 e1000.c 一致)
+int net_init_device(device_t* dev);
+size_t net_read(device_t* dev, void* buf, size_t len);
+size_t net_write(device_t* dev, const void* buf, size_t len);
+int net_ioctl(device_t* dev, u32 cmd, void* args);
 
 #endif  // BCM2837_NET_H

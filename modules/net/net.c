@@ -6,18 +6,10 @@
 #include "kernel/kernel.h"
 #include "dev/devfs.h"
 
-// Platform-specific includes
-#if defined(RASPI2) || defined(RASPI3)
-#include "bcm2837.h"
-#endif
-
-// Forward declarations for platform-specific init
-#if defined(RASPI2) || defined(RASPI3)
-#define NET_INIT_DEVICE bcm2837_net_init
-#else
-extern int net_init_device(device_t* dev);  // e1000 for x86/PCI systems
-#define NET_INIT_DEVICE net_init_device
-#endif
+// 平台特定的初始化函数由各个驱动文件实现
+// raspi2/raspi3: net_init_device() in bcm2837.c
+// x86/qemu: net_init_device() in e1000.c
+extern int net_init_device(device_t* dev);
 
 int net_init(void) {
   kprintf("net init\n");
@@ -30,15 +22,8 @@ int net_init(void) {
   dev->type = DEVICE_TYPE_NET;
   device_add(dev);
   
-  // Initialize platform-specific network device
-  #if defined(RASPI2) || defined(RASPI3)
-    dev->read = bcm2837_net_read;
-    dev->write = bcm2837_net_write;
-    dev->ioctl = bcm2837_net_ioctl;
-    bcm2837_net_init(dev);
-  #else
-    net_init_device(dev);
-  #endif
+  // 调用平台特定的初始化函数
+  net_init_device(dev);
 
   // Create /dev/net device node
   vnode_t *net = vfs_create_node("net", V_FILE | V_BLOCKDEVICE);
