@@ -7,6 +7,6 @@
 
 // 多核CPU初始化 (Application Processor init)
 void ap_init(int cpu) {
-  cpu_init();
+  cpu_init(cpu);
   interrupt_init();
 }

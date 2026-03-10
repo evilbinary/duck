@@ -11,6 +11,7 @@
 #include "kernel/kernel.h"
 #include "kernel/sysinfo.h"
 #include "kernel/time.h"
+#include "kernel/type.h"
 #include "types.h"
 
 #if defined(ARM)
@@ -79,6 +80,120 @@ enum {
   SYS_STATFS64 = 266,
   SYS_STATX = 397,
   SYS_CLOCK_GETTIME64 = 403,
+  SYS_PRINT = 500,
+  SYS_PRINT_AT = 501,
+  SYS_DEV_READ = 502,
+  SYS_DEV_WRITE = 503,
+  SYS_DEV_IOCTL = 504,
+  SYS_TEST = 505,
+  SYS_MAP = 506,
+  SYS_UMAP = 507,
+  SYS_VALLOC = 508,
+  SYS_VFREE = 509,
+  SYS_VHEAP = 510,
+  SYS_DUMPS = 511,
+  SYS_SELF = 512,
+  SYS_MEMINFO = 513,
+  SYS_THREAD_SELF = 514,
+  SYS_THREAD_CREATE = 515,
+  SYS_THREAD_DUMP = 516,
+  SYS_THREAD_ADDR = 517,
+  SYS_THREAD_MAP = 518,
+};
+
+#elif defined(AARCH64)
+
+enum {
+  SYS_EXIT = 93,
+  SYS_EXIT_GROUP = 94,
+  SYS_READ = 63,
+  SYS_WRITE = 64,
+  SYS_OPEN = 56,
+  SYS_CLOSE = 57,
+  SYS_IOCTL = 29,
+  SYS_FORK = -1,
+  SYS_EXEC = 221,
+
+  // Network syscalls (aarch64)
+  SYS_SOCKET = 198,
+  SYS_SOCKETPAIR = 199,
+  SYS_BIND = 200,
+  SYS_LISTEN = 201,
+  SYS_ACCEPT = 202,
+  SYS_ACCEPT4 = 242,
+  SYS_CONNECT = 203,
+  SYS_GETSOCKNAME = 204,
+  SYS_GETPEERNAME = 205,
+  SYS_SENDTO = 206,
+  SYS_RECVFROM = 207,
+  SYS_SETSOCKOPT = 208,
+  SYS_GETSOCKOPT = 209,
+  SYS_SHUTDOWN = 210,
+  SYS_SENDMSG = 211,
+  SYS_RECVMSG = 212,
+
+  SYS_GETPID = 172,
+  SYS_GETPPID = 173,
+  SYS_CLONE = 220,
+  SYS_WAIT4 = 260,
+  SYS_BRK = 214,
+  SYS_MMAP = 222,
+  SYS_MMAP2 = 222,
+  SYS_MUNMAP = 215,
+  SYS_MREMAP = 216,
+  SYS_MPROTECT = 226,
+
+  SYS_STAT = 79,
+  SYS_FSTAT = 80,
+  SYS_FSTAT64 = 80,
+  SYS_STATX = 291,
+  SYS_STATFS64 = 43,
+  SYS_FCNT64 = 25,
+  SYS_GETDENTS64 = 61,
+  SYS_GETCWD = 17,
+  SYS_CHDIR = 49,
+  SYS_FCHDIR = 50,
+  SYS_SEEK = 62,
+  SYS_LLSEEK = 62,
+  SYS_DUP = 23,
+  SYS_DUP2 = -1,
+  SYS_PIPE = -1,
+  SYS_UNLINK = 35,
+  SYS_RENAME = 38,
+  SYS_MKDIR = 34,
+  SYS_ACESS = 48,
+  SYS_ALARM = -1,
+  SYS_KILL = 129,
+  SYS_UMASK = 166,
+
+  SYS_READV = 65,
+  SYS_WRITEV = 66,
+  SYS_READLINK = 78,
+  SYS_READDIR = -1,
+
+  SYS_YIELD = 124,
+  SYS_NANOSLEEP = 101,
+  SYS_CLOCK_NANOSLEEP = 115,
+  SYS_CLOCK_GETTIME64 = 113,
+
+  SYS_RT_SIGACTION = 134,
+  SYS_RT_SIGPROCMASK = 135,
+
+  SYS_FUTEX = 98,
+  SYS_SET_TID_ADDRESS = 96,
+  SYS_SET_THREAD_AREA = -1,
+  SYS_GETTID = 178,
+  SYS_SYSINFO = 179,
+
+  SYS_SCHED_GETPARAM = 121,
+  SYS_SCHED_SETPARAM = 118,
+  SYS_SCHED_SETSCHEDULER = 119,
+  SYS_SCHED_GET_PRIORITY_MAX = 125,
+  SYS_SCHED_GET_PRIORITY_MIN = 126,
+
+  SYS_MADVISE = 233,
+  SYS_WAITID = 95,
+
   SYS_PRINT = 500,
   SYS_PRINT_AT = 501,
   SYS_DEV_READ = 502,
@@ -466,6 +581,94 @@ enum {
 #define CLOCK_SGI_CYCLE 10
 #define CLOCK_TAI 11
 
+// Socket address family
+#define AF_UNSPEC   0
+#define AF_UNIX     1
+#define AF_INET     2
+#define AF_INET6    10
+
+// Socket types
+#define SOCK_STREAM    1
+#define SOCK_DGRAM     2
+#define SOCK_RAW       3
+
+// Socket protocol
+#define IPPROTO_IP    0
+#define IPPROTO_TCP   6
+#define IPPROTO_UDP   17
+
+// Socket options
+#define SOL_SOCKET    1
+#define SO_DEBUG      1
+#define SO_REUSEADDR  2
+#define SO_TYPE       3
+#define SO_ERROR      4
+#define SO_DONTROUTE  5
+#define SO_BROADCAST  6
+#define SO_SNDBUF     7
+#define SO_RCVBUF     8
+#define SO_KEEPALIVE  9
+#define SO_OOBINLINE  10
+#define SO_LINGER     13
+#define SO_REUSEPORT  15
+#define SO_RCVTIMEO   20
+#define SO_SNDTIMEO   21
+#define SO_ACCEPTCONN 30
+
+// Message flags
+#define MSG_OOB       0x0001
+#define MSG_PEEK      0x0002
+#define MSG_DONTROUTE 0x0004
+#define MSG_DONTWAIT  0x0040
+#define MSG_WAITALL   0x0100
+
+// Shutdown flags
+#define SHUT_RD   0
+#define SHUT_WR   1
+#define SHUT_RDWR 2
+
+// Max pending connections
+#define SOMAXCONN  128
+
+// Socket state
+#define SS_UNCONNECTED  0
+#define SS_CONNECTING   1
+#define SS_CONNECTED    2
+#define SS_DISCONNECTING 3
+
+// sockaddr structure
+typedef struct sockaddr {
+  u16 sa_family;
+  char sa_data[14];
+} sockaddr_t;
+
+typedef u32 socklen_t;
+
+// sockaddr_in for IPv4
+typedef struct sockaddr_in {
+  u16 sin_family;
+  u16 sin_port;
+  u32 sin_addr;
+  u8 sin_zero[8];
+} sockaddr_in_t;
+
+// Socket structure (kernel internal)
+typedef struct socket {
+  int domain;
+  int type;
+  int protocol;
+  int state;
+  int fd;
+  u32 flags;
+  void *data;
+  struct sockaddr_in local_addr;
+  struct sockaddr_in remote_addr;
+  u32 recv_timeout;
+  u32 send_timeout;
+  int backlog;
+  int error;
+} socket_t;
+
 struct rusage {
   struct timeval ru_utime;
   struct timeval ru_stime;
@@ -565,6 +768,26 @@ int sys_umask(int mask);
 int sys_stat(const char* path, struct stat* buf);
 int sys_fstat(int fd, struct stat* buf);
 int sys_self(void* t);
+
+// Network syscalls
+int sys_socket(int domain, int type, int protocol);
+int sys_socketpair(int domain, int type, int protocol, int sv[2]);
+int sys_bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen);
+int sys_listen(int sockfd, int backlog);
+int sys_accept(int sockfd, struct sockaddr* addr, socklen_t* addrlen);
+int sys_accept4(int sockfd, struct sockaddr* addr, socklen_t* addrlen, int flags);
+int sys_connect(int sockfd, const struct sockaddr* addr, socklen_t addrlen);
+int sys_getsockname(int sockfd, struct sockaddr* addr, socklen_t* addrlen);
+int sys_getpeername(int sockfd, struct sockaddr* addr, socklen_t* addrlen);
+ssize_t sys_sendto(int sockfd, const void* buf, size_t len, int flags,
+                   const struct sockaddr* dest_addr, socklen_t addrlen);
+ssize_t sys_recvfrom(int sockfd, void* buf, size_t len, int flags,
+                     struct sockaddr* src_addr, socklen_t* addrlen);
+int sys_setsockopt(int sockfd, int level, int optname, const void* optval,
+                   socklen_t optlen);
+int sys_getsockopt(int sockfd, int level, int optname, void* optval,
+                   socklen_t* optlen);
+int sys_shutdown(int sockfd, int how);
 
 void sys_fn_init();
 
