@@ -847,5 +847,6 @@ int sys_getsockopt(int sockfd, int level, int optname, void* optval,
 int sys_shutdown(int sockfd, int how);
 
 void sys_fn_init();
+void sys_fn_net_init(void** syscall_table);
 
 #endif
