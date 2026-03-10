@@ -14,13 +14,13 @@
 #include "kernel/thread.h"
 #include "kernel/vfs.h"
 
-static void* syscall_table[SYSCALL_NUMBER] = {0};
+static void* syscall_table[SYSCALL_NUMBER];
 
 // Socket management
 #define MAX_SOCKETS 64
 static socket_t socket_table[MAX_SOCKETS];
-static int socket_initialized = 0;
-static int socket_next_id = 0;
+static int socket_initialized;
+static int socket_next_id;
 
 #define log_debug  // 取消注释以禁用调试日志
 
