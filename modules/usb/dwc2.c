@@ -6,9 +6,11 @@
  ********************************************************************/
 #include "usb.h"
 #include "pic/pic.h"
+#include "kernel/page.h"
 
-// DWC2 基地址 - raspi3
-#define DWC2_BASE        0x3F980000
+// DWC2 基地址 - raspi3 (物理地址)
+#define DWC2_BASE_PHYS   0x3F980000
+#define DWC2_BASE        DWC2_BASE_PHYS
 
 // 核心全局寄存器
 #define DWC2_GOTGCTL     (DWC2_BASE + 0x000)
@@ -141,14 +143,14 @@ typedef struct dwc2_channel {
 static dwc2_channel_t channels[16];
 static int dwc2_initialized = 0;
 
-// 读取寄存器
-static u32 dwc2_read(u32 offset) {
-    return dwc2_read32(DWC2_BASE + offset);
+// 读取寄存器 (addr 已经是完整地址)
+static u32 dwc2_read(u32 addr) {
+    return dwc2_read32(addr);
 }
 
-// 写入寄存器
-static void dwc2_write(u32 offset, u32 value) {
-    dwc2_write32(DWC2_BASE + offset, value);
+// 写入寄存器 (addr 已经是完整地址)
+static void dwc2_write(u32 addr, u32 value) {
+    dwc2_write32(addr, value);
 }
 
 // 等待寄存器位清零
@@ -189,25 +191,19 @@ static void dwc2_flush_all_fifos(void) {
 static int dwc2_core_init(void) {
     USB_INFO("DWC2: initializing core...\n");
 
-    // TODO: 在ARMv8-A上需要正确映射USB外设地址
-    // 当前阶段只打印信息，不实际访问硬件
-    USB_INFO("DWC2: USB peripheral at physical address 0x%08x\n", DWC2_BASE);
-    USB_INFO("DWC2: NOTE - hardware access pending implementation\n");
-
-    return 0;
-#if 0
+#if defined(RASPI3) || defined(RASPI2)
     // 读取 GUSBCFG
     u32 gusbcfg = dwc2_read(DWC2_GUSBCFG);
-    
+
     // 配置 PHY 接口
     gusbcfg |= DWC2_GUSBCFG_PHYIF;  // 8-bit PHY
     gusbcfg &= ~DWC2_GUSBCFG_ULPI;  // 内置 PHY
-    
+
     // 设置超时校准
     gusbcfg |= (0x3 << 10);
-    
+
     dwc2_write(DWC2_GUSBCFG, gusbcfg);
-    
+
     // 复位核心
     dwc2_write(DWC2_GRSTCTL, DWC2_GRSTCTL_CSRST);
     dwc2_wait_bit(DWC2_GRSTCTL, DWC2_GRSTCTL_CSRST, 0, 10000);
@@ -230,17 +226,21 @@ static int dwc2_core_init(void) {
     dwc2_write(DWC2_GINTMSK, gintmsk);
 
     USB_INFO("DWC2: core initialized\n");
-    return 0;
+#else
+    USB_INFO("DWC2: NOTE - hardware access not supported on this platform\n");
 #endif
+
+    return 0;
 }
 
 // 初始化主机模式
 static int dwc2_host_init(void) {
     USB_INFO("DWC2: initializing host mode...\n");
 
-    // TODO: 在ARMv8-A上需要正确映射USB外设地址
-    // 当前阶段只打印信息，不实际访问硬件
-    USB_INFO("DWC2: NOTE - hardware host mode pending implementation\n");
+#if defined(RASPI3) || defined(RASPI2) || defined(V3S) || defined(T113_S3)
+    // 配置主机
+    // ...
+#endif
 
     // 初始化通道数组
     for (int i = 0; i < 16; i++) {
@@ -250,11 +250,6 @@ static int dwc2_host_init(void) {
 
     USB_INFO("DWC2: host mode initialized\n");
     return 0;
-#if 0
-    // 配置主机
-    USB_INFO("DWC2: host mode initialized\n");
-    return 0;
-#endif
 }
 
 // 分配通道
@@ -533,6 +528,9 @@ static hcd_ops_t dwc2_hcd_ops = {
 
 // 模块初始化
 void dwc2_module_init(void) {
+    // 映射 USB 外设地址 (ARMv8-A 需要在启用 MMU 后映射)
+    page_map(DWC2_BASE_PHYS & ~0xfff, DWC2_BASE_PHYS & ~0xfff, PAGE_DEV);
+
     hcd_register_ops(&dwc2_hcd_ops);
 }
 
