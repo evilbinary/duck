@@ -10,7 +10,7 @@
 #define MAX_WINDOWS 64
 
 // ========== 全局显示服务器 ==========
-static xdisplay_t* g_display = NULL;
+xdisplay_t* g_display = NULL;
 
 // ========== 初始化 ==========
 
@@ -18,7 +18,10 @@ int xwin_init(xdisplay_t* disp, vga_device_t* vga) {
     if (disp == NULL || vga == NULL) {
         return -1;
     }
-    
+
+    // 设置全局显示服务器
+    g_display = disp;
+
     kmemset(disp, 0, sizeof(xdisplay_t));
     disp->vga = vga;
     
@@ -97,19 +100,19 @@ int xwin_init(xdisplay_t* disp, vga_device_t* vga) {
 
 void xwin_exit(xdisplay_t* disp) {
     if (disp == NULL) return;
-    
+
     // 销毁所有窗口
     for (u32 i = 0; i < disp->window_count; i++) {
         if (disp->windows[i] != NULL && disp->windows[i] != disp->root_window) {
             xwin_destroy_window(disp, disp->windows[i]);
         }
     }
-    
+
     // 销毁根窗口
     if (disp->root_window != NULL) {
         xwin_destroy_window(disp, disp->root_window);
     }
-    
+
     // 释放资源
     if (disp->event_queue != NULL) {
         queue_pool_destroy(disp->event_queue);
@@ -123,7 +126,12 @@ void xwin_exit(xdisplay_t* disp) {
     if (disp->windows != NULL) {
         kfree(disp->windows);
     }
-    
+
+    // 清除全局显示服务器
+    if (g_display == disp) {
+        g_display = NULL;
+    }
+
     g_display = NULL;
     log_info("xwin: exited\n");
 }

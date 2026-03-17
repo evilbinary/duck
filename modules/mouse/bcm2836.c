@@ -8,18 +8,8 @@
 #include "dev/devfs.h"
 
 int mouse_init(void) {
-  device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
-  dev->name = "mouse";
-  // dev->read = read;
-  dev->id = DEVICE_MOUSE;
-  dev->type = DEVICE_TYPE_CHAR;
-  // dev->data = &mouse_device;
-
-  device_add(dev);
-  // mouse_device.events = cqueue_create(EVENT_NUMBER, CQUEUE_DROP);
-
-
-
+  // BCM2836/BCM2837 没有 PS/2 鼠标，USB 鼠标由 usb_mouse 驱动处理
+  // 不注册 DEVICE_MOUSE，避免占用设备 ID
   return 0;
 }
 

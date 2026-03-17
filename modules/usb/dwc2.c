@@ -7,6 +7,7 @@
 #include "usb.h"
 #include "pic/pic.h"
 #include "kernel/page.h"
+#include "platform/platform.h"
 
 // DWC2 基地址 - raspi3 (物理地址)
 #define DWC2_BASE_PHYS   0x3F980000
