@@ -19,23 +19,19 @@ int hcd_init(void) {
     if (hcd_initialized) {
         return 0;
     }
-    
+
     if (hcd_ops == NULL) {
         USB_ERROR("No HCD ops registered\n");
         return -1;
     }
-    
+
     if (hcd_ops->init != NULL) {
-        int ret = hcd_ops->init();
-        if (ret != 0) {
-            USB_ERROR("HCD init failed\n");
-            return ret;
-        }
+        hcd_ops->init();
     }
-    
+
     hcd_initialized = 1;
     USB_INFO("HCD initialized\n");
-    
+
     return 0;
 }
 

@@ -525,9 +525,8 @@ static hcd_ops_t dwc2_hcd_ops = {
 };
 
 // 模块初始化
-int dwc2_module_init(void) {
+void dwc2_module_init(void) {
     hcd_register_ops(&dwc2_hcd_ops);
-    return 0;
 }
 
 module_t dwc2_module = {

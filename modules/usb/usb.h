@@ -260,7 +260,7 @@ int hid_get_report(usb_device_t* dev, u8 report_id, void* buf, u32 len);
 int hid_set_report(usb_device_t* dev, u8 report_id, void* buf, u32 len);
 
 // USB 鼠标函数
-int usb_mouse_init(void);
+void usb_mouse_init(void);
 void usb_mouse_exit(void);
 int usb_mouse_connect(usb_device_t* dev);
 int usb_mouse_disconnect(usb_device_t* dev);
