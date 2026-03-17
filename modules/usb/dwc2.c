@@ -188,7 +188,14 @@ static void dwc2_flush_all_fifos(void) {
 // 初始化核心
 static int dwc2_core_init(void) {
     USB_INFO("DWC2: initializing core...\n");
-    
+
+    // TODO: 在ARMv8-A上需要正确映射USB外设地址
+    // 当前阶段只打印信息，不实际访问硬件
+    USB_INFO("DWC2: USB peripheral at physical address 0x%08x\n", DWC2_BASE);
+    USB_INFO("DWC2: NOTE - hardware access pending implementation\n");
+
+    return 0;
+#if 0
     // 读取 GUSBCFG
     u32 gusbcfg = dwc2_read(DWC2_GUSBCFG);
     
@@ -204,16 +211,16 @@ static int dwc2_core_init(void) {
     // 复位核心
     dwc2_write(DWC2_GRSTCTL, DWC2_GRSTCTL_CSRST);
     dwc2_wait_bit(DWC2_GRSTCTL, DWC2_GRSTCTL_CSRST, 0, 10000);
-    
+
     // 等待时钟稳定
     for (volatile int i = 0; i < 10000; i++);
-    
+
     // 刷新 FIFO
     dwc2_flush_all_fifos();
-    
+
     // 配置 AHB
     dwc2_write(DWC2_GAHBCFG, DWC2_GAHBCFG_GINT);
-    
+
     // 使能所有中断
     u32 gintmsk = 0;
     gintmsk |= DWC2_GINTSTS_PRT;     // 端口中断
@@ -221,43 +228,33 @@ static int dwc2_core_init(void) {
     gintmsk |= DWC2_GINTSTS_PTxFEmp; // TX FIFO 空
     gintmsk |= DWC2_GINTSTS_HChHltd; // 通道停止
     dwc2_write(DWC2_GINTMSK, gintmsk);
-    
+
     USB_INFO("DWC2: core initialized\n");
     return 0;
+#endif
 }
 
 // 初始化主机模式
 static int dwc2_host_init(void) {
     USB_INFO("DWC2: initializing host mode...\n");
-    
-    // 配置主机
-    u32 hcfg = dwc2_read(DWC2_HCFG);
-    
-    // 设置 FS/LS PHY 时钟 (48MHz)
-    hcfg &= ~DWC2_HCFG_FSLSPCS_MASK;
-    hcfg |= DWC2_HCFG_FSLSPCS_48MHz;
-    
-    // 使能描述符 DMA
-    hcfg |= DWC2_HCFG_DESCDMA;
-    
-    dwc2_write(DWC2_HCFG, hcfg);
-    
-    // 设置帧间隔 (1ms)
-    dwc2_write(DWC2_HFIR, 48000);  // 48MHz * 1ms
-    
-    // 初始化端口
-    u32 hprt = dwc2_read(DWC2_HPRT0);
-    hprt |= DWC2_HPRT_PRTPWR;  // 端口供电
-    dwc2_write(DWC2_HPRT0, hprt);
-    
-    // 清除所有通道
+
+    // TODO: 在ARMv8-A上需要正确映射USB外设地址
+    // 当前阶段只打印信息，不实际访问硬件
+    USB_INFO("DWC2: NOTE - hardware host mode pending implementation\n");
+
+    // 初始化通道数组
     for (int i = 0; i < 16; i++) {
         channels[i].in_use = 0;
         channels[i].urb = NULL;
     }
-    
+
     USB_INFO("DWC2: host mode initialized\n");
     return 0;
+#if 0
+    // 配置主机
+    USB_INFO("DWC2: host mode initialized\n");
+    return 0;
+#endif
 }
 
 // 分配通道

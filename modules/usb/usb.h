@@ -237,6 +237,10 @@ typedef struct usb_mouse_event {
     i8 wheel;
 } usb_mouse_event_t;
 
+// USB 平台初始化函数
+void usb_host_init(void);
+void usb_device_init(void);
+
 // USB 核心函数
 void usb_init(void);
 void usb_exit(void);

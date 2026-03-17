@@ -7,6 +7,23 @@
 #include "usb.h"
 #include "dev/devfs.h"
 
+// 平台特定的USB初始化 - 根据平台选择
+#if defined(RASPI3) || defined(RASPI2) || defined(V3S) || defined(T113_S3)
+extern void dwc2_module_init(void);
+void usb_host_init(void) {
+    dwc2_module_init();
+}
+#else
+void usb_host_init(void) {
+    // no-op
+}
+#endif
+
+// USB设备模式初始化 - 预留接口
+void usb_device_init(void) {
+    // no-op
+}
+
 static usb_device_t* usb_devices = NULL;
 static u8 usb_next_address = 1;
 static int usb_initialized = 0;
@@ -328,6 +345,9 @@ void usb_init(void) {
     usb_devices = NULL;
     usb_next_address = 1;
 
+    // 初始化平台特定的HCD控制器 (如DWC2)
+    usb_host_init();
+
     // 初始化 HCD
     if (hcd_init() != 0) {
         USB_ERROR("Failed to initialize HCD\n");
@@ -335,7 +355,7 @@ void usb_init(void) {
     }
 
     // 注册设备
-    device_t* dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
+    device_t* dev = kmalloc(sizeof(device_t), KERNEL_TYPE);
     dev->name = "usb";
     dev->id = 0;
     dev->type = DEVICE_TYPE_CHAR;

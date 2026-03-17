@@ -189,7 +189,7 @@ int usb_mouse_connect(usb_device_t* dev) {
     USB_INFO("USB mouse initialized\n");
     
     // 注册设备到 devfs
-    device_t* mouse_dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
+    device_t* mouse_dev = kmalloc(sizeof(device_t), KERNEL_TYPE);
     mouse_dev->name = "usb_mouse";
     mouse_dev->id = DEVICE_MOUSE;
     mouse_dev->type = DEVICE_TYPE_CHAR;
