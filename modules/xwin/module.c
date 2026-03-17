@@ -100,7 +100,7 @@ int xwin_module_init(void) {
     // 创建设备节点
     xwin_device.display = &xwin_display;
     
-    device_t* dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
+    device_t* dev = kmalloc(sizeof(device_t), KERNEL_TYPE);
     dev->name = "xwin";
     dev->id = DEVICE_VGA + 100;  // 分配一个唯一的设备ID
     dev->type = DEVICE_TYPE_VIRTUAL;

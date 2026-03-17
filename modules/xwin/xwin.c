@@ -26,7 +26,7 @@ int xwin_init(xdisplay_t* disp, vga_device_t* vga) {
     disp->buffer_size = vga->width * vga->height * sizeof(u32);
     
     // 分配屏幕缓冲区
-    disp->screen_buffer = kmalloc(disp->buffer_size, DEFAULT_TYPE);
+    disp->screen_buffer = kmalloc(disp->buffer_size, KERNEL_TYPE);
     if (disp->screen_buffer == NULL) {
         log_error("xwin: failed to allocate screen buffer\n");
         return -1;
@@ -34,7 +34,7 @@ int xwin_init(xdisplay_t* disp, vga_device_t* vga) {
     kmemset(disp->screen_buffer, 0, disp->buffer_size);
     
     // 分配后备缓冲区 (双缓冲)
-    disp->back_buffer = kmalloc(disp->buffer_size, DEFAULT_TYPE);
+    disp->back_buffer = kmalloc(disp->buffer_size, KERNEL_TYPE);
     if (disp->back_buffer == NULL) {
         log_error("xwin: failed to allocate back buffer\n");
         kfree(disp->screen_buffer);
@@ -44,7 +44,7 @@ int xwin_init(xdisplay_t* disp, vga_device_t* vga) {
     
     // 分配窗口数组
     disp->window_capacity = MAX_WINDOWS;
-    disp->windows = kmalloc(sizeof(xwindow_t*) * disp->window_capacity, DEFAULT_TYPE);
+    disp->windows = kmalloc(sizeof(xwindow_t*) * disp->window_capacity, KERNEL_TYPE);
     if (disp->windows == NULL) {
         log_error("xwin: failed to allocate window array\n");
         kfree(disp->screen_buffer);
@@ -138,7 +138,7 @@ xwindow_t* xwin_create_window(xdisplay_t* disp,
     if (disp == NULL) return NULL;
     
     // 分配窗口结构
-    xwindow_t* win = kmalloc(sizeof(xwindow_t), DEFAULT_TYPE);
+    xwindow_t* win = kmalloc(sizeof(xwindow_t), KERNEL_TYPE);
     if (win == NULL) {
         log_error("xwin: failed to allocate window\n");
         return NULL;
@@ -167,7 +167,7 @@ xwindow_t* xwin_create_window(xdisplay_t* disp,
     
     // 分配窗口缓冲区
     win->fb_size = width * height * sizeof(u32);
-    win->framebuffer = kmalloc(win->fb_size, DEFAULT_TYPE);
+    win->framebuffer = kmalloc(win->fb_size, KERNEL_TYPE);
     if (win->framebuffer == NULL) {
         log_error("xwin: failed to allocate window framebuffer\n");
         kfree(win);
@@ -353,7 +353,7 @@ void xwin_resize(xdisplay_t* disp, xwindow_t* win, u32 w, u32 h) {
     
     // 重新分配缓冲区
     u32 new_size = w * h * sizeof(u32);
-    u32* new_fb = kmalloc(new_size, DEFAULT_TYPE);
+    u32* new_fb = kmalloc(new_size, KERNEL_TYPE);
     if (new_fb != NULL) {
         // 复制旧数据
         u32 copy_w = (w < old_w) ? w : old_w;
