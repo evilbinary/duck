@@ -30,6 +30,10 @@ plat_source={
         'bcm2836.c',
         'mailbox.c',
     ],
+    'raspi3':[
+        'bcm2836.c',
+        'mailbox.c',
+    ],
     'rk3128':[
         'rk3128.c'
     ],
@@ -51,6 +55,9 @@ plat_source={
 }
 arch_source={
     'arm':[
+        'gpu.c',
+    ],
+    'arm64':[
         'gpu.c',
     ]
 }
