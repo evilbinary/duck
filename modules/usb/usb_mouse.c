@@ -248,6 +248,7 @@ int usb_mouse_connect(usb_device_t* dev) {
     mouse_dev->id = DEVICE_MOUSE;
     mouse_dev->type = DEVICE_TYPE_CHAR;
     mouse_dev->read = usb_mouse_read;
+    USB_INFO("Registering mouse device: id=%d (DEVICE_MOUSE=%d)\n", mouse_dev->id, DEVICE_MOUSE);
     device_add(mouse_dev);
     
     return 0;

@@ -191,6 +191,7 @@ void xinput_poll(void) {
     
     // 轮询鼠标设备
     device_t* mouse_dev = device_find(DEVICE_MOUSE);
+    // log_debug("xinput_poll: mouse_dev=%p DEVICE_MOUSE=%d\n", mouse_dev, DEVICE_MOUSE);
     if (mouse_dev != NULL && mouse_dev->read != NULL) {
         u8 data[4];
         while (mouse_dev->read(mouse_dev, data, 3) >= 3) {
