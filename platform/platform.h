@@ -84,6 +84,7 @@
 #define ISR_TIMER 5
 #define ISR_KEYBOARD 0x21
 #define ISR_MOUSE 0x2c
+#define ISR_USB 0x09
 
 #define IDT_NUMBER 256
 #define EXCEPTION_NUMBER 32
