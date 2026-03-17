@@ -144,8 +144,9 @@ void test_xwin_window_ops(void) {
     TEST_ASSERT(1, "Z-order operations completed");
     
     // 销毁窗口
+    u32 win_id = win->id;
     xwin_destroy_window(test_display, win);
-    xwindow_t* found = xwin_find_window(test_display, win->id);
+    xwindow_t* found = xwin_find_window(test_display, win_id);
     TEST_ASSERT(found == NULL, "Window destroyed");
 }
 
