@@ -513,6 +513,16 @@ void dwc2_shutdown(void) {
     USB_INFO("DWC2 USB controller shut down\n");
 }
 
+
+void usb_host_init(void) {
+    dwc2_module_init();
+}
+
+// USB设备模式初始化 - 预留接口
+void usb_device_init(void) {
+    // no-op
+}
+
 // HCD 操作
 static hcd_ops_t dwc2_hcd_ops = {
     .init = dwc2_init,
