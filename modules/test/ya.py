@@ -8,7 +8,8 @@ target("mod-test")
 set_kind("static")
 
 add_deps(
-    'kernel'
+    'kernel',
+    'mod-xwin'
 )
 
 arch=get_arch()
@@ -27,7 +28,8 @@ arch_source={
     ]
 }
 common_source=[
-    'test.c'
+    'test.c',
+    'test-xwin.c'
 ]
 
 

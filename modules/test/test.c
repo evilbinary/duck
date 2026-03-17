@@ -47,6 +47,8 @@ int test_init(void) {
 
   // test_vfs();
   // test_dma();
+  
+  test_xwin();
 
   return 0;
 }
