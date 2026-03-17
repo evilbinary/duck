@@ -28,6 +28,8 @@ static int usb_set_address(usb_device_t* dev, u8 address) {
                                    address, 0, NULL, 0, 100);
     if (ret == 0) {
         dev->address = address;
+        // USB 规范要求设备在 SET_ADDRESS 后有 2ms 恢复时间
+        for (volatile int i = 0; i < 200000; i++);
     }
     return ret;
 }
@@ -104,6 +106,8 @@ static int usb_parse_configuration(usb_device_t* dev, u8* buffer, u16 length) {
                 dev->protocol = intf->interface_protocol;
                 USB_INFO("Interface: class=%d subclass=%d protocol=%d\n",
                          intf->interface_class, intf->interface_subclass, intf->interface_protocol);
+                USB_INFO("After assign: dev->class=%d subclass=%d protocol=%d\n",
+                         dev->class, dev->subclass, dev->protocol);
                 break;
             }
             case USB_DESCRIPTOR_TYPE_ENDPOINT: {
@@ -190,6 +194,9 @@ usb_device_t* usb_find_device_by_vid_pid(u16 vendor, u16 product) {
 int usb_control_transfer(u8 device_address, u8 endpoint,
                         u8 request_type, u8 request,
                         u16 value, u16 index, void* data, u16 len, u32 timeout) {
+    USB_INFO("usb_control_transfer: addr=%d ep=%d req=%02x val=%04x len=%d\n",
+             device_address, endpoint, request, value, len);
+    
     urb_t urb;
     kmemset(&urb, 0, sizeof(urb));
     
@@ -202,7 +209,9 @@ int usb_control_transfer(u8 device_address, u8 endpoint,
     urb.transfer_buffer = (u8*)data;
     urb.transfer_length = len;
     
-    return hcd_submit_urb(&urb);
+    int ret = hcd_submit_urb(&urb);
+    USB_INFO("usb_control_transfer: ret=%d\n", ret);
+    return ret;
 }
 
 // 中断传输
@@ -241,14 +250,14 @@ void usb_device_connected(usb_device_t* dev) {
     
     // 设置地址
     u8 new_addr = usb_next_address++;
-    if (usb_set_address(dev, new_addr) != 0) {
+    if (usb_set_address(dev, new_addr) < 0) {
         USB_ERROR("Failed to set address for device\n");
         return;
     }
     
     // 获取设备描述符
     usb_device_descriptor_t dev_desc;
-    if (usb_get_device_descriptor(dev, &dev_desc) != 0) {
+    if (usb_get_device_descriptor(dev, &dev_desc) < 0) {
         USB_ERROR("Failed to get device descriptor\n");
         return;
     }
@@ -264,7 +273,7 @@ void usb_device_connected(usb_device_t* dev) {
     
     // 获取配置
     usb_configuration_descriptor_t config_desc;
-    if (usb_get_configuration_descriptor(dev, &config_desc) != 0) {
+    if (usb_get_configuration_descriptor(dev, &config_desc) < 0) {
         USB_ERROR("Failed to get configuration descriptor\n");
         return;
     }
@@ -285,6 +294,8 @@ void usb_device_connected(usb_device_t* dev) {
     
     if (ret >= 0) {
         usb_parse_configuration(dev, config_buffer, config_desc.total_length);
+        USB_INFO("After parse_config: dev->class=%d subclass=%d protocol=%d\n",
+                 dev->class, dev->subclass, dev->protocol);
     }
     
     kfree(config_buffer);
@@ -293,14 +304,16 @@ void usb_device_connected(usb_device_t* dev) {
     usb_set_configuration(dev, 1);
     
     // 根据设备类型调用对应驱动
+    USB_INFO("Before switch: dev->class=%d subclass=%d protocol=%d\n",
+             dev->class, dev->subclass, dev->protocol);
     switch (dev->class) {
         case USB_CLASS_HID:
             USB_INFO("HID device detected\n");
-            // hid_handle_device(dev);
+            hid_handle_device(dev);
             break;
         case USB_CLASS_HUB:
             USB_INFO("Hub device detected\n");
-            // hub_probe(dev);
+            hub_probe(dev);
             break;
         case USB_CLASS_MASS_STORAGE:
             USB_INFO("Mass storage device detected\n");
@@ -328,14 +341,17 @@ void usb_init(void) {
     usb_devices = NULL;
     usb_next_address = 1;
 
-    // 初始化平台特定的HCD控制器 (如DWC2)
+    // 先初始化 HCD (注册 HCD 操作)
     usb_host_init();
 
-    // 初始化 HCD
+    // 初始化 HCD 层 (设置 hcd_initialized = 1)
     if (hcd_init() != 0) {
         USB_ERROR("Failed to initialize HCD\n");
         return;
     }
+
+    // 现在 HCD 已初始化，可以检测设备了
+    // dwc2 的设备检测在 hcd_init() 中调用 dwc2_init() 时进行
 
     // 注册设备
     device_t* dev = kmalloc(sizeof(device_t), KERNEL_TYPE);

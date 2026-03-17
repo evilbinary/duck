@@ -97,9 +97,15 @@
 #define DWC2_HPRT_PENCHNG (1 << 3)
 #define DWC2_HPRT_POCCHNG (1 << 4)
 #define DWC2_HPRT_POCSTS  (1 << 5)
+#define DWC2_HPRT_PRTRST  (1 << 8)
 #define DWC2_HPRT_PRTCTL_MASK (0xF << 8)
 #define DWC2_HPRT_PRTPWR   (1 << 12)
 #define DWC2_HPRT_L1STS   (1 << 13)
+#define DWC2_HPRT_PRTSPD_MASK   (0x3 << 17)
+#define DWC2_HPRT_PRTSPD_SHIFT  17
+#define DWC2_HPRT_PRTSPD_HS     (0 << 17)  // High Speed
+#define DWC2_HPRT_PRTSPD_FS     (1 << 17)  // Full Speed
+#define DWC2_HPRT_PRTSPD_LS     (2 << 17)  // Low Speed
 
 // HCCHAR 位
 #define DWC2_HCCHAR_MPSIZ_MASK  (0x7FF << 0)
@@ -192,7 +198,7 @@ static void dwc2_flush_all_fifos(void) {
 static int dwc2_core_init(void) {
     USB_INFO("DWC2: initializing core...\n");
 
-#if defined(RASPI3) || defined(RASPI2)
+#if defined(RASPI3) || defined(RASPI2) || defined(ARMV8_A)
     // 读取 GUSBCFG
     u32 gusbcfg = dwc2_read(DWC2_GUSBCFG);
 
@@ -212,10 +218,17 @@ static int dwc2_core_init(void) {
     // 等待时钟稳定
     for (volatile int i = 0; i < 10000; i++);
 
+    // 配置 FIFO 大小
+    // RX FIFO: 1024 words (4KB)
+    dwc2_write(DWC2_GRXFSIZ, 1024);
+    
+    // 非周期 TX FIFO: 1024 words (4KB), 起始地址 1024
+    dwc2_write(DWC2_GNPTXFSIZ, (1024 << 16) | 1024);
+
     // 刷新 FIFO
     dwc2_flush_all_fifos();
 
-    // 配置 AHB
+    // 配置 AHB - 使能全局中断
     dwc2_write(DWC2_GAHBCFG, DWC2_GAHBCFG_GINT);
 
     // 使能所有中断
@@ -238,9 +251,15 @@ static int dwc2_core_init(void) {
 static int dwc2_host_init(void) {
     USB_INFO("DWC2: initializing host mode...\n");
 
-#if defined(RASPI3) || defined(RASPI2) || defined(V3S) || defined(T113_S3)
-    // 配置主机
-    // ...
+#if defined(RASPI3) || defined(RASPI2) || defined(ARMV8_A) || defined(V3S) || defined(T113_S3)
+    // 配置主机模式
+    u32 hcfg = dwc2_read(DWC2_HCFG);
+    hcfg &= ~DWC2_HCFG_FSLSPCS_MASK;
+    hcfg |= DWC2_HCFG_FSLSPCS_48MHz;  // 全速/高速使用 48MHz
+    dwc2_write(DWC2_HCFG, hcfg);
+    
+    // 设置帧间隔 (全速: 48000, 高速: 125000)
+    dwc2_write(DWC2_HFIR, 48000);
 #endif
 
     // 初始化通道数组
@@ -308,28 +327,247 @@ static void dwc2_config_channel(int ch_num) {
     dwc2_write(DWC2_HCINTMSK(ch_num), hcintmsk);
 }
 
-// 启动传输
+// HCTSIZ PID 值
+#define DWC2_PID_DATA0  0
+#define DWC2_PID_DATA1  (1 << 29)
+#define DWC2_PID_DATA2  (2 << 29)
+#define DWC2_PID_SETUP  (3 << 29)
+
+// 等待通道传输完成
+static int dwc2_wait_channel(int ch_num, u32* actual_len) {
+    u32 timeout = 1000000;
+    
+    while (timeout > 0) {
+        u32 hcint = dwc2_read(DWC2_HCINT(ch_num));
+        
+        // 通道停止 (CHHLTD) - 传输结束，检查结果
+        if (hcint & DWC2_HCINT_CHHLTD) {
+            dwc2_write(DWC2_HCINT(ch_num), hcint);  // 清除中断
+            
+            // 检查是否成功完成
+            if (hcint & DWC2_HCINT_XFERC) {
+                u32 hctsiz = dwc2_read(DWC2_HCTSIZ(ch_num));
+                *actual_len = hctsiz & 0x7FFFF;  // 剩余长度
+                return URB_OK;
+            }
+            
+            // 检查错误
+            if (hcint & DWC2_HCINT_STALL) {
+                return URB_STALL;
+            }
+            if (hcint & DWC2_HCINT_TXERR) {
+                return URB_ERROR;
+            }
+            if (hcint & DWC2_HCINT_NAK) {
+                return URB_ERROR;
+            }
+            
+            // CHHLTD 但没有其他标志 - 可能是成功
+            // 对于零长度传输，可能只有 CHHLTD
+            return URB_OK;
+        }
+        
+        // 其他错误情况
+        if (hcint & DWC2_HCINT_STALL) {
+            dwc2_write(DWC2_HCINT(ch_num), hcint);
+            return URB_STALL;
+        }
+        
+        if (hcint & DWC2_HCINT_TXERR) {
+            dwc2_write(DWC2_HCINT(ch_num), hcint);
+            return URB_ERROR;
+        }
+        
+        timeout--;
+    }
+    
+    USB_ERROR("Transfer timeout\n");
+    return URB_ERROR;
+}
+
+// 执行单次传输
+static int dwc2_do_transfer(int ch_num, u8* buffer, u32 len, u8 ep_dir, u32 pid) {
+    // 配置传输大小
+    u32 hctsiz = 0;
+    u32 pkt_count = (len + channels[ch_num].mps - 1) / channels[ch_num].mps;
+    if (pkt_count == 0) pkt_count = 1;
+    
+    hctsiz |= (len & 0x7FFFF);            // 传输字节数 (bits 18:0)
+    hctsiz |= ((pkt_count & 0x3FF) << 19); // 包计数 (bits 28:19, 10 bits)
+    hctsiz |= pid;                         // PID (bits 30:29)
+    
+    dwc2_write(DWC2_HCTSIZ(ch_num), hctsiz);
+    
+    // 设置 DMA 地址
+    if (buffer != NULL && len > 0) {
+        dwc2_write(DWC2_HCDMA(ch_num), (u32)buffer);
+    }
+    
+    // 配置通道
+    dwc2_channel_t* ch = &channels[ch_num];
+    ch->ep_dir = ep_dir;
+    dwc2_config_channel(ch_num);
+    
+    // 启动传输
+    u32 hcchar = dwc2_read(DWC2_HCCHAR(ch_num));
+    if (ep_dir) hcchar |= DWC2_HCCHAR_EPDIR;
+    hcchar |= DWC2_HCCHAR_CHENA;
+    dwc2_write(DWC2_HCCHAR(ch_num), hcchar);
+    
+    USB_INFO("Transfer start: ch=%d len=%d dir=%d HCTSIZ=%08x HCCHAR=%08x\n", 
+             ch_num, len, ep_dir, hctsiz, hcchar);
+    
+    // 等待完成
+    u32 actual_len = 0;
+    int ret = dwc2_wait_channel(ch_num, &actual_len);
+    
+    // 停止通道
+    hcchar = dwc2_read(DWC2_HCCHAR(ch_num));
+    hcchar |= DWC2_HCCHAR_CHDIS;
+    hcchar &= ~DWC2_HCCHAR_CHENA;
+    dwc2_write(DWC2_HCCHAR(ch_num), hcchar);
+    
+    // 打印中断状态
+    u32 hcint = dwc2_read(DWC2_HCINT(ch_num));
+    USB_INFO("Transfer end: ch=%d ret=%d HCINT=%08x\n", ch_num, ret, hcint);
+    
+    return ret;
+}
+
+// 控制传输 (三阶段: SETUP -> DATA -> STATUS)
+static int dwc2_control_transfer(urb_t* urb) {
+    u8 setup_packet[8];
+    u8 device_addr = urb->device_address;
+    
+    // 构建 SETUP packet
+    setup_packet[0] = urb->request_type;
+    setup_packet[1] = urb->request;
+    setup_packet[2] = urb->value & 0xFF;
+    setup_packet[3] = (urb->value >> 8) & 0xFF;
+    setup_packet[4] = urb->index & 0xFF;
+    setup_packet[5] = (urb->index >> 8) & 0xFF;
+    setup_packet[6] = urb->transfer_length & 0xFF;
+    setup_packet[7] = (urb->transfer_length >> 8) & 0xFF;
+    
+    USB_INFO("Control transfer: addr=%d req=%02x val=%04x idx=%04x len=%d\n",
+             device_addr, urb->request, urb->value, urb->index, urb->transfer_length);
+    
+    // 分配通道
+    int ch_num = dwc2_alloc_channel(0, 0, USB_SPEED_FULL, 64, device_addr, USB_ENDPOINT_CONTROL);
+    if (ch_num < 0) {
+        USB_ERROR("Failed to allocate channel for control transfer\n");
+        return -1;
+    }
+    
+    int ret = URB_OK;
+    u8 data_dir = (urb->request_type & 0x80) ? 1 : 0;
+    
+    // === 阶段 1: SETUP ===
+    USB_INFO("Control SETUP phase\n");
+    
+    ret = dwc2_do_transfer(ch_num, setup_packet, 8, 0, DWC2_PID_SETUP);
+    if (ret != URB_OK) {
+        USB_ERROR("SETUP phase failed (%d)\n", ret);
+        dwc2_free_channel(ch_num);
+        return -1;
+    }
+    USB_INFO("Control SETUP phase OK\n");
+    
+    // === 阶段 2: DATA (如果有数据) ===
+    if (urb->transfer_length > 0 && urb->transfer_buffer != NULL) {
+        USB_INFO("Control DATA phase: dir=%d len=%d\n", data_dir, urb->transfer_length);
+        
+        ret = dwc2_do_transfer(ch_num, urb->transfer_buffer, urb->transfer_length, data_dir, DWC2_PID_DATA1);
+        if (ret != URB_OK) {
+            USB_ERROR("DATA phase failed (%d)\n", ret);
+            dwc2_free_channel(ch_num);
+            return -1;
+        }
+        
+        // 计算实际传输长度
+        u32 hctsiz = dwc2_read(DWC2_HCTSIZ(ch_num));
+        u32 remaining = hctsiz & 0x7FFFF;
+        urb->actual_length = urb->transfer_length - remaining;
+        
+        USB_INFO("Control DATA phase OK, actual=%d (remaining=%d)\n", urb->actual_length, remaining);
+        
+        // 打印接收到的数据（如果是 IN 传输）
+        if (data_dir == 1 && urb->actual_length > 0) {
+            USB_INFO("Data: %02x %02x %02x %02x %02x %02x %02x %02x ...\n",
+                     urb->transfer_buffer[0], urb->transfer_buffer[1],
+                     urb->transfer_buffer[2], urb->transfer_buffer[3],
+                     urb->transfer_buffer[4], urb->transfer_buffer[5],
+                     urb->transfer_buffer[6], urb->transfer_buffer[7]);
+        }
+    }
+    
+    // === 阶段 3: STATUS ===
+    // STATUS 阶段方向与 DATA 阶段相反，DATA1 PID
+    u8 status_dir = data_dir ? 0 : 1;  // 方向相反
+    USB_INFO("Control STATUS phase: dir=%d\n", status_dir);
+    
+    ret = dwc2_do_transfer(ch_num, NULL, 0, status_dir, DWC2_PID_DATA1);
+    if (ret != URB_OK) {
+        USB_ERROR("STATUS phase failed (%d)\n", ret);
+        dwc2_free_channel(ch_num);
+        return -1;
+    }
+    
+    dwc2_free_channel(ch_num);
+    urb->status = URB_OK;
+    USB_INFO("Control transfer complete\n");
+    
+    return urb->transfer_length;
+}
+
+// 启动传输 (非控制传输)
 static int dwc2_start_transfer(urb_t* urb, int ch_num) {
     dwc2_channel_t* ch = &channels[ch_num];
     ch->urb = urb;
+    urb->status = URB_PENDING;
     
     // 配置传输大小
     u32 hctsiz = 0;
     hctsiz |= (urb->transfer_length & 0x7FFFF);
-    hctsiz |= ((urb->index & 0xFF) << 19);  // PID
-    hctsiz |= ((urb->transfer_length & 0x1FF) << 29);  // 包计数
+    hctsiz |= DWC2_PID_DATA1;  // 使用 DATA1 PID
+    u32 pkt_count = (urb->transfer_length + ch->mps - 1) / ch->mps;
+    if (pkt_count == 0) pkt_count = 1;
+    hctsiz |= ((pkt_count & 0xFF) << 19);  // 包计数
     
     dwc2_write(DWC2_HCTSIZ(ch_num), hctsiz);
     
     // 配置通道
     dwc2_config_channel(ch_num);
     
+    // 设置 DMA 地址 (如果有数据传输)
+    if (urb->transfer_buffer != NULL && urb->transfer_length > 0) {
+        dwc2_write(DWC2_HCDMA(ch_num), (u32)urb->transfer_buffer);
+    }
+    
     // 启动传输
     u32 hcchar = dwc2_read(DWC2_HCCHAR(ch_num));
     hcchar |= DWC2_HCCHAR_CHENA;
     dwc2_write(DWC2_HCCHAR(ch_num), hcchar);
     
-    return 0;
+    // 等待完成
+    u32 actual_len = 0;
+    int ret = dwc2_wait_channel(ch_num, &actual_len);
+    
+    // 停止通道
+    hcchar = dwc2_read(DWC2_HCCHAR(ch_num));
+    hcchar |= DWC2_HCCHAR_CHDIS;
+    hcchar &= ~DWC2_HCCHAR_CHENA;
+    dwc2_write(DWC2_HCCHAR(ch_num), hcchar);
+    
+    urb->status = ret;
+    if (ret == URB_OK) {
+        urb->actual_length = urb->transfer_length;
+    }
+    
+    // 释放通道
+    dwc2_free_channel(ch_num);
+    
+    return (urb->status == URB_OK) ? urb->actual_length : -1;
 }
 
 // 处理通道中断
@@ -435,18 +673,21 @@ void dwc2_irq_handler(void) {
 static int dwc2_submit_urb(urb_t* urb) {
     if (urb == NULL) return -1;
     
-    u8 ep_dir = (urb->endpoint & 0x80) ? 1 : 0;
     u8 ep_num = urb->endpoint & 0x0F;
     u8 device_addr = urb->device_address;
     
-    // 确定端点类型
-    u8 ep_type = USB_ENDPOINT_CONTROL;
-    if (urb->request_type != 0) {
-        // 控制传输使用控制端点
-    } else if (urb->endpoint != 0) {
-        // 其他传输类型
-        ep_type = USB_ENDPOINT_BULK;
+    // 判断是否是控制传输：端点0 或者有 request 字段
+    // 控制传输需要发送 SETUP packet
+    int is_control = (ep_num == 0);
+    
+    if (is_control) {
+        // 控制传输需要三阶段处理
+        return dwc2_control_transfer(urb);
     }
+    
+    // 其他传输类型
+    u8 ep_dir = (urb->endpoint & 0x80) ? 1 : 0;
+    u8 ep_type = USB_ENDPOINT_BULK;
     
     // 分配通道
     int ch_num = dwc2_alloc_channel(ep_num, ep_dir, USB_SPEED_FULL, 64, device_addr, ep_type);
@@ -463,6 +704,9 @@ static int dwc2_get_frame_number(void) {
     // 从 HFNUM 读取
     return 0;
 }
+
+// 前向声明
+static void dwc2_detect_device(void);
 
 // DWC2 初始化
 int dwc2_init(void) {
@@ -488,7 +732,105 @@ int dwc2_init(void) {
     dwc2_initialized = 1;
     USB_INFO("DWC2 USB controller initialized\n");
     
+    // 检测端口上的设备
+    dwc2_detect_device();
+    
     return 0;
+}
+
+// 检测并枚举端口上的设备
+static void dwc2_detect_device(void) {
+#if defined(RASPI3) || defined(RASPI2) || defined(ARMV8_A) || defined(V3S) || defined(T113_S3)
+    USB_INFO("DWC2: checking port status...\n");
+    
+    // 先启用端口电源
+    u32 hprt = dwc2_read(DWC2_HPRT);
+    hprt |= DWC2_HPRT_PRTPWR;
+    dwc2_write(DWC2_HPRT, hprt);
+    
+    // 等待电源稳定和设备连接
+    USB_INFO("DWC2: power on, waiting for device...\n");
+    for (volatile int i = 0; i < 500000; i++);
+    
+    // 再次读取端口状态
+    hprt = dwc2_read(DWC2_HPRT);
+    USB_INFO("DWC2: HPRT=%08x\n", hprt);
+    
+    // 检查是否有设备连接
+    if (hprt & DWC2_HPRT_PCSTS) {
+        USB_INFO("DWC2: device connected, resetting port...\n");
+        
+        // 清除之前的连接检测中断
+        if (hprt & DWC2_HPRT_PCDET) {
+            dwc2_write(DWC2_HPRT, DWC2_HPRT_PCDET);
+        }
+        
+        // 复位端口 - 写 1 到 PRTRST
+        hprt = dwc2_read(DWC2_HPRT);
+        hprt |= DWC2_HPRT_PRTRST;
+        dwc2_write(DWC2_HPRT, hprt);
+        
+        // 等待复位完成 (至少 10ms，USB规范要求至少50ms)
+        for (volatile int i = 0; i < 1000000; i++);
+        
+        // 清除复位 - 写 0 到 PRTRST
+        hprt = dwc2_read(DWC2_HPRT);
+        hprt &= ~DWC2_HPRT_PRTRST;
+        dwc2_write(DWC2_HPRT, hprt);
+        
+        // 等待端口使能 (PENA = 1)
+        USB_INFO("DWC2: waiting for port enable...\n");
+        int timeout = 1000000;
+        while (timeout > 0) {
+            hprt = dwc2_read(DWC2_HPRT);
+            if (hprt & DWC2_HPRT_PENA) {
+                break;
+            }
+            timeout--;
+        }
+        
+        if (timeout == 0) {
+            USB_ERROR("DWC2: port enable timeout\n");
+            return;
+        }
+        
+        // 清除端口使能变化中断
+        if (hprt & DWC2_HPRT_PENCHNG) {
+            dwc2_write(DWC2_HPRT, DWC2_HPRT_PENCHNG);
+        }
+        
+        // 获取设备速度
+        u8 speed = USB_SPEED_FULL;
+        u32 spd = (hprt & DWC2_HPRT_PRTSPD_MASK) >> DWC2_HPRT_PRTSPD_SHIFT;
+        if (spd == 0) {
+            speed = USB_SPEED_HIGH;
+            USB_INFO("DWC2: High Speed device\n");
+        } else if (spd == 1) {
+            speed = USB_SPEED_FULL;
+            USB_INFO("DWC2: Full Speed device\n");
+        } else if (spd == 2) {
+            speed = USB_SPEED_LOW;
+            USB_INFO("DWC2: Low Speed device\n");
+        }
+        
+        USB_INFO("DWC2: port enabled, HPRT=%08x\n", hprt);
+        
+        // 分配 USB 设备结构
+        usb_device_t* dev = kmalloc(sizeof(usb_device_t), KERNEL_TYPE);
+        if (dev != NULL) {
+            kmemset(dev, 0, sizeof(usb_device_t));
+            dev->address = 0;  // 默认地址
+            dev->speed = speed;
+            
+            // 枚举设备
+            usb_device_connected(dev);
+        }
+    } else {
+        USB_INFO("DWC2: no device connected (HPRT=%08x)\n", hprt);
+    }
+#else
+    USB_INFO("DWC2: port detection not supported on this platform\n");
+#endif
 }
 
 // DWC2 关闭

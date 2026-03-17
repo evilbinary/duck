@@ -6,7 +6,7 @@
  ********************************************************************/
 #include "usb.h"
 
-// Hub 描述符
+// Hub 描述符 (固定部分，实际大小取决于端口数)
 typedef struct hub_descriptor {
     u8  length;
     u8  type;
@@ -14,8 +14,7 @@ typedef struct hub_descriptor {
     u16 characteristics;
     u8  power_good_delay;
     u8  max_power;
-    u8  device_removable[32];
-    u8  port_power_ctrl_mask[32];
+    // DeviceRemovable 和 PortPwrCtrlMask 是可变长度
 } hub_descriptor_t;
 
 // Hub 特征
@@ -65,34 +64,40 @@ static usb_device_t* hubs = NULL;
 
 // 获取 Hub 描述符
 static int hub_get_descriptor(usb_device_t* hub, hub_descriptor_t* desc) {
-    return usb_control_transfer(hub->address, 0,
+    // 只请求固定部分，实际大小可能更大但包含可变长度数组
+    int ret = usb_control_transfer(hub->address, 0,
                                 USB_REQUEST_TYPE_DEVICE_TO_HOST | USB_REQUEST_TYPE_CLASS | USB_REQUEST_TYPE_RECIPIENT_DEVICE,
                                 HUB_REQUEST_GET_DESCRIPTOR,
                                 (USB_DESCRIPTOR_TYPE_HUB << 8) | 0,
                                 0, desc, sizeof(hub_descriptor_t), 1000);
+    if (ret < 0) {
+        return ret;
+    }
+    // 返回成功即可，不检查具体字节数
+    return 0;
 }
 
 // 获取端口状态
 static int hub_get_port_status(usb_device_t* hub, u8 port, u32* status) {
     return usb_control_transfer(hub->address, 0,
-                               USB_REQUEST_TYPE_DEVICE_TO_HOST | USB_REQUEST_TYPE_CLASS | USB_REQUEST_TYPE_RECIPIENT_ENDPOINT,
-                               HUB_REQUEST_GET_PORT_STATUS,
-                               port, 0, status, 4, 1000);
+                               USB_REQUEST_TYPE_DEVICE_TO_HOST | USB_REQUEST_TYPE_CLASS | USB_REQUEST_TYPE_RECIPIENT_OTHER,
+                               USB_REQUEST_GET_STATUS,
+                               0, port, status, 4, 1000);
 }
 
 // 设置端口特征
 static int hub_set_port_feature(usb_device_t* hub, u8 port, u8 feature) {
     return usb_control_transfer(hub->address, 0,
-                               USB_REQUEST_TYPE_HOST_TO_DEVICE | USB_REQUEST_TYPE_CLASS | USB_REQUEST_TYPE_RECIPIENT_ENDPOINT,
-                               HUB_REQUEST_SET_PORT_FEATURE,
+                               USB_REQUEST_TYPE_HOST_TO_DEVICE | USB_REQUEST_TYPE_CLASS | USB_REQUEST_TYPE_RECIPIENT_OTHER,
+                               USB_REQUEST_SET_FEATURE,
                                feature, port, NULL, 0, 1000);
 }
 
 // 清除端口特征
 static int hub_clear_port_feature(usb_device_t* hub, u8 port, u8 feature) {
     return usb_control_transfer(hub->address, 0,
-                               USB_REQUEST_TYPE_HOST_TO_DEVICE | USB_REQUEST_TYPE_CLASS | USB_REQUEST_TYPE_RECIPIENT_ENDPOINT,
-                               HUB_REQUEST_CLEAR_PORT_FEATURE,
+                               USB_REQUEST_TYPE_HOST_TO_DEVICE | USB_REQUEST_TYPE_CLASS | USB_REQUEST_TYPE_RECIPIENT_OTHER,
+                               USB_REQUEST_CLEAR_FEATURE,
                                feature, port, NULL, 0, 1000);
 }
 
@@ -108,23 +113,51 @@ void hub_port_status_changed(usb_device_t* hub, u8 port) {
         // 设备连接
         USB_INFO("Device connected to hub port %d\n", port);
         
-        // 启用端口
-        hub_set_port_feature(hub, port, HUB_FEATURE_PORT_POWER);
-        
-        // 等待设备稳定
-        for (volatile int i = 0; i < 100000; i++);
+        // 清除连接状态变化
+        hub_clear_port_feature(hub, port, HUB_FEATURE_C_PORT_CONNECTION);
         
         // 复位端口
         hub_set_port_feature(hub, port, HUB_FEATURE_PORT_RESET);
         
-        // 等待复位完成
-        for (volatile int i = 0; i < 500000; i++);
+        // 等待复位完成 (至少 50ms)
+        for (volatile int i = 0; i < 1000000; i++);
         
         // 检查端口状态
-        hub_get_port_status(hub, port, &status);
+        u32 reset_status = 0;
+        hub_get_port_status(hub, port, &reset_status);
+        USB_INFO("Hub port %d after reset: 0x%08x\n", port, reset_status);
         
-        if (status & USB_PORT_ENABLE) {
+        if (reset_status & USB_PORT_ENABLE) {
             USB_INFO("Device enabled on hub port %d\n", port);
+            
+            // 清除复位变化
+            hub_clear_port_feature(hub, port, HUB_FEATURE_C_PORT_RESET);
+            
+            // 获取设备速度
+            u8 speed = USB_SPEED_FULL;
+            u32 spd = (reset_status >> 26) & 0x3;  // Port Speed bits
+            if (spd == 0) {
+                speed = USB_SPEED_FULL;  // Full speed in hub status
+            } else if (spd == 1) {
+                speed = USB_SPEED_LOW;
+            } else if (spd == 2) {
+                speed = USB_SPEED_HIGH;
+            }
+            
+            USB_INFO("Hub port %d device speed: %d\n", port, speed);
+            
+            // 分配 USB 设备结构
+            usb_device_t* dev = kmalloc(sizeof(usb_device_t), KERNEL_TYPE);
+            if (dev != NULL) {
+                kmemset(dev, 0, sizeof(usb_device_t));
+                dev->address = 0;  // 默认地址
+                dev->speed = speed;
+                dev->parent = hub;
+                dev->port = port;
+                
+                // 枚举设备
+                usb_device_connected(dev);
+            }
         }
     }
     
@@ -149,9 +182,6 @@ int hub_probe(usb_device_t* dev) {
     dev->maxchild = hub_desc.num_ports;
     USB_INFO("Hub has %d ports\n", hub_desc.num_ports);
     
-    // 分配 Hub 设备结构
-    // 注意: 实际实现需要在设备结构中保存更多 Hub 信息
-    
     // 添加到 Hub 列表
     dev->next = (usb_device_t*)hubs;
     hubs = dev;
@@ -161,16 +191,19 @@ int hub_probe(usb_device_t* dev) {
         hub_set_port_feature(dev, i, HUB_FEATURE_PORT_POWER);
     }
     
-    // 等待端口稳定
-    for (volatile int i = 0; i < 100000; i++);
+    // 等待端口稳定 (至少 100ms)
+    for (volatile int i = 0; i < 2000000; i++);
     
-    // 检查端口连接状态
+    // 检查端口连接状态并枚举设备
     for (int i = 1; i <= hub_desc.num_ports; i++) {
         u32 status = 0;
         hub_get_port_status(dev, i, &status);
         
+        USB_INFO("Hub port %d status: 0x%08x\n", i, status);
+        
         if (status & USB_PORT_CONNECTION) {
-            USB_INFO("Hub port %d: device connected\n", i);
+            USB_INFO("Hub port %d: device connected, enumerating...\n", i);
+            hub_port_status_changed(dev, i);
         }
     }
     

@@ -115,6 +115,10 @@ static void usb_mouse_push_event(u8 buttons, i8 dx, i8 dy, i8 wheel) {
 // 设备读取函数 (供 xinput 轮询)
 static size_t usb_mouse_read(device_t* dev, void* buf, size_t len) {
     if (buf == NULL || len < 3) return 0;
+    
+    // 先轮询 USB 设备获取新数据
+    usb_mouse_poll();
+    
     if (event_tail == event_head) return 0;  // 无事件
 
     // 转换为 PS/2 兼容格式: Byte 0: 按键+标志位, Byte 1: X, Byte 2: Y
@@ -184,11 +188,14 @@ int usb_mouse_connect(usb_device_t* dev) {
     if (dev == NULL) return -1;
     
     USB_INFO("USB mouse connected: vid=%04x pid=%04x\n", dev->vendor, dev->product);
+    USB_INFO("dev: addr=%d class=%d subclass=%d protocol=%d num_ep=%d\n",
+             dev->address, dev->class, dev->subclass, dev->protocol, dev->num_endpoints);
     
     // 查找中断 IN 端点
     u8 endpoint_in = 0;
     u16 max_packet = 8;
     
+    USB_INFO("Searching %d endpoints...\n", dev->num_endpoints);
     for (int i = 0; i < dev->num_endpoints; i++) {
         u8 addr = dev->ep[i].address;
         u8 attr = dev->ep[i].attributes;
@@ -233,13 +240,14 @@ int usb_mouse_connect(usb_device_t* dev) {
     mouse->next = usb_mice;
     usb_mice = mouse;
     
-    USB_INFO("USB mouse initialized\n");
+    USB_INFO("  \n");
     
     // 注册设备到 devfs
     device_t* mouse_dev = kmalloc(sizeof(device_t), KERNEL_TYPE);
     mouse_dev->name = "usb_mouse";
     mouse_dev->id = DEVICE_MOUSE;
     mouse_dev->type = DEVICE_TYPE_CHAR;
+    mouse_dev->read = usb_mouse_read;
     device_add(mouse_dev);
     
     return 0;

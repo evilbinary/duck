@@ -128,7 +128,8 @@ typedef struct usb_device {
     u8 address;
     u8 speed;
     u8 port;
-    u8 parent;
+    u8 reserved;  // padding
+    struct usb_device* parent;  // Hub device if connected through hub
     u16 vendor;
     u16 product;
     u8 class;
@@ -247,6 +248,7 @@ void usb_exit(void);
 int usb_alloc_device(usb_device_t* dev);
 int usb_free_device(usb_device_t* dev);
 int usb_enumerate(void);
+void usb_device_connected(usb_device_t* dev);
 usb_device_t* usb_find_device(u8 address);
 usb_device_t* usb_find_device_by_vid_pid(u16 vendor, u16 product);
 int usb_control_transfer(u8 device_address, u8 endpoint, 

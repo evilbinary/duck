@@ -179,60 +179,58 @@ static int hid_set_idle(usb_device_t* dev, u8 interface, u8 duration) {
 // 处理 HID 设备
 int hid_handle_device(usb_device_t* dev) {
     if (dev == NULL) return -1;
-    
+
     USB_INFO("Handling HID device: vid=%04x pid=%04x\n", dev->vendor, dev->product);
-    
-    // 获取 HID 描述符
-    usb_hid_descriptor_t hid_desc;
-    if (hid_get_descriptor(dev, &hid_desc) != 0) {
-        USB_ERROR("Failed to get HID descriptor\n");
-        return -1;
-    }
-    
-    USB_INFO("HID: bcd_hid=%04x country=%d num_desc=%d\n",
-             hid_desc.bcd_hid, hid_desc.country_code, hid_desc.num_descriptors);
-    
+
     // 分配 HID 设备
     hid_device_t* hid = kmalloc(sizeof(hid_device_t), KERNEL_TYPE);
     if (hid == NULL) {
         USB_ERROR("Failed to allocate HID device\n");
         return -1;
     }
-    
+
     kmemset(hid, 0, sizeof(hid_device_t));
     hid->usb_dev = dev;
     hid->interface = 0;
-    
-    // 获取报告描述符
-    u16 report_desc_len = hid_desc.descriptor_length;
-    if (report_desc_len == 0) {
-        report_desc_len = 256;  // 默认最大长度
+
+    // 尝试获取 HID 描述符 (可选，Boot 设备不一定需要)
+    usb_hid_descriptor_t hid_desc;
+    if (hid_get_descriptor(dev, &hid_desc) == 0) {
+        USB_INFO("HID: bcd_hid=%04x country=%d num_desc=%d\n",
+                 hid_desc.bcd_hid, hid_desc.country_code, hid_desc.num_descriptors);
+
+        // 尝试获取报告描述符
+        u16 report_desc_len = hid_desc.descriptor_length;
+        if (report_desc_len == 0) {
+            report_desc_len = 256;  // 默认最大长度
+        }
+
+        hid->report_desc = kmalloc(report_desc_len, KERNEL_TYPE);
+        if (hid->report_desc != NULL) {
+            if (hid_get_report_descriptor(dev, hid->report_desc, report_desc_len) == 0) {
+                // 解析报告描述符
+                hid_parse_report_descriptor(hid, hid->report_desc, report_desc_len);
+            } else {
+                kfree(hid->report_desc);
+                hid->report_desc = NULL;
+            }
+        }
+    } else {
+        USB_INFO("HID descriptor not available, using Boot protocol\n");
     }
-    
-    hid->report_desc = kmalloc(report_desc_len, KERNEL_TYPE);
-    if (hid->report_desc == NULL) {
-        kfree(hid);
-        return -1;
-    }
-    
-    if (hid_get_report_descriptor(dev, hid->report_desc, report_desc_len) < 0) {
-        USB_ERROR("Failed to get report descriptor\n");
-        kfree(hid->report_desc);
-        kfree(hid);
-        return -1;
-    }
-    
-    // 解析报告描述符
-    hid_parse_report_descriptor(hid, hid->report_desc, report_desc_len);
-    
-    // 设置空闲速率 (中断端点轮询)
+
+    // 设置空闲速率 (中断端点轮询) - 可能失败，忽略错误
     hid_set_idle(dev, hid->interface, 10);  // 10ms
-    
+
     // 添加到 HID 设备列表
     hid->next = hid_devices;
     hid_devices = hid;
+
+    // 根据设备类型初始化 - 检查 subclass 和 protocol
+    USB_INFO("HID device subclass=%d protocol=%d\n", dev->subclass, dev->protocol);
+    USB_INFO("Before mouse: dev=%p addr=%d vid=%04x pid=%04x num_ep=%d\n",
+             dev, dev->address, dev->vendor, dev->product, dev->num_endpoints);
     
-    // 根据设备类型初始化
     if (dev->subclass == 0x01) {
         // Boot 设备
         if (dev->protocol == 0x01) {
@@ -243,8 +241,10 @@ int hid_handle_device(usb_device_t* dev) {
             USB_INFO("HID Boot Mouse detected\n");
             usb_mouse_connect(dev);
         }
+    } else {
+        USB_INFO("HID device is not Boot protocol, subclass=%d\n", dev->subclass);
     }
-    
+
     return 0;
 }
 

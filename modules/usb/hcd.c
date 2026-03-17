@@ -25,11 +25,14 @@ int hcd_init(void) {
         return -1;
     }
 
+    // 先设置初始化标志，这样在 HCD init 中调用 usb_device_connected 时
+    // hcd_submit_urb 就不会直接返回 -1
+    hcd_initialized = 1;
+
     if (hcd_ops->init != NULL) {
         hcd_ops->init();
     }
 
-    hcd_initialized = 1;
     USB_INFO("HCD initialized\n");
 
     return 0;
@@ -52,10 +55,12 @@ void hcd_shutdown(void) {
 // 提交 URB
 int hcd_submit_urb(urb_t* urb) {
     if (!hcd_initialized || hcd_ops == NULL) {
+        USB_ERROR("hcd_submit_urb: not initialized (init=%d ops=%p)\n", hcd_initialized, hcd_ops);
         return -1;
     }
     
     if (hcd_ops->submit_urb == NULL) {
+        USB_ERROR("hcd_submit_urb: no submit_urb callback\n");
         return -1;
     }
     
