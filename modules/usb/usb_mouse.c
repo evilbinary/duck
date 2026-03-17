@@ -7,6 +7,17 @@
 #include "usb.h"
 #include "mouse/mouse.h"
 #include "dev/devfs.h"
+#include "kernel/device.h"
+
+#define USB_MOUSE_EVENT_QUEUE_SIZE 64
+
+// 鼠标事件数据 (兼容 PS/2 鼠标格式)
+typedef struct {
+    u8 buttons;     // 按键状态
+    i8 dx;          // X 移动
+    i8 dy;          // Y 移动
+    i8 wheel;       // 滚轮
+} usb_mouse_data_t;
 
 // USB 鼠标设备
 typedef struct usb_mouse_device {
@@ -20,6 +31,10 @@ typedef struct usb_mouse_device {
 } usb_mouse_device_t;
 
 static usb_mouse_device_t* usb_mice = NULL;
+static usb_mouse_data_t event_queue[USB_MOUSE_EVENT_QUEUE_SIZE];
+static u32 event_head = 0;
+static u32 event_tail = 0;
+static u8 last_buttons = 0;
 
 // USB 鼠标报告描述符 (Boot Protocol)
 static const u8 usb_mouse_report_desc[] = {
@@ -79,33 +94,65 @@ static const u8 usb_mouse_report_desc[] = {
     0xC0
 };
 
+// 将事件加入队列
+static void usb_mouse_push_event(u8 buttons, i8 dx, i8 dy, i8 wheel) {
+    u32 next_head = (event_head + 1) % USB_MOUSE_EVENT_QUEUE_SIZE;
+    if (next_head == event_tail) {
+        // 队列满，丢弃最旧的事件
+        event_tail = (event_tail + 1) % USB_MOUSE_EVENT_QUEUE_SIZE;
+    }
+
+    event_queue[event_head].buttons = buttons;
+    event_queue[event_head].dx = dx;
+    event_queue[event_head].dy = dy;
+    event_queue[event_head].wheel = wheel;
+    event_head = next_head;
+
+    USB_DEBUG("USB Mouse: buttons=%02x dx=%d dy=%d wheel=%d\n",
+              buttons, dx, dy, wheel);
+}
+
+// 设备读取函数 (供 xinput 轮询)
+static size_t usb_mouse_read(device_t* dev, void* buf, size_t len) {
+    if (buf == NULL || len < 3) return 0;
+    if (event_tail == event_head) return 0;  // 无事件
+
+    // 转换为 PS/2 兼容格式: Byte 0: 按键+标志位, Byte 1: X, Byte 2: Y
+    u8* data = (u8*)buf;
+    usb_mouse_data_t* evt = &event_queue[event_tail];
+
+    // PS/2 格式: Y溢出, X溢出, Y符号, X符号, 1, 中键, 右键, 左键
+    data[0] = 0x08;  // bit 3 固定为1
+    data[0] |= (evt->buttons & 0x07);  // 按键状态
+
+    // 符号位
+    if (evt->dx < 0) data[0] |= 0x10;
+    if (evt->dy < 0) data[0] |= 0x20;
+
+    data[1] = (u8)evt->dx;
+    data[2] = (u8)(-evt->dy);  // Y 轴反向
+
+    if (len >= 4) {
+        data[3] = (u8)evt->wheel;
+    }
+
+    event_tail = (event_tail + 1) % USB_MOUSE_EVENT_QUEUE_SIZE;
+    return len;
+}
+
 // USB 鼠标事件回调
 static void usb_mouse_event_handler(u8* data, u32 length) {
     if (data == NULL || length < 3) return;
-    
-    usb_mouse_event_t event;
-    kmemset(&event, 0, sizeof(event));
-    
+
     // 解析 USB 鼠标报告
-    // Byte 0: 按钮
-    event.buttons = data[0];
-    
-    // Byte 1: X 移动
-    event.x = (i8)data[1];
+    u8 buttons = data[0];
+    i8 dx = (i8)data[1];
+    i8 dy = (i8)data[2];
+    i8 wheel = (length > 3) ? (i8)data[3] : 0;
 
-    // Byte 2: Y 移动
-    event.y = (i8)data[2];
-
-    // Byte 3: 滚轮 (如果有)
-    if (length > 3) {
-        event.wheel = (i8)data[3];
-    }
-    
-    USB_DEBUG("USB Mouse: buttons=%02x x=%d y=%d wheel=%d\n",
-              event.buttons, event.x, event.y, event.wheel);
-    
-    // 转换并发送到鼠标设备
-    // 实际实现需要调用 mouse 驱动
+    // 将事件加入队列
+    usb_mouse_push_event(buttons, dx, dy, wheel);
+    last_buttons = buttons;
 }
 
 // 设置引导协议
