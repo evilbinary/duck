@@ -145,9 +145,12 @@ int xwm_handle_mouse_down(xdisplay_t* disp, xwindow_t* win, i32 x, i32 y, u32 bu
         // 标题栏拖拽
         if (win->flags & XWIN_FLAG_DRAGGABLE) {
             disp->drag_window = win;
-            disp->drag_offset_x = x;
+            // drag_offset 保存的是：鼠标点击位置相对于窗口左上角的偏移
+            // 这样：新窗口位置 = 鼠标屏幕坐标 - drag_offset
+            disp->drag_offset_x = x;  // 窗口内坐标就是相对于左上角的偏移
             disp->drag_offset_y = y;
-            log_info("  -> drag started! drag_window=%x\n", disp->drag_window);
+            log_info("  -> drag started! drag_window=%x offset=(%d,%d)\n",
+                     disp->drag_window, disp->drag_offset_x, disp->drag_offset_y);
             return 1;
         }
     }
