@@ -25,93 +25,23 @@ void xwm_init(xdisplay_t* disp) {
 void xwm_draw_title_bar(xwindow_t* win) {
     if (win == NULL || win->flags & XWIN_FLAG_ROOT) return;
     
-    xdisplay_t* disp = g_wm.display;
-    xtheme_t* t = xtheme_current(disp);
-    
-    u32 bg_top = win->focused ? t->titlebar_bg_top : t->titlebar_inactive;
-    u32 bg_bottom = win->focused ? t->titlebar_bg_bottom : t->titlebar_inactive;
-    u32 text_color = win->focused ? t->title_text_color : t->title_text_inactive;
-    u32 title_h = t->title_bar_height;
-    
-    // 绘制渐变标题栏背景
-    for (u32 y = 0; y < title_h; y++) {
-        u32 ratio = y * 256 / title_h;
-        u32 r = ((bg_top >> 16 & 0xFF) * (256 - ratio) + (bg_bottom >> 16 & 0xFF) * ratio) >> 8;
-        u32 g = ((bg_top >> 8 & 0xFF) * (256 - ratio) + (bg_bottom >> 8 & 0xFF) * ratio) >> 8;
-        u32 b = ((bg_top & 0xFF) * (256 - ratio) + (bg_bottom & 0xFF) * ratio) >> 8;
-        u32 color = 0xFF000000 | (r << 16) | (g << 8) | b;
-        xwin_fill_rect(win, 0, y, win->width, 1, color);
-    }
-    
-    // 绘制标题文字
-    if (win->title[0] != '\0') {
-        i32 text_y = (title_h - 16) / 2;  // 垂直居中
-        xwin_draw_text(win, 12, text_y, win->title, text_color);
-    }
-    
-    // 绘制窗口控制按钮
-    u32 btn_size = t->btn_size;
-    u32 btn_gap = t->btn_gap;
-    u32 btn_y = (title_h - btn_size) / 2;
-    u32 btn_x = win->width - btn_size - btn_gap;
-    
-    if (t->button_style == XBUTTON_STYLE_CIRCLE) {
-        // 圆形按钮
-        u32 radius = btn_size / 2;
-        
-        // 关闭按钮
-        xwin_fill_circle(win, btn_x + radius, btn_y + radius, radius, t->btn_close);
-        xwin_draw_line(win, btn_x + 3, btn_y + 3, btn_x + btn_size - 3, btn_y + btn_size - 3, t->btn_icon);
-        xwin_draw_line(win, btn_x + btn_size - 3, btn_y + 3, btn_x + 3, btn_y + btn_size - 3, t->btn_icon);
-        
-        // 最大化按钮
-        btn_x -= btn_size + btn_gap;
-        xwin_fill_circle(win, btn_x + radius, btn_y + radius, radius, t->btn_maximize);
-        xwin_draw_rect(win, btn_x + 3, btn_y + 3, btn_size - 6, btn_size - 6, t->btn_icon);
-        
-        // 最小化按钮
-        btn_x -= btn_size + btn_gap;
-        xwin_fill_circle(win, btn_x + radius, btn_y + radius, radius, t->btn_minimize);
-        xwin_draw_line(win, btn_x + 3, btn_y + radius, btn_x + btn_size - 3, btn_y + radius, t->btn_icon);
-    } else {
-        // 方形按钮
-        // 关闭按钮
-        xwin_fill_rect(win, btn_x, btn_y, btn_size, btn_size, t->btn_close);
-        xwin_draw_line(win, btn_x + 2, btn_y + 2, btn_x + btn_size - 2, btn_y + btn_size - 2, t->btn_icon);
-        xwin_draw_line(win, btn_x + btn_size - 2, btn_y + 2, btn_x + 2, btn_y + btn_size - 2, t->btn_icon);
-        
-        // 最大化按钮
-        btn_x -= btn_size + btn_gap;
-        xwin_fill_rect(win, btn_x, btn_y, btn_size, btn_size, t->btn_maximize);
-        xwin_draw_rect(win, btn_x + 2, btn_y + 2, btn_size - 4, btn_size - 4, t->btn_icon);
-        
-        // 最小化按钮
-        btn_x -= btn_size + btn_gap;
-        xwin_fill_rect(win, btn_x, btn_y, btn_size, btn_size, t->btn_minimize);
-        xwin_draw_line(win, btn_x + 2, btn_y + btn_size - 3, btn_x + btn_size - 2, btn_y + btn_size - 3, t->btn_icon);
-    }
+    // 标题栏由合成器在 xtheme_render_decoration 中绘制
+    // 这里不再在窗口 framebuffer 上绘制，避免重复绘制和与边框冲突
 }
 
 void xwm_draw_border(xwindow_t* win) {
     if (win == NULL || win->flags & XWIN_FLAG_ROOT) return;
     
-    xdisplay_t* disp = g_wm.display;
-    xtheme_t* t = xtheme_current(disp);
-    u32 border_color = win->focused ? t->border_active : t->border_inactive;
-    u32 bw = t->border_width;
-    
-    // 绘制边框
-    for (u32 i = 0; i < bw; i++) {
-        xwin_draw_rect(win, i, i, win->width - i * 2, win->height - i * 2, border_color);
-    }
+    // 边框由合成器在 xtheme_render_decoration 中绘制
+    // 这里不再在窗口 framebuffer 上绘制，避免重复绘制和与标题栏冲突
 }
 
 void xwm_decorate_window(xwindow_t* win) {
     if (win == NULL || win->flags & XWIN_FLAG_ROOT) return;
     if (!(win->flags & XWIN_FLAG_BORDERED)) return;
     
-    xwm_draw_border(win);
-    xwm_draw_title_bar(win);
+    // xwm_draw_border(win);
+    // xwm_draw_title_bar(win);
 }
 
 // ========== 窗口管理器事件处理 ==========
