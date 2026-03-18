@@ -68,6 +68,7 @@ void xwin_update(xwin_handle_t win);
 // Syscall 包装函数
 static inline long xwin_syscall(int num, long a1, long a2, long a3, long a4, long a5) {
     long ret;
+#if defined(__aarch64__) || defined(ARM64)
     __asm__ volatile (
         "mov x8, %1\n"
         "mov x0, %2\n"
@@ -81,6 +82,23 @@ static inline long xwin_syscall(int num, long a1, long a2, long a3, long a4, lon
         : "r"(num), "r"(a1), "r"(a2), "r"(a3), "r"(a4), "r"(a5)
         : "x0", "x1", "x2", "x3", "x4", "x8"
     );
+#elif defined(__arm__) || defined(ARM)
+    __asm__ volatile (
+        "mov r7, %1\n"
+        "mov r0, %2\n"
+        "mov r1, %3\n"
+        "mov r2, %4\n"
+        "mov r3, %5\n"
+        "mov r4, %6\n"
+        "svc #0\n"
+        "mov %0, r0\n"
+        : "=r"(ret)
+        : "r"(num), "r"(a1), "r"(a2), "r"(a3), "r"(a4), "r"(a5)
+        : "r0", "r1", "r2", "r3", "r4", "r7"
+    );
+#else
+    #error "Unsupported architecture for xwin_syscall"
+#endif
     return ret;
 }
 

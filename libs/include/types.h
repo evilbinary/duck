@@ -68,7 +68,7 @@ typedef signed short int16_t;
 typedef signed int int32_t;
 #endif
 
-#if !defined(_INT64_T) && !defined(int64_t)
+#if !defined(_INT64_T) && !defined(int64_t) && !defined(__DEFINED_int64_t)
 typedef signed long long int64_t;
 #endif
 
@@ -84,7 +84,7 @@ typedef unsigned short uint16_t;
 typedef unsigned int uint32_t;
 #endif
 
-#if !defined(_UINT64_T) && !defined(uint64_t)
+#if !defined(_UINT64_T) && !defined(uint64_t) && !defined(__DEFINED_uint64_t)
 typedef unsigned long long uint64_t;
 #endif
 
