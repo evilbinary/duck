@@ -126,15 +126,26 @@ static size_t usb_mouse_read(device_t* dev, void* buf, size_t len) {
     usb_mouse_data_t* evt = &event_queue[event_tail];
 
     // PS/2 格式: Y溢出, X溢出, Y符号, X符号, 1, 中键, 右键, 左键
+    // data[1] 和 data[2] 是补码的低8位，符号位在 data[0] 中
     data[0] = 0x08;  // bit 3 固定为1
     data[0] |= (evt->buttons & 0x07);  // 按键状态
 
-    // 符号位
-    if (evt->dx < 0) data[0] |= 0x10;
-    if (evt->dy < 0) data[0] |= 0x20;
-
+    // X 轴 - 转换为 PS/2 格式 (不需要反转)
+    // USB dx 是有符号 i8，直接取低8位
     data[1] = (u8)evt->dx;
-    data[2] = (u8)(-evt->dy);  // Y 轴反向
+    // 设置 X 符号位 (如果 dx < 0，低8位会 >= 128)
+    if (evt->dx < 0) {
+        data[0] |= 0x10;  // X 符号位
+    }
+
+    // Y 轴 - 需要反转方向
+    // USB dy < 0 (向上) → PS/2 dy > 0 (不设置符号位)
+    // USB dy > 0 (向下) → PS/2 dy < 0 (设置符号位，值为 256-dy)
+    i8 ps2_dy = -evt->dy;  // 反转 Y 轴
+    data[2] = (u8)ps2_dy;
+    if (ps2_dy < 0) {
+        data[0] |= 0x20;  // Y 符号位
+    }
 
     if (len >= 4) {
         data[3] = (u8)evt->wheel;
@@ -318,7 +329,11 @@ void usb_mouse_poll(void) {
         int ret = usb_interrupt_transfer(mouse->usb_dev, mouse->endpoint_in,
                                         mouse->report_buffer, mouse->max_packet_size);
         
-        if (ret >= 0) {
+        if (ret > 0) {
+            // 打印原始数据
+            USB_DEBUG("Raw mouse data: %02x %02x %02x %02x (ret=%d)\n",
+                     mouse->report_buffer[0], mouse->report_buffer[1],
+                     mouse->report_buffer[2], mouse->report_buffer[3], ret);
             usb_mouse_event_handler(mouse->report_buffer, ret);
         }
         

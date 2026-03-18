@@ -336,6 +336,7 @@ static void dwc2_config_channel(int ch_num) {
 // 等待通道传输完成
 static int dwc2_wait_channel(int ch_num, u32* actual_len) {
     u32 timeout = 1000000;
+    u32 requested_len = channels[ch_num].mps;  // 从通道获取请求长度，后面会修正
     
     while (timeout > 0) {
         u32 hcint = dwc2_read(DWC2_HCINT(ch_num));
@@ -347,7 +348,9 @@ static int dwc2_wait_channel(int ch_num, u32* actual_len) {
             // 检查是否成功完成
             if (hcint & DWC2_HCINT_XFERC) {
                 u32 hctsiz = dwc2_read(DWC2_HCTSIZ(ch_num));
-                *actual_len = hctsiz & 0x7FFFF;  // 剩余长度
+                u32 remaining = hctsiz & 0x7FFFF;  // 剩余长度
+                // 实际长度 = 请求长度 - 剩余长度 (由调用者计算)
+                *actual_len = remaining;
                 return URB_OK;
             }
             
@@ -529,7 +532,8 @@ static int dwc2_start_transfer(urb_t* urb, int ch_num) {
     // 配置传输大小
     u32 hctsiz = 0;
     hctsiz |= (urb->transfer_length & 0x7FFFF);
-    hctsiz |= DWC2_PID_DATA1;  // 使用 DATA1 PID
+    // 中断传输使用 DATA0, 批量传输使用 DATA1
+    hctsiz |= (ch->ep_type == USB_ENDPOINT_INTERRUPT) ? DWC2_PID_DATA0 : DWC2_PID_DATA1;
     u32 pkt_count = (urb->transfer_length + ch->mps - 1) / ch->mps;
     if (pkt_count == 0) pkt_count = 1;
     hctsiz |= ((pkt_count & 0xFF) << 19);  // 包计数
@@ -561,7 +565,8 @@ static int dwc2_start_transfer(urb_t* urb, int ch_num) {
     
     urb->status = ret;
     if (ret == URB_OK) {
-        urb->actual_length = urb->transfer_length;
+        // actual_len 是剩余长度，需要计算实际传输长度
+        urb->actual_length = urb->transfer_length - actual_len;
     }
     
     // 释放通道
@@ -672,30 +677,43 @@ void dwc2_irq_handler(void) {
 // 提交 URB
 static int dwc2_submit_urb(urb_t* urb) {
     if (urb == NULL) return -1;
-    
+
     u8 ep_num = urb->endpoint & 0x0F;
     u8 device_addr = urb->device_address;
-    
+
     // 判断是否是控制传输：端点0 或者有 request 字段
     // 控制传输需要发送 SETUP packet
     int is_control = (ep_num == 0);
-    
+
     if (is_control) {
         // 控制传输需要三阶段处理
         return dwc2_control_transfer(urb);
     }
-    
-    // 其他传输类型
+
+    // 其他传输类型 (中断/批量)
     u8 ep_dir = (urb->endpoint & 0x80) ? 1 : 0;
-    u8 ep_type = USB_ENDPOINT_BULK;
-    
+    u8 ep_type = USB_ENDPOINT_INTERRUPT;  // 假设中断传输
+    u16 mps = urb->transfer_length > 0 ? urb->transfer_length : 8;  // 默认 8 字节
+
+    // 从 USB 设备获取正确的 max_packet_size (如果可用)
+    usb_device_t* usb_dev = usb_find_device(device_addr);
+    if (usb_dev != NULL) {
+        for (int i = 0; i < usb_dev->num_endpoints; i++) {
+            if ((usb_dev->ep[i].address & 0x0F) == ep_num) {
+                mps = usb_dev->ep[i].max_packet_size;
+                USB_DEBUG("Using max_packet_size=%d for ep %d\n", mps, ep_num);
+                break;
+            }
+        }
+    }
+
     // 分配通道
-    int ch_num = dwc2_alloc_channel(ep_num, ep_dir, USB_SPEED_FULL, 64, device_addr, ep_type);
+    int ch_num = dwc2_alloc_channel(ep_num, ep_dir, USB_SPEED_FULL, mps, device_addr, ep_type);
     if (ch_num < 0) {
         USB_ERROR("Failed to allocate channel\n");
         return -1;
     }
-    
+
     return dwc2_start_transfer(urb, ch_num);
 }
 
