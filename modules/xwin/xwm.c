@@ -105,8 +105,13 @@ void xwm_decorate_window(xwindow_t* win) {
 int xwm_handle_mouse_down(xdisplay_t* disp, xwindow_t* win, i32 x, i32 y, u32 button) {
     if (win == NULL || win->flags & XWIN_FLAG_ROOT) return 0;
     
+    log_info("xwm_handle_mouse_down: x=%d y=%d button=%d TITLE_BAR_HEIGHT=%d\n",
+              x, y, button, TITLE_BAR_HEIGHT);
+    
     // 检查是否点击标题栏
     if (y < TITLE_BAR_HEIGHT && button == XBUTTON_LEFT) {
+        log_info("  -> in title bar, DRAGGABLE=%d\n", (win->flags & XWIN_FLAG_DRAGGABLE) ? 1 : 0);
+        
         // 检查按钮点击
         u32 btn_x = win->width - BUTTON_SIZE - 4;
         u32 btn_y = (TITLE_BAR_HEIGHT - BUTTON_SIZE) / 2;
@@ -142,6 +147,7 @@ int xwm_handle_mouse_down(xdisplay_t* disp, xwindow_t* win, i32 x, i32 y, u32 bu
             disp->drag_window = win;
             disp->drag_offset_x = x;
             disp->drag_offset_y = y;
+            log_info("  -> drag started! drag_window=%x\n", disp->drag_window);
             return 1;
         }
     }

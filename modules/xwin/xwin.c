@@ -57,7 +57,7 @@ int xwin_init(xdisplay_t* disp, vga_device_t* vga) {
     kmemset(disp->windows, 0, sizeof(xwindow_t*) * disp->window_capacity);
     
     // 创建事件队列
-    disp->event_queue = queue_pool_create(256, sizeof(xevent_t));
+    disp->event_queue = ring_queue_create(256, sizeof(xevent_t));
     if (disp->event_queue == NULL) {
         log_error("xwin: failed to create event queue\n");
         kfree(disp->screen_buffer);
@@ -72,7 +72,7 @@ int xwin_init(xdisplay_t* disp, vga_device_t* vga) {
                                             XWIN_FLAG_ROOT | XWIN_FLAG_VISIBLE);
     if (disp->root_window == NULL) {
         log_error("xwin: failed to create root window\n");
-        queue_pool_destroy(disp->event_queue);
+        ring_queue_destroy(disp->event_queue);
         kfree(disp->screen_buffer);
         kfree(disp->back_buffer);
         kfree(disp->windows);
@@ -115,7 +115,7 @@ void xwin_exit(xdisplay_t* disp) {
 
     // 释放资源
     if (disp->event_queue != NULL) {
-        queue_pool_destroy(disp->event_queue);
+        ring_queue_destroy(disp->event_queue);
     }
     if (disp->screen_buffer != NULL) {
         kfree(disp->screen_buffer);

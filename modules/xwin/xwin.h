@@ -151,7 +151,7 @@ typedef struct xdisplay {
     u32 window_capacity;       // 窗口数组容量
     u32 next_window_id;        // 下一个窗口ID
     
-    queue_pool_t* event_queue; // 事件队列
+    ring_queue_t* event_queue;  // 事件队列
     
     // 鼠标状态
     i32 mouse_x, mouse_y;      // 鼠标位置

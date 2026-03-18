@@ -22,13 +22,7 @@ int xwin_next_event(xdisplay_t* disp, xevent_t* event) {
         return 0;
     }
     
-    void* data = queue_pool_poll(disp->event_queue);
-    if (data == NULL) {
-        return 0;
-    }
-    
-    kmemcpy(event, data, sizeof(xevent_t));
-    return 1;
+    return ring_queue_poll(disp->event_queue, event);
 }
 
 void xwin_send_event(xdisplay_t* disp, xwindow_t* win, xevent_t* event) {
@@ -51,7 +45,7 @@ void xwin_post_event(xdisplay_t* disp, xevent_t* event) {
         return;
     }
     
-    queue_pool_put(disp->event_queue, event);
+    ring_queue_put(disp->event_queue, event);
 }
 
 void xwin_dispatch_event(xdisplay_t* disp, xevent_t* event) {
