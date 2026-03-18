@@ -249,23 +249,3 @@ void xwin_composite_window(xdisplay_t* disp, xwindow_t* win) {
     win->damaged = 0;
 }
 
-// ========== 窗口管理器 (基础) ==========
-
-// 绘制窗口装饰
-void xwm_decorate_window(xwindow_t* win) {
-    if (win == NULL || !(win->flags & XWIN_FLAG_BORDERED)) return;
-    
-    u32 title_height = 24;
-    u32 title_bg = win->focused ? 0xFF4A90D9 : 0xFF606060;
-    
-    // 绘制标题栏背景
-    xwin_fill_rect(win, 0, 0, win->width, title_height, title_bg);
-    
-    // 绘制标题文字
-    xwin_draw_text(win, 8, 4, win->title, XCOLOR_WHITE);
-    
-    // 绘制关闭按钮
-    xwin_fill_rect(win, win->width - 20, 4, 16, 16, 0xFFCC0000);
-    xwin_draw_line(win, win->width - 18, 6, win->width - 6, 18, XCOLOR_WHITE);
-    xwin_draw_line(win, win->width - 6, 6, win->width - 18, 18, XCOLOR_WHITE);
-}
