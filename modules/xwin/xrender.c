@@ -31,20 +31,55 @@ static const u32 cursor_arrow[16][16] = {
 void xwin_render(xdisplay_t* disp) {
     if (disp == NULL || disp->vga == NULL) return;
     
+    extern u32 schedule_get_ticks(void);
+    u32 t0, t1;
+    static u32 t_clear = 0, t_composite = 0, t_cursor = 0, t_flip = 0;
+    static u32 frame_count = 0;
+    static int printed_info = 0;
+    
+    // 只打印一次分辨率信息
+    if (!printed_info) {
+        log_info("xwin: %dx%d, buffer=%d bytes, %d KB\n", 
+                 disp->vga->width, disp->vga->height, 
+                 disp->buffer_size, disp->buffer_size / 1024);
+        printed_info = 1;
+    }
+    
     // 清空后备缓冲
+    t0 = schedule_get_ticks();
     kmemset(disp->back_buffer, 0, disp->buffer_size);
+    t1 = schedule_get_ticks();
+    t_clear += (t1 - t0);
     
     // 合成所有可见窗口 (按zorder从低到高)
+    t0 = schedule_get_ticks();
     xwin_composite(disp);
+    t1 = schedule_get_ticks();
+    t_composite += (t1 - t0);
     
     // 绘制鼠标光标
+    t0 = schedule_get_ticks();
     xwin_update_mouse_cursor(disp);
+    t1 = schedule_get_ticks();
+    t_cursor += (t1 - t0);
     
     // 翻转缓冲区
+    t0 = schedule_get_ticks();
     xwin_flip_buffer(disp);
+    t1 = schedule_get_ticks();
+    t_flip += (t1 - t0);
     
     // 更新FPS
     disp->frame_count++;
+    frame_count++;
+    
+    // 每 60 帧打印一次
+    if (frame_count >= 60) {
+        log_info("Render: clear=%d composite=%d cursor=%d flip=%d (ticks)\n",
+                 t_clear, t_composite, t_cursor, t_flip);
+        t_clear = t_composite = t_cursor = t_flip = 0;
+        frame_count = 0;
+    }
 }
 
 void xwin_render_window(xdisplay_t* disp, xwindow_t* win) {
@@ -56,18 +91,13 @@ void xwin_render_window(xdisplay_t* disp, xwindow_t* win) {
 
 void xwin_flip_buffer(xdisplay_t* disp) {
     if (disp == NULL || disp->vga == NULL) return;
-    
-    // 复制后备缓冲到屏幕缓冲
-    kmemcpy(disp->screen_buffer, disp->back_buffer, disp->buffer_size);
-    
-    // 如果VGA有flip_buffer函数，调用它
+
+    // 如果VGA有flip_buffer函数，调用它（由驱动处理显示）
     if (disp->vga->flip_buffer != NULL) {
         disp->vga->flip_buffer(disp->vga, 0);
-    } else {
-        // 直接写入framebuffer
-        if (disp->vga->frambuffer != NULL) {
-            kmemcpy(disp->vga->frambuffer, disp->back_buffer, disp->buffer_size);
-        }
+    } else if (disp->vga->frambuffer != NULL) {
+        // 直接写入framebuffer，不需要中间的screen_buffer
+        kmemcpy(disp->vga->frambuffer, disp->back_buffer, disp->buffer_size);
     }
 }
 
@@ -129,27 +159,19 @@ void xwin_composite_window(xdisplay_t* disp, xwindow_t* win) {
     i32 clip_ex = (ex > (i32)screen_w) ? screen_w : ex;
     i32 clip_ey = (ey > (i32)screen_h) ? screen_h : ey;
     
-    // 复制像素
+    i32 copy_width = clip_ex - clip_sx;
+    if (copy_width <= 0) return;
+    
+    // 优化：按行复制，避免逐像素计算
     for (i32 y = clip_sy; y < clip_ey; y++) {
-        for (i32 x = clip_sx; x < clip_ex; x++) {
-            i32 src_x = x - sx;
-            i32 src_y = y - sy;
-            
-            u32 color = src[src_y * win->width + src_x];
-            
-            // Alpha混合
-            u8 alpha = (color >> 24) & 0xFF;
-            if (alpha == 255) {
-                dst[y * screen_w + x] = color;
-            } else if (alpha > 0) {
-                u32 dst_color = dst[y * screen_w + x];
-                dst[y * screen_w + x] = 
-                    ((alpha * ((color >> 16) & 0xFF) + (255 - alpha) * ((dst_color >> 16) & 0xFF)) >> 8) << 16 |
-                    ((alpha * ((color >> 8) & 0xFF) + (255 - alpha) * ((dst_color >> 8) & 0xFF)) >> 8) << 8 |
-                    ((alpha * (color & 0xFF) + (255 - alpha) * (dst_color & 0xFF)) >> 8) |
-                    0xFF000000;
-            }
-        }
+        i32 src_y = y - sy;
+        i32 src_x = clip_sx - sx;
+        
+        u32* dst_row = dst + y * screen_w + clip_sx;
+        u32* src_row = src + src_y * win->width + src_x;
+        
+        // 快速路径：直接复制整行（假设大部分情况不需要 alpha 混合）
+        kmemcpy(dst_row, src_row, copy_width * sizeof(u32));
     }
     
     // 如果窗口有边框，绘制边框

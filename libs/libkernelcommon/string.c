@@ -45,6 +45,21 @@ void* kmemcpy(void* /* restrict */ s1, const void* /* restrict */ s2,
               size_t n) {
   char* cdest;
   char* csrc;
+  
+#if defined(ARM64) || defined(__aarch64__)
+  // ARM64: 使用 64 位操作
+  uint64_t* ldest = (uint64_t*)s1;
+  uint64_t* lsrc = (uint64_t*)s2;
+
+  while (n >= 8) {
+    *ldest++ = *lsrc++;
+    n -= 8;
+  }
+
+  cdest = (char*)ldest;
+  csrc = (char*)lsrc;
+#else
+  // 32 位: 使用 32 位操作
   uint32_t* ldest = (uint32_t*)s1;
   uint32_t* lsrc = (uint32_t*)s2;
 
@@ -55,6 +70,7 @@ void* kmemcpy(void* /* restrict */ s1, const void* /* restrict */ s2,
 
   cdest = (char*)ldest;
   csrc = (char*)lsrc;
+#endif
 
   while (n > 0) {
     *cdest++ = *csrc++;
@@ -328,8 +344,29 @@ void* kmemset(void* s, int c, size_t n) {
     }
   }
 #endif
-  int i;
-  for (i = 0; i < n; i++) ((char*)s)[i] = c;
+  // 优化：使用 32 位操作
+  char* p = (char*)s;
+  u32 c32 = (u8)c;
+  c32 |= c32 << 8;
+  c32 |= c32 << 16;
+  
+  // 32 位对齐设置
+  while (n >= 4 && ((u32)p & 3)) {
+    *p++ = c;
+    n--;
+  }
+  
+  u32* p32 = (u32*)p;
+  while (n >= 4) {
+    *p32++ = c32;
+    n -= 4;
+  }
+  
+  p = (char*)p32;
+  while (n > 0) {
+    *p++ = c;
+    n--;
+  }
 
   return s;
 }
