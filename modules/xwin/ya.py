@@ -29,6 +29,7 @@ common_source=[
     'xevent.c',
     'xrender.c',
     'xwm.c',
+    'xtheme.c',
     'font.c',
     'xwin_syscall.c',
     'xinput.c',

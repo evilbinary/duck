@@ -5,6 +5,7 @@
  * X Window System - Rendering Engine
  ********************************************************************/
 #include "xwin.h"
+#include "font.h"
 
 // ========== 鼠标光标 (16x16) ==========
 static const u32 cursor_arrow[16][16] = {
@@ -199,7 +200,7 @@ void xwin_composite_window(xdisplay_t* disp, xwindow_t* win) {
     i32 copy_width = clip_ex - clip_sx;
     if (copy_width <= 0) return;
     
-    // 优化：按行复制，避免逐像素计算
+    // 优化：按行复制窗口内容
     for (i32 y = clip_sy; y < clip_ey; y++) {
         i32 src_y = y - sy;
         i32 src_x = clip_sx - sx;
@@ -207,42 +208,12 @@ void xwin_composite_window(xdisplay_t* disp, xwindow_t* win) {
         u32* dst_row = dst + y * screen_w + clip_sx;
         u32* src_row = src + src_y * win->width + src_x;
         
-        // 快速路径：直接复制整行（假设大部分情况不需要 alpha 混合）
         kmemcpy(dst_row, src_row, copy_width * sizeof(u32));
     }
     
-    // 如果窗口有边框，绘制边框
+    // 使用主题渲染窗口装饰
     if (win->flags & XWIN_FLAG_BORDERED && win != disp->root_window) {
-        u32 border_color = win->focused ? 0xFF4A90D9 : 0xFF808080;
-        i32 bw = 2;  // 边框宽度
-        
-        // 优化：直接 32 位填充边框行
-        // 上边框
-        for (i32 y = clip_sy; y < clip_sy + bw && y < clip_ey; y++) {
-            u32* row = dst + y * screen_w + clip_sx;
-            for (i32 x = 0; x < copy_width; x++) {
-                row[x] = border_color;
-            }
-        }
-        
-        // 下边框
-        for (i32 y = clip_ey - bw; y < clip_ey; y++) {
-            u32* row = dst + y * screen_w + clip_sx;
-            for (i32 x = 0; x < copy_width; x++) {
-                row[x] = border_color;
-            }
-        }
-        
-        // 左右边框
-        for (i32 y = clip_sy + bw; y < clip_ey - bw; y++) {
-            u32* row = dst + y * screen_w;
-            for (i32 x = clip_sx; x < clip_sx + bw && x < clip_ex; x++) {
-                row[x] = border_color;
-            }
-            for (i32 x = clip_ex - bw; x < clip_ex; x++) {
-                row[x] = border_color;
-            }
-        }
+        xtheme_render_decoration(disp, win, dst, screen_w, screen_h, sx, sy, ex, ey);
     }
     
     // 清除损坏标记

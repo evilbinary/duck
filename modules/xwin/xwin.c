@@ -90,6 +90,9 @@ int xwin_init(xdisplay_t* disp, vga_device_t* vga) {
     // 初始化窗口ID计数器
     disp->next_window_id = 1;
     
+    // 初始化主题（使用默认深色主题）
+    xtheme_set(disp, XTHEME_DARK);
+    
     g_display = disp;
     
     log_info("xwin: initialized (%dx%d, %d bpp)\n", 

@@ -24,6 +24,150 @@
 #define XCOLOR_LIGHT_GRAY  0x00C0C0C0
 #define XCOLOR_DARK_GRAY   0x00404040
 
+// ========== 主题系统 ==========
+
+// 前向声明
+struct xdisplay;
+struct xwindow;
+
+// 主题ID
+typedef enum {
+    XTHEME_DARK = 0,      // 深色主题（默认）
+    XTHEME_LIGHT,         // 浅色主题
+    XTHEME_BLUE,          // 蓝色主题
+    XTHEME_CLASSIC,       // 经典主题
+    XTHEME_COUNT          // 主题数量
+} xtheme_id_t;
+
+// 按钮样式
+typedef enum {
+    XBUTTON_STYLE_CIRCLE = 0,   // 圆形按钮（现代）
+    XBUTTON_STYLE_SQUARE,       // 方形按钮（经典）
+    XBUTTON_STYLE_FLAT          // 扁平按钮
+} xbutton_style_t;
+
+// 边框样式
+typedef enum {
+    XBORDER_STYLE_THIN = 0,     // 细边框（现代）
+    XBORDER_STYLE_THICK,        // 粗边框（经典）
+    XBORDER_STYLE_NONE          // 无边框
+} xborder_style_t;
+
+// ========== 主题渲染回调函数类型 ==========
+
+// 绘制窗口边框（在屏幕缓冲区上绘制）
+typedef void (*xtheme_draw_border_fn)(
+    struct xdisplay* disp,
+    struct xwindow* win,
+    u32* buffer, u32 buf_w, u32 buf_h,
+    i32 sx, i32 sy, i32 ex, i32 ey
+);
+
+// 绘制标题栏背景
+typedef void (*xtheme_draw_titlebar_fn)(
+    struct xdisplay* disp,
+    struct xwindow* win,
+    u32* buffer, u32 buf_w, u32 buf_h,
+    i32 sx, i32 sy, i32 ex, i32 ey
+);
+
+// 绘制标题文字
+typedef void (*xtheme_draw_title_text_fn)(
+    struct xdisplay* disp,
+    struct xwindow* win,
+    u32* buffer, u32 buf_w, u32 buf_h,
+    i32 sx, i32 sy, i32 ex, i32 ey
+);
+
+// 绘制窗口按钮
+typedef void (*xtheme_draw_buttons_fn)(
+    struct xdisplay* disp,
+    struct xwindow* win,
+    u32* buffer, u32 buf_w, u32 buf_h,
+    i32 sx, i32 sy, i32 ex, i32 ey
+);
+
+// 绘制整个窗口装饰（边框+标题栏+按钮）
+typedef void (*xtheme_draw_decoration_fn)(
+    struct xdisplay* disp,
+    struct xwindow* win,
+    u32* buffer, u32 buf_w, u32 buf_h,
+    i32 sx, i32 sy, i32 ex, i32 ey
+);
+
+// 绘制桌面背景
+typedef void (*xtheme_draw_desktop_fn)(
+    struct xdisplay* disp,
+    struct xwindow* desktop,
+    u32* buffer, u32 buf_w, u32 buf_h
+);
+
+// 绘制窗口阴影
+typedef void (*xtheme_draw_shadow_fn)(
+    struct xdisplay* disp,
+    struct xwindow* win,
+    u32* buffer, u32 buf_w, u32 buf_h,
+    i32 sx, i32 sy, i32 ex, i32 ey
+);
+
+// ========== 主题结构 ==========
+typedef struct xtheme {
+    const char* name;           // 主题名称
+    
+    // ========== 尺寸参数 ==========
+    u32 title_bar_height;       // 标题栏高度
+    u32 border_width;           // 边框宽度
+    u32 corner_radius;          // 圆角半径
+    
+    // ========== 颜色参数 ==========
+    // 标题栏颜色
+    u32 titlebar_bg_top;        // 活动标题栏渐变顶部
+    u32 titlebar_bg_bottom;     // 活动标题栏渐变底部
+    u32 titlebar_inactive;      // 非活动标题栏
+    u32 title_text_color;       // 标题文字颜色
+    u32 title_text_inactive;    // 非活动标题文字
+    
+    // 边框颜色
+    u32 border_active;          // 活动窗口边框
+    u32 border_inactive;        // 非活动窗口边框
+    
+    // 按钮颜色
+    u32 btn_close;              // 关闭按钮
+    u32 btn_close_hover;        // 关闭按钮悬停
+    u32 btn_minimize;           // 最小化按钮
+    u32 btn_maximize;           // 最大化按钮
+    u32 btn_icon;               // 按钮图标颜色
+    u32 btn_size;               // 按钮大小
+    u32 btn_gap;                // 按钮间距
+    
+    // 桌面背景
+    u32 desktop_bg_top;         // 桌面背景渐变顶部
+    u32 desktop_bg_bottom;      // 桌面背景渐变底部
+    u32 desktop_solid;          // 桌面纯色背景
+    
+    // 阴影
+    u32 shadow_color;           // 窗口阴影颜色
+    u32 shadow_size;            // 阴影大小
+    
+    // ========== 样式枚举 ==========
+    xbutton_style_t button_style;
+    xborder_style_t border_style;
+    
+    // ========== 自定义渲染函数 ==========
+    // 设置为 NULL 则使用默认实现
+    xtheme_draw_decoration_fn draw_decoration;    // 绘制整个装饰（优先使用）
+    xtheme_draw_border_fn draw_border;            // 绘制边框
+    xtheme_draw_titlebar_fn draw_titlebar;        // 绘制标题栏背景
+    xtheme_draw_title_text_fn draw_title_text;    // 绘制标题文字
+    xtheme_draw_buttons_fn draw_buttons;          // 绘制按钮
+    xtheme_draw_desktop_fn draw_desktop;          // 绘制桌面
+    xtheme_draw_shadow_fn draw_shadow;            // 绘制阴影
+    
+    // ========== 用户数据 ==========
+    void* user_data;            // 自定义数据（可用于主题状态）
+    
+} xtheme_t;
+
 // ========== 窗口标志 ==========
 #define XWIN_FLAG_VISIBLE    0x01
 #define XWIN_FLAG_FOCUSABLE  0x02
@@ -172,12 +316,38 @@ typedef struct xdisplay {
     u32 frame_count;           // 帧计数
     u32 last_fps_time;         // 上次FPS计算时间
     
+    // 主题
+    xtheme_t* theme;           // 当前主题
+    xtheme_id_t theme_id;      // 当前主题ID
+    
 } xdisplay_t;
 
 // ========== 显示设备 ==========
 typedef struct xwin_device {
     xdisplay_t* display;
 } xwin_device_t;
+
+// ========== 主题 API ==========
+
+// 获取主题
+xtheme_t* xtheme_get(xtheme_id_t id);
+
+// 设置主题
+void xtheme_set(xdisplay_t* disp, xtheme_id_t id);
+
+// 获取当前主题
+xtheme_t* xtheme_current(xdisplay_t* disp);
+
+// 应用主题（重绘所有窗口）
+void xtheme_apply(xdisplay_t* disp);
+
+// 主题渲染入口函数（内部使用）
+void xtheme_render_decoration(xdisplay_t* disp, xwindow_t* win,
+                               u32* buffer, u32 buf_w, u32 buf_h,
+                               i32 sx, i32 sy, i32 ex, i32 ey);
+
+void xtheme_render_desktop(xdisplay_t* disp, xwindow_t* desktop,
+                           u32* buffer, u32 buf_w, u32 buf_h);
 
 // ========== 窗口管理 API ==========
 

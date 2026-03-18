@@ -6,17 +6,9 @@
  ********************************************************************/
 #include "xwin.h"
 
-#define TITLE_BAR_HEIGHT 24
-#define BORDER_WIDTH 2
-#define BUTTON_SIZE 16
-
 // ========== 窗口管理器状态 ==========
 typedef struct xwm {
     xdisplay_t* display;
-    u32 title_bar_color;
-    u32 title_bar_active_color;
-    u32 border_color;
-    u32 border_active_color;
 } xwm_t;
 
 static xwm_t g_wm;
@@ -25,10 +17,7 @@ static xwm_t g_wm;
 
 void xwm_init(xdisplay_t* disp) {
     g_wm.display = disp;
-    g_wm.title_bar_color = 0xFF606060;
-    g_wm.title_bar_active_color = 0xFF4A90D9;
-    g_wm.border_color = 0xFF808080;
-    g_wm.border_active_color = 0xFF4A90D9;
+    // 主题由 display 管理
 }
 
 // ========== 窗口装饰绘制 ==========
@@ -36,60 +25,85 @@ void xwm_init(xdisplay_t* disp) {
 void xwm_draw_title_bar(xwindow_t* win) {
     if (win == NULL || win->flags & XWIN_FLAG_ROOT) return;
     
-    u32 bg_color = win->focused ? g_wm.title_bar_active_color : g_wm.title_bar_color;
+    xdisplay_t* disp = g_wm.display;
+    xtheme_t* t = xtheme_current(disp);
     
-    // 绘制标题栏背景
-    xwin_fill_rect(win, 0, 0, win->width, TITLE_BAR_HEIGHT, bg_color);
+    u32 bg_top = win->focused ? t->titlebar_bg_top : t->titlebar_inactive;
+    u32 bg_bottom = win->focused ? t->titlebar_bg_bottom : t->titlebar_inactive;
+    u32 text_color = win->focused ? t->title_text_color : t->title_text_inactive;
+    u32 title_h = t->title_bar_height;
+    
+    // 绘制渐变标题栏背景
+    for (u32 y = 0; y < title_h; y++) {
+        u32 ratio = y * 256 / title_h;
+        u32 r = ((bg_top >> 16 & 0xFF) * (256 - ratio) + (bg_bottom >> 16 & 0xFF) * ratio) >> 8;
+        u32 g = ((bg_top >> 8 & 0xFF) * (256 - ratio) + (bg_bottom >> 8 & 0xFF) * ratio) >> 8;
+        u32 b = ((bg_top & 0xFF) * (256 - ratio) + (bg_bottom & 0xFF) * ratio) >> 8;
+        u32 color = 0xFF000000 | (r << 16) | (g << 8) | b;
+        xwin_fill_rect(win, 0, y, win->width, 1, color);
+    }
     
     // 绘制标题文字
     if (win->title[0] != '\0') {
-        xwin_draw_text(win, BORDER_WIDTH + 4, 4, win->title, XCOLOR_WHITE);
+        i32 text_y = (title_h - 16) / 2;  // 垂直居中
+        xwin_draw_text(win, 12, text_y, win->title, text_color);
     }
     
-    // 绘制控制按钮
-    u32 btn_x = win->width - BUTTON_SIZE - 4;
+    // 绘制窗口控制按钮
+    u32 btn_size = t->btn_size;
+    u32 btn_gap = t->btn_gap;
+    u32 btn_y = (title_h - btn_size) / 2;
+    u32 btn_x = win->width - btn_size - btn_gap;
     
-    // 最小化按钮
-    xwin_draw_rect(win, btn_x - BUTTON_SIZE * 2 - 4, 
-                   (TITLE_BAR_HEIGHT - BUTTON_SIZE) / 2, 
-                   BUTTON_SIZE, BUTTON_SIZE, XCOLOR_LIGHT_GRAY);
-    xwin_draw_line(win, btn_x - BUTTON_SIZE * 2 - 4 + 2, 
-                   TITLE_BAR_HEIGHT / 2, 
-                   btn_x - BUTTON_SIZE - 6 - 2, 
-                   TITLE_BAR_HEIGHT / 2, XCOLOR_WHITE);
-    
-    // 最大化按钮
-    xwin_draw_rect(win, btn_x - BUTTON_SIZE - 2, 
-                   (TITLE_BAR_HEIGHT - BUTTON_SIZE) / 2, 
-                   BUTTON_SIZE, BUTTON_SIZE, XCOLOR_LIGHT_GRAY);
-    xwin_draw_rect(win, btn_x - BUTTON_SIZE - 2 + 2, 
-                   (TITLE_BAR_HEIGHT - BUTTON_SIZE) / 2 + 2, 
-                   BUTTON_SIZE - 4, BUTTON_SIZE - 4, XCOLOR_WHITE);
-    
-    // 关闭按钮
-    xwin_fill_rect(win, btn_x, 
-                   (TITLE_BAR_HEIGHT - BUTTON_SIZE) / 2, 
-                   BUTTON_SIZE, BUTTON_SIZE, 0xFFCC0000);
-    xwin_draw_line(win, btn_x + 2, 
-                   (TITLE_BAR_HEIGHT - BUTTON_SIZE) / 2 + 2, 
-                   btn_x + BUTTON_SIZE - 2, 
-                   (TITLE_BAR_HEIGHT - BUTTON_SIZE) / 2 + BUTTON_SIZE - 2, XCOLOR_WHITE);
-    xwin_draw_line(win, btn_x + BUTTON_SIZE - 2, 
-                   (TITLE_BAR_HEIGHT - BUTTON_SIZE) / 2 + 2, 
-                   btn_x + 2, 
-                   (TITLE_BAR_HEIGHT - BUTTON_SIZE) / 2 + BUTTON_SIZE - 2, XCOLOR_WHITE);
+    if (t->button_style == XBUTTON_STYLE_CIRCLE) {
+        // 圆形按钮
+        u32 radius = btn_size / 2;
+        
+        // 关闭按钮
+        xwin_fill_circle(win, btn_x + radius, btn_y + radius, radius, t->btn_close);
+        xwin_draw_line(win, btn_x + 3, btn_y + 3, btn_x + btn_size - 3, btn_y + btn_size - 3, t->btn_icon);
+        xwin_draw_line(win, btn_x + btn_size - 3, btn_y + 3, btn_x + 3, btn_y + btn_size - 3, t->btn_icon);
+        
+        // 最大化按钮
+        btn_x -= btn_size + btn_gap;
+        xwin_fill_circle(win, btn_x + radius, btn_y + radius, radius, t->btn_maximize);
+        xwin_draw_rect(win, btn_x + 3, btn_y + 3, btn_size - 6, btn_size - 6, t->btn_icon);
+        
+        // 最小化按钮
+        btn_x -= btn_size + btn_gap;
+        xwin_fill_circle(win, btn_x + radius, btn_y + radius, radius, t->btn_minimize);
+        xwin_draw_line(win, btn_x + 3, btn_y + radius, btn_x + btn_size - 3, btn_y + radius, t->btn_icon);
+    } else {
+        // 方形按钮
+        // 关闭按钮
+        xwin_fill_rect(win, btn_x, btn_y, btn_size, btn_size, t->btn_close);
+        xwin_draw_line(win, btn_x + 2, btn_y + 2, btn_x + btn_size - 2, btn_y + btn_size - 2, t->btn_icon);
+        xwin_draw_line(win, btn_x + btn_size - 2, btn_y + 2, btn_x + 2, btn_y + btn_size - 2, t->btn_icon);
+        
+        // 最大化按钮
+        btn_x -= btn_size + btn_gap;
+        xwin_fill_rect(win, btn_x, btn_y, btn_size, btn_size, t->btn_maximize);
+        xwin_draw_rect(win, btn_x + 2, btn_y + 2, btn_size - 4, btn_size - 4, t->btn_icon);
+        
+        // 最小化按钮
+        btn_x -= btn_size + btn_gap;
+        xwin_fill_rect(win, btn_x, btn_y, btn_size, btn_size, t->btn_minimize);
+        xwin_draw_line(win, btn_x + 2, btn_y + btn_size - 3, btn_x + btn_size - 2, btn_y + btn_size - 3, t->btn_icon);
+    }
 }
 
 void xwm_draw_border(xwindow_t* win) {
     if (win == NULL || win->flags & XWIN_FLAG_ROOT) return;
     
-    u32 border_color = win->focused ? g_wm.border_active_color : g_wm.border_color;
+    xdisplay_t* disp = g_wm.display;
+    xtheme_t* t = xtheme_current(disp);
+    u32 border_color = win->focused ? t->border_active : t->border_inactive;
+    u32 bw = t->border_width;
     
     // 绘制边框
-    xwin_draw_rect(win, 0, 0, win->width, win->height, border_color);
-    
-    // 加粗边框
-    xwin_draw_rect(win, 1, 1, win->width - 2, win->height - 2, border_color);
+    for (u32 i = 0; i < bw; i++) {
+        xwin_draw_rect(win, i, i, win->width - i * 2, win->height - i * 2, border_color);
+    }
 }
 
 void xwm_decorate_window(xwindow_t* win) {
@@ -105,21 +119,40 @@ void xwm_decorate_window(xwindow_t* win) {
 int xwm_handle_mouse_down(xdisplay_t* disp, xwindow_t* win, i32 x, i32 y, u32 button) {
     if (win == NULL || win->flags & XWIN_FLAG_ROOT) return 0;
     
-    log_info("xwm_handle_mouse_down: x=%d y=%d button=%d TITLE_BAR_HEIGHT=%d\n",
-              x, y, button, TITLE_BAR_HEIGHT);
+    xtheme_t* t = xtheme_current(disp);
+    u32 title_h = t->title_bar_height;
+    u32 btn_size = t->btn_size;
+    u32 btn_gap = t->btn_gap;
+    
+    log_info("xwm_handle_mouse_down: x=%d y=%d button=%d title_h=%d\n",
+              x, y, button, title_h);
     
     // 检查是否点击标题栏
-    if (y < TITLE_BAR_HEIGHT && button == XBUTTON_LEFT) {
+    if (y < (i32)title_h && button == XBUTTON_LEFT) {
         log_info("  -> in title bar, DRAGGABLE=%d\n", (win->flags & XWIN_FLAG_DRAGGABLE) ? 1 : 0);
         
-        // 检查按钮点击
-        u32 btn_x = win->width - BUTTON_SIZE - 4;
-        u32 btn_y = (TITLE_BAR_HEIGHT - BUTTON_SIZE) / 2;
+        // 按钮区域检测
+        u32 btn_y = (title_h - btn_size) / 2;
+        u32 btn_x = win->width - btn_size - btn_gap;
+        u32 btn_cx = btn_x + btn_size / 2;
+        u32 btn_cy = btn_y + btn_size / 2;
+        u32 btn_radius_sq = (btn_size * btn_size) / 4;
+        
+        // 根据按钮样式检测
+        int in_btn = 0;
+        if (t->button_style == XBUTTON_STYLE_CIRCLE) {
+            // 圆形按钮检测
+            i32 dx = x - (i32)btn_cx;
+            i32 dy = y - (i32)btn_cy;
+            in_btn = (dx * dx + dy * dy <= (i32)btn_radius_sq);
+        } else {
+            // 方形按钮检测
+            in_btn = (x >= (i32)btn_x && x < (i32)(btn_x + btn_size) &&
+                      y >= (i32)btn_y && y < (i32)(btn_y + btn_size));
+        }
         
         // 关闭按钮
-        if (x >= btn_x && x < btn_x + BUTTON_SIZE && 
-            y >= btn_y && y < btn_y + BUTTON_SIZE) {
-            // 发送关闭事件
+        if (in_btn) {
             xevent_t event;
             kmemset(&event, 0, sizeof(event));
             event.type = XEVENT_CLOSE;
@@ -128,26 +161,45 @@ int xwm_handle_mouse_down(xdisplay_t* disp, xwindow_t* win, i32 x, i32 y, u32 bu
             return 1;
         }
         
-        // 最小化按钮
-        if (x >= btn_x - BUTTON_SIZE * 2 - 4 && x < btn_x - BUTTON_SIZE - 4 && 
-            y >= btn_y && y < btn_y + BUTTON_SIZE) {
-            xwin_show(disp, win, 0);
+        // 最大化按钮
+        btn_cx -= btn_size + btn_gap;
+        btn_x -= btn_size + btn_gap;
+        if (t->button_style == XBUTTON_STYLE_CIRCLE) {
+            i32 dx = x - (i32)btn_cx;
+            i32 dy = y - (i32)btn_cy;
+            in_btn = (dx * dx + dy * dy <= (i32)btn_radius_sq);
+        } else {
+            in_btn = (x >= (i32)btn_x && x < (i32)(btn_x + btn_size) &&
+                      y >= (i32)btn_y && y < (i32)(btn_y + btn_size));
+        }
+        if (in_btn) {
+            // TODO: 实现最大化
             return 1;
         }
         
-        // 最大化按钮
-        if (x >= btn_x - BUTTON_SIZE - 2 && x < btn_x - 2 && 
-            y >= btn_y && y < btn_y + BUTTON_SIZE) {
-            // TODO: 实现最大化
+        // 最小化按钮
+        btn_cx -= btn_size + btn_gap;
+        btn_x -= btn_size + btn_gap;
+        if (t->button_style == XBUTTON_STYLE_CIRCLE) {
+            i32 dx = x - (i32)btn_cx;
+            i32 dy = y - (i32)btn_cy;
+            in_btn = (dx * dx + dy * dy <= (i32)btn_radius_sq);
+        } else {
+            in_btn = (x >= (i32)btn_x && x < (i32)(btn_x + btn_size) &&
+                      y >= (i32)btn_y && y < (i32)(btn_y + btn_size));
+        }
+        if (in_btn) {
+            xwin_show(disp, win, 0);
             return 1;
         }
         
         // 标题栏拖拽
         if (win->flags & XWIN_FLAG_DRAGGABLE) {
+            if (disp->drag_window != NULL && disp->drag_window != win) {
+                log_info("  -> ending previous drag on %x\n", disp->drag_window);
+            }
             disp->drag_window = win;
-            // drag_offset 保存的是：鼠标点击位置相对于窗口左上角的偏移
-            // 这样：新窗口位置 = 鼠标屏幕坐标 - drag_offset
-            disp->drag_offset_x = x;  // 窗口内坐标就是相对于左上角的偏移
+            disp->drag_offset_x = x;
             disp->drag_offset_y = y;
             log_info("  -> drag started! drag_window=%x offset=(%d,%d)\n",
                      disp->drag_window, disp->drag_offset_x, disp->drag_offset_y);
@@ -180,10 +232,7 @@ xwindow_t* xwm_create_standard_window(xdisplay_t* disp,
                                         XWIN_FLAG_FOCUSABLE);
     if (win == NULL) return NULL;
     
-    // 设置标题
     xwin_set_title(win, title);
-    
-    // 设置背景色
     xwin_set_bg_color(win, XCOLOR_WHITE);
     
     return win;
@@ -195,9 +244,19 @@ void xwm_draw_desktop(xdisplay_t* disp) {
     if (disp == NULL || disp->root_window == NULL) return;
     
     xwindow_t* desktop = disp->root_window;
+    xtheme_t* t = xtheme_current(disp);
     
-    // 绘制桌面背景
-    xwin_clear_color(desktop, XCOLOR_DARK_GRAY);
+    // 使用主题的桌面背景
+    u32 bg_top = t->desktop_bg_top;
+    u32 bg_bottom = t->desktop_bg_bottom;
     
-    // 可以在这里绘制桌面图标等
+    // 绘制渐变背景
+    for (u32 y = 0; y < desktop->height; y++) {
+        u32 ratio = y * 256 / desktop->height;
+        u32 r = ((bg_top >> 16 & 0xFF) * (256 - ratio) + (bg_bottom >> 16 & 0xFF) * ratio) >> 8;
+        u32 g = ((bg_top >> 8 & 0xFF) * (256 - ratio) + (bg_bottom >> 8 & 0xFF) * ratio) >> 8;
+        u32 b = ((bg_top & 0xFF) * (256 - ratio) + (bg_bottom & 0xFF) * ratio) >> 8;
+        u32 color = 0xFF000000 | (r << 16) | (g << 8) | b;
+        xwin_fill_rect(desktop, 0, y, desktop->width, 1, color);
+    }
 }
