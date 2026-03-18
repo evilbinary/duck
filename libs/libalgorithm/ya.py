@@ -12,7 +12,8 @@ add_files(
     'circle_queue.c',
     'pool.c',
     'queue_pool.c',
-    'buffer.c'
+    'buffer.c',
+    'ring_queue.c',
     )
 
 add_includedirs(
