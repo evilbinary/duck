@@ -400,8 +400,9 @@ void kpool_init() {
 int kpool_put(void* e) { return queue_pool_put(kernel_pool, e); }
 
 void* kpool_poll() {
-  void* e = queue_pool_poll(kernel_pool);
-  if (e == NULL) {
+  void* e = NULL;
+  int ret = queue_pool_poll(kernel_pool, &e);
+  if (ret != 0 || e == NULL) {
     log_error("kpool poll is null\n");
   }
   return e;
