@@ -1,32 +1,39 @@
+// queue_pool.c - 兼容层实现
+// 提供 queue_pool API，底层调用 ring_queue 实现
 #include "queue_pool.h"
 
-queue_pool_t* queue_pool_create_align(u32 size, u32 bytes, u32 align) {
-  queue_pool_t* q = fn_malloc(sizeof(queue_pool_t));
-  q->capacity = size;
-  q->pool = pool_create(size * (bytes + align));
-  q->bytes = bytes;
-  q->queue = cqueue_create(size, CQUEUE_RESIZE);
-  for (int i = 0; i < size; i++) {
-    void* e = pool_alloc(q->pool, bytes, align);
-    if (e != NULL) {
-      cqueue_put(q->queue, e);
-    } else {
-      kprintf("pool alloc null\n");
-    }
-  }
-  return q;
+ring_queue_t* queue_pool_create(u32 capacity, u32 elem_size) {
+    return ring_queue_create(capacity, elem_size);
 }
 
-queue_pool_t* queue_pool_create(u32 size, u32 bytes) {
-  return queue_pool_create_align(size, bytes, 0);
+ring_queue_t* queue_pool_create_align(u32 capacity, u32 elem_size, u32 align) {
+    return ring_queue_create_align(capacity, elem_size, align);
 }
 
-int queue_pool_put(queue_pool_t* q, void* e) { return cqueue_put(q->queue, e); }
+int queue_pool_put(ring_queue_t* q, void* elem) {
+    return ring_queue_put(q, elem);
+}
 
-void* queue_pool_poll(queue_pool_t* q) { return cqueue_poll(q->queue); }
+int queue_pool_poll(ring_queue_t* q, void* elem) {
+    return ring_queue_poll(q, elem);
+}
 
-void queue_pool_destroy(queue_pool_t* q) {
-  cqueue_destroy(q->queue);
-  pool_destroy(q->pool);
-  fn_free(q);
+void queue_pool_destroy(ring_queue_t* q) {
+    ring_queue_destroy(q);
+}
+
+u32 queue_pool_count(ring_queue_t* q) {
+    return ring_queue_count(q);
+}
+
+u32 queue_pool_is_empty(ring_queue_t* q) {
+    return ring_queue_is_empty(q);
+}
+
+u32 queue_pool_is_full(ring_queue_t* q) {
+    return ring_queue_is_full(q);
+}
+
+void queue_pool_clear(ring_queue_t* q) {
+    ring_queue_clear(q);
 }

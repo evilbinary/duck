@@ -22,6 +22,9 @@ typedef struct ring_queue {
 // 创建环形队列
 ring_queue_t* ring_queue_create(u32 capacity, u32 elem_size);
 
+// 创建带对齐的环形队列
+ring_queue_t* ring_queue_create_align(u32 capacity, u32 elem_size, u32 align);
+
 // 销毁队列
 void ring_queue_destroy(ring_queue_t* q);
 

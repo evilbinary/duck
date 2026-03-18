@@ -1,23 +1,33 @@
 #include "ring_queue.h"
 #include "kernel/memory.h"
 
-ring_queue_t* ring_queue_create(u32 capacity, u32 elem_size) {
+ring_queue_t* ring_queue_create_align(u32 capacity, u32 elem_size, u32 align) {
     ring_queue_t* q = kmalloc(sizeof(ring_queue_t), KERNEL_TYPE);
     if (q == NULL) return NULL;
-    
-    q->buffer = kmalloc(capacity * elem_size, KERNEL_TYPE);
+
+    // 对齐分配（如果需要）
+    u32 alloc_size = capacity * elem_size;
+    if (align > 0) {
+        alloc_size += align;
+    }
+
+    q->buffer = kmalloc(alloc_size, KERNEL_TYPE);
     if (q->buffer == NULL) {
         kfree(q);
         return NULL;
     }
-    
+
     q->capacity = capacity;
     q->elem_size = elem_size;
     q->head = 0;
     q->tail = 0;
     q->count = 0;
-    
+
     return q;
+}
+
+ring_queue_t* ring_queue_create(u32 capacity, u32 elem_size) {
+    return ring_queue_create_align(capacity, elem_size, 0);
 }
 
 void ring_queue_destroy(ring_queue_t* q) {
