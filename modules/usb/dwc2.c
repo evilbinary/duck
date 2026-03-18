@@ -338,7 +338,7 @@ static void dwc2_config_channel(int ch_num) {
 #define URB_NAK  (-2)  // NAK - 无数据可读
 
 static int dwc2_wait_channel(int ch_num, u32* actual_len) {
-    u32 timeout = 50000;  // 降低超时时间，中断传输应该快速响应
+    u32 timeout = 500;  // 中断传输应该快速响应
     u32 requested_len = channels[ch_num].mps;  // 从通道获取请求长度，后面会修正
     
     while (timeout > 0) {

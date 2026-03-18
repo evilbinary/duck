@@ -116,8 +116,10 @@ static void usb_mouse_push_event(u8 buttons, i8 dx, i8 dy, i8 wheel) {
 static size_t usb_mouse_read(device_t* dev, void* buf, size_t len) {
     if (buf == NULL || len < 3) return 0;
     
-    // 先轮询 USB 设备获取新数据
-    usb_mouse_poll();
+    // 只在队列为空时才轮询 USB 设备
+    if (event_tail == event_head) {
+        usb_mouse_poll();
+    }
     
     if (event_tail == event_head) return 0;  // 无事件
 

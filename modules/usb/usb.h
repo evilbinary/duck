@@ -287,9 +287,23 @@ int hcd_unlink_urb(urb_t* urb);
 int hcd_get_frame_number(void);
 void hcd_register_ops(hcd_ops_t* ops);
 
-// USB 调试
+// USB 调试级别
+// 0 = 关闭所有调试, 1 = 只显示错误, 2 = 显示信息, 3 = 显示详细调试
+#define USB_DEBUG_LEVEL 1
+
+// USB 调试宏
+#if USB_DEBUG_LEVEL >= 3
 #define USB_DEBUG(fmt, ...) kprintf("[USB] " fmt, ##__VA_ARGS__)
+#else
+#define USB_DEBUG(fmt, ...)
+#endif
+
+#if USB_DEBUG_LEVEL >= 2
 #define USB_INFO(fmt, ...) kprintf("[USB] " fmt, ##__VA_ARGS__)
+#else
+#define USB_INFO(fmt, ...)
+#endif
+
 #define USB_ERROR(fmt, ...) kprintf("[USB ERROR] " fmt, ##__VA_ARGS__)
 #define USB_WARN(fmt, ...) kprintf("[USB WARN] " fmt, ##__VA_ARGS__)
 
