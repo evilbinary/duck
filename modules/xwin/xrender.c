@@ -35,6 +35,7 @@ void xwin_render(xdisplay_t* disp) {
     u32 t0, t1;
     static u32 t_clear = 0, t_composite = 0, t_cursor = 0, t_flip = 0;
     static u32 frame_count = 0;
+    static u32 skip_count = 0;
     static int printed_info = 0;
     
     // 只打印一次分辨率信息
@@ -45,11 +46,46 @@ void xwin_render(xdisplay_t* disp) {
         printed_info = 1;
     }
     
-    // 清空后备缓冲
-    t0 = schedule_get_ticks();
-    kmemset(disp->back_buffer, 0, disp->buffer_size);
-    t1 = schedule_get_ticks();
-    t_clear += (t1 - t0);
+    // 检查是否有窗口需要更新
+    int need_render = 0;
+    for (u32 i = 0; i < disp->window_count; i++) {
+        xwindow_t* win = disp->windows[i];
+        if (win != NULL && win->visible && win->damaged) {
+            need_render = 1;
+            break;
+        }
+    }
+    
+    // 鼠标移动也需要更新
+    static i32 last_mouse_x = -1, last_mouse_y = -1;
+    if (disp->mouse_x != last_mouse_x || disp->mouse_y != last_mouse_y) {
+        need_render = 1;
+        last_mouse_x = disp->mouse_x;
+        last_mouse_y = disp->mouse_y;
+    }
+    
+    // 没有变化则跳过渲染
+    if (!need_render) {
+        skip_count++;
+        return;
+    }
+    
+    // 清空后备缓冲 - 只有在没有全屏根窗口时才需要
+    // 根窗口会覆盖整个屏幕，所以可以跳过清空
+    int need_clear = 1;
+    if (disp->root_window != NULL && 
+        disp->root_window->visible &&
+        disp->root_window->width == disp->vga->width &&
+        disp->root_window->height == disp->vga->height) {
+        need_clear = 0;
+    }
+    
+    if (need_clear) {
+        t0 = schedule_get_ticks();
+        kmemset(disp->back_buffer, 0, disp->buffer_size);
+        t1 = schedule_get_ticks();
+        t_clear += (t1 - t0);
+    }
     
     // 合成所有可见窗口 (按zorder从低到高)
     t0 = schedule_get_ticks();
@@ -75,10 +111,11 @@ void xwin_render(xdisplay_t* disp) {
     
     // 每 60 帧打印一次
     if (frame_count >= 60) {
-        log_info("Render: clear=%d composite=%d cursor=%d flip=%d (ticks)\n",
-                 t_clear, t_composite, t_cursor, t_flip);
+        log_info("Render: clear=%d composite=%d cursor=%d flip=%d (skipped=%d)\n",
+                 t_clear, t_composite, t_cursor, t_flip, skip_count);
         t_clear = t_composite = t_cursor = t_flip = 0;
         frame_count = 0;
+        skip_count = 0;
     }
 }
 
@@ -96,7 +133,7 @@ void xwin_flip_buffer(xdisplay_t* disp) {
     if (disp->vga->flip_buffer != NULL) {
         disp->vga->flip_buffer(disp->vga, 0);
     } else if (disp->vga->frambuffer != NULL) {
-        // 直接写入framebuffer，不需要中间的screen_buffer
+        // 直接写入framebuffer
         kmemcpy(disp->vga->frambuffer, disp->back_buffer, disp->buffer_size);
     }
 }
@@ -176,35 +213,34 @@ void xwin_composite_window(xdisplay_t* disp, xwindow_t* win) {
     
     // 如果窗口有边框，绘制边框
     if (win->flags & XWIN_FLAG_BORDERED && win != disp->root_window) {
-        // 绘制边框
         u32 border_color = win->focused ? 0xFF4A90D9 : 0xFF808080;
         i32 bw = 2;  // 边框宽度
         
+        // 优化：直接 32 位填充边框行
         // 上边框
         for (i32 y = clip_sy; y < clip_sy + bw && y < clip_ey; y++) {
-            for (i32 x = clip_sx; x < clip_ex; x++) {
-                dst[y * screen_w + x] = border_color;
+            u32* row = dst + y * screen_w + clip_sx;
+            for (i32 x = 0; x < copy_width; x++) {
+                row[x] = border_color;
             }
         }
         
         // 下边框
         for (i32 y = clip_ey - bw; y < clip_ey; y++) {
-            for (i32 x = clip_sx; x < clip_ex; x++) {
-                dst[y * screen_w + x] = border_color;
+            u32* row = dst + y * screen_w + clip_sx;
+            for (i32 x = 0; x < copy_width; x++) {
+                row[x] = border_color;
             }
         }
         
-        // 左边框
-        for (i32 y = clip_sy; y < clip_ey; y++) {
+        // 左右边框
+        for (i32 y = clip_sy + bw; y < clip_ey - bw; y++) {
+            u32* row = dst + y * screen_w;
             for (i32 x = clip_sx; x < clip_sx + bw && x < clip_ex; x++) {
-                dst[y * screen_w + x] = border_color;
+                row[x] = border_color;
             }
-        }
-        
-        // 右边框
-        for (i32 y = clip_sy; y < clip_ey; y++) {
             for (i32 x = clip_ex - bw; x < clip_ex; x++) {
-                dst[y * screen_w + x] = border_color;
+                row[x] = border_color;
             }
         }
     }
