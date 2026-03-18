@@ -334,8 +334,11 @@ static void dwc2_config_channel(int ch_num) {
 #define DWC2_PID_SETUP  (3 << 29)
 
 // 等待通道传输完成
+// 返回值: URB_OK, URB_NAK (无数据), URB_STALL, URB_ERROR
+#define URB_NAK  (-2)  // NAK - 无数据可读
+
 static int dwc2_wait_channel(int ch_num, u32* actual_len) {
-    u32 timeout = 1000000;
+    u32 timeout = 50000;  // 降低超时时间，中断传输应该快速响应
     u32 requested_len = channels[ch_num].mps;  // 从通道获取请求长度，后面会修正
     
     while (timeout > 0) {
@@ -362,7 +365,7 @@ static int dwc2_wait_channel(int ch_num, u32* actual_len) {
                 return URB_ERROR;
             }
             if (hcint & DWC2_HCINT_NAK) {
-                return URB_ERROR;
+                return URB_NAK;  // NAK - 设备无数据
             }
             
             // CHHLTD 但没有其他标志 - 可能是成功
@@ -567,6 +570,10 @@ static int dwc2_start_transfer(urb_t* urb, int ch_num) {
     if (ret == URB_OK) {
         // actual_len 是剩余长度，需要计算实际传输长度
         urb->actual_length = urb->transfer_length - actual_len;
+    } else if (ret == URB_NAK) {
+        // NAK - 设备无数据，返回 0
+        urb->status = URB_OK;
+        urb->actual_length = 0;
     }
     
     // 释放通道

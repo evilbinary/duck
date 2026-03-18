@@ -151,8 +151,8 @@ void xinput_ps2_mouse_data(u8* data) {
     if (data[0] & 0x10) dx -= 256;
     if (data[0] & 0x20) dy -= 256;
     
-    // Y 轴反向
-    dy = -dy;
+    // Y 轴不反转 (usb_mouse.c 已经处理了方向)
+    // dy = -dy;
     
     // 鼠标移动
     xinput_mouse_move(dx, dy);

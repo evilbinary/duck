@@ -108,8 +108,8 @@ static void usb_mouse_push_event(u8 buttons, i8 dx, i8 dy, i8 wheel) {
     event_queue[event_head].wheel = wheel;
     event_head = next_head;
 
-    USB_DEBUG("USB Mouse: buttons=%02x dx=%d dy=%d wheel=%d\n",
-              buttons, dx, dy, wheel);
+    // USB_DEBUG("USB Mouse: buttons=%02x dx=%d dy=%d wheel=%d\n",
+            //   buttons, dx, dy, wheel);
 }
 
 // 设备读取函数 (供 xinput 轮询)
@@ -138,12 +138,10 @@ static size_t usb_mouse_read(device_t* dev, void* buf, size_t len) {
         data[0] |= 0x10;  // X 符号位
     }
 
-    // Y 轴 - 需要反转方向
-    // USB dy < 0 (向上) → PS/2 dy > 0 (不设置符号位)
-    // USB dy > 0 (向下) → PS/2 dy < 0 (设置符号位，值为 256-dy)
-    i8 ps2_dy = -evt->dy;  // 反转 Y 轴
-    data[2] = (u8)ps2_dy;
-    if (ps2_dy < 0) {
+    // Y 轴 - 不在这里反转，让 xinput.c 处理
+    // xinput.c 会做 dy = -dy 来反转 Y 轴
+    data[2] = (u8)evt->dy;
+    if (evt->dy < 0) {
         data[0] |= 0x20;  // Y 符号位
     }
 
@@ -331,9 +329,9 @@ void usb_mouse_poll(void) {
         
         if (ret > 0) {
             // 打印原始数据
-            USB_DEBUG("Raw mouse data: %02x %02x %02x %02x (ret=%d)\n",
-                     mouse->report_buffer[0], mouse->report_buffer[1],
-                     mouse->report_buffer[2], mouse->report_buffer[3], ret);
+            // USB_DEBUG("Raw mouse data: %02x %02x %02x %02x (ret=%d)\n",
+            //          mouse->report_buffer[0], mouse->report_buffer[1],
+            //          mouse->report_buffer[2], mouse->report_buffer[3], ret);
             usb_mouse_event_handler(mouse->report_buffer, ret);
         }
         
