@@ -6,6 +6,7 @@
 #include "kernel/kernel.h"
 #include "loader.h"
 #include "posix/sysfn.h"
+#include "kernel/elf.h"
 
 // #define LOAD_ELF_DEBUG 1
 
@@ -30,6 +31,11 @@ static void print_hex(u8 *addr, u32 size) {
     }
   }
   kprintf("\n\r");
+}
+
+// Check if ELF is 64-bit
+static int is_elf64(unsigned char* e_ident) {
+  return e_ident[EI_CLASS] == ELFCLASS64;
 }
 
 int load_elf(Elf32_Ehdr* elf_header, u32 fd, void* arg, u32 base) {
@@ -169,6 +175,127 @@ int load_elf(Elf32_Ehdr* elf_header, u32 fd, void* arg, u32 base) {
   return 0;
 }
 
+// ELF64 loader for aarch64
+int load_elf64(Elf64_Ehdr* elf_header, u32 fd, void* arg, u64 base) {
+#ifdef LOAD_ELF_DEBUG
+  int p = syscall0(SYS_GETPID);
+  log_debug("load elf64 fd %d tid %d\n", fd, p);
+#endif
+  u64 offset = elf_header->e_phoff;
+  if (elf_header->e_phnum > MAX_PHDR) {
+    log_error("phnum %d > MAX_PHDR\n", elf_header->e_phnum);
+    return -1;
+  }
+  Elf64_Phdr phdr[MAX_PHDR];
+  kmemset(phdr, 0, MAX_PHDR * sizeof(Elf64_Phdr));
+  char* interp_buf[MAX_INTERP_PATH];
+  char* interp_name = NULL;
+
+  syscall3(SYS_SEEK, fd, offset, 0);
+  u32 nbytes =
+      syscall3(SYS_READ, fd, phdr, sizeof(Elf64_Phdr) * elf_header->e_phnum);
+
+  u64 entry = elf_header->e_entry;
+  u64 entry_txt = 0;
+  for (int i = 0; i < elf_header->e_phnum; i++) {
+#ifdef LOAD_ELF_DEBUG
+    log_debug("ptype:%d addr:%lx\n", phdr[i].p_type, phdr[i].p_paddr);
+#endif
+
+    switch (phdr[i].p_type) {
+      case PT_NULL:
+        log_debug(" %s %lx %lx %lx %s %lx %lx \r\n", "NULL", phdr[i].p_offset,
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
+        break;
+      case PT_LOAD: {
+        if ((phdr[i].p_flags & PF_X) == PF_X) {
+#ifdef LOAD_ELF_DEBUG
+          log_debug(" %s %lx %lx %lx %s %lx %lx \r\n", "LOAD X", phdr[i].p_offset,
+                    phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                    phdr[i].p_memsz);
+#endif
+          u64 start = phdr[i].p_offset;
+          char* vaddr = (char*)(phdr[i].p_vaddr + base);
+          syscall3(SYS_SEEK, fd, start, 0);
+          entry_txt = (u64)vaddr;
+          u32 ret = syscall3(SYS_READ, fd, vaddr, phdr[i].p_filesz);
+        } else {
+#ifdef LOAD_ELF_DEBUG
+          log_debug(" %s %lx %lx %lx %s %lx %lx \r\n", "LOAD RW", phdr[i].p_offset,
+                    phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                    phdr[i].p_memsz);
+#endif
+          u64 start = phdr[i].p_offset;
+          char* vaddr = (char*)(phdr[i].p_vaddr + base);
+          syscall3(SYS_SEEK, fd, start, 0);
+          u32 ret = syscall3(SYS_READ, fd, vaddr, phdr[i].p_filesz);
+          log_debug("content =%x\n", *((int*)vaddr));
+        }
+      } break;
+      case PT_DYNAMIC:
+        log_debug(" %s %lx %lx %lx %s %lx %lx \r\n", "DYNAMIC", phdr[i].p_offset,
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
+        break;
+      case PT_INTERP:
+        log_debug(" %s %lx %lx %lx %s %lx %lx \r\n", "INTERP", phdr[i].p_offset,
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
+        u64 start = phdr[i].p_offset;
+        syscall3(SYS_SEEK, fd, start, 0);
+        u32 ret = syscall3(SYS_READ, fd, interp_buf, phdr[i].p_filesz);
+        interp_name = interp_buf;
+        break;
+      case PT_NOTE:
+        log_debug(" %s %lx %lx %lx %s %lx %lx \r\n", "NOTE", phdr[i].p_offset,
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
+        break;
+      case PT_SHLIB:
+        log_debug(" %s %lx %lx %lx %s %lx %lx \r\n", "SHLIB", phdr[i].p_offset,
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
+        break;
+      case PT_PHDR:
+        log_debug(" %s %lx %lx %lx %s %lx %lx \r\n", "PHDR", phdr[i].p_offset,
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
+        break;
+      case PT_TLS:
+        log_debug(" %s %lx %lx %lx %s %lx %lx ", "TLS", phdr[i].p_offset,
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
+        break;
+      case PT_GNU_EH_FRAME:
+        log_debug(" %s %lx %lx %lx %s %lx %lx \r\n", "GNU_EH_FRAME",
+                  phdr[i].p_offset, phdr[i].p_vaddr, phdr[i].p_paddr, "",
+                  phdr[i].p_filesz, phdr[i].p_memsz);
+        break;
+      case PT_GNU_RELRO:
+        log_debug(" %s %lx %lx %lx %s %lx %lx \r\n", "GNU_RELRO", phdr[i].p_offset,
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
+        break;
+      case PT_GNU_STACK:
+#ifdef LOAD_ELF_DEBUG
+        log_debug(" %s %lx %lx %lx %s %lx %lx \r\n", "GNU_STACK", phdr[i].p_offset,
+                  phdr[i].p_vaddr, phdr[i].p_paddr, "", phdr[i].p_filesz,
+                  phdr[i].p_memsz);
+#endif
+        break;
+      default:
+        break;
+    }
+  }
+  if (interp_name != NULL) {
+    log_debug("interp name %s\n", interp_name);
+    // load_elf_interp(interp_name, arg);  // TODO: 64-bit interp
+  }
+
+  return 0;
+}
+
 void auxv_set(Elf32_auxv_t* auxv, int a_type, int a_val) {
   auxv[a_type].a_type = a_type;
   auxv[a_type].a_un.a_val = a_val;
@@ -200,7 +327,10 @@ void build_env(char** env) {
 
 void run_elf_thread(long* p) {
   log_debug("run load elf\n");
-  Elf32_Ehdr elf;
+  union {
+    Elf32_Ehdr elf32;
+    Elf64_Ehdr elf64;
+  } elf;
   int ret = 0;
   if (p == NULL) {
     log_error("get current thread args error\n");
@@ -210,7 +340,7 @@ void run_elf_thread(long* p) {
   int argc = p[0];
   char** argv = (void*)(p + 1);
   char** envp = argv + argc + 1;
-  char* filename = p[1];
+  char* filename = (char*)p[1];
 
   while (*envp++ != NULL)
     ;
@@ -237,13 +367,22 @@ void run_elf_thread(long* p) {
   }
   log_debug("run load elf1 fd %d\n",fd);
 
-  u32 nbytes = syscall3(SYS_READ, fd, &elf, sizeof(Elf32_Ehdr));
+  // Read enough for both ELF32 and ELF64 headers
+  u32 nbytes = syscall3(SYS_READ, fd, &elf, sizeof(elf));
 
-  Elf32_Ehdr* elf_header = (Elf32_Ehdr*)&elf;
   entry_fn entry = NULL;
-  if (elf_header->e_ident[0] == ELFMAG0 || elf_header->e_ident[1] == ELFMAG1) {
-    entry = elf_header->e_entry;
-    load_elf(elf_header, fd, p, 0);
+  if (elf.elf32.e_ident[0] == ELFMAG0 || elf.elf32.e_ident[1] == ELFMAG1) {
+    if (is_elf64(elf.elf32.e_ident)) {
+      // ELF64 (aarch64)
+      log_debug("loading ELF64 binary\n");
+      entry = (entry_fn)elf.elf64.e_entry;
+      load_elf64(&elf.elf64, fd, p, 0);
+    } else {
+      // ELF32 (arm)
+      log_debug("loading ELF32 binary\n");
+      entry = (entry_fn)elf.elf32.e_entry;
+      load_elf(&elf.elf32, fd, p, 0);
+    }
   } else {
     log_error("load faild not elf %s\n", filename);
     entry = NULL;
