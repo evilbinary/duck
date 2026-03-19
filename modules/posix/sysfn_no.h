@@ -125,7 +125,7 @@ enum {
   SYS_OPEN = 56,
   SYS_CLOSE = 57,
   SYS_IOCTL = 29,
-  SYS_FORK = 0x1000,  // Use clone instead
+  SYS_FORK = 2,  // ARM64: fork not available, use clone instead
   SYS_EXEC = 221,
 
   // Network syscalls (aarch64)
