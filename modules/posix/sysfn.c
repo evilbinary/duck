@@ -16,7 +16,7 @@
 
 static void* syscall_table[SYSCALL_NUMBER];
 
-#define log_debug  // 取消注释以禁用调试日志
+// #define log_debug  // 取消注释以禁用调试日志
 
 int sys_print(char* s) {
   thread_t* current = thread_current();
@@ -1347,6 +1347,7 @@ void sys_fn_init() {
   syscall_table[SYS_EXEC] = &sys_exec;
   syscall_table[SYS_TEST] = &sys_test;
   syscall_table[SYS_EXIT] = &sys_exit;
+  syscall_table[SYS_STOP] = &sys_exit;
   syscall_table[SYS_MAP] = &sys_vmap;
   syscall_table[SYS_UMAP] = &sys_vumap;
   syscall_table[SYS_SEEK] = &sys_seek;
