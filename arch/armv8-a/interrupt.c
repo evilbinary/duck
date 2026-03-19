@@ -122,16 +122,14 @@ void exception_current_fiq(void) {
 
 // ============================================================
 // Lower EL synchronous (user SVC / user page fault)
-// User syscalls go through schedule() which may call context_switch,
-// replacing ic contents with next thread's registers.
-// interrupt_exit_ret() does "mov sp, x0" first so SP_EL1 is reset
-// to the ic base before popping — identical to armv7-a irq_handler.
+// sync_handler returns the ic pointer, which may have been updated
+// by sys_exec. Use interrupt_exit_ret() to restore from that pointer.
 // ============================================================
 INTERRUPT_SERVICE
 void exception_lower_sync(void) {
   interrupt_entering_code(EX_SYS_CALL, 0, 0);
   interrupt_process(sync_handler);
-  interrupt_exit_ret_safe();
+  interrupt_exit_ret();
 }
 
 // ============================================================
@@ -188,12 +186,10 @@ void* sync_handler(interrupt_context_t* ic) {
       break;
   }
 
-  void* ret = interrupt_default_handler(ic);
-  // interrupt_default_handler / exception_process may return NULL when no
-  // handler is registered.  interrupt_exit_ret() does "mov sp, x0" so a
-  // NULL return would set SP_EL1 = 0 and corrupt the kernel stack on the
-  // next exception.  Always return a valid ic pointer.
-  return (ret != NULL) ? ret : ic;
+  interrupt_default_handler(ic);
+  // Always return the ic pointer.  sys_exec sets ic->x0 = args and ic->pc = entry,
+  // so the return value is already in the right place for eret.
+  return ic;
 }
 
 // ============================================================
