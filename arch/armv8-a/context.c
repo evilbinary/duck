@@ -155,13 +155,7 @@ int context_clone(context_t* des, context_t* src) {
   return 0;
 }
 
-// context_switch: save current ic to current->ksp (fixed slot), load next's.
-// ARM64 kstack is large; we must NOT use ++/-- pointer arithmetic because the
-// slots adjacent to ic are inside the thread's runtime stack and will be
-// overwritten by normal function calls.  Instead each thread has exactly one
-// fixed save slot (the ic pointer set by context_init) and we copy in/out of
-// that fixed slot directly, returning the original ic address so
-// interrupt_exit_ret()'s "mov sp, x0" sets SP_EL1 back to that fixed address.
+
 interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
                                     context_t* next) {
   if (ic == NULL || current == next) {
