@@ -69,7 +69,7 @@ void exception_process_error(thread_t *current, interrupt_context_t *ic,
 // Issues an exit syscall so the kernel can clean up.
 void exception_error_exit() {
   log_debug("exception error exit\n");
-  syscall1(1, 555);
+  syscall1(0, 555);
   for (;;) {
   }
 }
