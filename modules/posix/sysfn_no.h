@@ -168,7 +168,9 @@ enum {
   SYS_CHDIR = 49,
   SYS_FCHDIR = 50,
   SYS_SEEK = 62,
-  SYS_LLSEEK = 62,
+  // ARM64 does not have _llseek; lseek returns 64-bit offset directly.
+  // Map _llseek to lseek for compatibility (musl may still call it).
+  SYS_LLSEEK = 62,  // Same as SYS_SEEK on ARM64
   SYS_DUP = 23,
   SYS_DUP2 = 23,      // ARM64: dup2 not available, map to dup (or use dup3=24)
   SYS_DUP3 = 24,      // ARM64: use dup3 instead of dup2

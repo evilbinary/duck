@@ -97,7 +97,7 @@ INTERRUPT_SERVICE
 void exception_current_sync(void) {
   interrupt_entering_code(EX_SYS_CALL, 0, 0);
   interrupt_process(sync_handler);
-  interrupt_exit_ret_safe();
+  interrupt_exit_ret();
 }
 
 // ============================================================
@@ -122,14 +122,16 @@ void exception_current_fiq(void) {
 
 // ============================================================
 // Lower EL synchronous (user SVC / user page fault)
-// sync_handler returns the ic pointer, which may have been updated
-// by sys_exec. Use interrupt_exit_ret() to restore from that pointer.
+// Use interrupt_exit() like armv7-a: restore from current sp directly,
+// ignoring the return value. exception_process() already syncs ic to
+// current->ctx->ksp, and sys_exec updates ksp then copies back to ic,
+// so the stack context is correct.
 // ============================================================
 INTERRUPT_SERVICE
 void exception_lower_sync(void) {
   interrupt_entering_code(EX_SYS_CALL, 0, 0);
   interrupt_process(sync_handler);
-  interrupt_exit_ret();
+  interrupt_exit();
 }
 
 // ============================================================

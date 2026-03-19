@@ -1388,7 +1388,13 @@ void sys_fn_init() {
   syscall_table[SYS_CHDIR] = &sys_chdir;
   syscall_table[SYS_FCHDIR] = &sys_fchdir;
   syscall_table[SYS_CLONE] = &sys_clone;
+#if defined(ARM64)
+  // ARM64 uses lseek (62) which returns 64-bit offset directly.
+  // _llseek is an ARM32 legacy syscall, map it to lseek for compatibility.
+  syscall_table[SYS_LLSEEK] = &sys_seek;
+#else
   syscall_table[SYS_LLSEEK] = &sys_llseek;
+#endif
 
   syscall_table[SYS_UMASK] = &sys_umask;
 
