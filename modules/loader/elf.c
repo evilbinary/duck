@@ -303,7 +303,8 @@ void auxv_set(Elf32_auxv_t* auxv, int a_type, int a_val) {
 
 void build_env(char** env) {
   char** envp = env;
-  Elf32_auxv_t* auxv = envp;
+#if defined(ARM64)
+  Elf64_auxv_t* auxv = (Elf64_auxv_t*)envp;
 
   auxv_set(auxv++, AT_IGNORE, 0);
   auxv_set(auxv++, AT_EXECFD, 0);
@@ -323,6 +324,28 @@ void build_env(char** env) {
   auxv_set(auxv++, AT_HWCAP, 0);
   auxv_set(auxv++, AT_CLKTCK, 0);
   auxv_set(auxv++, AT_NULL, 0);
+#else
+  Elf32_auxv_t* auxv = (Elf32_auxv_t*)envp;
+
+  auxv_set(auxv++, AT_IGNORE, 0);
+  auxv_set(auxv++, AT_EXECFD, 0);
+  auxv_set(auxv++, AT_PHDR, 0);
+  auxv_set(auxv++, AT_PHENT, 0);
+  auxv_set(auxv++, AT_PHNUM, 0);
+  auxv_set(auxv++, AT_PAGESZ, PAGE_SIZE);
+  auxv_set(auxv++, AT_BASE, 0);
+  auxv_set(auxv++, AT_FLAGS, 0);
+  auxv_set(auxv++, AT_ENTRY, 0);
+  auxv_set(auxv++, AT_NOTELF, 0);
+  auxv_set(auxv++, AT_UID, 0);
+  auxv_set(auxv++, AT_EUID, 0);
+  auxv_set(auxv++, AT_GID, 0);
+  auxv_set(auxv++, AT_EGID, 0);
+  auxv_set(auxv++, AT_PLATFORM, 0);
+  auxv_set(auxv++, AT_HWCAP, 0);
+  auxv_set(auxv++, AT_CLKTCK, 0);
+  auxv_set(auxv++, AT_NULL, 0);
+#endif
 }
 
 void run_elf_thread(long* p) {
