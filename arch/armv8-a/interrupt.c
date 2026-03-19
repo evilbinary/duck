@@ -171,6 +171,7 @@ void* sync_handler(interrupt_context_t* ic) {
 
   switch (ec) {
     case ESR_ELx_EC_SVC64:
+    case ESR_ELx_EC_SVC32:
       ic->no = EX_SYS_CALL;
       break;
     case ESR_ELx_EC_DABT_LOW:
@@ -181,8 +182,11 @@ void* sync_handler(interrupt_context_t* ic) {
     case ESR_ELx_EC_IABT_CUR:
       ic->no = EX_PREF_ABORT;
       break;
+    case ESR_ELx_EC_UNKNOWN:
+      ic->no = EX_UNDEF;
+      break;
     default:
-      kprintf("sync: unknown ec=%x esr=%lx pc=%lx\n", ec, esr, ic->pc);
+      kprintf("sync: unknown ec=%x esr=%lx far=%lx pc=%lx\n", ec, esr, far, ic->pc);
       context_dump_interrupt(ic);
       cpu_halt();
       break;
