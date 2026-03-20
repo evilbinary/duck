@@ -218,6 +218,43 @@ static inline u64 read_current_el(void) {
     ret;                                         \
   })
 
+#define syscall5(syscall_num, arg1, arg2, arg3, arg4, arg5)  \
+  ({                                             \
+    u64 ret;                                     \
+    asm volatile(                                \
+        "mov x8, %1\n"                           \
+        "mov x0, %2\n"                           \
+        "mov x1, %3\n"                           \
+        "mov x2, %4\n"                           \
+        "mov x3, %5\n"                           \
+        "mov x4, %6\n"                           \
+        "svc 0\n"                                \
+        "mov %0, x0\n"                           \
+        : "=r"(ret)                              \
+        : "r"((u64)syscall_num), "r"((u64)arg1), "r"((u64)arg2), "r"((u64)arg3), "r"((u64)arg4), "r"((u64)arg5) \
+        : "x0", "x1", "x2", "x3", "x4", "x8", "memory"); \
+    ret;                                         \
+  })
+
+#define syscall6(syscall_num, arg1, arg2, arg3, arg4, arg5, arg6)  \
+  ({                                             \
+    u64 ret;                                     \
+    asm volatile(                                \
+        "mov x8, %1\n"                           \
+        "mov x0, %2\n"                           \
+        "mov x1, %3\n"                           \
+        "mov x2, %4\n"                           \
+        "mov x3, %5\n"                           \
+        "mov x4, %6\n"                           \
+        "mov x5, %7\n"                           \
+        "svc 0\n"                                \
+        "mov %0, x0\n"                           \
+        : "=r"(ret)                              \
+        : "r"((u64)syscall_num), "r"((u64)arg1), "r"((u64)arg2), "r"((u64)arg3), "r"((u64)arg4), "r"((u64)arg5), "r"((u64)arg6) \
+        : "x0", "x1", "x2", "x3", "x4", "x5", "x8", "memory"); \
+    ret;                                         \
+  })
+
 // CPU functions
 u32 cpu_get_id(void);
 int cpu_get_number(void);
