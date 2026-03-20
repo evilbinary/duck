@@ -148,4 +148,24 @@ typedef u32 (*sys_call_fn)(u32 arg1, u32 arg2, u32 arg3, u32 arg4, u32 arg5,
     ret;                                                                \
   })
 
+#define syscall6(syscall_num, arg1, arg2, arg3, arg4, arg5, arg6)       \
+  ({                                                                    \
+    int ret;                                                            \
+    asm volatile(                                                       \
+        "mov r7, %1\n"                                                  \
+        "mov r0, %2\n"                                                  \
+        "mov r1, %3\n"                                                  \
+        "mov r2, %4\n"                                                  \
+        "mov r3, %5\n"                                                  \
+        "mov r4, %6\n"                                                  \
+        "mov r5, %7\n"                                                  \
+        "svc 0\n"                                                       \
+        "mov %0, r0\n"                                                  \
+        : "=r"(ret)                                                     \
+        : "r"(syscall_num), "r"(arg1), "r"(arg2), "r"(arg3), "r"(arg4), \
+          "r"(arg5), "r"(arg6)                                          \
+        : "r0", "r1", "r2", "r3", "r4", "r5", "r7", "memory");          \
+    ret;                                                                \
+  })
+
 #endif
