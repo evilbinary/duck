@@ -9,9 +9,15 @@
 
 
 int loader_init(void) {
-  log_debug("loader init\n");
+  kprintf("loader init arm64=%d\n"),
 
+#if defined(ARM64) || defined(__aarch64__)
+  kprintf("loader regist run_elf64_thread=%lx\n", run_elf64_thread);
+  loader_regist(&run_elf64_thread);
+#else
+  kprintf("loader regist run_elf_thread=%lx\n", run_elf_thread);
   loader_regist(&run_elf_thread);
+#endif
 
   return 0;
 }

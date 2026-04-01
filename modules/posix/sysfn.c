@@ -129,6 +129,133 @@ u32 sys_open(char* name, int attr, ...) {
   return f;
 }
 
+// ---------------------------------------------------------------------------
+// AArch64 Linux ABI compatibility
+//   syscall 56 is openat(dirfd, pathname, flags, mode)
+//   There is no legacy open(2) syscall on aarch64.
+// Our userspace (musl/busybox) will typically issue openat.
+// ---------------------------------------------------------------------------
+// Dispatcher for aarch64 syscall 56.
+// - Linux aarch64: openat(dirfd, pathname, flags, mode)
+// - Some bare-metal/musl ports (or older code) may still issue open(pathname, flags, mode)
+//   but with syscall number 56.
+// Keep both working by inspecting the first argument.
+static u64 sys_open_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5) {
+  (void)a3;
+  (void)a4;
+  (void)a5;
+  // If a0 looks like a small dirfd (including AT_FDCWD=-100), treat as openat.
+  // Otherwise treat a0 as pathname pointer (open).
+  long s0 = (long)a0;
+  const char* pathname = NULL;
+  int flags = 0;
+
+  if (s0 >= -4096 && s0 <= 4096) {
+    // openat layout
+    pathname = (const char*)a1;
+    flags = (int)a2;
+  } else {
+    // open layout
+    pathname = (const char*)a0;
+    flags = (int)a1;
+  }
+
+  if (pathname == NULL) {
+    log_error("sys_open_dispatch null pathname a0=%lx a1=%lx a2=%lx a3=%lx\n",
+              a0, a1, a2, a3);
+    return (u64)-1;
+  }
+
+  return (u64)sys_open((char*)pathname, flags);
+}
+
+static u64 sys_access_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5) {
+  (void)a4;
+  (void)a5;
+  long s0 = (long)a0;
+  const char* pathname = NULL;
+  int mode = 0;
+  int flags = 0;
+  int dirfd = 0;
+
+  if (s0 >= -4096 && s0 <= 4096) {
+    dirfd = (int)a0;
+    pathname = (const char*)a1;
+    mode = (int)a2;
+    flags = (int)a3;
+    if (pathname == NULL) {
+      log_error(
+          "sys_access_dispatch faccessat null pathname dirfd=%d mode=%x flags=%x\n",
+          dirfd, mode, flags);
+      return (u64)-1;
+    }
+    log_debug("sys_access_dispatch faccessat dirfd=%d path=%s mode=%x flags=%x\n",
+              dirfd, pathname, mode, flags);
+    return (u64)sys_faccessat(dirfd, pathname, mode, flags);
+  }
+
+  pathname = (const char*)a0;
+  mode = (int)a1;
+  if (pathname == NULL) {
+    log_error("sys_access_dispatch access null pathname mode=%x\n", mode);
+    return (u64)-1;
+  }
+  log_debug("sys_access_dispatch access path=%s mode=%x\n", pathname, mode);
+  return (u64)sys_access(pathname, mode);
+}
+
+u32 sys_openat(int dirfd, const char* pathname, int flags, int mode) {
+  (void)mode;
+  if (pathname == NULL) {
+    log_error("sys_openat null pathname dirfd=%d flags=%x\n", dirfd, flags);
+    return -1;
+  }
+  log_debug("sys_openat dirfd=%d path=%s flags=%x\n", dirfd, pathname, flags);
+  return sys_open((char*)pathname, flags);
+}
+
+int sys_mkdirat(int dirfd, const char* pathname, mode_t mode) {
+  (void)dirfd;
+  return sys_mkdir(pathname, mode);
+}
+
+int sys_unlinkat(int dirfd, const char* pathname, int flags) {
+  (void)dirfd;
+  (void)flags;
+  return sys_unlink(pathname);
+}
+
+int sys_renameat(int olddirfd, const char* oldpath, int newdirfd,
+                 const char* newpath) {
+  (void)olddirfd;
+  (void)newdirfd;
+  return sys_rename(oldpath, newpath);
+}
+
+int sys_newfstatat(int dirfd, const char* pathname, struct stat* stat,
+                   int flags) {
+  (void)dirfd;
+  (void)flags;
+  return sys_stat(pathname, stat);
+}
+
+ssize_t sys_readlinkat(int dirfd, const char* restrict pathname,
+                       char* restrict buf, size_t bufsiz) {
+  (void)dirfd;
+  return sys_readlink(pathname, buf, bufsiz);
+}
+
+int sys_faccessat(int dirfd, const char* pathname, int mode, int flags) {
+  if (pathname == NULL) {
+    log_error("sys_faccessat null pathname dirfd=%d mode=%x flags=%x\n", dirfd,
+              mode, flags);
+    return -1;
+  }
+  log_debug("sys_faccessat dirfd=%d path=%s mode=%x flags=%x\n", dirfd, pathname,
+            mode, flags);
+  return sys_access(pathname, mode);
+}
+
 int sys_close(u32 fd) {
   thread_t* current = thread_current();
   fd_t* f = thread_find_fd_id(current, fd);
@@ -292,6 +419,8 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     return 0;
   }
   thread_set_entry(current, load_thread_entry);
+  kprintf("sys_exec set load_thread_entry=%lx current=%d\n", load_thread_entry,
+          current->id);
   vnode_t* node = f->data;
   if (node == NULL) {
     log_error("sys exec node is null pwd\n");
@@ -315,7 +444,16 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     i++;
   }
 
-  long* args = kmalloc(sizeof(long*) * (argc + 4 + 38), DEFAULT_TYPE);
+  // args layout is used as the initial user stack for ELF entry:
+  // [argc][argv...][NULL][envp...][NULL][auxv...]
+  // Reserve enough longs for argv/envp and a small auxv (type,val pairs + AT_NULL).
+#if defined(ARM64) || defined(__aarch64__)
+  const int auxv_pairs = 16;  // 16 entries is plenty for a minimal auxv
+#else
+  const int auxv_pairs = 12;
+#endif
+  const int auxv_words = auxv_pairs * 2;
+  long* args = kmalloc(sizeof(long) * (argc + 4 + 38 + auxv_words), DEFAULT_TYPE);
   args[0] = argc;
   i = 0;
   int pos = 1;
@@ -343,6 +481,8 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
 
   current->exec = args;
   thread_set_arg(current, args);
+  kprintf("sys_exec args=%lx pc=%lx lr=%lx x0=%lx\n", args, current->ctx->ksp->pc,
+          current->ctx->ksp->lr, current->ctx->ksp->x0);
   thread_run(current);
 
   kmemmove(current->ctx->ic, current->ctx->ksp, sizeof(interrupt_context_t));
@@ -1185,10 +1325,12 @@ int sys_mkdir(const char* pathname, mode_t mode) {
 }
 
 int sys_access(const char* pathname, int mode) {
-  log_debug("sys access not impl %s\n", pathname);
+  kprintf("sys_access pathname=%lx mode=%x\n", pathname, mode);
   if (pathname == NULL) {
+    log_error("sys_access null pathname\n");
     return -1;
   }
+  kprintf("sys_access path=%s\n", pathname);
   int fd = sys_open(pathname, 0);
   if (fd < 0) {
     log_error("access faild %s\n", pathname);
@@ -1339,7 +1481,12 @@ void sys_fn_init() {
   syscall_table[SYS_PRINT] = &sys_print;
   syscall_table[SYS_PRINT_AT] = &sys_print_at;
   syscall_table[SYS_IOCTL] = &sys_ioctl;
+#if defined(ARM64) || defined(__aarch64__)
+  // Linux aarch64 syscall 56 is openat, but some userspace may still use open-layout args.
+  syscall_table[SYS_OPEN] = &sys_open_dispatch;
+#else
   syscall_table[SYS_OPEN] = &sys_open;
+#endif
   syscall_table[SYS_CLOSE] = &sys_close;
   syscall_table[SYS_DEV_READ] = &dev_read;
   syscall_table[SYS_DEV_WRITE] = &dev_write;
@@ -1372,8 +1519,14 @@ void sys_fn_init() {
   syscall_table[SYS_RT_SIGACTION] = &sys_rt_sigaction;
 
   syscall_table[SYS_ALARM] = &sys_alarm;
+  // aarch64 uses *at syscalls for many path operations
+#if defined(ARM64) || defined(__aarch64__)
+  syscall_table[SYS_UNLINK] = &sys_unlinkat;
+  syscall_table[SYS_RENAME] = &sys_renameat;
+#else
   syscall_table[SYS_UNLINK] = &sys_unlink;
   syscall_table[SYS_RENAME] = &sys_rename;
+#endif
 
   syscall_table[SYS_RENAME] = &sys_rename;
 
@@ -1398,7 +1551,12 @@ void sys_fn_init() {
 
   syscall_table[SYS_UMASK] = &sys_umask;
 
+  // aarch64 syscall 79 is newfstatat
+#if defined(ARM64) || defined(__aarch64__)
+  syscall_table[SYS_STAT] = &sys_newfstatat;
+#else
   syscall_table[SYS_STAT] = &sys_stat;
+#endif
   syscall_table[SYS_FSTAT] = &sys_fstat;
   syscall_table[SYS_SELF] = &sys_self;
 
@@ -1416,7 +1574,12 @@ void sys_fn_init() {
   syscall_table[SYS_SET_TID_ADDRESS] = &sys_set_tid_adress;
 
   syscall_table[SYS_EXIT_GROUP] = &sys_exit_group;
+  // aarch64 syscall 78 is readlinkat
+#if defined(ARM64) || defined(__aarch64__)
+  syscall_table[SYS_READLINK] = &sys_readlinkat;
+#else
   syscall_table[SYS_READLINK] = &sys_readlink;
+#endif
 
   syscall_table[SYS_MADVISE] = &sys_madvice;
 
@@ -1427,8 +1590,18 @@ void sys_fn_init() {
   syscall_table[SYS_THREAD_ADDR] = &sys_thread_addr;
 
   syscall_table[SYS_FUTEX] = &sys_futex;
+  // aarch64 syscall 34 is mkdirat
+#if defined(ARM64) || defined(__aarch64__)
+  syscall_table[SYS_MKDIR] = &sys_mkdirat;
+#else
   syscall_table[SYS_MKDIR] = &sys_mkdir;
+#endif
+  // aarch64 syscall 48 is faccessat
+#if defined(ARM64) || defined(__aarch64__)
+  syscall_table[SYS_ACESS] = &sys_access_dispatch;
+#else
   syscall_table[SYS_ACESS] = &sys_access;
+#endif
 
   syscall_table[SYS_GETTID] = &sys_gettid;
   syscall_table[SYS_THREAD_MAP] = &sys_thread_map;

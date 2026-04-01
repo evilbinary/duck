@@ -274,8 +274,11 @@ typedef struct context_t {
 // Syscall number is in x8 (Linux AArch64 ABI)
 #define context_fn(context)  ((context)->x8)
 #define context_ret(context) ((context)->x0)
-#define context_set_entry(context, entry) \
-  (((interrupt_context_t*)(context))->pc = (u64)(entry))
+#define context_set_entry(context, entry)                \
+  do {                                                   \
+    ((interrupt_context_t*)(context))->pc = (u64)(entry); \
+    ((interrupt_context_t*)(context))->lr = (u64)(entry); \
+  } while (0)
 
 void context_switch_page(context_t* ctx, u64 page_dir);
 

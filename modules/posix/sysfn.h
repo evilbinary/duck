@@ -316,6 +316,16 @@ struct rusage {
 };
 
 u32 sys_open(char* name, int attr, ...);
+u32 sys_openat(int dirfd, const char* pathname, int flags, int mode);
+int sys_mkdirat(int dirfd, const char* pathname, mode_t mode);
+int sys_unlinkat(int dirfd, const char* pathname, int flags);
+int sys_renameat(int olddirfd, const char* oldpath, int newdirfd,
+                 const char* newpath);
+int sys_newfstatat(int dirfd, const char* pathname, struct stat* stat,
+                   int flags);
+ssize_t sys_readlinkat(int dirfd, const char* restrict pathname,
+                       char* restrict buf, size_t bufsiz);
+int sys_faccessat(int dirfd, const char* pathname, int mode, int flags);
 // size_t sys_ioctl(u32 fd, u32 cmd, ...);
 size_t sys_ioctl(u32 fd, u32 cmd, void* args);
 int sys_close(u32 fd);

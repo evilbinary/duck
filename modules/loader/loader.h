@@ -31,6 +31,7 @@ typedef int (*entry_fn)(long * args);
 
 
 void run_elf_thread(long* p);
+void run_elf64_thread(long* p);
 void* load_elf_interp(char* filename,void* arg);
 void go_start(entry_fn entry,long* exec);
 
