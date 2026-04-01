@@ -119,6 +119,11 @@ typedef struct context_t {
 
 #define context_fn(context) context->r6
 #define context_ret(context) context
+#define context_arg0(context) context->r0
+#define context_arg1(context) context->r1
+#define context_arg2(context) context->r2
+#define context_arg3(context) context->r3
+#define context_arg4(context) context->r4
 #define context_set_entry(context, entry) \
   ((interrupt_context_t*)(context))->lr = entry + 4;
 

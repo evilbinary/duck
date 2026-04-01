@@ -274,6 +274,11 @@ typedef struct context_t {
 // Syscall number is in x8 (Linux AArch64 ABI)
 #define context_fn(context)  ((context)->x8)
 #define context_ret(context) ((context)->x0)
+#define context_arg0(context) ((context)->x0)
+#define context_arg1(context) ((context)->x1)
+#define context_arg2(context) ((context)->x2)
+#define context_arg3(context) ((context)->x3)
+#define context_arg4(context) ((context)->x4)
 #define context_set_entry(context, entry)                \
   do {                                                   \
     ((interrupt_context_t*)(context))->pc = (u64)(entry); \

@@ -148,6 +148,11 @@ void timer_init(int hz);
 
 #define context_fn(context) context->eax
 #define context_ret(context) context->eax
+#define context_arg0(context) context->edi
+#define context_arg1(context) context->esi
+#define context_arg2(context) context->edx
+#define context_arg3(context) context->ecx
+#define context_arg4(context) context->ebx
 #define context_set_entry(context, entry) \
   ((interrupt_context_t*)context)->eip = entry
 

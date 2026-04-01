@@ -93,6 +93,8 @@ int xwin_module_init(void) {
         log_error("xwin: init failed\n");
         return -1;
     }
+
+    xwin_register_syscall();
     
     // 初始化窗口管理器
     // xwm_init(&xwin_display);

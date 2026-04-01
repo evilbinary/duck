@@ -15,6 +15,8 @@
 #include "kernel/vfs.h"
 
 static void* syscall_table[SYSCALL_NUMBER];
+extern long xwin_syscall_handler(u32 num, long a1, long a2, long a3, long a4,
+                                 long a5);
 
 // #define log_debug  // 取消注释以禁用调试日志
 
@@ -1534,10 +1536,18 @@ pid_t sys_wait4(pid_t pid, int* wstatus, int options, struct rusage* rusage) {
 
 int sys_fn_faild_handler(int no, interrupt_context_t* ic) {
   int call_id = context_fn(ic);
-  log_debug("sys fn faild %x\n", call_id);
   if (call_id == 0xf0005) {
     return sys_fn_call(ic, &sys_set_thread_area);
   }
+  if (call_id >= 0x5000 && call_id <= 0x5017) {
+    context_ret(ic) =
+        xwin_syscall_handler((u32)call_id, (long)context_arg0(ic),
+                             (long)context_arg1(ic), (long)context_arg2(ic),
+                             (long)context_arg3(ic), (long)context_arg4(ic));
+    return 0;
+  }
+  log_debug("sys fn faild %x\n", call_id);
+  return -1;
 }
 
 void sys_fn_call_handler(int no, interrupt_context_t* ic) {
