@@ -39,6 +39,7 @@ typedef struct fd {
   u32 offset;
   u8 *name;
   u32 use_count;
+  u32 flags;
 } fd_t;
 
 

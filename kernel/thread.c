@@ -77,6 +77,7 @@ void thread_init_default(thread_t* thread, u32 level, u32* entry, void* data) {
   thread->data = data;
   thread->mem = 0;
   thread->ticks = 0;
+  thread->clear_child_tid = NULL;
 }
 
 thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,

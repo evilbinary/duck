@@ -75,6 +75,7 @@ typedef struct thread {
   u32 mem;
   u32 dump_count;
   void* tinfo;
+  void* clear_child_tid;
 } thread_t;
 
 void thread_init();

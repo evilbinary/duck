@@ -348,6 +348,10 @@ size_t sys_yeild() { thread_yield(); }
 
 void sys_exit(int status) {
   thread_t* current = thread_current();
+  if (current != NULL && current->clear_child_tid != NULL) {
+    int* tidptr = (int*)current->clear_child_tid;
+    *tidptr = 0;
+  }
   thread_exit(current, status);
   // thread_dumps();
   // log_debug("sys exit tid %d %s status %d\n", current->id, current->name,
@@ -969,18 +973,20 @@ int sys_fcntl64(int fd, int cmd, void* arg) {
   log_debug("sys fcntl64 fd: %d cmd: %x flag: %x\n", fd, cmd, arg);
   thread_t* current = thread_current();
   fd_t* findfd = thread_find_fd_id(current, fd);
-  if (fd == NULL) {
+  if (findfd == NULL) {
     log_error("sys fcntl64 not found fd %d\n", fd);
-    return 0;
+    return -1;
   }
   vnode_t* node = findfd->data;
   if (cmd == F_SETFD) {
-    u32 ret = vioctl(node, cmd, arg);
+    findfd->flags = (u32)(uintptr_t)arg;
     return fd;
   } else if (cmd == F_DUPFD) {
     u32 ret = sys_dup(fd);
 
     return ret;
+  } else if (cmd == F_GETFD) {
+    return findfd->flags;
   } else if (cmd == F_GETFL) {
     u32 ret = vioctl(node, cmd, arg);
     return ret;
@@ -1233,13 +1239,14 @@ int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
 
 int sys_set_tid_adress(void* ptr) {
   thread_t* current = thread_current();
-  log_debug("sys set tid adress not impl\n");
+  if (current != NULL) {
+    current->clear_child_tid = ptr;
+  }
   return current->id;
 }
 
 void sys_exit_group(int status) {
   sys_exit(status);
-  log_debug("sys exit group not impl\n");
 }
 
 ssize_t sys_readlink(const char* restrict pathname, char* restrict buf,
