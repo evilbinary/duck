@@ -383,6 +383,9 @@ char* kstrerror(int errnum) {
 }
 
 size_t kstrlen(const char* s) {
+  if(s==NULL) {
+    return 0;
+  }
   const char* p = s;  // Use local variable to avoid stack spill
   size_t ans = 0;
   while (p[ans] != '\0') {
