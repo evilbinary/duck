@@ -22,6 +22,7 @@
 #define SYS_XWIN_DRAW_RECT     (SYS_XWIN_BASE + 12)
 #define SYS_XWIN_DRAW_LINE     (SYS_XWIN_BASE + 13)
 #define SYS_XWIN_DRAW_TEXT     (SYS_XWIN_BASE + 14)
+#define SYS_XWIN_BLIT          (SYS_XWIN_BASE + 15)
 
 #define SYS_XWIN_GET_EVENT     (SYS_XWIN_BASE + 20)
 #define SYS_XWIN_PROCESS_EVENTS (SYS_XWIN_BASE + 21)
@@ -193,6 +194,19 @@ long xwin_syscall_draw_text(long win_id, long x, long y, long text, long color) 
     return 0;
 }
 
+long xwin_syscall_blit(long win_id, long x, long y, long wh, long data) {
+    xdisplay_t* disp = g_display;
+    if (disp == NULL) return -1;
+
+    xwindow_t* win = xwin_find_window(disp, (u32)win_id);
+    if (win == NULL || data == 0) return -1;
+
+    u32 w = wh & 0xFFFF;
+    u32 h = (wh >> 16) & 0xFFFF;
+    xwin_blit(win, (i32)x, (i32)y, (const u32*)data, w, h);
+    return 0;
+}
+
 long xwin_syscall_get_event(long event_ptr) {
     xdisplay_t* disp = g_display;
     if (disp == NULL) return -1;
@@ -266,6 +280,8 @@ long xwin_syscall_handler(u32 num, long a1, long a2, long a3, long a4, long a5) 
             return xwin_syscall_draw_line(a1, a2, a3, a4, a5);
         case SYS_XWIN_DRAW_TEXT:
             return xwin_syscall_draw_text(a1, a2, a3, a4, a5);
+        case SYS_XWIN_BLIT:
+            return xwin_syscall_blit(a1, a2, a3, a4, a5);
         case SYS_XWIN_GET_EVENT:
             return xwin_syscall_get_event(a1);
         case SYS_XWIN_PROCESS_EVENTS:

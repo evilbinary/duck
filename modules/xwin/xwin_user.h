@@ -30,6 +30,7 @@ void xwin_fill_rect(xwin_handle_t win, i32 x, i32 y, u32 w, u32 h, u32 color);
 void xwin_draw_rect(xwin_handle_t win, i32 x, i32 y, u32 w, u32 h, u32 color);
 void xwin_draw_line(xwin_handle_t win, i32 x1, i32 y1, i32 x2, i32 y2, u32 color);
 void xwin_draw_text(xwin_handle_t win, i32 x, i32 y, const char* text, u32 color);
+void xwin_blit(xwin_handle_t win, i32 x, i32 y, const u32* data, u32 w, u32 h);
 
 // 事件
 int xwin_get_event(void* event);
@@ -55,6 +56,7 @@ void xwin_update(xwin_handle_t win);
 #define SYS_XWIN_DRAW_RECT     (SYS_XWIN_BASE + 12)
 #define SYS_XWIN_DRAW_LINE     (SYS_XWIN_BASE + 13)
 #define SYS_XWIN_DRAW_TEXT     (SYS_XWIN_BASE + 14)
+#define SYS_XWIN_BLIT          (SYS_XWIN_BASE + 15)
 
 #define SYS_XWIN_GET_EVENT     (SYS_XWIN_BASE + 20)
 #define SYS_XWIN_PROCESS_EVENTS (SYS_XWIN_BASE + 21)
@@ -150,6 +152,11 @@ void xwin_draw_line(xwin_handle_t win, i32 x1, i32 y1, i32 x2, i32 y2, u32 color
 
 void xwin_draw_text(xwin_handle_t win, i32 x, i32 y, const char* text, u32 color) {
     xwin_syscall(SYS_XWIN_DRAW_TEXT, (long)win, (long)x, (long)y, (long)text, (long)color);
+}
+
+void xwin_blit(xwin_handle_t win, i32 x, i32 y, const u32* data, u32 w, u32 h) {
+    xwin_syscall(SYS_XWIN_BLIT, (long)win, (long)x, (long)y,
+                 (long)w | ((long)h << 16), (long)data);
 }
 
 int xwin_get_event(void* event) {
