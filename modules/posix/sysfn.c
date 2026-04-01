@@ -204,6 +204,71 @@ static u64 sys_access_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5) {
   return (u64)sys_access(pathname, mode);
 }
 
+static u64 sys_stat_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5) {
+  (void)a4;
+  (void)a5;
+  long s0 = (long)a0;
+  const char* pathname = NULL;
+  struct stat* statbuf = NULL;
+  int dirfd = 0;
+  int flags = 0;
+
+  if (s0 >= -4096 && s0 <= 4096) {
+    dirfd = (int)a0;
+    pathname = (const char*)a1;
+    statbuf = (struct stat*)a2;
+    flags = (int)a3;
+    if (pathname == NULL || statbuf == NULL) {
+      log_error("sys_stat_dispatch newfstatat bad args dirfd=%d path=%lx stat=%lx flags=%x\n",
+                dirfd, pathname, statbuf, flags);
+      return (u64)-1;
+    }
+    return (u64)sys_newfstatat(dirfd, pathname, statbuf, flags);
+  }
+
+  pathname = (const char*)a0;
+  statbuf = (struct stat*)a1;
+  if (pathname == NULL || statbuf == NULL) {
+    log_error("sys_stat_dispatch stat bad args path=%lx stat=%lx\n", pathname,
+              statbuf);
+    return (u64)-1;
+  }
+  return (u64)sys_stat(pathname, statbuf);
+}
+
+static u64 sys_readlink_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5) {
+  (void)a4;
+  (void)a5;
+  long s0 = (long)a0;
+  const char* pathname = NULL;
+  char* buf = NULL;
+  size_t bufsiz = 0;
+  int dirfd = 0;
+
+  if (s0 >= -4096 && s0 <= 4096) {
+    dirfd = (int)a0;
+    pathname = (const char*)a1;
+    buf = (char*)a2;
+    bufsiz = (size_t)a3;
+    if (pathname == NULL || buf == NULL) {
+      log_error("sys_readlink_dispatch readlinkat bad args dirfd=%d path=%lx buf=%lx size=%lx\n",
+                dirfd, pathname, buf, bufsiz);
+      return (u64)-1;
+    }
+    return (u64)sys_readlinkat(dirfd, pathname, buf, bufsiz);
+  }
+
+  pathname = (const char*)a0;
+  buf = (char*)a1;
+  bufsiz = (size_t)a2;
+  if (pathname == NULL || buf == NULL) {
+    log_error("sys_readlink_dispatch readlink bad args path=%lx buf=%lx size=%lx\n",
+              pathname, buf, bufsiz);
+    return (u64)-1;
+  }
+  return (u64)sys_readlink(pathname, buf, bufsiz);
+}
+
 u32 sys_openat(int dirfd, const char* pathname, int flags, int mode) {
   (void)mode;
   if (pathname == NULL) {
@@ -1332,12 +1397,12 @@ int sys_mkdir(const char* pathname, mode_t mode) {
 }
 
 int sys_access(const char* pathname, int mode) {
-  kprintf("sys_access pathname=%lx mode=%x\n", pathname, mode);
+  log_debug("sys_access pathname=%lx mode=%x\n", pathname, mode);
   if (pathname == NULL) {
     log_error("sys_access null pathname\n");
     return -1;
   }
-  kprintf("sys_access path=%s\n", pathname);
+  log_debug("sys_access path=%s\n", pathname);
   int fd = sys_open(pathname, 0);
   if (fd < 0) {
     log_error("access faild %s\n", pathname);
@@ -1560,7 +1625,7 @@ void sys_fn_init() {
 
   // aarch64 syscall 79 is newfstatat
 #if defined(ARM64) || defined(__aarch64__)
-  syscall_table[SYS_STAT] = &sys_newfstatat;
+  syscall_table[SYS_STAT] = &sys_stat_dispatch;
 #else
   syscall_table[SYS_STAT] = &sys_stat;
 #endif
@@ -1583,7 +1648,7 @@ void sys_fn_init() {
   syscall_table[SYS_EXIT_GROUP] = &sys_exit_group;
   // aarch64 syscall 78 is readlinkat
 #if defined(ARM64) || defined(__aarch64__)
-  syscall_table[SYS_READLINK] = &sys_readlinkat;
+  syscall_table[SYS_READLINK] = &sys_readlink_dispatch;
 #else
   syscall_table[SYS_READLINK] = &sys_readlink;
 #endif

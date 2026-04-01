@@ -222,7 +222,7 @@ static int elf64_load_image_fd(int fd, const Elf64_Ehdr* ehdr, elf64_image_info_
 
     Elf64_Phdr load = phdr[i];
     load.p_vaddr += bias;
-    kprintf(
+    elf64_log_debug(
         "elf64 load seg[%d] off=%lx vaddr=%lx filesz=%lx memsz=%lx flags=%lx bias=%lx\n",
         i, phdr[i].p_offset, load.p_vaddr, phdr[i].p_filesz, phdr[i].p_memsz,
         phdr[i].p_flags, bias);
@@ -257,13 +257,14 @@ static int elf64_open_and_load(const char* path, elf64_image_info_t* image,
     return -1;
   }
 
-  kprintf("elf64 open %s type=%d entry=%lx phoff=%lx phnum=%d\n", path,
-          ehdr.e_type, ehdr.e_entry, ehdr.e_phoff, ehdr.e_phnum);
+  elf64_log_debug("elf64 open %s type=%d entry=%lx phoff=%lx phnum=%d\n", path,
+                  ehdr.e_type, ehdr.e_entry, ehdr.e_phoff, ehdr.e_phnum);
 
   int ret = elf64_load_image_fd(fd, &ehdr, image, force_dyn_bias);
-  kprintf("elf64 image %s base=%lx entry=%lx phdr=%lx phent=%lx phnum=%lx interp=%s\n",
-          path, image->base, image->entry, image->phdr, image->phent,
-          image->phnum, image->interp_path[0] ? image->interp_path : "<none>");
+  elf64_log_debug(
+      "elf64 image %s base=%lx entry=%lx phdr=%lx phent=%lx phnum=%lx interp=%s\n",
+      path, image->base, image->entry, image->phdr, image->phent, image->phnum,
+      image->interp_path[0] ? image->interp_path : "<none>");
   syscall1(SYS_CLOSE, fd);
   return ret;
 }
@@ -309,7 +310,8 @@ __attribute__((noreturn)) static void elf64_enter(u64 entry, long* sp0, long arg
   (void)envp;
   (void)auxv;
   u64 tp = sys_thread_self();
-  kprintf("elf64 enter entry=%lx sp=%lx tp=%lx auxv=%lx\n", entry, sp0, tp, auxv);
+  elf64_log_debug("elf64 enter entry=%lx sp=%lx tp=%lx auxv=%lx\n", entry, sp0,
+                  tp, auxv);
   asm volatile(
       "msr tpidr_el0, %6\n"
       "mov sp,  %0\n"
@@ -328,7 +330,7 @@ __attribute__((noreturn)) static void elf64_enter(u64 entry, long* sp0, long arg
 }
 
 void run_elf64_thread(long* p) {
-  kprintf("run_elf64_thread %lx\n", p);
+  elf64_log_debug("run_elf64_thread %lx\n", p);
 
   int argc;
   char** argv;
@@ -384,7 +386,7 @@ void run_elf64_thread(long* p) {
   }
 
   elf64_build_auxv(auxv, &main_image, main_image.interp_base, filename);
-  kprintf(
+  elf64_log_debug(
       "elf64 start=%lx main_entry=%lx main_base=%lx interp_base=%lx phdr=%lx sp=%lx argc=%d file=%s\n",
       start_entry, main_image.entry, main_image.base, main_image.interp_base,
       main_image.phdr, p, argc, filename);
