@@ -197,6 +197,8 @@ long xwin_syscall_get_event(long event_ptr) {
     xdisplay_t* disp = g_display;
     if (disp == NULL) return -1;
     
+    xinput_poll();
+
     xevent_t event;
     if (xwin_next_event(disp, &event)) {
         if (event_ptr != 0) {
@@ -211,6 +213,7 @@ long xwin_syscall_process_events(void) {
     xdisplay_t* disp = g_display;
     if (disp == NULL) return -1;
     
+    xinput_poll();
     xwin_process_events(disp);
     return 0;
 }
@@ -219,6 +222,7 @@ long xwin_syscall_render(void) {
     xdisplay_t* disp = g_display;
     if (disp == NULL) return -1;
     
+    xinput_poll();
     xwin_render(disp);
     return 0;
 }

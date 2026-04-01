@@ -435,6 +435,11 @@ void xwin_mouse_button(xdisplay_t* disp, u32 button, u32 pressed);
 void xwin_mouse_wheel(xdisplay_t* disp, i32 delta);
 void xwin_keyboard_event(xdisplay_t* disp, u32 keycode, u32 pressed, u32 mods);
 
+// 输入设备集成
+void xinput_poll(void);
+void xinput_init(void);
+void xinput_exit(void);
+
 // 损坏区域
 void xwin_damage(xwindow_t* win, i32 x, i32 y, u32 w, u32 h);
 void xwin_damage_all(xwindow_t* win);

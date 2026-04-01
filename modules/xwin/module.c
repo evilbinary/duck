@@ -94,6 +94,7 @@ int xwin_module_init(void) {
         return -1;
     }
 
+    xinput_init();
     xwin_register_syscall();
     
     // 初始化窗口管理器
@@ -125,6 +126,7 @@ int xwin_module_init(void) {
 
 void xwin_module_exit(void) {
     log_info("xwin module exit\n");
+    xinput_exit();
     xwin_exit(&xwin_display);
 }
 
