@@ -3,7 +3,7 @@
 
 #if defined(ARM64) || defined(__aarch64__)
 #define _Addr long
-#define _Int64 long long
+#define _Int64 long
 #define _Reg long
 #else
 #define _Addr int
@@ -69,7 +69,7 @@ typedef signed int int32_t;
 #endif
 
 #if !defined(_INT64_T) && !defined(int64_t) && !defined(__DEFINED_int64_t)
-typedef signed long long int64_t;
+typedef signed _Int64 int64_t;
 #endif
 
 #if !defined(_UINT8_T) && !defined(uint8_t)
@@ -85,7 +85,7 @@ typedef unsigned int uint32_t;
 #endif
 
 #if !defined(_UINT64_T) && !defined(uint64_t) && !defined(__DEFINED_uint64_t)
-typedef unsigned long long uint64_t;
+typedef unsigned _Int64 uint64_t;
 #endif
 
 #if !defined(_INTPTR_T) && !defined(intptr_t) && !defined(__DEFINED_intptr_t)

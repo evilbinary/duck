@@ -1244,12 +1244,22 @@ int sys_statx(int dirfd, const char* restrict pathname, int flags,
 u32 sys_time(time_t* t) {
   vnode_t* time_node = vfs_find(NULL, "/dev/time");
   rtc_time_t time;
+  time_t seconds = 0;
   time.day = 1;
   time.hour = 0;
   time.minute = 0;
   time.month = 1;
   time.second = 0;
   time.year = 1970;
+
+  if (t == NULL) {
+    return -1;
+  }
+  if (time_node == NULL) {
+    log_error("cannot found file /dev/time\n");
+    kmemcpy(t, &seconds, sizeof(time_t));
+    return 0;
+  }
 
   // kprintf("time fd %d\n", time_fd);
   u32 ret = vread(time_node, 0, sizeof(rtc_time_t), &time);
@@ -1269,10 +1279,9 @@ u32 sys_time(time_t* t) {
   // kprintf("%d-%d-%d %d:%d:%d\n", time.year, time.month, time.day, time.hour,
   //         time.minute, time.second);
 
-  time_t seconds = secs_of_years(time.year - 1) +
-                   secs_of_month(time.month - 1, time.year) +
-                   (time.day - 1) * 86400 + time.hour * 3600 +
-                   time.minute * 60 + time.second + 0;
+  seconds = secs_of_years(time.year - 1) + secs_of_month(time.month - 1, time.year) +
+            (time.day - 1) * 86400 + time.hour * 3600 + time.minute * 60 +
+            time.second + 0;
 
   kmemcpy(t, &seconds, sizeof(time_t));
 
