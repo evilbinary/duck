@@ -173,6 +173,18 @@ void* sync_handler(interrupt_context_t* ic) {
     case ESR_ELx_EC_SVC64:
       ic->no = EX_SYS_CALL;
       break;
+    case ESR_ELx_EC_UNKNOWN:
+      // When user threads run at EL1t during bring-up, some libc syscall
+      // sites can arrive here with EC=0 even though x8 still carries a valid
+      // Linux syscall number. Handle that path as a syscall instead of halting.
+      if ((ic->x8 <= 518) || (ic->x8 >= 0x5000 && ic->x8 <= 0x5017)) {
+        ic->no = EX_SYS_CALL;
+        break;
+      }
+      kprintf("sync: unknown ec=%x esr=%lx pc=%lx\n", ec, esr, ic->pc);
+      context_dump_interrupt(ic);
+      cpu_halt();
+      break;
     case ESR_ELx_EC_DABT_LOW:
     case ESR_ELx_EC_DABT_CUR:
       ic->no = EX_DATA_FAULT;

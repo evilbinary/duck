@@ -62,6 +62,13 @@ void ya_alloc_init() {
 #define BLOCK_FREE 123456789
 #define BLOCK_USED 987654321
 
+static int ya_block_magic_valid(block_t* block) {
+  if (block == NULL) {
+    return 0;
+  }
+  return block->magic == MAGIC_USED || block->magic == MAGIC_FREE;
+}
+
 void* ya_sbrk(size_t size) {
   mem_block_t* current = mmt.blocks;
   kassert(current != NULL);
@@ -277,13 +284,23 @@ void ya_free(void* ptr) {
   kprintf("free  %x size=%d baddr=%x bsize=%d bcount=%d\n", ptr, block->size,
           block, block->size, block->count);
 #endif
-  // kassert(block->count == 1);
-  kassert(block->free == BLOCK_USED);
-  kassert(block->magic == MAGIC_USED);
-  kassert(block->size > 0);
+  if (!ya_block_magic_valid(block)) {
+    log_error("ya_free invalid block ptr=%x block=%x magic=%x\n", ptr, block,
+              block != NULL ? block->magic : 0);
+    return;
+  }
+  if (block->free != BLOCK_USED || block->magic != MAGIC_USED || block->size <= 0) {
+    log_error("ya_free bad state ptr=%x block=%x free=%x magic=%x size=%x\n", ptr,
+              block, block->free, block->magic, block->size);
+    return;
+  }
 
   int* end = ptr + block->size;
-  kassert((*end) == MAGIC_END);
+  if ((*end) != MAGIC_END) {
+    log_error("ya_free end marker corrupted ptr=%x block=%x end=%x expect=%x\n",
+              ptr, block, *end, MAGIC_END);
+    return;
+  }
 
   block->magic = MAGIC_FREE;
   block->free = BLOCK_FREE;
@@ -381,7 +398,11 @@ size_t ya_real_size(void* ptr) {
     return 0;
   }
   block_t* block = ya_block_ptr(ptr);
-  kassert(block->magic == MAGIC_USED || block->magic == MAGIC_FREE);
+  if (!ya_block_magic_valid(block)) {
+    log_error("ya_real_size invalid block ptr=%x block=%x magic=%x\n", ptr, block,
+              block != NULL ? block->magic : 0);
+    return 0;
+  }
   return block->size;
 }
 

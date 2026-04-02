@@ -52,6 +52,31 @@ typedef struct file_info {
 
 vnode_t *default_node = NULL;
 
+static int fat_reopen_file(vnode_t *node) {
+  if (node == NULL || (node->flags & V_DIRECTORY) == V_DIRECTORY) {
+    return -1;
+  }
+
+  file_info_t *file_info = node->data;
+  if (file_info == NULL) {
+    return -1;
+  }
+
+  char buf[MAX_FILE_PATH];
+  kstrcpy(buf, VOLUME);
+  vfs_path_append(node, NULL, &buf[2]);
+
+  f_close(&file_info->fil);
+  kmemset(&file_info->fil, 0, sizeof(FIL));
+
+  int res = f_open(&file_info->fil, buf, FA_READ | FA_WRITE);
+  if (res != FR_OK) {
+    log_error("fat reopen file %s path %s error code %d\n", node->name, buf, res);
+    return -1;
+  }
+  return 0;
+}
+
 static uint fat_device_read(vnode_t *node, uint offset, size_t nbytes,
                            u8 *buffer) {
   uint ret = 0;
@@ -194,9 +219,23 @@ static void print_hex(u8 *addr, uint size) {
 
 uint fat_op_read(vnode_t *node, uint offset, size_t nbytes, u8 *buffer) {
   file_info_t *file_info = node->data;
+  if (file_info == NULL) {
+    log_error("fat read %s file_info is null\n", node != NULL ? node->name : "<null>");
+    return -1;
+  }
 
   if (offset >= 0) {
-    f_lseek(&file_info->fil, offset);
+    int seek_res = f_lseek(&file_info->fil, offset);
+    if (seek_res == FR_INVALID_OBJECT) {
+      if (fat_reopen_file(node) < 0) {
+        return -1;
+      }
+      seek_res = f_lseek(&file_info->fil, offset);
+    }
+    if (seek_res != FR_OK) {
+      log_error("fat seek %s error code %d offset %d\n", node->name, seek_res, offset);
+      return -1;
+    }
   }
   // kprintf("read file-->%s fil: %x offset %d\n", node->name, &file_info->fil,
   //         offset);
@@ -206,6 +245,20 @@ uint fat_op_read(vnode_t *node, uint offset, size_t nbytes, u8 *buffer) {
 
   int readbytes = 0;
   int res = f_read(&file_info->fil, buffer, nbytes, &readbytes);
+  if (res == FR_INVALID_OBJECT) {
+    if (fat_reopen_file(node) < 0) {
+      return -1;
+    }
+    if (offset >= 0) {
+      int seek_res = f_lseek(&file_info->fil, offset);
+      if (seek_res != FR_OK) {
+        log_error("fat seek retry %s error code %d offset %d\n", node->name, seek_res,
+                  offset);
+        return -1;
+      }
+    }
+    res = f_read(&file_info->fil, buffer, nbytes, &readbytes);
+  }
   if (res != FR_OK) {
     log_error("fat read %s error code %d\n", node->name, res);
     return -1;
@@ -245,7 +298,8 @@ uint fat_op_open(vnode_t *node, uint mode) {
   char buf[MAX_FILE_PATH];
 
   if (file_info == NULL) {
-    file_info = kmalloc(sizeof(file_info_t), DEFAULT_TYPE);
+    file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
+    kmemset(file_info, 0, sizeof(file_info_t));
     file_info_t *super_file_info = node->super->data;
     file_info->fs = super_file_info->fs;
     node->data = file_info;
@@ -335,7 +389,7 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
   }
   uint type = V_FILE;
 
-  file_info_t *new_file_info = kmalloc(sizeof(file_info_t), DEFAULT_TYPE);
+  file_info_t *new_file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
   kmemset(new_file_info, 0, sizeof(file_info_t));
   // find file in dir
   res = find_in_dir(&dir, &find_file, name);
@@ -384,7 +438,8 @@ uint fat_op_read_dir(vnode_t *node, struct vdirent *dirent, uint count) {
   int res;
   file_info_t *file_info = node->data;
   if (file_info == NULL) {
-    file_info = kmalloc(sizeof(file_info_t), DEFAULT_TYPE);
+    file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
+    kmemset(file_info, 0, sizeof(file_info_t));
     node->data = file_info;
     kstrcpy(buf, VOLUME);
     int ret = vfs_path_append(node, NULL, &buf[2]);
@@ -520,7 +575,7 @@ void fat_init(void) {
     if (dev == NULL) {
       continue;
     }
-    name = kmalloc(4, DEFAULT_TYPE);
+    name = kmalloc(4, KERNEL_TYPE);
     name[0] = 's';
     name[1] = 'd';
     name[2] = 0x61 + i;
@@ -555,7 +610,8 @@ void fat_init(void) {
   }
   fat_init_op(node);
 
-  file_info_t *file_info = kmalloc(sizeof(file_info_t), DEFAULT_TYPE);
+  file_info_t *file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
+  kmemset(file_info, 0, sizeof(file_info_t));
 
   int res = f_mount(&file_info->fs, VOLUME, 0);
   if (res != FR_OK) {

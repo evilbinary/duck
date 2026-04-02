@@ -1065,7 +1065,6 @@ int sys_mprotect(const void* start, size_t len, int prot) {
 }
 
 int sys_rt_sigprocmask(int h, void* set, void* old_set) {
-  log_debug("sys sigprocmask not impl\n");
   return 0;
 }
 
