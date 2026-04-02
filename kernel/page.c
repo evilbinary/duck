@@ -25,7 +25,17 @@ void* page_fault_handle(interrupt_context_t *ic) {
 #ifdef DEBUG
     log_debug("page fault at %lx\n", fault_addr);
 #endif
-    vmemory_area_t *area = vmemory_area_find(current->vm->vma, (void*)fault_addr, 0);
+    // Check mmap children first (precise range), then fall back to main VMA list.
+    // The heap VMA covers the entire heap address range and would otherwise
+    // swallow mmap faults before we can check the exact mmap sub-region.
+    vmemory_area_t *area = NULL;
+    vmemory_area_t *heap = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
+    if (heap != NULL && heap->child != NULL) {
+      area = vmemory_area_find(heap->child, (void*)fault_addr, 0);
+    }
+    if (area == NULL) {
+      area = vmemory_area_find(current->vm->vma, (void*)fault_addr, 0);
+    }
     if (area == NULL) {
       void *phy = page_v2p((u64*)current->vm->kpage, (void*)fault_addr);
 #ifdef DEBUG
@@ -78,7 +88,14 @@ void* page_fault_handle(interrupt_context_t *ic) {
         if (area->flags == MEMORY_STACK) {
           extend_stack((void*)fault_addr, PAGE_SIZE);
         } else {
-          valloc((void*)fault_addr, PAGE_SIZE);
+          log_debug("page fault valloc addr:%lx flags:%d\n", fault_addr, area->flags);
+          void* vret = valloc((void*)fault_addr, PAGE_SIZE);
+          if (vret == NULL) {
+            log_error("page fault valloc failed addr:%lx\n", fault_addr);
+            thread_exit(current, -1);
+            exception_process_error(current, ic, (void *)&page_error_exit);
+            schedule(ic);
+          }
         }
       } else {
         log_error("%s remap memory fault at %lx phy: %lx\n", current->name,
