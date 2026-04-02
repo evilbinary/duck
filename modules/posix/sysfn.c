@@ -47,7 +47,8 @@ int sys_print_at(char* s, u32 x, u32 y) {
 
 size_t sys_ioctl(u32 fd, u32 cmd, void* args) {
   u32 ret = 0;
-  fd_t* f = thread_find_fd_id(thread_current(), fd);
+  thread_t* current = thread_current();
+  fd_t* f = thread_find_fd_id(current, fd);
   if (f == NULL) {
     // f = find_fd(fd);
   }
@@ -56,6 +57,12 @@ size_t sys_ioctl(u32 fd, u32 cmd, void* args) {
     return 0;
   }
   vnode_t* node = f->data;
+  if (node == NULL) {
+    log_error("sys ioctl node is null tid %d fd %d name %s ptr %x cmd %x\n",
+              current != NULL ? current->id : -1, fd,
+              f->name != NULL ? f->name : 0, f, cmd);
+    return 0;
+  }
   ret = vioctl(node, cmd, args);
 
   // log_debug("sys ioctl fd %d %s cmd %x ret %x\n", fd, f->name, cmd, ret);
@@ -94,18 +101,14 @@ u32 sys_open(char* name, int attr, ...) {
     return -1;
   }
 
-  // 构建路径名用于 fd 缓存
   char path_name[256];
   vfs_path_append(file, "", path_name);
 
   log_debug("path name %s to %s\n", name, path_name);
 
-  int f = thread_find_fd_name(current, path_name);
-  if (f >= 0) {
-    fd_t* fd = thread_find_fd_id(current, f);
-    fd->offset = 0;
-    log_debug("sys open name return : %s fd: %d\n", path_name, f);
-    return f;
+  // 初始化线程时 devfs 可能还没就绪，首次 open 前补充 stdin/stdout/stderr。
+  if (current->fds[STDIN] == NULL) {
+    thread_fill_fd(current);
   }
 
   // 打开文件
@@ -117,7 +120,7 @@ u32 sys_open(char* name, int attr, ...) {
     return -1;
   }
   fd->offset = 0;
-  f = thread_add_fd(current, fd);
+  int f = thread_add_fd(current, fd);
   if (f < 0) {
     log_error("sys open %s error\n", name);
     return -1;
@@ -330,19 +333,9 @@ int sys_close(u32 fd) {
     log_error("close not found fd %d tid %d\n", fd, current->id);
     return 0;
   }
-  int ret = fd_close(f);
-  if (ret == 1) {
-    // fd use by other do not close
-    thread_set_fd(current, fd, NULL);
-  }
-  vnode_t* node = f->data;
-  if (node == NULL) {
-    log_error("sys close node is null tid %d \n", current->id);
-    return -1;
-  }
-  ret = vclose(node);
-
-  return ret;
+  // fd_close already calls vclose and sets fd->data = NULL.
+  thread_set_fd(current, fd, NULL);
+  return fd_close(f);
 }
 
 size_t sys_write(u32 fd, void* buf, size_t nbytes) {
@@ -372,8 +365,18 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
   }
   vnode_t* node = f->data;
   if (node == NULL) {
-    log_error("sys read node is null\n");
-    return -1;
+    if (fd <= STDERR) {
+      thread_fill_fd(current);
+      f = thread_find_fd_id(current, fd);
+      if (f != NULL) {
+        node = f->data;
+      }
+    }
+    if (node == NULL) {
+      log_error("sys read node is null tid %d fd %d name %s ptr %x\n",
+                current->id, fd, f != NULL ? f->name : 0, f);
+      return -1;
+    }
   }
   u32 ret = vread(node, f->offset, nbytes, buf);
   if (ret > 0) {
@@ -497,7 +500,6 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     log_error("sys exec node is null pwd\n");
     return -1;
   }
-  sys_close(fd);
   if (node->parent != NULL) {
     // current->vfs->pwd = node->parent;
   } else {
@@ -707,15 +709,27 @@ int sys_dup2(int oldfd, int newfd) {
   fd_t* fd = thread_find_fd_id(current, oldfd);
   if (fd == NULL) {
     log_error("dup not found fd %d\n", fd);
-    return 0;
+    return -1;
   }
+  if (oldfd == newfd) {
+    return newfd;
+  }
+
   fd_t* nfd = thread_find_fd_id(current, newfd);
-  if (nfd == NULL) {
-    log_error("dup not found nfd %d\n", nfd);
-    return 0;
+  if (nfd != NULL && nfd != fd) {
+    fd_close(nfd);
   }
-  fd_close(fd);
+
+  if (newfd >= current->fd_size) {
+    log_error("dup2 newfd limit %d >= %d\n", newfd, current->fd_size);
+    return -1;
+  }
+
   thread_set_fd(current, newfd, fd);
+  fd->use_count++;
+  if (newfd >= current->fd_number) {
+    current->fd_number = newfd + 1;
+  }
   return newfd;
 }
 
@@ -1102,6 +1116,12 @@ int sys_fcntl64(int fd, int cmd, void* arg) {
     return -1;
   }
   vnode_t* node = findfd->data;
+  if ((cmd == F_GETFL || cmd == F_SETFL) && node == NULL) {
+    log_error("sys fcntl64 node is null tid %d fd %d name %s ptr %x cmd %x\n",
+              current != NULL ? current->id : -1, fd,
+              findfd->name != NULL ? findfd->name : 0, findfd, cmd);
+    return -1;
+  }
   if (cmd == F_SETFD) {
     findfd->flags = (u32)(uintptr_t)arg;
     return fd;
@@ -1209,6 +1229,12 @@ int sys_fstat(int fd, struct stat* stat) {
     return -1;
   }
   vnode_t* node = f->data;
+  if (node == NULL) {
+    log_error("sys fstat node is null tid %d fd %d name %s ptr %x\n",
+              current != NULL ? current->id : -1, fd,
+              f->name != NULL ? f->name : 0, f);
+    return -1;
+  }
   u32 cmd = IOC_STAT;
   u32 ret = vioctl(node, cmd, stat);
   return ret;
@@ -1531,6 +1557,11 @@ int sys_statfs64(const char* filename, struct statfs* stat) {
     return 0;
   }
   vnode_t* node = fd->data;
+  if (node == NULL) {
+    log_error("sys statfs64 node is null name %s tid %d fd %d fdptr %x\n",
+              filename, current != NULL ? current->id : -1, f, fd);
+    return -1;
+  }
   u32 cmd = IOC_STATFS;
   u32 ret = vioctl(node, cmd, stat);
   return ret;

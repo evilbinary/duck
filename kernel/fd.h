@@ -48,5 +48,6 @@ fd_t* fd_find(u32 fd);
 int fd_close(fd_t* fd);
 int fd_init();
 int fd_std_init();
+int fd_ensure_stdio();
 
 #endif

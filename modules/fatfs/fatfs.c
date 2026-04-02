@@ -290,12 +290,7 @@ uint fat_op_open(vnode_t *node, uint mode) {
         log_error("open file %s path %s error code %d\n", node->name, buf, res);
         return -1;
       }
-      //dont not foget length
       node->length = file_info->file.fsize;
-    }else{
-      //kprintf("2file_info->fil->%x path: %s\n", &file_info->fil,buf);
-      log_error("get fil %x  path: %s\n",&file_info->fil,buf);
-
     }
   }
   return 1;
@@ -341,10 +336,12 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
   uint type = V_FILE;
 
   file_info_t *new_file_info = kmalloc(sizeof(file_info_t), DEFAULT_TYPE);
+  kmemset(new_file_info, 0, sizeof(file_info_t));
   // find file in dir
   res = find_in_dir(&dir, &find_file, name);
   if (res != FR_OK) {
     log_error("not found file %s in %s code %d\n", name, node->name, res);
+    kfree(new_file_info);
     return NULL;
   }
 
@@ -438,10 +435,11 @@ int fat_op_close(vnode_t *node) {
   file_info_t *file_info = node->data;
   if (file_info != NULL) {
     file_info->offset = 0;
-    if (file_info->file.fattrib == AM_DIR) {
+    if ((node->flags & V_DIRECTORY) == V_DIRECTORY) {
       f_closedir(&file_info->dir);
     } else {
       f_close(&file_info->fil);
+      file_info->fil.obj.fs = NULL;  // mark as closed so next open re-opens it
     }
   }
   return 0;

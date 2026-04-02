@@ -12,69 +12,92 @@
 fd_t fd_list[MAX_FD_NUMBER];
 int fd_number = 0;
 
+int fd_init() {
+  for (int i = 0; i < MAX_FD_NUMBER; i++) {
+    fd_list[i].use_count = -1;  // -1 = never allocated
+  }
+
+  fd_std_init();
+  return 1;
+}
+
 fd_t* fd_find(u32 fd) {
   for (int i = 0; i < fd_number; i++) {
-    if (fd_list[i].id == fd) {
+    if (fd_list[i].id == fd && fd_list[i].data != NULL) {
       return &fd_list[i];
     }
   }
   return NULL;
 }
 
+static fd_t* fd_alloc_slot(u32* file, u32 type, char* name, int id) {
+  fd_t* slot = &fd_list[id];
+  slot->id = id;
+  slot->type = type;
+  slot->data = file;
+  slot->offset = 0;
+  slot->name = kmalloc(kstrlen(name) + 1, KERNEL_TYPE);
+  kstrcpy(slot->name, name);
+  slot->use_count = 0;  // incremented by thread_add_fd
+  slot->flags = 0;
+  return slot;
+}
+
 fd_t* fd_open(u32* file, u32 type, char* name) {
-  if (fd_number > MAX_FD_NUMBER) {
-    kprintf("new fd limit \n");
-    return NULL;
-  }
   if (file == NULL) {
     kprintf("fd new file is null\n");
     return NULL;
   }
+  if (fd_number >= MAX_FD_NUMBER) {
+    kprintf("new fd limit\n");
+    return NULL;
+  }
+  return fd_alloc_slot(file, type, name, fd_number++);
+}
 
-  for (int i = 0; i < fd_number; i++) {
-    if (fd_list[i].type == type && fd_list[i].data == file) {
-      fd_list[i].use_count++;
-      return &fd_list[i];
-    }
+static int fd_reopen_stdio_slot(int id, char* path) {
+  vnode_t* file = vfs_open_attr(NULL, path, V_CHARDEVICE);
+  if (file == NULL) {
+    return -1;
   }
 
-  fd_list[fd_number].id = fd_number;
-  fd_list[fd_number].type = type;
-  fd_list[fd_number].data = file;
-  fd_list[fd_number].offset = 0;
-  fd_list[fd_number].name = kmalloc(kstrlen(name) + 1, KERNEL_TYPE);
-  kstrcpy(fd_list[fd_number].name, name);
-  fd_list[fd_number].use_count = 1;
-  fd_list[fd_number].flags = 0;
-  return &fd_list[fd_number++];
+  if (id >= MAX_FD_NUMBER) {
+    return -1;
+  }
+
+  if (id >= fd_number) {
+    fd_number = id + 1;
+  }
+
+  fd_t* slot = &fd_list[id];
+  if (slot->name != NULL) {
+    kfree(slot->name);
+    slot->name = NULL;
+  }
+  fd_alloc_slot((u32*)file, DEVICE_TYPE_FILE, path, id);
+  return 0;
+}
+
+int fd_ensure_stdio() {
+  static char* stdio_path[] = {"/dev/stdin", "/dev/stdout", "/dev/stderr"};
+
+  for (int i = STDIN; i <= STDERR; i++) {
+    fd_t* fd = NULL;
+    if (i < fd_number) {
+      fd = &fd_list[i];
+    }
+    if (fd == NULL || fd->data == NULL) {
+      if (fd_reopen_stdio_slot(i, stdio_path[i]) < 0) {
+        return -1;
+      }
+    }
+  }
+  return 0;
 }
 
 int fd_std_init() {
-  char* stdin = "/dev/stdin";
-  vnode_t* file = vfs_open_attr(NULL, stdin, V_CHARDEVICE);
-  fd_t* fdstdin = fd_open(file, DEVICE_TYPE_FILE, stdin);
-  if (fdstdin == NULL) {
-    kprintf(" new fd stdin error\n");
-    return -1;
-  }
-  char* stdout = "/dev/stdout";
-  file = vfs_open_attr(NULL, stdout, V_CHARDEVICE);
-  fd_t* fdstdout = fd_open(file, DEVICE_TYPE_FILE, stdout);
-  if (fdstdout == NULL) {
-    kprintf(" new fd stdout error\n");
-    return -1;
-  }
-
-  char* stderro = "/dev/stderr";
-  fd_t* fdstderro = fd_open(file, DEVICE_TYPE_FILE, stderro);
-  if (fdstderro == NULL) {
-    kprintf(" new fd stderro error\n");
-    return -1;
-  }
-  return 1;
+  return fd_ensure_stdio();
 }
-int fd_init() { return 1; }
-
 int fd_close(fd_t* fd) {
   if (fd == NULL) {
     kprintf("fd close is null\n");
@@ -82,16 +105,14 @@ int fd_close(fd_t* fd) {
   }
   fd->use_count--;
   if (fd->use_count <= 0) {
-    vnode_t* file = fd->data;
-    if (file == NULL) {
-      log_error("sys close node is null ,name is  %s\n", file->name);
-      return -1;
+    vnode_t* file = (vnode_t*)fd->data;
+    if (file != NULL) {
+      vclose(file);
     }
-    // reset offset
-    // fd->offset = 0;
-    // u32 ret = vclose(file);
-    return 1;
+    fd->data = NULL;
+    fd->use_count = 0;
   }
+  return 0;
 }
 
 void fd_dumps() {

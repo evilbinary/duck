@@ -122,6 +122,7 @@ void thread_run_all();
 void thread_reset_stack3(thread_t* thread, u32* stack3);
 
 void thread_fill_fd(thread_t* thread);
+u64 thread_user_tp();
 void thread_dump_stack(u32* stack, u32 size);
 void thread_dump(thread_t* thread, u32 flags);
 

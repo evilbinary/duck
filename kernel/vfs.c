@@ -18,6 +18,15 @@ voperator_t default_operator = {.write = vfs_write,
                                 .readdir = vfs_readdir};
 
 size_t vioctl(vnode_t *node, u32 cmd, void *args) {
+  if (node == NULL) {
+    log_error("vioctl node is null cmd=%x args=%x\n", cmd, args);
+    return 0;
+  }
+  if (node->op == NULL) {
+    log_error("vioctl node->op is null node=%s cmd=%x args=%x\n",
+              node->name != NULL ? node->name : "<null>", cmd, args);
+    return 0;
+  }
   if (node->op->ioctl != NULL) {
     u32 ret = 0;
     // va_list args;
@@ -26,7 +35,8 @@ size_t vioctl(vnode_t *node, u32 cmd, void *args) {
     // va_end(args);
     return ret;
   } else {
-    // log_warn("node %s ioctl is null\n", node->name);
+    log_warn("vioctl ioctl is null node=%s cmd=%x args=%x\n",
+             node->name != NULL ? node->name : "<null>", cmd, args);
     return 0;
   }
 }
@@ -380,7 +390,7 @@ int vfs_close(vnode_t *node) {
 int vfs_path_append(vnode_t *node, char *name, char *buf) {
   int len = 0;
   vnode_t *p = node;
-  if (name != NULL) {
+  if (name != NULL && name[0] != 0) {
     int start = 1;
     len = kstrlen(name);
     if (name[0] == '/') {
