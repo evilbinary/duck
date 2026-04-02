@@ -89,7 +89,7 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   thread_t* thread = kmalloc(sizeof(thread_t), KERNEL_TYPE);
   thread_init_default(thread, level, entry, data);
 
-  thread->fds = kmalloc(sizeof(fd_t) * thread->fd_size, KERNEL_TYPE);
+  thread->fds = kmalloc(sizeof(fd_t*) * thread->fd_size, KERNEL_TYPE);
 
   // context init
   context_t* ctx = kmalloc(sizeof(context_t), KERNEL_TYPE);
@@ -192,8 +192,13 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
     copy->fd_number = thread->fd_number;
     copy->fds = kmalloc(sizeof(fd_t*) * thread->fd_size, KERNEL_TYPE);
     kmemmove(copy->fds, thread->fds, sizeof(fd_t*) * thread->fd_size);
+    for (int i = 0; i < copy->fd_number; i++) {
+      if (copy->fds[i] != NULL) {
+        copy->fds[i]->use_count++;
+      }
+    }
   } else {
-    thread_fill_fd(thread);
+    thread_fill_fd(copy);
   }
 
   // check thread data
@@ -277,12 +282,13 @@ int thread_check(thread_t* thread) {
 }
 
 void thread_fill_fd(thread_t* thread) {
-  thread->fds[STDIN] = fd_find(STDIN);
+  thread->fds[STDIN]  = fd_find(STDIN);
   thread->fds[STDOUT] = fd_find(STDOUT);
   thread->fds[STDERR] = fd_find(STDERR);
-  // thread->fds[STDSELF]=3;
+  thread->fd_number = 0;
   for (int i = STDIN; i <= STDERR; i++) {
-    if (thread->fds[STDIN] != NULL) {
+    if (thread->fds[i] != NULL) {
+      thread->fds[i]->use_count++;
       thread->fd_number++;
     }
   }
@@ -538,10 +544,12 @@ int thread_add_fd(thread_t* thread, fd_t* fd) {
     fd_t* find_fd = thread->fds[i];
     if (find_fd == NULL) {
       thread->fds[i] = fd;
+      fd->use_count++;
       return i;
     }
   }
   thread->fds[thread->fd_number] = fd;
+  fd->use_count++;
   return thread->fd_number++;
 }
 

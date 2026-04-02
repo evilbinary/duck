@@ -48,6 +48,9 @@ int devfs_init(void) {
   stderr->op = &device_operator;
 
   stdin->device = device_find(DEVICE_KEYBOARD);
+  if (stdin->device == NULL) {
+    stdin->device = device_find(DEVICE_SERIAL);
+  }
   stdout->device = device_find(DEVICE_VGA);
 
   if (stdout->device == NULL) {
@@ -67,7 +70,7 @@ int devfs_init(void) {
   null->op = &device_operator;
   vfs_mount(NULL, "/dev", null);
 
-  fd_std_init();
+  fd_init();
 
   return 0;
 }
