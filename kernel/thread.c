@@ -56,7 +56,7 @@ thread_t* thread_create_ex_name(char* name, void* entry, u32 size, void* data,
   thread_t* t = thread_create_ex(entry, KERNEL_THREAD_STACK_SIZE, size, data,
                                  level, flags);
   if (t == NULL) return t;
-  char* kname = kmalloc(kstrlen(name), KERNEL_TYPE);
+  char* kname = kmalloc(kstrlen(name) + 1, KERNEL_TYPE);
   kstrcpy(kname, name);
   t->name = kname;
   return t;

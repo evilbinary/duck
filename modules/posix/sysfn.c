@@ -475,7 +475,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     return -1;
   }
 
-  char* name = kmalloc(kstrlen(filename), KERNEL_TYPE);
+  char* name = kmalloc(kstrlen(filename) + 1, KERNEL_TYPE);
   kstrcpy(name, filename);
   current->name = name;
 
