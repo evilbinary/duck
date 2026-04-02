@@ -809,9 +809,7 @@ int sys_chdir(const char* path) {
 
 int sys_brk(u32 end) {
   thread_t* current = thread_current();
-#ifdef LOG_BRK
-  log_debug("sys brk tid:%x addr:%x\n", current->id, end);
-#endif
+  log_debug("brk tid:%d req:%x\n", current->id, end);
   vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
   if (vm == NULL) {
     log_error("sys brk not found vm\n");
@@ -822,23 +820,27 @@ int sys_brk(u32 end) {
       vm->alloc_addr = vm->vaddr + end;
     }
     end = vm->alloc_addr;
-#ifdef LOG_BRK
-    log_debug("sys brk return first addr:%x\n", end);
-#endif
+    log_debug("brk first ret:%x\n", end);
     return end;
   }
-  int size = end - (u32)vm->alloc_addr;
-  if (end < vm->alloc_addr) {
-    // todo free map age
-    log_debug("brk free %x %d\n", end, -size);
-    vfree(end, -size);
+  if ((u32)end > (u32)vm->vend) {
+    log_error("brk: end %x exceeds heap vend %x, returning current brk %x\n",
+              end, vm->vend, vm->alloc_addr);
+    return vm->alloc_addr;  // musl: brk failed, returned old value
   }
+  int size = (int)((u32)end - (u32)vm->alloc_addr);
+  if (size < 0) {
+    log_debug("brk shrink %x by %d\n", end, -size);
+    vfree((void*)end, (size_t)(-size));
+  }
+  // Do NOT eagerly valloc — let page fault handler lazily allocate.
+  // Eager valloc for large sizes overwhelms kmalloc_alignment and silently
+  // fails, leaving alloc_addr advanced past unmapped pages.
   int addr = end;
   vm->alloc_size += size;
   vm->alloc_addr = end;
-#ifdef LOG_BRK
-  log_debug("sys brk return alloc addr:%x\n", addr);
-#endif
+  log_debug("brk old:%x new:%x size_delta:%d total:%d\n",
+            addr - size, addr, size, vm->alloc_size);
   return addr;
 }
 
@@ -891,24 +893,52 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
     return start_addr;
   }
 
-  if (vm->child == NULL) {  // 未分配过
-    // 从父亲的中间位置开始拿
-    start_addr = vm->vaddr + vm->size / 2;
-    vm->child = vmemory_area_create(start_addr, length, MEMORY_MMAP);
-  } else {
-    // 找下一个内存地址
-    vmemory_area_t* last_area = vmemory_area_find_last(vm->child);
-    start_addr = last_area->vend;
-    vmemory_area_t* new_area =
-        vmemory_area_create(start_addr, length, MEMORY_MMAP);
-    last_area->next = new_area;
+  // 先找合适大小的已释放节点复用，避免地址单向增长导致堆溢出
+  vmemory_area_t* reuse = NULL;
+  if (vm->child != NULL) {
+    for (vmemory_area_t* p = vm->child; p != NULL; p = p->next) {
+      if (p->flags == MEMORY_FREE && p->size >= length) {
+        reuse = p;
+        break;
+      }
+    }
   }
 
-  // 匿名内存
+  if (reuse != NULL) {
+    reuse->flags = MEMORY_MMAP;
+    reuse->size = length;
+    reuse->vend = reuse->vaddr + length;
+    start_addr = (void*)reuse->vaddr;
+  } else {
+    if (vm->child == NULL) {  // 未分配过
+      start_addr = vm->vaddr + vm->size / 2;
+    } else {
+      vmemory_area_t* last_area = vmemory_area_find_last(vm->child);
+      start_addr = last_area->vend;
+    }
+
+    if ((uintptr_t)start_addr + length > vm->vend) {
+      log_error("mmap: out of heap range start=%x len=%x vend=%x\n",
+                start_addr, length, vm->vend);
+      return MAP_FAILED;
+    }
+
+    if (vm->child == NULL) {
+      vm->child = vmemory_area_create(start_addr, length, MEMORY_MMAP);
+    } else {
+      vmemory_area_t* last_area = vmemory_area_find_last(vm->child);
+      vmemory_area_t* new_area = vmemory_area_create(start_addr, length, MEMORY_MMAP);
+      last_area->next = new_area;
+    }
+  }
+
+  // 匿名内存：立即分配并清零物理页，不走懒分配
+  // prot==0 (PROT_NONE) 表示 guard page，不需要映射真实物理页
   if ((flags & MAP_ANON) == MAP_ANON) {
-#ifdef LOG_MMAP
-    log_debug("map anon return addr %x\n", start_addr);
-#endif
+    if (prot != 0) {
+      valloc(start_addr, length);
+    }
+    log_debug("mmap anon addr %x len %x prot %x\n", start_addr, length, prot);
     return start_addr;
   } else if ((flags & MAP_ANON) == 0) {
     // 有名
@@ -985,9 +1015,7 @@ void* sys_mremap(void* old_address, size_t old_size, size_t new_size, int flags,
 }
 
 int sys_munmap(void* addr, size_t size) {
-#ifdef LOG_MMAP
   log_debug("sys munmap addr: %x size: %d\n", addr, size);
-#endif
   thread_t* current = thread_current();
   vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
   if (vm == NULL) {
@@ -999,16 +1027,31 @@ int sys_munmap(void* addr, size_t size) {
     log_warn("sys munmap not found area\n");
     return 0;
   }
-  vmemory_area_free(area);
+  // 释放物理页
+  vfree((void*)area->vaddr, area->size);
+  // 从 child 链表摘掉节点并释放
+  vmemory_area_t* prev = NULL;
+  vmemory_area_t* p = vm->child;
+  while (p != NULL) {
+    if (p == area) {
+      if (prev == NULL) {
+        vm->child = p->next;
+      } else {
+        prev->next = p->next;
+      }
+      kfree(area);
+      break;
+    }
+    prev = p;
+    p = p->next;
+  }
 
   return 0;
 }
 
 int sys_mprotect(const void* start, size_t len, int prot) {
-  int ret = 0;
   log_debug("sys mprotect not impl\n");
-
-  return ret;
+  return -ENOSYS;
 }
 
 int sys_rt_sigprocmask(int h, void* set, void* old_set) {

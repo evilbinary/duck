@@ -88,7 +88,7 @@ void* page_fault_handle(interrupt_context_t *ic) {
         if (area->flags == MEMORY_STACK) {
           extend_stack((void*)fault_addr, PAGE_SIZE);
         } else {
-          log_debug("page fault valloc addr:%lx flags:%d\n", fault_addr, area->flags);
+          //log_debug("page fault valloc addr:%lx flags:%d\n", fault_addr, area->flags);
           void* vret = valloc((void*)fault_addr, PAGE_SIZE);
           if (vret == NULL) {
             log_error("page fault valloc failed addr:%lx\n", fault_addr);
