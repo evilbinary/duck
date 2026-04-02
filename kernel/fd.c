@@ -42,7 +42,7 @@ fd_t* fd_open(u32* file, u32 type, char* name) {
   fd_list[fd_number].type = type;
   fd_list[fd_number].data = file;
   fd_list[fd_number].offset = 0;
-  fd_list[fd_number].name = kmalloc(kstrlen(name), KERNEL_TYPE);
+  fd_list[fd_number].name = kmalloc(kstrlen(name) + 1, KERNEL_TYPE);
   kstrcpy(fd_list[fd_number].name, name);
   fd_list[fd_number].use_count = 1;
   fd_list[fd_number].flags = 0;

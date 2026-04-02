@@ -299,7 +299,7 @@ u32 vfs_open(vnode_t *node, u32 mode) {
 
 vnode_t *vfs_create_node(u8 *name, u32 flags) {
   vnode_t *node = kmalloc(sizeof(vnode_t), KERNEL_TYPE);
-  node->name = kmalloc(kstrlen(name), KERNEL_TYPE);
+  node->name = kmalloc(kstrlen(name) + 1, KERNEL_TYPE);
   kstrcpy(node->name, name);
   node->flags = flags;
   node->op = &default_operator;
@@ -309,6 +309,7 @@ vnode_t *vfs_create_node(u8 *name, u32 flags) {
   node->child_size = 0;
   return node;
 }
+
 
 vnode_t *vfs_open_attr(vnode_t *root, u8 *name, u32 attr) {
   if (name == NULL) {
