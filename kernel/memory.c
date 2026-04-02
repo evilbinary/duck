@@ -314,6 +314,11 @@ void* valloc(void* addr, size_t size) {
   for (int i = 0; i < pages; i++) {
     void* phy_addr = NULL;
     phy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
+    if (phy_addr == NULL) {
+      log_error("valloc: kmalloc_alignment failed vaddr=%lx\n", vaddr);
+      return NULL;
+    }
+    kmemset(phy_addr, 0, PAGE_SIZE);
     void* paddr = phy_addr;
     #ifdef DEBUG
     log_debug("valloc page:%x vaddr:%x paddr:%x\n", current->vm->upage, vaddr,
