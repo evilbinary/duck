@@ -568,6 +568,23 @@ int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
     log_error("current is null\n");
     return -1;
   }
+
+  // 如果 stack 为 NULL，按 fork 方式处理（vfork 会这样调用）
+  if (stack == NULL) {
+    thread_t* copy_thread = thread_copy(current, THREAD_VFORK);
+    thread_set_ret(copy_thread, 0);  // 子进程返回 0
+
+#ifdef LOG_DEBUG
+    log_debug("-------dump current thread %d %s-------------\n", current->id);
+    thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
+    log_debug("-------dump clone thread %d-------------\n", copy_thread->id);
+    thread_dump(copy_thread, DUMP_DEFAULT | DUMP_CONTEXT);
+#endif
+
+    thread_run(copy_thread);
+    return copy_thread->id;  // 父进程返回子进程ID
+  }
+
   start_args_t* start_args = stack;
   void* fn = start_args->start_func;
   void* arg = start_args->start_arg;
@@ -608,6 +625,7 @@ int sys_vfork() {
     return -1;
   }
   thread_t* copy_thread = thread_copy(current, THREAD_VFORK);
+  thread_set_ret(copy_thread, 0);  // 子进程返回 0
 
 #ifdef LOG_DEBUG
   log_debug("-------dump current thread %d %s-------------\n", current->id);
@@ -617,7 +635,7 @@ int sys_vfork() {
 #endif
 
   thread_run(copy_thread);
-  return current->id;
+  return copy_thread->id;  // 父进程返回子进程ID
 }
 
 int sys_fork() {

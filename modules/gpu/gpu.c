@@ -57,8 +57,8 @@ void gpu_init_device(device_t* dev) {
   vga->frambuffer = 0;
   dev->data = vga;
   // gpu_init_mode(vga, VGA_MODE_480x272x32);
-  gpu_init_mode(vga, VGA_MODE_640x480x32);
-  // gpu_init_mode(vga, VGA_MODE_1024x768x32);
+  // gpu_init_mode(vga, VGA_MODE_640x480x32);
+  gpu_init_mode(vga, VGA_MODE_1024x768x32);
   log_info("gpu_init_device end\n");
 }
 
