@@ -826,16 +826,15 @@ int sys_brk(u32 end) {
   if ((u32)end > (u32)vm->vend) {
     log_error("brk: end %x exceeds heap vend %x, returning current brk %x\n",
               end, vm->vend, vm->alloc_addr);
-    return vm->alloc_addr;  // musl: brk failed, returned old value
+    return vm->alloc_addr;
   }
   int size = (int)((u32)end - (u32)vm->alloc_addr);
   if (size < 0) {
     log_debug("brk shrink %x by %d\n", end, -size);
     vfree((void*)end, (size_t)(-size));
   }
-  // Do NOT eagerly valloc — let page fault handler lazily allocate.
-  // Eager valloc for large sizes overwhelms kmalloc_alignment and silently
-  // fails, leaving alloc_addr advanced past unmapped pages.
+  // Lazy allocation: physical pages are demand-paged on first access.
+  // Eager valloc here drains kmalloc_alignment too fast for large brk jumps.
   int addr = end;
   vm->alloc_size += size;
   vm->alloc_addr = end;
@@ -932,12 +931,9 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
     }
   }
 
-  // 匿名内存：立即分配并清零物理页，不走懒分配
-  // prot==0 (PROT_NONE) 表示 guard page，不需要映射真实物理页
+  // 匿名内存：登记 VMA 后懒分配，page fault 时逐页分配物理帧
+  // prot==0 (PROT_NONE) 表示 guard page，不映射物理页
   if ((flags & MAP_ANON) == MAP_ANON) {
-    if (prot != 0) {
-      valloc(start_addr, length);
-    }
     log_debug("mmap anon addr %x len %x prot %x\n", start_addr, length, prot);
     return start_addr;
   } else if ((flags & MAP_ANON) == 0) {

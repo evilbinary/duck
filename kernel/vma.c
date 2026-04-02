@@ -96,6 +96,10 @@ vmemory_area_t* vmemory_area_clone(vmemory_area_t* areas, int flag) {
       c->alloc_addr = p->alloc_addr;
       c->alloc_size = p->alloc_size;
     }
+    // Recursively clone mmap child list so forked processes have correct VMA
+    if (p->child != NULL) {
+      c->child = vmemory_area_clone(p->child, flag);
+    }
     if (new_area == NULL) {
       new_area = c;
       current = c;
@@ -288,18 +292,14 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
       log_debug("-copy vaddr %lx addr %lx to %lx\n", addr, phy, copy_addr);
       vmemory_map(vm_copy->upage, addr, (vaddr_t)copy_addr, PAGE_SIZE);
       copied_pages++;
-    } else {
-      log_warn("thread %d vm copy data,vaddr %lx phy is null\n", vm_copy->tid,
-               addr);
     }
+    // Pages not yet faulted in (lazy alloc) are intentionally skipped here.
+    // The child will fault them in on first access, getting a fresh zero page.
   }
-  if (type == MEMORY_STACK) {
-    cvm->alloc_addr = copy_start;
-    cvm->alloc_size = copied_pages * PAGE_SIZE;
-  } else if (type == MEMORY_HEAP) {
-    cvm->alloc_addr = copy_start + copied_pages * PAGE_SIZE;
-    cvm->alloc_size = copied_pages * PAGE_SIZE;
-  }
+  // Always inherit the parent's brk/alloc pointers regardless of how many
+  // pages were physically copied; uncopied lazy pages will be demand-paged.
+  cvm->alloc_addr = vm->alloc_addr;
+  cvm->alloc_size = vm->alloc_size;
 #endif
 }
 

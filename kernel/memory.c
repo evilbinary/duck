@@ -309,28 +309,42 @@ void* valloc(void* addr, size_t size) {
   thread_t* current = thread_current();
   u32 page_alignt = PAGE_SIZE - 1;
   void* vaddr = (vaddr_t)addr & (~page_alignt);
-  // void* vaddr = ALIGN((u32)addr, PAGE_SIZE);
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
-  for (int i = 0; i < pages; i++) {
-    void* phy_addr = NULL;
-    phy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
+
+  // Try to allocate all pages as one contiguous block first.
+  // This reduces kernel heap fragmentation compared to per-page allocations.
+  if (pages > 1) {
+    void* bulk = kmalloc_alignment(pages * PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
+    if (bulk != NULL) {
+      kmemset(bulk, 0, pages * PAGE_SIZE);
+      for (u32 i = 0; i < pages; i++) {
+        void* paddr = bulk + i * PAGE_SIZE;
+        if (current != NULL) {
+          page_map_on(current->vm->upage, vaddr, paddr,
+                      PAGE_P | PAGE_USR | PAGE_RWX);
+        } else {
+          page_map(vaddr, paddr, PAGE_P | PAGE_USR | PAGE_RWX);
+        }
+        vaddr += PAGE_SIZE;
+      }
+      return addr;
+    }
+    // Bulk alloc failed, fall through to per-page allocation
+  }
+
+  for (u32 i = 0; i < pages; i++) {
+    void* phy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
     if (phy_addr == NULL) {
       log_error("valloc: kmalloc_alignment failed vaddr=%lx\n", vaddr);
       return NULL;
     }
     kmemset(phy_addr, 0, PAGE_SIZE);
-    void* paddr = phy_addr;
-    #ifdef DEBUG
-    log_debug("valloc page:%x vaddr:%x paddr:%x\n", current->vm->upage, vaddr,
-              paddr);
-    #endif
     if (current != NULL) {
-      page_map_on(current->vm->upage, vaddr, paddr,
+      page_map_on(current->vm->upage, vaddr, phy_addr,
                   PAGE_P | PAGE_USR | PAGE_RWX);
     } else {
-      page_map(vaddr, paddr, PAGE_P | PAGE_USR | PAGE_RWX);
+      page_map(vaddr, phy_addr, PAGE_P | PAGE_USR | PAGE_RWX);
     }
-    // kprintf("vmap vaddr:%x paddr:%x\n", vaddr, paddr);
     vaddr += PAGE_SIZE;
   }
   return addr;
