@@ -461,6 +461,12 @@ void sys_exit(int status) {
   if (current->tinfo != NULL) {
     ((thread_info_t*)current->tinfo)->detach_state = DT_EXITED;
   }
+  // sys_exit must not return to the caller. Once the current thread is marked
+  // stopped, immediately switch away; otherwise execution continues on a dead
+  // thread and eventually faults in unrelated code paths.
+  schedule_switch();
+  for (;;) {
+  }
 }
 
 void* sys_vmap(void* addr, size_t size) {
