@@ -610,8 +610,8 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
 
   current->exec = args;
   thread_set_arg(current, args);
-  kprintf("sys_exec args=%lx pc=%lx lr=%lx x0=%lx\n", args, current->ctx->ksp->pc,
-          current->ctx->ksp->lr, current->ctx->ksp->x0);
+  // kprintf("sys_exec args=%lx pc=%lx lr=%lx x0=%lx\n", args, current->ctx->ksp->pc,
+  //         current->ctx->ksp->lr, current->ctx->ksp->x0);
   thread_run(current);
 
   kmemmove(current->ctx->ic, current->ctx->ksp, sizeof(interrupt_context_t));
