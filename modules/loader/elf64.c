@@ -1,6 +1,7 @@
 #include "kernel/kernel.h"
 #include "kernel/elf.h"
 #include "kernel/memory.h"
+#include "kernel/thread.h"
 #include "loader.h"
 #include "posix/sysfn.h"
 
@@ -355,7 +356,8 @@ void run_elf64_thread(long* p) {
   }
   auxv++;
 
-  filename = (char*)p[1];
+  thread_t* current = thread_current();
+  filename = current != NULL && current->name != NULL ? (char*)current->name : (char*)p[1];
   if (filename == NULL) {
     elf64_log_error("exec filename is null\n");
     syscall1(SYS_EXIT, -1);

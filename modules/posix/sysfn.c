@@ -76,6 +76,15 @@ u32 sys_open(char* name, int attr, ...) {
     log_error("open name is null\n");
     return -1;
   }
+  if (name[0] == '\0') {
+    log_error("open name is empty attr %x\n", attr);
+    return -1;
+  }
+  if ((unsigned char)name[0] < 0x20 && name[0] != '/' && name[0] != '.') {
+    log_error("open invalid path start 0x%x attr %x\n", (unsigned char)name[0],
+              attr);
+    return -1;
+  }
   if (attr > 020200000) {
     log_error("open attr range error %x\n", attr);
     return -1;
@@ -154,11 +163,15 @@ static u64 sys_open_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5) {
   long s0 = (long)a0;
   const char* pathname = NULL;
   int flags = 0;
+  int dirfd = -100;
+  int is_openat = 0;
 
   if (s0 >= -4096 && s0 <= 4096) {
     // openat layout
+    dirfd = (int)a0;
     pathname = (const char*)a1;
     flags = (int)a2;
+    is_openat = 1;
   } else {
     // open layout
     pathname = (const char*)a0;
@@ -171,6 +184,9 @@ static u64 sys_open_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5) {
     return (u64)-1;
   }
 
+  if (is_openat) {
+    return (u64)sys_openat(dirfd, pathname, flags, (int)a3);
+  }
   return (u64)sys_open((char*)pathname, flags);
 }
 
@@ -279,6 +295,17 @@ u32 sys_openat(int dirfd, const char* pathname, int flags, int mode) {
   if (pathname == NULL) {
     log_error("sys_openat null pathname dirfd=%d flags=%x\n", dirfd, flags);
     return -1;
+  }
+  if (pathname[0] == '\0') {
+    // Some userspace paths for "current directory" end up here as openat with
+    // an empty pathname. Treat that as "." for AT_FDCWD-style calls so tools
+    // like ls can continue.
+    if (dirfd == -100 || dirfd == 0) {
+      pathname = ".";
+    } else {
+      log_error("sys_openat empty pathname dirfd=%d flags=%x\n", dirfd, flags);
+      return -1;
+    }
   }
   log_debug("sys_openat dirfd=%d path=%s flags=%x\n", dirfd, pathname, flags);
   return sys_open((char*)pathname, flags);
@@ -521,34 +548,57 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   // [argc][argv...][NULL][envp...][NULL][auxv...]
   // Reserve enough longs for argv/envp and a small auxv (type,val pairs + AT_NULL).
 #if defined(ARM64) || defined(__aarch64__)
-  const int auxv_pairs = 16;  // 16 entries is plenty for a minimal auxv
+  const int auxv_pairs = 24;  // Keep headroom for AT_EXECFN and future auxv entries.
 #else
   const int auxv_pairs = 12;
 #endif
   const int auxv_words = auxv_pairs * 2;
-  long* args = kmalloc(sizeof(long) * (argc + 4 + 38 + auxv_words), DEFAULT_TYPE);
-  args[0] = argc;
+  int exec_argc = argc > 0 ? argc : 1;
+  int envc = 0;
+  size_t string_bytes = 0;
+  for (i = 0; i < argc; i++) {
+    string_bytes += kstrlen(argv[i]) + 1;
+  }
+  if (argc == 0) {
+    string_bytes += kstrlen(filename) + 1;
+  }
+  if (envp != NULL) {
+    for (i = 0; i < 38 && envp[i]; i++) {
+      string_bytes += kstrlen(envp[i]) + 1;
+      envc++;
+    }
+  }
+  int header_words = 1 + exec_argc + 1 + envc + 1 + auxv_words;
+  long* args =
+      kmalloc(sizeof(long) * header_words + string_bytes + 16, DEFAULT_TYPE);
+  char* strp = (char*)(args + header_words);
+  args[0] = exec_argc;
   i = 0;
   int pos = 1;
   for (i = 0; i < argc; i++) {
-    args[pos] = argv[i];
-    pos++;
+    size_t len = kstrlen(argv[i]) + 1;
+    kstrcpy(strp, argv[i]);
+    args[pos++] = (long)strp;
+    strp += len;
   }
-  log_debug("envp %x argc %d filename %s\n", envp, argc, filename);
+  if (argc == 0) {
+    size_t len = kstrlen(filename) + 1;
+    kstrcpy(strp, filename);
+    args[pos++] = (long)strp;
+    strp += len;
+  }
+  log_debug("envp %x argc %d filename %s\n", envp, exec_argc, filename);
 
   long* p = args;
   char** pargv = (void*)(p + 1);
-  char** penvp = pargv + argc + 1;
+  char** penvp = pargv + exec_argc + 1;
 
-  args[1] = filename;
-  if (pos == 1) {
-    pos++;
-  }
   args[pos++] = 0;
-  if (envp != NULL) {
-    for (i = 0; i < 38 && envp[i]; i++) {
-      args[pos++] = envp[i];
-    }
+  for (i = 0; i < envc; i++) {
+    size_t len = kstrlen(envp[i]) + 1;
+    kstrcpy(strp, envp[i]);
+    args[pos++] = (long)strp;
+    strp += len;
   }
   args[pos++] = 0;
 
