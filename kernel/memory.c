@@ -25,8 +25,12 @@ void memory_init() {
 }
 
 memory_t* memory_info() {
-  memory_summary.free = memory_summary.total - memory_summary.kernel_used -
-                        memory_summary.user_used;
+  ulong used = memory_summary.kernel_used + memory_summary.user_used;
+  if (used >= memory_summary.total) {
+    memory_summary.free = 0;
+  } else {
+    memory_summary.free = memory_summary.total - used;
+  }
   return &memory_summary;
 }
 
@@ -261,23 +265,50 @@ int kmem_size(void* ptr) {
 
 void memory_static(u32 size, int type) {
   thread_t* current = thread_current();
-  int op = 1;
-  if (type == MEMORY_TYPE_FREE) {
-    op = -1;
-  }
+  int is_free = (type == MEMORY_TYPE_FREE);
   if (current != NULL) {
     if (current->level == LEVEL_USER) {
-      memory_summary.user_used += size * op;
-      current->mem += size * op;
+      if (is_free) {
+        if (memory_summary.user_used >= size) {
+          memory_summary.user_used -= size;
+        } else {
+          memory_summary.user_used = 0;
+        }
+        if (current->mem >= size) {
+          current->mem -= size;
+        } else {
+          current->mem = 0;
+        }
+      } else {
+        memory_summary.user_used += size;
+        current->mem += size;
+      }
     } else {
-      memory_summary.kernel_used += size * op;
-      current->mem += size * op;
+      if (is_free) {
+        if (memory_summary.kernel_used >= size) {
+          memory_summary.kernel_used -= size;
+        } else {
+          memory_summary.kernel_used = 0;
+        }
+        if (current->mem >= size) {
+          current->mem -= size;
+        } else {
+          current->mem = 0;
+        }
+      } else {
+        memory_summary.kernel_used += size;
+        current->mem += size;
+      }
     }
   } else {
-    if (type == MEMORY_TYPE_USE) {
-      memory_summary.kernel_used += size * op;
+    if (!is_free) {
+      memory_summary.kernel_used += size;
     } else {
-      memory_summary.kernel_used -= size * op;
+      if (memory_summary.kernel_used >= size) {
+        memory_summary.kernel_used -= size;
+      } else {
+        memory_summary.kernel_used = 0;
+      }
     }
   }
 }
