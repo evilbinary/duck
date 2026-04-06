@@ -56,50 +56,60 @@ typedef u32 vaddr_t;
 
 typedef unsigned int u_int;
 
-#if !defined(_INT8_T) && !defined(int8_t)
+// Standard integer types - coordinate with musl using __DEFINED_* macros
+#if !defined(__DEFINED_int8_t)
 typedef signed char int8_t;
+#define __DEFINED_int8_t
 #endif
 
-#if !defined(_INT16_T) && !defined(int16_t)
+#if !defined(__DEFINED_int16_t)
 typedef signed short int16_t;
+#define __DEFINED_int16_t
 #endif
 
-#if !defined(_INT32_T) && !defined(int32_t)
+#if !defined(__DEFINED_int32_t)
 typedef signed int int32_t;
+#define __DEFINED_int32_t
 #endif
 
-#if !defined(_INT64_T) && !defined(int64_t) && !defined(__DEFINED_int64_t)
+#if !defined(__DEFINED_int64_t)
 typedef signed _Int64 int64_t;
+#define __DEFINED_int64_t
 #endif
 
-#if !defined(_UINT8_T) && !defined(uint8_t)
+#if !defined(__DEFINED_uint8_t)
 typedef unsigned char uint8_t;
+#define __DEFINED_uint8_t
 #endif
 
-#if !defined(_UINT16_T) && !defined(uint16_t)
+#if !defined(__DEFINED_uint16_t)
 typedef unsigned short uint16_t;
+#define __DEFINED_uint16_t
 #endif
 
-#if !defined(_UINT32_T) && !defined(uint32_t)
+#if !defined(__DEFINED_uint32_t)
 typedef unsigned int uint32_t;
+#define __DEFINED_uint32_t
 #endif
 
-#if !defined(_UINT64_T) && !defined(uint64_t) && !defined(__DEFINED_uint64_t)
+#if !defined(__DEFINED_uint64_t)
 typedef unsigned _Int64 uint64_t;
+#define __DEFINED_uint64_t
 #endif
 
-#if !defined(_INTPTR_T) && !defined(intptr_t) && !defined(__DEFINED_intptr_t)
+#if !defined(__DEFINED_intptr_t)
 typedef _Addr intptr_t;
+#define __DEFINED_intptr_t
 #endif
 
-#if !defined(_UINTPTR_T) && !defined(uintptr_t) && !defined(__DEFINED_uintptr_t)
+#if !defined(__DEFINED_uintptr_t)
 typedef unsigned _Addr uintptr_t;
+#define __DEFINED_uintptr_t
 #endif
 
-#if !defined(_SIZE_T) && !defined(size_t) && !defined(_HAVE_SIZE_T) && !defined(__DEFINED_size_t)
-#define _HAVE_SIZE_T
-#define _SIZE_T
+#if !defined(__DEFINED_size_t)
 typedef unsigned _Addr size_t;
+#define __DEFINED_size_t
 #endif
 
 
