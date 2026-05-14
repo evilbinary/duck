@@ -123,18 +123,8 @@ void double_excetpion_handler() {
 }
 
 void exception_info(interrupt_context_t* ic) {
-  static const char* exception_msg[] = {
-      "NONE", "RESET", "NONE", "NONE", "NONE", "NONE", "NONE",       "NONE",
-      "NONE", "NONE",  "NONE", "SVC",  "NONE", "NONE", "SYS PENDSV", "SYS TICK",
-  };
   int cpu = cpu_get_id();
-  if (ic->no < sizeof exception_msg) {
-    kprintf("exception cpu %d no %d: %s\n----------------------------\n", cpu,
-            ic->no, exception_msg[ic->no]);
-  } else {
-    kprintf("exception cpu %d no %d:\n----------------------------\n", cpu,
-            ic->no);
-  }
+  kprintf("EXC %d %d\n", cpu, ic->no);
 }
 
 extern void window_overflow_4();

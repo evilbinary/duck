@@ -71,7 +71,9 @@ void platform_init() {
   ps.EXCM = 0;         // normal exception mode
   ps.LINTLEVEL = 0;  // interrupts disabled
   ps.UM = 0;           // usermode
-  ps.WOE = 1;          // window overflow enabled
+  // The lx6 exception vectors/context code uses call0-style frames.
+  // Keep WOE disabled so the CPU stays in call0 ABI mode.
+  ps.WOE = 0;
   cpu_write_ps(ps);
 
   WSR(INTCLEAR,1);
@@ -83,7 +85,7 @@ void platform_init() {
  }
 
 void platform_end() { 
-  
+  kprintf("P0\n");
 
 }
 

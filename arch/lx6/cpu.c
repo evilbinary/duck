@@ -103,24 +103,7 @@ void cpu_enable_page() {
 inline void cpu_invalidate_tlbs(void) {}
 
 void cpu_init() {
-    kprintf("cpu_init: setup ITLB/DTLB\n");
-
-    static const uint32_t illegal_regions[] = {
-        // 0x00000000,
-        0x80000000,
-        0xa0000000,
-        0xc0000000,
-        0xe0000000
-    };
-    for (size_t i = 0; i < (sizeof(illegal_regions) / sizeof(illegal_regions[0])); i++) {
-        WITLB(0xF, illegal_regions[i]);
-        WDTLB(0xF, illegal_regions[i]);
-    }
-
-    // setup the main region as cached no allocate
-    WDTLB(0x0, 0x20000000);
-
-    kprintf("cpu_init: done\n");
+    kprintf("cpu_init\n");
 }
 
 void cpu_halt() {

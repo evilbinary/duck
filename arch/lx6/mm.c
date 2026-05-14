@@ -9,35 +9,51 @@
 #include "cpu.h"
 #include "gpio.h"
 
+#define PAGE_DIR_NUMBER 1024
+
 extern boot_info_t* boot_info;
 
-u32* page_create(u32 level) { return NULL; }
+u32* page_create(u32 level) {
+  u32* page_dir_ptr_tab =
+      mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, PAGE_SIZE);
+  return page_dir_ptr_tab;
+}
 
 void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
-  // u32 l1_index = virtualaddr >> 20;
-  // u32 l2_index = virtualaddr >> 12 & 0xFF;
-  // u32* l2 = ((u32)l1[l1_index]) & 0xFFFFFC00;
-  // if (l2 == NULL) {
-  //   l2 = mm_alloc_zero_align(0x1000, 0x1000);
-  //   kmemset(l2, 0, 0x1000);
-  //   l1[l1_index] = (((u32)l2) & 0xFFFFFC00) | L1_DESC;
-  // }
-  // l2[l2_index] = ((physaddr >> 12) << 12 )|L2_DESC| flags;
+  u32 l1_index = virtualaddr >> 20;
+  u32 l2_index = (virtualaddr >> 12) & 0xFF;
+  u32* l2 = (u32*)(l1[l1_index] & 0xFFFFFC00);
+  if (l2 == NULL) {
+    l2 = mm_alloc_zero_align(PAGE_SIZE, PAGE_SIZE);
+    if (l2 == NULL) {
+      kprintf("lx6 page_map_on alloc l2 failed\n");
+      return;
+    }
+    kmemset(l2, 0, PAGE_SIZE);
+    l1[l1_index] = ((u32)l2 & 0xFFFFFC00) | PAGE_P;
+  }
+  l2[l2_index] = ((physaddr >> 12) << 12) | PAGE_P | flags;
 }
 
 void* page_v2p(void* page, void* vaddr) {
   void* phyaddr = NULL;
+  if (page == NULL) {
+    return vaddr;
+  }
   u32* l1 = page;
   u32 l1_index = (u32)vaddr >> 20;
   u32 l2_index = (u32)vaddr >> 12 & 0xFF;
+  u32 offset = (u32)vaddr & 0x0FFF;
   u32 l2_addr = l1[l1_index] & 0xFFFFFC00;
   if (l2_addr == 0) {
     return NULL;
   }
   u32* l2 = (u32*)l2_addr;
   phyaddr = (void*)((l2[l2_index] >> 12) << 12);
-  // kprintf("page_v2p vaddr %x paddr %x\n",vaddr,phyaddr);
-  return phyaddr;
+  if (phyaddr == NULL) {
+    return NULL;
+  }
+  return phyaddr + offset;
 }
 
 void mm_page_enable(u32 page_dir) {
@@ -48,30 +64,28 @@ void mm_page_enable(u32 page_dir) {
   kprintf("paging success\n");
 }
 
-void page_clone(u32* old_page, u32* new_page) {
-  // kprintf("page_clone:%x %x\n",old_page,new_page);
-  // if (old_page == NULL) {
-  //   kprintf("page clone error old page null\n");
-  //   return;
-  // }
-  // u32* l1 = old_page;
-  // u32* new_l1 = new_page;
-  // // kprintf("page clone %x to %x\n",old_page,new_page);
-  // for (int l1_index = 0; l1_index < 4096; l1_index++) {
-  //   u32* l2 = ((u32)l1[l1_index]) & 0xFFFFFC00;
-  //   if (l2 != NULL) {
-  //     page_dir_t* new_l2 = mm_alloc_zero_align(256*sizeof(u32), 0x1000);
-  //     new_l1[l1_index] = (((u32)new_l2) & 0xFFFFFC00) | L1_DESC;
-  //     // kprintf("%d %x\n", l1_index, (u32)l2>>10 );
-  //     for (int l2_index = 0; l2_index < 256; l2_index++) {
-  //       u32* addr = l2[l2_index] >> 12;
-  //       if (addr != NULL || l1_index == 0) {
-  //         new_l2[l2_index] = l2[l2_index];
-  //         // kprintf("  %d %x\n", l2_index, addr);
-  //       }
-  //     }
-  //   }
-  // }
+void page_copy(u32* old_page, u32* new_page) {
+  if (old_page == NULL || new_page == NULL) {
+    return;
+  }
+  for (int l1_index = 0; l1_index < PAGE_DIR_NUMBER; l1_index++) {
+    u32* l2 = (u32*)(old_page[l1_index] & 0xFFFFFC00);
+    if (l2 != NULL) {
+      u32* new_l2 = mm_alloc_zero_align(PAGE_SIZE, PAGE_SIZE);
+      if (new_l2 == NULL) {
+        kprintf("lx6 page_clone alloc l2 failed\n");
+        return;
+      }
+      kmemmove(new_l2, l2, PAGE_SIZE);
+      new_page[l1_index] = ((u32)new_l2 & 0xFFFFFC00) | (old_page[l1_index] & 0x3FF);
+    }
+  }
+}
+
+u32* page_clone(u32* old_page_dir, u32 level) {
+  u32* page_dir_ptr_tab = page_create(level);
+  page_copy(old_page_dir, page_dir_ptr_tab);
+  return page_dir_ptr_tab;
 }
 
 void page_unmap_on(page_dir_t* page, u32 virtualaddr) {
@@ -85,7 +99,4 @@ void page_unmap_on(page_dir_t* page, u32 virtualaddr) {
   }
 }
 
-void mm_init_default() { 
-
-
- }
+void mm_init_default() { kprintf("lx6 mm init default\n"); }

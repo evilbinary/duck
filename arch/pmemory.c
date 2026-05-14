@@ -7,6 +7,7 @@ const size_t align_to = 16;
 extern boot_info_t* boot_info;
 
 #define ALIGN(x, a) (x + (a - 1)) & ~(a - 1)
+#define PMEM_ALIGN 16
 
 memory_manager_t mmt;
 
@@ -18,9 +19,9 @@ memory_manager_t mmt;
 void mm_add_block(uintptr_t addr, uintptr_t len);
 
 void ya_alloc_init() {
-  memory_info_t* first_mem = (memory_info_t*)&boot_info->memory[0];
-  u32 size = sizeof(mem_block_t) * boot_info->memory_number;
-  u32 pos = 0;
+#ifdef LX6
+  kprintf("Y0\n");
+#endif
   for (int i = 0; i < boot_info->memory_number; i++) {
     memory_info_t* mem = (memory_info_t*)&boot_info->memory[i];
     if (mem->type != 1) {  // normal ram
@@ -30,8 +31,32 @@ void ya_alloc_init() {
     uintptr_t len = mem->length;
     uintptr_t kernel_start = (uintptr_t)boot_info->kernel_base;
     uintptr_t kernel_end = kernel_start + boot_info->kernel_size;
-    kprintf("kernel base %lx end %lx\n", kernel_start, kernel_end);
-    if (is_line_intersect(addr, addr + len, kernel_start, kernel_end)) {
+#ifdef LX6
+    kprintf("Y1\n");
+    addr = ALIGN(addr, PMEM_ALIGN);
+    if (len > sizeof(mem_block_t)) {
+      len = len & ~(PMEM_ALIGN - 1);
+      if (len > sizeof(mem_block_t) + PAGE_SIZE) {
+        mem_block_t* block = (mem_block_t*)addr;
+        block->addr = (uintptr_t)block + sizeof(mem_block_t);
+        block->size = len - sizeof(mem_block_t);
+        block->origin_size = block->size;
+        block->origin_addr = addr;
+        block->type = MEM_FREE;
+        block->next = NULL;
+        if (mmt.blocks == NULL) {
+          mmt.blocks = block;
+          mmt.blocks_tail = block;
+        } else {
+          mmt.blocks_tail->next = block;
+          mmt.blocks_tail = block;
+        }
+      }
+    }
+    kprintf("Y2\n");
+    break;
+#else
+    if (!(kernel_end < addr || kernel_start > (addr + len))) {
       uintptr_t a1 = addr;
       uintptr_t a2 = addr + len;
       uintptr_t b1 = kernel_start;
@@ -49,6 +74,7 @@ void ya_alloc_init() {
     } else {
       mm_add_block(addr, len);
     }
+#endif
   }
   kassert(mmt.blocks != NULL);
 }
@@ -384,6 +410,10 @@ void mm_add_block(uintptr_t addr, uintptr_t len) {
 }
 
 void mm_dump_phy() {
+#ifdef LX6
+  kprintf("lx6 phy skip\n");
+  return;
+#endif
   for (int i = 0; i < boot_info->memory_number; i++) {
     memory_sinfo_t* m = (memory_sinfo_t*)&boot_info->memory[i];
     kprintf("base:%x %x lenght:%x %x type:%d\n", m->baseh, m->basel, m->lengthh,
@@ -424,12 +454,31 @@ void mm_init() {
   mmt.extend_phy_count = 0;
 
   count = 0;
-
+#ifdef LX6
+  kprintf("M0\n");
+#else
   kprintf("phy dump\n");
+#endif
   mm_dump_phy();
+
+#ifdef LX6
+  kprintf("M1\n");
+#else
+  kprintf("mm init default\n");
+#endif
+  mm_init_default();
+
+#ifdef LX6
+  kprintf("M2\n");
+#else
   kprintf("alloc init\n");
+#endif
+
   // mm init
   mmt.init();
+#ifdef LX6
+  kprintf("M3\n");
+#endif
 }
 
 size_t mm_get_size(void* addr) { return mmt.size(addr); }
@@ -528,13 +577,30 @@ int is_line_intersect(int a1, int a2, int b1, int b2) {
 }
 
 void mm_add_block(uintptr_t addr, uintptr_t len) {
+#ifdef LX6
+  kprintf("B0\n");
+#endif
+  addr = ALIGN(addr, MEMORY_ALIGMENT);
+  if (len <= sizeof(mem_block_t)) {
+    return;
+  }
+  len = len & ~(MEMORY_ALIGMENT - 1);
+  if (len <= sizeof(mem_block_t) + PAGE_SIZE) {
+    return;
+  }
   mem_block_t* block = (mem_block_t*)addr;
+#ifdef LX6
+  kprintf("B1\n");
+#endif
   block->addr = (uintptr_t)block + sizeof(mem_block_t);
   block->size = len - sizeof(mem_block_t);
   block->origin_size = block->size;
   block->origin_addr = addr;
   block->type = MEM_FREE;
   block->next = NULL;
+#ifdef LX6
+  kprintf("B2\n");
+#endif
   if (mmt.blocks == NULL) {
     mmt.blocks = block;
     mmt.blocks_tail = block;

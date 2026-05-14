@@ -36,12 +36,13 @@ int context_init(context_t* context, u32* ksp_top, u32* usp_top, u32* entry,
     cpsr.UM = 0; //kernel vector mode
     cpsr.LINTLEVEL = 0; // interrupts disabled
     cpsr.EXCM = 0; //  exception mode
-    cpsr.WOE =1; // window overflow enabled
+    cpsr.WOE =0; // keep call0-style context until windowed ABI path is stable
 
   } else if (level == 3) {
     cpsr.UM = 1; // usermode user vector mode
     cpsr.LINTLEVEL = 0;
     cpsr.EXCM = 0; //  exception mode
+    cpsr.WOE =0;
 
   } else {
     kprintf("not suppport level %d\n", level);

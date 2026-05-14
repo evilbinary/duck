@@ -43,4 +43,8 @@ void log_warn(const char* fmt, ...);
 
 void log_error(const char* fmt, ...);
 
+void log_set_runtime_ready(int ready);
+
+int log_is_runtime_ready(void);
+
 #endif

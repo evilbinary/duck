@@ -9,13 +9,15 @@
 
 
 int loader_init(void) {
-  kprintf("loader init arm64=%d\n"),
+  kprintf("loader init\n"),
 
 #if defined(ARM64) || defined(__aarch64__)
-  kprintf("loader regist run_elf64_thread=%lx\n", run_elf64_thread);
+  kprintf("loader regist\n");
+  kprintf("LD2\n");
   loader_regist(&run_elf64_thread);
+  kprintf("LD3\n");
 #else
-  kprintf("loader regist run_elf_thread=%lx\n", run_elf_thread);
+  kprintf("loader regist\n");
   loader_regist(&run_elf_thread);
 #endif
 
