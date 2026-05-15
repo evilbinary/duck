@@ -104,6 +104,62 @@ static char *number(char *str, unsigned long long num, int base, int size,
   return str;
 }
 
+static char *number32(char *str, unsigned int num, int base, int size,
+                      int precision, int type) {
+  if (size > 64) size = 64;
+  if (precision > 64) precision = 64;
+  int i;
+  char c, sign, tmp[36];
+  const char *digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+  if (type & SMALL) digits = "0123456789abcdefghijklmnopqrstuvwxyz";
+  if (type & LEFT) type &= ~ZEROPAD;
+  if (base < 2 || base > 36) return 0;
+  c = (type & ZEROPAD) ? '0' : ' ';
+  if (type & SIGN && (int)num < 0) {
+    sign = '-';
+    num = (unsigned int)(-(int)num);
+  } else {
+    sign = (type & PLUS) ? '+' : ((type & SPACE) ? ' ' : 0);
+  }
+  if (sign) size--;
+  if (type & SPECIAL) {
+    if (base == 16)
+      size -= 2;
+    else if (base == 8)
+      size--;
+  }
+  i = 0;
+  if (num == 0) {
+    tmp[i++] = '0';
+  } else {
+    while (num != 0) {
+      unsigned int rem = num % (unsigned int)base;
+      num /= (unsigned int)base;
+      tmp[i++] = digits[rem];
+    }
+  }
+  if (i > precision) precision = i;
+  size -= precision;
+  if (!(type & (ZEROPAD + LEFT)))
+    while (size-- > 0) *str++ = ' ';
+  if (sign) *str++ = sign;
+  if (type & SPECIAL) {
+    if (base == 8)
+      *str++ = '0';
+    else if (base == 16) {
+      *str++ = '0';
+      *str++ = digits[33];
+    }
+  }
+  if (!(type & LEFT))
+    while (size-- > 0) *str++ = c;
+  while (i < precision--) *str++ = '0';
+  while (i-- > 0) *str++ = tmp[i];
+  while (size-- > 0) *str++ = ' ';
+  return str;
+}
+
 /*------------------------------------------------------------------------
  Procedure:     kvsprintf ID:1
  Purpose:
@@ -214,8 +270,16 @@ int kvsprintf(char *buf, const char *fmt, va_list args) {
         break;
 
       case 'o':
-        str = number(str, (unsigned long long)va_arg(args, unsigned long), 8,
-                     field_width, precision, flags);
+        if (qualifier == 'L') {
+          str = number(str, va_arg(args, unsigned long long), 8, field_width,
+                       precision, flags);
+        } else if (qualifier == 'l') {
+          str = number32(str, va_arg(args, unsigned long), 8, field_width,
+                         precision, flags);
+        } else {
+          str = number32(str, va_arg(args, unsigned int), 8, field_width,
+                         precision, flags);
+        }
         break;
 
       case 'p':
@@ -235,12 +299,11 @@ int kvsprintf(char *buf, const char *fmt, va_list args) {
           str = number(str, va_arg(args, unsigned long long), 16, field_width,
                        precision, flags);
         } else if (qualifier == 'l') {
-          str = number(str, (unsigned long long)va_arg(args, unsigned long), 16,
-                       field_width, precision, flags);
+          str = number32(str, va_arg(args, unsigned long), 16, field_width,
+                         precision, flags);
         } else {
-          // Promote to 64-bit to avoid va_arg misread on ARM64
-          str = number(str, (unsigned long long)va_arg(args, unsigned int), 16,
-                       field_width, precision, flags);
+          str = number32(str, va_arg(args, unsigned int), 16, field_width,
+                         precision, flags);
         }
         break;
 
@@ -252,14 +315,14 @@ int kvsprintf(char *buf, const char *fmt, va_list args) {
         if (qualifier == 'L') {
           num = va_arg(args, unsigned long long);
           if (flags & SIGN) num = (long long)num;
+          str = number(str, num, 10, field_width, precision, flags);
         } else if (qualifier == 'l') {
-          num = va_arg(args, unsigned long);
-          if (flags & SIGN) num = (signed long)num;
+          unsigned int num32 = va_arg(args, unsigned long);
+          str = number32(str, num32, 10, field_width, precision, flags);
         } else {
-          num = va_arg(args, unsigned int);
-          if (flags & SIGN) num = (signed int)num;
+          unsigned int num32 = va_arg(args, unsigned int);
+          str = number32(str, num32, 10, field_width, precision, flags);
         }
-        str = number(str, num, 10, field_width, precision, flags);
         break;
 
       case 'n':

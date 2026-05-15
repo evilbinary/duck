@@ -36,7 +36,7 @@ int cpu_init_id(u32 id) { return 0; }
 int cpu_start_id(u32 id, u32 entry) { return 0; }
 
 // cpu 延迟
-void cpu_delay(int n) { for (int i = 0; i < 10000 * n; i++); }
+void cpu_delay(int n) { for (int i = 0; i < 100 * n; i++); }
 
 int cpu_pmu_version() {
   u32 pmu_id = 0;

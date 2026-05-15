@@ -45,14 +45,14 @@ void interrutp_set(int i) {
 
 INTERRUPT_SERVICE
 void reset_handler() {
-  interrupt_entering_code(0, 0);
+  interrupt_entering_code(EX_RESET, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void l1_handler() {
-  interrupt_entering_code(0, 0);
+  interrupt_entering_code(EX_IRQ, 0);
   interrupt_process(interrupt_default_handler);
   // cpu_halt();
   interrupt_exit();
@@ -60,63 +60,63 @@ void l1_handler() {
 
 INTERRUPT_SERVICE
 void l2_handler() {
-  interrupt_entering_code(0, 0);
+  interrupt_entering_code(EX_IRQ, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void l3_handler() {
-  interrupt_entering_code(0, 0);
+  interrupt_entering_code(EX_IRQ, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void l4_handler() {
-  interrupt_entering_code(0, 0);
+  interrupt_entering_code(EX_IRQ, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void l5_handler() {
-  interrupt_entering_code(0, 0);
+  interrupt_entering_code(EX_IRQ, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void debug_excetpion_handler() {
-  interrupt_entering_code(0, 0);
+  interrupt_entering_code(EX_OTHER, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void nmi_excetpion_handler() {
-  interrupt_entering_code(0, 0);
+  interrupt_entering_code(EX_OTHER, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void kernel_excetpion_handler() {
-  interrupt_entering_code(0, 0);
+  interrupt_entering_code(EX_OTHER, 0);
   interrupt_process(interrupt_default_handler);
   interrupt_exit();
 }
 
 INTERRUPT_SERVICE
 void user_excetpion_handler() {
-  interrupt_entering_code(0, 0);
+  interrupt_entering_code(EX_OTHER, 0);
   interrupt_process(interrupt_default_handler);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void double_excetpion_handler() {
-  interrupt_entering_code(0, 0);
+  interrupt_entering_code(EX_OTHER, 0);
   interrupt_process(interrupt_default_handler);
   // cpu_halt();
   interrupt_exit();
