@@ -137,6 +137,12 @@ void* do_schedule(interrupt_context_t* ic) {
   thread_t* next_thread = schedule_next(cpu);
   if (next_thread == NULL) {
     log_debug("schedule error next\n");
+    thread_t* v = thread_head();
+    for (; v != NULL; v = v->next) {
+      kprintf("TS tid=%d state=%d sleep=%d counter=%d cpu=%d name=%s\n",
+              v->id, v->state, v->sleep_counter, v->counter, v->cpu_id,
+              v->name != NULL ? v->name : "null");
+    }
     timer_end();
     return ic;
   }
