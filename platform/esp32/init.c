@@ -4,6 +4,45 @@
 #include "hal/timer_ll.h"
 #include "soc/timer_group_struct.h"
 
+#define TIMG0_BASE 0x3FF5F000
+#define TIMG1_BASE 0x3FF60000
+#define RTC_CNTL_BASE 0x3FF48000
+
+#define TIMG_WDTCONFIG0_OFFSET 0x48
+#define TIMG_WDTWPROTECT_OFFSET 0x64
+#define RTC_CNTL_WDTCONFIG0_OFFSET 0x8C
+#define RTC_CNTL_WDTWPROTECT_OFFSET 0xA4
+
+#define WDT_WKEY_VALUE 0x50D83AA1
+
+static inline void reg_write(uint32_t addr, uint32_t value) {
+  *((volatile uint32_t*)addr) = value;
+}
+
+static inline uint32_t reg_read(uint32_t addr) {
+  return *((volatile uint32_t*)addr);
+}
+
+static inline void disable_timg_wdt(uint32_t base) {
+  reg_write(base + TIMG_WDTWPROTECT_OFFSET, WDT_WKEY_VALUE);
+  reg_write(base + TIMG_WDTCONFIG0_OFFSET,
+            reg_read(base + TIMG_WDTCONFIG0_OFFSET) & ~1U);
+  reg_write(base + TIMG_WDTWPROTECT_OFFSET, 0);
+}
+
+static inline void disable_rtc_wdt(void) {
+  reg_write(RTC_CNTL_BASE + RTC_CNTL_WDTWPROTECT_OFFSET, WDT_WKEY_VALUE);
+  reg_write(RTC_CNTL_BASE + RTC_CNTL_WDTCONFIG0_OFFSET,
+            reg_read(RTC_CNTL_BASE + RTC_CNTL_WDTCONFIG0_OFFSET) & ~1U);
+  reg_write(RTC_CNTL_BASE + RTC_CNTL_WDTWPROTECT_OFFSET, 0);
+}
+
+static inline void disable_runtime_wdts(void) {
+  disable_rtc_wdt();
+  disable_timg_wdt(TIMG0_BASE);
+  disable_timg_wdt(TIMG1_BASE);
+}
+
 
 #define XCHAL_TIMER0_INTERRUPT 6  /* CCOMPARE0 */
 #define XCHAL_TIMER1_INTERRUPT 15 /* CCOMPARE1 */
@@ -11,6 +50,8 @@
 
 #define XT_TICK_PER_SEC 1000
 #define XT_CLOCK_FREQ 50000000
+
+static u32 xt_tick_cycles = XT_CLOCK_FREQ / XT_TICK_PER_SEC;
 
 static inline void uart_send_char(char c) {
   while ((io_read32(UART0_STATUS) >>16 )  >= 128);
@@ -38,7 +79,7 @@ u32 timer_count = 0;
 void timer_init(int hz) {
   periph_ll_enable_clk_clear_rst(PERIPH_TIMG0_MODULE);
 
-  int xt_tick_cycles = ( XT_CLOCK_FREQ / XT_TICK_PER_SEC );
+  xt_tick_cycles = ( XT_CLOCK_FREQ / XT_TICK_PER_SEC );
 
   u32 count = timer_get_count();
   reset_count();
@@ -60,8 +101,9 @@ void timer_init(int hz) {
 }
 
 void timer_end() {
-  //kprintf("timer end %d\n", timer_count++);
-  reset_count();
+  u32 count = timer_get_count();
+  count += xt_tick_cycles;
+  asm volatile("wsr %0, ccompare0; rsync" : : "a"(count));
 }
 
 void platform_init() { 
@@ -78,6 +120,8 @@ void platform_init() {
 
   WSR(INTCLEAR,1);
   rsync();
+
+  disable_runtime_wdts();
 
   io_write32(UART0_INT_ENA, 0);
   io_add_write_channel(&uart_send);

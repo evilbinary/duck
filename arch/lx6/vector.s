@@ -129,9 +129,6 @@ window_underflow_12:
 .type  kernel_exception,@function //12
 .align 64
  kernel_exception:
-    wsr.excsave1 a1
-    wsr.epc1 a0
-    
     call0 kernel_excetpion_handler
 
     rfe
@@ -141,9 +138,6 @@ window_underflow_12:
 .type  user_exception,@function //13
 .align 64
 user_exception:
-    wsr.excsave1 a1
-    wsr.epc1 a0
-
     call0 user_excetpion_handler
 
     rfe
@@ -153,7 +147,5 @@ user_exception:
 
 .align 64
 /* double exception - 0x380 */
-    wsr.excsave1 a1
-    wsr.depc a0
     call0 double_excetpion_handler
     rfde

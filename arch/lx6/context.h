@@ -57,10 +57,11 @@ typedef struct context_t {
 
 #define interrupt_process(X) \
   asm volatile(\
-      "call0    " #X         \
-            "\n"                   \
-      :                      \
-      :)
+      "mov      a2, sp"      "\n"  \
+      "call0    " #X         "\n"  \
+      :                             \
+      :                             \
+      : "a2", "memory")
 
 // #define interrupt_entering_code(VEC, CODE) \
 //         asm volatile(                            \
@@ -196,7 +197,11 @@ typedef struct context_t {
 
 #define interrupt_entering(VEC) interrupt_entering_code(VEC, 0)
 
-#define interrupt_exit()
+#define interrupt_exit()                        \
+    do {                                       \
+        register void* __next_ksp asm("a2");   \
+        interrupt_exit_context(__next_ksp);    \
+    } while (0)
 
 #define interrupt_exit2()
 
@@ -212,7 +217,7 @@ typedef struct context_t {
 #define context_arg3(context) context->a5
 #define context_arg4(context) context->a6
 #define context_set_entry(context, entry) \
-        ((interrupt_context_t*)((context)));
+        (((interrupt_context_t*)(context))->pc = (u32)(entry));
 
 #define context_restore(duck_context) \
         interrupt_exit_context(duck_context->ksp);

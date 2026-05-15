@@ -17,6 +17,17 @@ extern boot_info_t* boot_info;
 interrupt_handler_t* interrutp_handlers[IDT_NUMBER];
 extern u64 _idt[IDT_NUMBER];
 
+static void* lx6_interrupt_dispatch(interrupt_context_t* ic) {
+  if (ic != NULL && ic->no == EX_OTHER) {
+    if (ic->exccause == 4) {
+      ic->no = EX_IRQ;
+    } else if (ic->exccause == 1) {
+      ic->no = EX_SYS_CALL;
+    }
+  }
+  return interrupt_default_handler(ic);
+}
+
 void interrupt_init() {
   u64* pidt = _idt;
 
@@ -53,7 +64,9 @@ void reset_handler() {
 INTERRUPT_SERVICE
 void l1_handler() {
   interrupt_entering_code(EX_IRQ, 0);
+  kprintf("IR1\n");
   interrupt_process(interrupt_default_handler);
+  kprintf("IR1R\n");
   // cpu_halt();
   interrupt_exit();
 }
@@ -61,14 +74,18 @@ void l1_handler() {
 INTERRUPT_SERVICE
 void l2_handler() {
   interrupt_entering_code(EX_IRQ, 0);
+  kprintf("IR2\n");
   interrupt_process(interrupt_default_handler);
+  kprintf("IR2R\n");
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void l3_handler() {
   interrupt_entering_code(EX_IRQ, 0);
+  kprintf("IR3\n");
   interrupt_process(interrupt_default_handler);
+  kprintf("IR3R\n");
   cpu_halt();
 }
 
@@ -89,35 +106,35 @@ void l5_handler() {
 INTERRUPT_SERVICE
 void debug_excetpion_handler() {
   interrupt_entering_code(EX_OTHER, 0);
-  interrupt_process(interrupt_default_handler);
+  interrupt_process(lx6_interrupt_dispatch);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void nmi_excetpion_handler() {
   interrupt_entering_code(EX_OTHER, 0);
-  interrupt_process(interrupt_default_handler);
+  interrupt_process(lx6_interrupt_dispatch);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void kernel_excetpion_handler() {
   interrupt_entering_code(EX_OTHER, 0);
-  interrupt_process(interrupt_default_handler);
+  interrupt_process(lx6_interrupt_dispatch);
   interrupt_exit();
 }
 
 INTERRUPT_SERVICE
 void user_excetpion_handler() {
   interrupt_entering_code(EX_OTHER, 0);
-  interrupt_process(interrupt_default_handler);
+  interrupt_process(lx6_interrupt_dispatch);
   cpu_halt();
 }
 
 INTERRUPT_SERVICE
 void double_excetpion_handler() {
   interrupt_entering_code(EX_OTHER, 0);
-  interrupt_process(interrupt_default_handler);
+  interrupt_process(lx6_interrupt_dispatch);
   // cpu_halt();
   interrupt_exit();
 }

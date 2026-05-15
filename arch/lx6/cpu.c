@@ -158,36 +158,70 @@ void cpu_backtrace(void) {
 }
 
 void* syscall0(u32 num) {
-  int ret;
-
-  return ret;
+  register u32 a2 asm("a2") = 0;
+  register u32 a7 asm("a7") = num;
+  asm volatile("syscall"
+               : "+r"(a2), "+r"(a7)
+               :
+               : "a3", "a4", "a5", "a6", "memory");
+  return (void*)a2;
 }
 
 void* syscall1(u32 num, void* arg0) {
-  int ret;
-
-  return ret;
+  register u32 a2 asm("a2") = (u32)arg0;
+  register u32 a7 asm("a7") = num;
+  asm volatile("syscall"
+               : "+r"(a2), "+r"(a7)
+               :
+               : "a3", "a4", "a5", "a6", "memory");
+  return (void*)a2;
 }
 void* syscall2(u32 num, void* arg0, void* arg1) {
-  int ret;
-
-  return ret;
+  register u32 a2 asm("a2") = (u32)arg0;
+  register u32 a3 asm("a3") = (u32)arg1;
+  register u32 a7 asm("a7") = num;
+  asm volatile("syscall"
+               : "+r"(a2), "+r"(a3), "+r"(a7)
+               :
+               : "a4", "a5", "a6", "memory");
+  return (void*)a2;
 }
 void* syscall3(u32 num, void* arg0, void* arg1, void* arg2) {
-  u32 ret = 0;
-
-  return ret;
+  register u32 a2 asm("a2") = (u32)arg0;
+  register u32 a3 asm("a3") = (u32)arg1;
+  register u32 a4 asm("a4") = (u32)arg2;
+  register u32 a7 asm("a7") = num;
+  asm volatile("syscall"
+               : "+r"(a2), "+r"(a3), "+r"(a4), "+r"(a7)
+               :
+               : "a5", "a6", "memory");
+  return (void*)a2;
 }
 
 void* syscall4(u32 num, void* arg0, void* arg1, void* arg2, void* arg3) {
-  u32 ret = 0;
-
-  return ret;
+  register u32 a2 asm("a2") = (u32)arg0;
+  register u32 a3 asm("a3") = (u32)arg1;
+  register u32 a4 asm("a4") = (u32)arg2;
+  register u32 a5 asm("a5") = (u32)arg3;
+  register u32 a7 asm("a7") = num;
+  asm volatile("syscall"
+               : "+r"(a2), "+r"(a3), "+r"(a4), "+r"(a5), "+r"(a7)
+               :
+               : "a6", "memory");
+  return (void*)a2;
 }
 
 void* syscall5(u32 num, void* arg0, void* arg1, void* arg2, void* arg3,
                void* arg4) {
-  u32 ret = 0;
-
-  return ret;
+  register u32 a2 asm("a2") = (u32)arg0;
+  register u32 a3 asm("a3") = (u32)arg1;
+  register u32 a4 asm("a4") = (u32)arg2;
+  register u32 a5 asm("a5") = (u32)arg3;
+  register u32 a6 asm("a6") = (u32)arg4;
+  register u32 a7 asm("a7") = num;
+  asm volatile("syscall"
+               : "+r"(a2), "+r"(a3), "+r"(a4), "+r"(a5), "+r"(a6), "+r"(a7)
+               :
+               : "memory");
+  return (void*)a2;
 }
