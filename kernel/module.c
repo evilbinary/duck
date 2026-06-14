@@ -11,7 +11,7 @@ u32 module_number = 0;
 void module_init() { module_number = 0; }
 
 void module_regist(module_t* mod) {
-  if (module_number > MAX_MODULES) {
+  if (module_number >= MAX_MODULES) {
     kprintf("add module full %d\n", module_number);
     return;
   }

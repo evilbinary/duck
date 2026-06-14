@@ -331,6 +331,7 @@ typedef struct block {
 #endif
 
 void* kmemset(void* s, int c, size_t n) {
+  if(s==NULL) return NULL;
 #ifdef MALLOC_TRACE
   block_t* block = ya_block_ptr(s);
   if (block != NULL) {

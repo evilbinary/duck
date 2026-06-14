@@ -490,6 +490,9 @@ void* mm_alloc(size_t size) {
   if (p == 0x23e000) {
     int i = 0;
   }
+  if (p == NULL) {
+    return NULL;
+  }
   kmemset(p, 0, size);
   return p;
 }

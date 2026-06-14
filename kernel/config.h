@@ -57,7 +57,7 @@
 
 #define EXEC_FILE_NAME_LEN 256
 
-#define MAX_MODULES 10
+#define MAX_MODULES 40
 
 #define SYSCALL_NUMBER 600
 
