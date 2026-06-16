@@ -6,8 +6,118 @@
 #include "lcd.h"
 
 #include "dev/devfs.h"
+#include "xwin/font.h"
 #include "vga/vga.h"
 #include "kernel/string.h"
+
+static inline u32 lcd_text_scale(u32 size) {
+  if (size == 8) {
+    return 1;
+  }
+  size /= 16;
+  if (size < 1) {
+    size = 1;
+  }
+  return size;
+}
+
+static inline void lcd_put_pixel(int x, int y, u16 color) {
+  extern void st7735_set_pixel(u16 x, u16 y, u16 color);
+  if (x < 0 || y < 0 || x >= 128 || y >= 128) {
+    return;
+  }
+  st7735_set_pixel((u16)x, (u16)y, color);
+}
+
+static void lcd_draw_line(int x0, int y0, int x1, int y1, u16 color) {
+  int dx = x1 > x0 ? x1 - x0 : x0 - x1;
+  int sx = x0 < x1 ? 1 : -1;
+  int dy = y1 > y0 ? -(y1 - y0) : -(y0 - y1);
+  int sy = y0 < y1 ? 1 : -1;
+  int err = dx + dy;
+
+  for (;;) {
+    lcd_put_pixel(x0, y0, color);
+    if (x0 == x1 && y0 == y1) {
+      break;
+    }
+    int e2 = err << 1;
+    if (e2 >= dy) {
+      err += dy;
+      x0 += sx;
+    }
+    if (e2 <= dx) {
+      err += dx;
+      y0 += sy;
+    }
+  }
+}
+
+static void lcd_draw_rect(int x, int y, int w, int h, u16 color) {
+  if (w <= 0 || h <= 0) {
+    return;
+  }
+  lcd_draw_line(x, y, x + w - 1, y, color);
+  lcd_draw_line(x, y, x, y + h - 1, color);
+  lcd_draw_line(x + w - 1, y, x + w - 1, y + h - 1, color);
+  lcd_draw_line(x, y + h - 1, x + w - 1, y + h - 1, color);
+}
+
+static void lcd_draw_char(int x, int y, char ch, u16 color, u16 bg_color,
+                          int draw_bg, u32 size) {
+
+  const u8* glyph = xfont_get_glyph(ch, size);
+  if (glyph == NULL) {
+    return;
+  }
+
+  u32 height = xfont_get_height(size);
+  u32 scale = lcd_text_scale(size);
+
+  for (u32 row = 0; row < height; row++) {
+    u8 bits = glyph[row];
+    for (u32 col = 0; col < 8; col++) {
+      int set = (bits & (0x80 >> col)) != 0;
+      if (set || draw_bg) {
+        u16 pixel = set ? color : bg_color;
+        for (u32 sy = 0; sy < scale; sy++) {
+          for (u32 sx = 0; sx < scale; sx++) {
+            lcd_put_pixel(x + col * scale + sx, y + row * scale + sy, pixel);
+          }
+        }
+      }
+    }
+  }
+}
+
+static void lcd_draw_text(int x, int y, const char* text, u16 color, u32 size) {
+  if (text == NULL) {
+    return;
+  }
+
+  u32 scale = lcd_text_scale(size);
+  int cx = x;
+  while (*text != 0) {
+    lcd_draw_char(cx, y, *text, color, 0, 0, size);
+    cx += 8 * scale;
+    text++;
+  }
+}
+
+static void lcd_draw_text_bg(int x, int y, const char* text, u16 color,
+                             u16 bg_color, u32 size) {
+  if (text == NULL) {
+    return;
+  }
+
+  u32 scale = lcd_text_scale(size);
+  int cx = x;
+  while (*text != 0) {
+    lcd_draw_char(cx, y, *text, color, bg_color, 1, size);
+    cx += 8 * scale;
+    text++;
+  }
+}
 
 size_t lcd_read(device_t* dev, void* buf, size_t len) {
   u32 ret = 0;
@@ -40,6 +150,79 @@ size_t lcd_write(device_t* dev, const void* buf, size_t len) {
     // 调用st7735_fill填充矩形
     extern void st7735_fill(u16 xsta, u16 ysta, u16 xend, u16 yend, u16 color);
     st7735_fill(x, y, x + w - 1, y + h - 1, color);
+    return len;
+  }
+
+  if (kstrncmp(cmd, "PIXEL ", 6) == 0) {
+    char* p = (char*)cmd + 6;
+    int x = katoi((const char**)&p);
+    while (*p == ' ') p++;
+    int y = katoi((const char**)&p);
+    while (*p == ' ') p++;
+    int color = katoi((const char**)&p);
+    lcd_put_pixel(x, y, (u16)color);
+    return len;
+  }
+
+  if (kstrncmp(cmd, "LINE ", 5) == 0) {
+    char* p = (char*)cmd + 5;
+    int x1 = katoi((const char**)&p);
+    while (*p == ' ') p++;
+    int y1 = katoi((const char**)&p);
+    while (*p == ' ') p++;
+    int x2 = katoi((const char**)&p);
+    while (*p == ' ') p++;
+    int y2 = katoi((const char**)&p);
+    while (*p == ' ') p++;
+    int color = katoi((const char**)&p);
+    lcd_draw_line(x1, y1, x2, y2, (u16)color);
+    return len;
+  }
+
+  if (kstrncmp(cmd, "RECT ", 5) == 0) {
+    char* p = (char*)cmd + 5;
+    int x = katoi((const char**)&p);
+    while (*p == ' ') p++;
+    int y = katoi((const char**)&p);
+    while (*p == ' ') p++;
+    int w = katoi((const char**)&p);
+    while (*p == ' ') p++;
+    int h = katoi((const char**)&p);
+    while (*p == ' ') p++;
+    int color = katoi((const char**)&p);
+    lcd_draw_rect(x, y, w, h, (u16)color);
+    return len;
+  }
+
+  if (kstrncmp(cmd, "TEXT ", 5) == 0) {
+    char* p = (char*)cmd + 5;
+    int x = katoi((const char**)&p);
+    while (*p == ' ') p++;
+    int y = katoi((const char**)&p);
+    while (*p == ' ') p++;
+    int color = katoi((const char**)&p);
+    while (*p == ' ') p++;
+    int size = katoi((const char**)&p);
+    while (*p == ' ') p++;
+
+    lcd_draw_text(x, y, p, (u16)color, (u32)size);
+    return len;
+  }
+
+  if (kstrncmp(cmd, "TEXTBG ", 7) == 0) {
+    char* p = (char*)cmd + 7;
+    int x = katoi((const char**)&p);
+    while (*p == ' ') p++;
+    int y = katoi((const char**)&p);
+    while (*p == ' ') p++;
+    int color = katoi((const char**)&p);
+    while (*p == ' ') p++;
+    int bg_color = katoi((const char**)&p);
+    while (*p == ' ') p++;
+    int size = katoi((const char**)&p);
+    while (*p == ' ') p++;
+
+    lcd_draw_text_bg(x, y, p, (u16)color, (u16)bg_color, (u32)size);
     return len;
   }
   
