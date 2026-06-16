@@ -9,9 +9,9 @@
 void kernel_init() {
   int cpu = cpu_get_id();
   if (cpu == 0) {
+    log_init();
     log_info("kernel init\n");
     log_info("log init\n");
-    log_init();
     log_info("exception init\n");
     exception_init();
     log_info("page init\n");
