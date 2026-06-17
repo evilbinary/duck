@@ -22,11 +22,11 @@ static inline u32 lcd_text_scale(u32 size) {
 }
 
 static inline void lcd_put_pixel(int x, int y, u16 color) {
-  extern void st7735_set_pixel(u16 x, u16 y, u16 color);
-  if (x < 0 || y < 0 || x >= 128 || y >= 128) {
+  extern void lcd_set_pixel(u16 x, u16 y, u16 color);
+  if (x < 0 || y < 0) {
     return;
   }
-  st7735_set_pixel((u16)x, (u16)y, color);
+  lcd_set_pixel((u16)x, (u16)y, color);
 }
 
 static void lcd_draw_line(int x0, int y0, int x1, int y1, u16 color) {

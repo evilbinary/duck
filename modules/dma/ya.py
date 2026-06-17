@@ -28,6 +28,9 @@ plat_source={
     'stm32':[
         'dummy.c'
     ],
+    'stm32f4xx':[
+        'dummy.c'
+    ],
     'general':[
         'dummy.c'
     ],

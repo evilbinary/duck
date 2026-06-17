@@ -9,6 +9,9 @@
 #include "platform/stm32f4xx/gpio.h"
 #include "platform/stm32f4xx/stm32f4xx_hal.h"
 
+#define st7735_fill lcd_fill
+#define st7735_set_pixel  lcd_set_pixel
+
 #define USE_DMA 0  // 可以改为1启用DMA
 
 #define BLACK 0x0000
@@ -24,7 +27,7 @@
 device_t* spi_dev = NULL;
 
 // 使用更大的缓冲区批量发送，提高刷屏速度
-#define ST77XX_BUF_SIZE 4096*4
+#define ST77XX_BUF_SIZE 512
 static uint8_t st7735_buf[ST77XX_BUF_SIZE];
 
 void delay(int n) {
@@ -57,7 +60,7 @@ void st7735_debug_gpio() {
 #define ST7735_MADCTL 0xC0
 #define ST7735_INVERT_DISPLAY 0
 
-#define  st7735_fill lcd_fill
+
 
 void st7735_fill(u16 xsta, u16 ysta, u16 xend, u16 yend, u16 color) {
   u32 pixel_count = (u32)(xend - xsta + 1) * (u32)(yend - ysta + 1);

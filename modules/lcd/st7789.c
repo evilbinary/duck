@@ -9,8 +9,6 @@
 #include "dma/sunxi-dma.h"
 #include "gpio/sunxi-gpio.h"
 #include "lcd.h"
-#include "spi/spi.h"
-#include "spi/sunxi-spi.h"
 
 #define WHITE 0xFFFF
 #define BLACK 0x0000
@@ -30,21 +28,34 @@
 #define WIDTH 240
 #define HEIGHT 320
 
+// #define CPU_SPI 1
+// #define SUNXI_SPI 1
+
+#define st7789_fill lcd_fill
+#define st7789_set_pixel  lcd_set_pixel
+
+device_t* spi_dev = NULL;
+int horizontal_mode = 0;
+
+#ifdef V3S
+
+#define WITH_FB 1
+#endif 
+
+#ifdef SUNXI_SPI
+
 #define SPI0 0
 #define SPI0_BASE 0x01C68000
 #define SPI1_BASE 0x01C68000
 
-// #define CPU_SPI 1
-
-#define  st7789_fill lcd_fill
-
-
-int horizontal_mode = 0;
+#include "spi/spi.h"
+#include "spi/sunxi-spi.h"
 
 static sunxi_spi_t* spio_base[] = {
     (sunxi_spi_t*)SPI0_BASE,  // spi 0
     (sunxi_spi_t*)SPI1_BASE,  // spi 1
 };
+#endif
 
 #define LCD_CS_SET gpio_output(GPIO_C, 2, 1);
 #define LCD_CS_CLR gpio_output(GPIO_C, 2, 0);
@@ -118,7 +129,7 @@ void st7789_write_cmd(u8 cmd) {
 #ifdef CPU_SPI
   SPI_DC_0;
   st7789_cpu_send_byte(cmd);
-#else
+#elif defined(SUNXI_SPI)
   // LCD_CS_SET;
   // sunxi_spi_cs(SPI0, 0);
   LCD_DC_CLR;
@@ -126,6 +137,11 @@ void st7789_write_cmd(u8 cmd) {
   LCD_DC_SET;
   // LCD_CS_CLR;
   // sunxi_spi_cs(SPI0, 1);
+#else
+  LCD_DC_CLR;
+  spi_dev->write(spi_dev, (u8*)&cmd, 1);
+  LCD_DC_SET;
+
 #endif
 }
 
@@ -133,12 +149,19 @@ static inline void st7789_write_data(u8 data) {
 #ifdef CPU_SPI
   SPI_DC_1;
   st7789_cpu_send_byte(data);
-#else
+#elif defined(SUNXI_SPI)
   // LCD_CS_SET;
   // sunxi_spi_cs(SPI0, 0);
   sunxi_spi_write(SPI0, &data, 1);
   // LCD_CS_CLR;
   // sunxi_spi_cs(SPI0, 1);
+#else
+  // LCD_CS_SET;
+  // sunxi_spi_cs(SPI0, 0);
+  spi_dev->write(spi_dev, (u8*)&data, 1);
+  // LCD_CS_CLR;
+  // sunxi_spi_cs(SPI0, 1);
+
 #endif
 }
 
@@ -151,11 +174,18 @@ u16 st7789_read_data() {
 #ifdef CPU_SPI
 
   return 0;
-#else
+
+#elif defined(SUNXI_SPI)
   u16 data;
   LCD_DC_SET;
   sunxi_spi_read(SPI0, &data, 2);
   return data;
+#else
+  u16 data;
+  LCD_DC_SET;
+  spi_dev->read(spi_dev, (u8*)&data, 2);
+  return data;
+
 #endif
 }
 
@@ -229,7 +259,7 @@ void st7789_init() {
   gpio_config(GPIO_C, 2, GPIO_OUTPUT);  // SPI_CS  PC2
   gpio_config(GPIO_C, 3, GPIO_OUTPUT);  // SPI_MOSI PC3
   gpio_config(GPIO_B, 2, GPIO_OUTPUT);  // RESET      PB2
-#else
+#elif defined(SUNXI_SPI)
 
   // use SPI0_BASE
   sunxi_spi_set_base(spio_base);
@@ -250,6 +280,15 @@ void st7789_init() {
 
   u16 id = st7789_read_id();
   kprintf("st7789 spi init id %x end\n", id);
+
+#else
+  // init spi
+  spi_dev = device_find(DEVICE_SPI);
+  if (spi_dev == NULL) {
+    kprintf("ERROR: SPI device not found!\n");
+    return;
+  }
+  kprintf("SPI device found: %s\n", spi_dev->name);
 
 #endif
 
@@ -381,6 +420,7 @@ static inline u32 RGB888_to_RGB565(u32 rgb) {
 void dma_st7789_handler(void* data) {
   // buffer_read(dev->buffer, dev->sound_buf, dev->play_size);
 
+#if defined(SUNXI_SPI)
   // log_info("dma_audio_handler %x play size %d\n", dev->sound_buf,
   // dev->play_size);
   u32* txd = sunxi_spi_get_tx(SPI0);
@@ -388,15 +428,14 @@ void dma_st7789_handler(void* data) {
   // dma_trans(0, dev->sound_buf, txd, 64);
   log_info("dma_audio_handler end\n");
 
-  u32 sta=sunxi_spi_status();
+  u32 sta = sunxi_spi_status();
 
-  if(sta& (1<<12)){ //1: Transfer Completed
- 
-  }else if(sta&(1<<4)){ //X_READY
+  if (sta & (1 << 12)) {  // 1: Transfer Completed
 
-
+  } else if (sta & (1 << 4)) {  // X_READY
   }
 
+#endif
 }
 int ii = 0;
 
@@ -419,6 +458,9 @@ void st7789_flush_screen(vga_device_t* vga, u32 index) {
       vga->pframbuffer[i * j] = MAGENTA << ii++;
     }
   }
+
+#if defined(SUNXI_SPI)
+
   // sunxi_spi_write(SPI0, color, vga->width * vga->height);
   u32* txd = sunxi_spi_get_tx(SPI0);
 
@@ -430,8 +472,10 @@ void st7789_flush_screen(vga_device_t* vga, u32 index) {
     kprintf("phys is null\n");
     return;
   }
-  
-  dma_trans(0,phys , txd, vga->width * vga->height *4);
+
+  dma_trans(0, phys, txd, vga->width * vga->height * 4);
+
+#endif
 }
 
 void st7789_test() {
@@ -457,14 +501,34 @@ void st7789_test() {
   kprintf("st7789 test lcd end\n");
 }
 
+
+int st7789_write_pixel(vga_device_t* vga, const void* buf, size_t len) {
+  u16* color = buf;
+  int i = 0;
+  for (i = 0; i < len / 6; i += 3) {
+    st7789_set_pixel(color[i], color[i + 1], color[i + 2]);
+  }
+  return i;
+}
+
+
 int lcd_init_mode(vga_device_t* vga, int mode) {
-  vga->width = WIDTH;
-  vga->height = HEIGHT;
-  vga->bpp = 16;
+
+  if (mode == VGA_MODE_128x128x16) {
+    vga->width = 128;
+    vga->height = 128;
+    vga->bpp=16;
+  } else {
+    vga->width = WIDTH;
+    vga->height = HEIGHT;
+    vga->bpp = 16;
+  }
 
   vga->mode = mode;
   vga->write = NULL;
   // vga->flip_buffer=gpu_flush;
+
+#ifdef WITH_FB
 
   vga->framebuffer_index = 0;
   vga->framebuffer_count = 1;
@@ -504,6 +568,17 @@ int lcd_init_mode(vga_device_t* vga, int mode) {
   } else {
     log_error("dev fb not found\n");
   }
+
+#else
+
+vga->framebuffer_index = 0;
+vga->framebuffer_count = 1;
+vga->frambuffer = NULL;
+vga->pframbuffer = vga->frambuffer;
+
+vga->write = st7789_write_pixel;
+
+#endif
 
   st7789_init();
 
