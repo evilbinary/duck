@@ -533,7 +533,11 @@ int lcd_init_mode(vga_device_t* vga, int mode) {
     vga->width = 128;
     vga->height = 128;
     vga->bpp=16;
-  } else {
+  }else if (mode == VGA_MODE_80x160x16) {
+    vga->width = 80;
+    vga->height = 160;
+    vga->bpp=16;
+  }  else {
     kprintf("lcd no support mode %x\n");
   }
   vga->mode = mode;
