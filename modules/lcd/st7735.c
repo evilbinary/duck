@@ -24,12 +24,12 @@
 device_t* spi_dev = NULL;
 
 // 使用更大的缓冲区批量发送，提高刷屏速度
-#define ST77XX_BUF_SIZE 4096
+#define ST77XX_BUF_SIZE 4096*4
 static uint8_t st7735_buf[ST77XX_BUF_SIZE];
 
 void delay(int n) {
   // Use simple loop delay - ~1ms per 10000 iterations at 84MHz
-  for (volatile int i = 0; i < 10000 * n; i++) {
+  for (volatile int i = 0; i < 10000/8 * n; i++) {
     __asm__ volatile("nop");
   }
 }
@@ -46,15 +46,25 @@ void st7735_debug_gpio() {
   kprintf("GPIO test done\n");
 }
 
-// ST7735S offset for 128x128 display - set to 0 if not needed
-#define COL_OFFSET 0
-#define ROW_OFFSET 0
+// ===== Panel tuning =====
+// Common combinations to try for 128x128 ST7735/ST7735S panels:
+// 1) COL=0  ROW=0  MADCTL=0xC0 INV=0
+// 2) COL=2  ROW=1  MADCTL=0xC8 INV=0
+// 3) COL=2  ROW=3  MADCTL=0xC8 INV=0
+// 4) COL=0  ROW=32 MADCTL=0xA8 INV=1
+#define ST7735_COL_OFFSET 1
+#define ST7735_ROW_OFFSET 0
+#define ST7735_MADCTL 0xC0
+#define ST7735_INVERT_DISPLAY 0
+
+#define  st7735_fill lcd_fill
 
 void st7735_fill(u16 xsta, u16 ysta, u16 xend, u16 yend, u16 color) {
   u32 pixel_count = (u32)(xend - xsta + 1) * (u32)(yend - ysta + 1);
 
   // Apply offset correction for ST7735S
-  st7735_address_set(xsta + COL_OFFSET, ysta + ROW_OFFSET, xend + COL_OFFSET, yend + ROW_OFFSET);
+  st7735_address_set(xsta + ST7735_COL_OFFSET, ysta + ST7735_ROW_OFFSET,
+                     xend + ST7735_COL_OFFSET, yend + ST7735_ROW_OFFSET);
 
   // Set DC high for pixel data
   gpio_output(ST7735_DC_GPIO_Port, ST7735_DC_Pin, GPIO_PIN_SET);
@@ -87,8 +97,8 @@ void st7735_fill(u16 xsta, u16 ysta, u16 xend, u16 yend, u16 color) {
 
 void st7735_set_pixel(u16 x, u16 y, u16 color) {
   // Apply offset correction
-  u16 x_offset = x + COL_OFFSET;
-  u16 y_offset = y + ROW_OFFSET;
+  u16 x_offset = x + ST7735_COL_OFFSET;
+  u16 y_offset = y + ST7735_ROW_OFFSET;
   
   st7735_select();
 
@@ -311,10 +321,10 @@ void st7735_init() {
   kprintf("SPI device found: %s\n", spi_dev->name);
 
   // Test GPIO
-  st7735_debug_gpio();
+  //st7735_debug_gpio();
 
   // Test SPI
-  st7735_debug_spi();
+  //st7735_debug_spi();
 
   // init lcd - hardware reset
   kprintf("Doing hardware reset...\n");
@@ -416,7 +426,7 @@ void st7735_init() {
   
   st7735_select();
   st7735_write_cmd_no_cs(0x36); // MX, MY, RGB mode
-  st7735_write_data_no_cs(0xC8); // Try 0xC8 (BGR) instead of 0xC0 (RGB)
+  st7735_write_data_no_cs(ST7735_MADCTL);
   st7735_unselect();
   
   //--------------------------------ST7735S Gamma Sequence--------------------------------
@@ -467,15 +477,18 @@ void st7735_init() {
   st7735_unselect();
   delay(10);
   
-  // Display Inversion OFF (some modules need this)
   st7735_select();
+#if ST7735_INVERT_DISPLAY
+  st7735_write_cmd_no_cs(0x21);
+#else
   st7735_write_cmd_no_cs(0x20);
+#endif
   st7735_unselect();
   
   // Memory Data Access Control - refresh direction
   st7735_select();
   st7735_write_cmd_no_cs(0x36);
-  st7735_write_data_no_cs(0xC8); // MX=1, MY=1, BGR=1
+  st7735_write_data_no_cs(ST7735_MADCTL);
   st7735_unselect();
   
   st7735_select();
@@ -484,46 +497,23 @@ void st7735_init() {
   delay(100);
   
   // Set full screen address range
-  // Column address: 0x00-0x7F (128 pixels)
   st7735_select();
   st7735_write_cmd_no_cs(0x2A);
   st7735_write_data_no_cs(0x00);
-  st7735_write_data_no_cs(0x00);  // X start = 0
+  st7735_write_data_no_cs(ST7735_COL_OFFSET);  // X start
   st7735_write_data_no_cs(0x00);
-  st7735_write_data_no_cs(0x7F);  // X end = 127
+  st7735_write_data_no_cs(0x7F & ST7735_COL_OFFSET);  // X end
   st7735_unselect();
   
-  // Row address: 0x00-0x7F (128 pixels)
   st7735_select();
   st7735_write_cmd_no_cs(0x2B);
   st7735_write_data_no_cs(0x00);
-  st7735_write_data_no_cs(0x00);  // Y start = 0
+  st7735_write_data_no_cs(ST7735_ROW_OFFSET);  // Y start
   st7735_write_data_no_cs(0x00);
-  st7735_write_data_no_cs(0x7F);  // Y end = 127
+  st7735_write_data_no_cs(0x7F & ST7735_ROW_OFFSET);  // Y end
   st7735_unselect();
   
-  // delay(100);
-
-  // kprintf("st7735 lcd init done, starting test...\n");
-
-  // // First, test with a single pixel
-  // kprintf("Setting single pixel at (10,10)...\n");
-  st7735_set_pixel(10, 10, RED);
-  // delay(500);
-  
-  // // Try to fill a small area
-  // kprintf("Filling small area (20,20) to (30,30)...\n");
-  // st7735_fill(20, 20, 30, 30, GREEN);
-  // delay(1000);
-  
-  // // Fill entire screen
-  // kprintf("Filling entire screen RED...\n");
-  // st7735_fill(0, 0, 127, 127, RED);
-  // delay(2000);
-  
-  // while(1){
-  //   st7735_test();
-  // }
+  st7735_fill(1, 1, 128, 128, BLACK);
 }
 
 int st7735_write_pixel(vga_device_t* vga, const void* buf, size_t len) {

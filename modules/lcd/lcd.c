@@ -148,8 +148,7 @@ size_t lcd_write(device_t* dev, const void* buf, size_t len) {
     int color = katoi((const char**)&p);
     
     // 调用st7735_fill填充矩形
-    extern void st7735_fill(u16 xsta, u16 ysta, u16 xend, u16 yend, u16 color);
-    st7735_fill(x, y, x + w - 1, y + h - 1, color);
+    lcd_fill(x, y, x + w - 1, y + h - 1, color);
     return len;
   }
 

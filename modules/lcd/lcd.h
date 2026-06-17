@@ -10,5 +10,6 @@
 #include "vga/vga.h"
 
 
+void lcd_fill(u16 xsta, u16 ysta, u16 xend, u16 yend, u16 color);
 
 #endif

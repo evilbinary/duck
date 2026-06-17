@@ -36,6 +36,9 @@
 
 // #define CPU_SPI 1
 
+#define  st7789_fill lcd_fill
+
+
 int horizontal_mode = 0;
 
 static sunxi_spi_t* spio_base[] = {
