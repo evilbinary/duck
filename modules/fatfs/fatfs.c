@@ -101,6 +101,21 @@ static vnode_t *fat_super_node(vnode_t *node) {
   return default_node;
 }
 
+static void fat_init_file_info_from_node(vnode_t *node, file_info_t *file_info,
+                                         file_info_t *super_file_info) {
+  if (file_info == NULL || super_file_info == NULL) {
+    return;
+  }
+  file_info->fs = super_file_info->fs;
+  if (file_info->fat_path[0] != '\0') {
+    return;
+  }
+  if (node->name != NULL && kstrcmp(node->name, "/") == 0 &&
+      super_file_info->fat_path[0] != '\0') {
+    kstrcpy(file_info->fat_path, super_file_info->fat_path);
+  }
+}
+
 int fat_node_path(vnode_t *node, char *buf, size_t bufsz) {
   if (node == NULL || buf == NULL || bufsz == 0) {
     return -1;
@@ -372,7 +387,7 @@ uint fat_op_open(vnode_t *node, uint mode) {
     file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
     kmemset(file_info, 0, sizeof(file_info_t));
     file_info_t *super_file_info = super_node->data;
-    file_info->fs = super_file_info->fs;
+    fat_init_file_info_from_node(node, file_info, super_file_info);
     node->data = file_info;
   }
 
@@ -520,6 +535,10 @@ uint fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 *offset,
     file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
     kmemset(file_info, 0, sizeof(file_info_t));
     node->data = file_info;
+    vnode_t *super_node = fat_super_node(node);
+    if (super_node != NULL && super_node->data != NULL) {
+      fat_init_file_info_from_node(node, file_info, super_node->data);
+    }
   }
   if (fat_volume_path(file_info, buf) < 0) {
     return 0;
@@ -554,8 +573,13 @@ uint fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 *offset,
       }
 
       kstrcpy(dirent->name, fno.fname);
-      dirent->offset = i;
-      dirent->length = sizeof(struct vdirent);
+      dirent->ino = i + 1;
+      dirent->offset = i + 1;
+      {
+        u32 n = kstrlen(fno.fname) + 1;
+        u32 reclen = 19 + n;
+        dirent->length = (u16)((reclen + 7) & ~7u);
+      }
       nbytes += dirent->length;
       dirent++;  // maybe change to offset
       file_info->offset = i + 1;

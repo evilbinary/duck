@@ -152,8 +152,8 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   thread_t* copy = kmalloc(sizeof(thread_t), KERNEL_TYPE);
   kmemset(copy, 0, sizeof(thread_t));
   kmemmove(copy, thread, sizeof(thread_t));
-  copy->tinfo = NULL;
-  copy->user_tp = NULL;
+  copy->tinfo = thread->tinfo;
+  copy->user_tp = thread->user_tp;
 
   log_debug("thread init default\n");
 

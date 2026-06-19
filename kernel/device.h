@@ -62,6 +62,7 @@ typedef size_t (*dev_read_fn)(device_t* dev, void* buf, size_t len);
 typedef size_t (*dev_write_fn)(device_t* dev, const void* buf, size_t len);
 typedef size_t (*dev_stat_fn)(device_t* dev, dstat_t* stat);
 typedef size_t (*dev_ioctl_fn)(device_t* dev, u32 cmd, ...);
+typedef void (*device_notify_fn)(device_t* dev);
 
 typedef struct device {
   char* name;
@@ -76,6 +77,8 @@ typedef struct device {
 
 
 void device_add(device_t* device);
+
+void device_set_notify(device_notify_fn fn);
 
 void device_remove();
 

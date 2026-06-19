@@ -20,7 +20,7 @@ size_t gpu_write(device_t* dev, const void* buf, size_t len) {
     return ret;
   }
   kstrncpy(vga->frambuffer, (const char*)buf, len);
-  return ret;
+  return len;
 }
 
 size_t gpu_ioctl(device_t* dev, u32 cmd, void* args) {
