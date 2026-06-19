@@ -13,6 +13,8 @@
 #include "memory.h"
 #include "vfs.h"
 
+typedef struct exec_params exec_params_t;
+
 #define THREAD_CREATE 0
 #define THREAD_RUNNING 1
 #define THREAD_RUNABLE 2
@@ -34,9 +36,9 @@
 #define VM_COW 1 << 6  // copy on write
 
 #define THREAD_NEW (VM_CLONE)
-#define THREAD_FORK (VM_CLONE_ALL | FS_CLONE)
+#define THREAD_FORK (VM_CLONE_ALL)
 #define THREAD_CLONE (VM_CLONE_ALL | FS_CLONE)
-#define THREAD_VFORK (VM_CLONE_ALL | FS_CLONE)
+#define THREAD_VFORK (VM_CLONE_ALL)
 
 #define DUMP_DEFAULT 1
 #define DUMP_CONTEXT 2
@@ -58,7 +60,7 @@ typedef struct thread {
   int sleep_counter;
   struct thread* next;
   void* data;
-  void* exec;
+  exec_params_t* exec;
   context_t* ctx;
   vmemory_t* vm;
   u32 pid;
@@ -75,6 +77,7 @@ typedef struct thread {
   u32 mem;
   u32 dump_count;
   void* tinfo;
+  void* user_tp;
   void* clear_child_tid;
 } thread_t;
 
@@ -123,6 +126,7 @@ void thread_reset_stack3(thread_t* thread, u32* stack3);
 
 void thread_fill_fd(thread_t* thread);
 u64 thread_user_tp();
+void thread_reset_user_context(thread_t* thread, void* entry, void* stack_top);
 void thread_dump_stack(u32* stack, u32 size);
 void thread_dump(thread_t* thread, u32 flags);
 

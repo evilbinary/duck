@@ -71,6 +71,7 @@ void thread_init_default(thread_t* thread, u32 level, u32* entry, void* data) {
   thread->sleep_counter = 0;
   thread->state = THREAD_CREATE;
   thread->level = level;
+  thread->exec = NULL;
   thread->cpu_id = cpu_get_id();
   thread->fd_size = 40;
   thread->fd_number = 0;
@@ -78,6 +79,7 @@ void thread_init_default(thread_t* thread, u32 level, u32* entry, void* data) {
   thread->mem = 0;
   thread->ticks = 0;
   thread->clear_child_tid = NULL;
+  thread->user_tp = NULL;
 }
 
 thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
@@ -90,6 +92,9 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   thread_init_default(thread, level, entry, data);
 
   thread->fds = kmalloc(sizeof(fd_t*) * thread->fd_size, KERNEL_TYPE);
+  if (thread->fds != NULL) {
+    kmemset(thread->fds, 0, sizeof(fd_t*) * thread->fd_size);
+  }
 
   // context init
   context_t* ctx = kmalloc(sizeof(context_t), KERNEL_TYPE);
@@ -124,6 +129,12 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
 
   // vfs
   thread->vfs = kmalloc(sizeof(vfs_t), KERNEL_TYPE);
+  if (thread->vfs != NULL) {
+    kmemset(thread->vfs, 0, sizeof(vfs_t));
+    thread->vfs->root = vfs_find(NULL, "/");
+    thread->vfs->pwd = thread->vfs->root;
+    thread->vfs->users = 1;
+  }
   // file description
   thread_fill_fd(thread);
 
@@ -142,6 +153,7 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   kmemset(copy, 0, sizeof(thread_t));
   kmemmove(copy, thread, sizeof(thread_t));
   copy->tinfo = NULL;
+  copy->user_tp = NULL;
 
   log_debug("thread init default\n");
 
@@ -176,6 +188,25 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
 
   context_clone(copy->ctx, thread->ctx);
 
+  if (thread->vfs != NULL) {
+    copy->vfs = thread->vfs;
+    if (copy->vfs->root == NULL) {
+      copy->vfs->root = vfs_find(NULL, "/");
+    }
+    if (copy->vfs->pwd == NULL) {
+      copy->vfs->pwd = copy->vfs->root;
+    }
+    copy->vfs->users++;
+  } else {
+    copy->vfs = kmalloc(sizeof(vfs_t), KERNEL_TYPE);
+    if (copy->vfs != NULL) {
+      kmemset(copy->vfs, 0, sizeof(vfs_t));
+      copy->vfs->root = vfs_find(NULL, "/");
+      copy->vfs->pwd = copy->vfs->root;
+      copy->vfs->users = 1;
+    }
+  }
+
 #ifdef VM_ENABLE
   // vm init
   copy->vm = kmalloc(sizeof(vmemory_t), KERNEL_TYPE);
@@ -185,14 +216,19 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   vmemory_clone(copy->vm, thread->vm, flags);
 #endif
 
-  // 文件分配方式
+  // Always give the child its own fd table; optionally share fd_t objects.
+  copy->fd_size = thread->fd_size;
+  copy->fd_number = 0;
+  copy->fds = kmalloc(sizeof(fd_t*) * copy->fd_size, KERNEL_TYPE);
+  if (copy->fds == NULL) {
+    log_error("thread copy fd alloc failed\n");
+    return NULL;
+  }
+  kmemset(copy->fds, 0, sizeof(fd_t*) * copy->fd_size);
   if (flags & FS_CLONE) {
-    // copy file
-    copy->fd_size = thread->fd_size;
     copy->fd_number = thread->fd_number;
-    copy->fds = kmalloc(sizeof(fd_t*) * thread->fd_size, KERNEL_TYPE);
-    kmemmove(copy->fds, thread->fds, sizeof(fd_t*) * thread->fd_size);
-    for (int i = 0; i < copy->fd_number; i++) {
+    for (int i = 0; i < (int)thread->fd_number; i++) {
+      copy->fds[i] = thread->fds[i];
       if (copy->fds[i] != NULL) {
         copy->fds[i]->use_count++;
       }
@@ -282,16 +318,56 @@ int thread_check(thread_t* thread) {
 }
 
 void thread_fill_fd(thread_t* thread) {
-  thread->fds[STDIN]  = fd_find(STDIN);
+  if (thread == NULL || thread->fds == NULL) {
+    return;
+  }
+  fd_ensure_stdio();
+  thread->fds[STDIN] = fd_find(STDIN);
   thread->fds[STDOUT] = fd_find(STDOUT);
   thread->fds[STDERR] = fd_find(STDERR);
   thread->fd_number = 0;
   for (int i = STDIN; i <= STDERR; i++) {
     if (thread->fds[i] != NULL) {
       thread->fds[i]->use_count++;
-      thread->fd_number++;
+      thread->fd_number = i + 1;
     }
   }
+}
+
+void thread_ensure_stdio(thread_t* thread) {
+  if (thread == NULL || thread->fds == NULL) {
+    return;
+  }
+  fd_ensure_stdio();
+  for (int i = STDIN; i <= STDERR; i++) {
+    if (thread->fds[i] == NULL) {
+      fd_t* stdfd = fd_find(i);
+      if (stdfd != NULL) {
+        thread->fds[i] = stdfd;
+        stdfd->use_count++;
+      }
+    }
+    if (thread->fds[i] != NULL && i + 1 > (int)thread->fd_number) {
+      thread->fd_number = i + 1;
+    }
+  }
+}
+
+void thread_exec_reset_fds(thread_t* thread) {
+  if (thread == NULL || thread->fds == NULL) {
+    return;
+  }
+  for (u32 i = 0; i < thread->fd_number; i++) {
+    if (i <= STDERR) {
+      continue;
+    }
+    if (thread->fds[i] != NULL) {
+      fd_t* f = thread->fds[i];
+      thread->fds[i] = NULL;
+      fd_close(f);
+    }
+  }
+  thread_ensure_stdio(thread);
 }
 
 void thread_sleep(thread_t* thread, u32 count) {
@@ -338,6 +414,23 @@ void thread_set_arg(thread_t* thread, void* arg) {
     return;
   }
   context_ret(ic) = arg;
+}
+
+void thread_reset_user_context(thread_t* thread, void* entry, void* stack_top) {
+  if (thread == NULL || thread->ctx == NULL || thread->ctx->ksp == NULL) {
+    log_error("thread reset user context invalid thread\n");
+    return;
+  }
+  interrupt_context_t* ic = thread->ctx->ksp;
+  context_set_entry(ic, (u32)entry);
+  ic->sp = (u32)stack_top;
+  ic->lr = 0;
+  ic->r0 = (u32)stack_top;
+  ic->r1 = 0;
+  ic->r2 = 0;
+  ic->r3 = 0;
+  thread->ctx->usp = (u32)stack_top;
+  thread->ctx->eip = (u32)entry;
 }
 
 void thread_set_ret(thread_t* thread, u32 ret) {
@@ -554,13 +647,27 @@ int thread_add_fd(thread_t* thread, fd_t* fd) {
 }
 
 fd_t* thread_find_fd_id(thread_t* thread, u32 fd) {
+  if (thread == NULL || thread->fds == NULL) {
+    return NULL;
+  }
   if (thread->fd_number > thread->fd_size) {
     log_error("thread find number limit %d\n", fd);
     return NULL;
   }
-  if (fd > thread->fd_number) {
-    log_error("thread find fd limit %d > %d\n", fd, thread->fd_number);
+  if (fd >= thread->fd_size) {
+    log_error("thread find fd limit %d >= size %d\n", fd, thread->fd_size);
     return NULL;
+  }
+  if (thread->fds[fd] == NULL) {
+    if (fd <= STDERR) {
+      thread_ensure_stdio(thread);
+    }
+    if (thread->fds[fd] == NULL) {
+      return NULL;
+    }
+  }
+  if (fd + 1 > thread->fd_number) {
+    thread->fd_number = fd + 1;
   }
   return thread->fds[fd];
 }

@@ -316,6 +316,7 @@ struct rusage {
 };
 
 u32 sys_open(char* name, int attr, ...);
+u32 sys_open_kernel(const char* path, int attr);
 u32 sys_openat(int dirfd, const char* pathname, int flags, int mode);
 int sys_mkdirat(int dirfd, const char* pathname, mode_t mode);
 int sys_unlinkat(int dirfd, const char* pathname, int flags);
@@ -328,6 +329,10 @@ ssize_t sys_readlinkat(int dirfd, const char* restrict pathname,
 int sys_faccessat(int dirfd, const char* pathname, int mode, int flags);
 // size_t sys_ioctl(u32 fd, u32 cmd, ...);
 size_t sys_ioctl(u32 fd, u32 cmd, void* args);
+u64 sys_open_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5);
+u64 sys_access_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5);
+u64 sys_stat_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5);
+u64 sys_readlink_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5);
 int sys_close(u32 fd);
 size_t sys_write(u32 fd, void* buf, size_t nbytes);
 size_t sys_read(u32 fd, void* buf, size_t nbytes);
@@ -389,8 +394,15 @@ void sys_dumps();
 int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count);
 int sys_munmap(void* addr, size_t size);
 int sys_fcntl64(int fd, int cmd, void* arg);
-int sys_getcwd(char* buf, size_t size);
+char* sys_getcwd(char* buf, size_t size);
 int sys_fchdir(int fd);
+int sys_mkdir(const char* pathname, mode_t mode);
+int sys_access(const char* pathname, int mode);
+int sys_fstat64(int fd, struct stat* stat);
+int sys_statfs64(const char* filename, struct statfs* stat);
+u64 sys_open_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5);
+u64 sys_readlink_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4,
+  u64 a5);
 
 int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
               int child_tid);
@@ -425,5 +437,6 @@ int sys_shutdown(int sockfd, int how);
 
 void sys_fn_init();
 void sys_fn_net_init(void** syscall_table);
+
 
 #endif

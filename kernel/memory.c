@@ -412,29 +412,25 @@ void vfree(void* addr, size_t size) {
 void* kpage_v2p(void* addr, int size) {
   thread_t* current = thread_current();
 #ifdef VM_ENABLE
-  void* phy = NULL;
-  if (current != NULL) {
-    u32 page = NULL;
-    if (current->vm == NULL) {
-      log_error("vm is null\n");
-    } else {
-      page = current->vm->upage;
-    }
-    phy = page_v2p(page, addr);
-    if (phy == NULL) {
-      log_error("get page: %x vaddr %x phy null\n", page, addr);
-      if (size > 0) {
-        kmemset(addr, 0, size);
-      }
-      phy = page_v2p(page, addr);
-    }
-  } else {
-    phy = addr;
+  if (addr == NULL) {
+    return NULL;
   }
-  return phy;
-#else
-  return addr;
+  if (current != NULL && current->vm != NULL) {
+    if (page_v2p(current->vm->upage, addr) != NULL) {
+      return addr;
+    }
+    if (page_v2p(current->vm->kpage, addr) != NULL) {
+      return addr;
+    }
+    if (size > 0) {
+      log_error("kpage_v2p unmapped vaddr %x size %x tid %d\n", addr, size,
+                current->id);
+    }
+    return NULL;
+  }
 #endif
+  (void)size;
+  return addr;
 }
 
 void kpool_init() {
