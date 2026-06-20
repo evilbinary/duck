@@ -16,6 +16,7 @@ void* page_fault_handle(interrupt_context_t *context);
 void page_map(vaddr_t virtualaddr, vaddr_t physaddr, u32 flags);
 void page_map_current(vaddr_t virtualaddr, vaddr_t physaddr, u32 flags);
 void page_init(void);
+void* page_kernel_dir(void);
 
 // Forward declarations for functions used in page fault handling
 void schedule(interrupt_context_t* ic);

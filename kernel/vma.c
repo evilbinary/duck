@@ -4,6 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "memory.h"
+#include "page.h"
 #include "thread.h"
 #include "libs/include/kernel/string.h"
 

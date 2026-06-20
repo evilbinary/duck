@@ -161,16 +161,21 @@ typedef	int32_t		pid_t;
 
 #ifndef _HAVE_SIZE_T
 #define _HAVE_SIZE_T
-#ifndef size_t
-typedef	uint32_t		size_t;
+#if !defined(__DEFINED_size_t)
+typedef uint32_t size_t;
 #endif
 #endif
 
 
 #ifndef _HAVE_SSIZE_T
 #define _HAVE_SSIZE_T
-#ifndef ssize_t
-typedef	int32_t		ssize_t;
+#if !defined(__DEFINED_ssize_t)
+#if defined(ARM64) || defined(__aarch64__)
+typedef long ssize_t;
+#else
+typedef int32_t ssize_t;
+#endif
+#define __DEFINED_ssize_t
 #endif
 #endif
 
