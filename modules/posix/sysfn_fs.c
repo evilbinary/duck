@@ -116,7 +116,8 @@ static int sys_copy_from_user(void* kbuf, const void* user, size_t size) {
   return 0;
 }
 
-#if defined(ARM) || defined(ARMV7) || defined(ARMV7_A) || defined(__arm__)
+#if (defined(ARM) || defined(ARMV7) || defined(ARMV7_A) || defined(__arm__)) && \
+    !defined(ARM64) && !defined(__aarch64__)
 static void sys_user_dcache_sync(const void* user, size_t size) {
   if (user == NULL || size == 0) {
     return;

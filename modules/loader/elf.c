@@ -7,10 +7,11 @@
 #include "kernel/elf.h"
 #include "kernel/memory.h"
 #include "kernel/thread.h"
+#include "libs/include/kernel/string.h"
 #include "loader.h"
 #include "posix/sysfn.h"
 
-#if defined(__arm__)
+#if defined(ARM) && !defined(ARM64) && !defined(__aarch64__)
 extern void cp15_invalidate_icache(void);
 #endif
 
@@ -44,14 +45,28 @@ static void elf32_user_cache_sync(void* user_addr, u32 size) {
   if (user_addr == NULL || size == 0) {
     return;
   }
-  u32 start = (u32)user_addr & ~31U;
-  u32 end = ((u32)user_addr + size + 31U) & ~31U;
+#if defined(ARM64) || defined(__aarch64__)
+  uintptr_t start = (uintptr_t)user_addr & ~63UL;
+  uintptr_t end =
+      ((uintptr_t)user_addr + size + 63UL) & ~63UL;
+  for (uintptr_t va = start; va < end; va += 64) {
+    asm volatile("dc civac, %0" : : "r"(va) : "memory");
+  }
+  asm volatile("dsb ish" ::: "memory");
+  asm volatile("isb" ::: "memory");
+#elif defined(ARM) || defined(ARMV7_A) || defined(ARMV7) || defined(ARMV5) || \
+    defined(__arm__)
+  u32 start = (u32)(uintptr_t)user_addr & ~31U;
+  u32 end = ((u32)(uintptr_t)user_addr + size + 31U) & ~31U;
   for (u32 va = start; va < end; va += 32) {
-    /* Clean + invalidate so user mode never sees stale stack/heap lines. */
     asm volatile("mcr p15, 0, %0, c7, c14, 1" : : "r"(va) : "memory");
   }
   asm volatile("dsb sy" ::: "memory");
   asm volatile("isb sy" ::: "memory");
+#else
+  (void)user_addr;
+  (void)size;
+#endif
 }
 
 static void* elf32_user_ptr(thread_t* current, void* user_addr, u32 size) {
@@ -586,10 +601,12 @@ static int elf32_build_initial_stack(thread_t* current, const exec_params_t* exe
 static void elf32_enter_user(thread_t* current, const elf32_image_info_t* image,
                              const exec_stack_layout_t* layout) {
   if (layout->stack_top > layout->sp) {
-    elf32_user_cache_sync((void*)layout->sp, layout->stack_top - layout->sp);
+    elf32_user_cache_sync((void*)(uintptr_t)layout->sp,
+                          layout->stack_top - layout->sp);
   }
 
-  thread_reset_user_context(current, (void*)image->entry, (void*)layout->sp);
+  thread_reset_user_context(current, (void*)(uintptr_t)image->entry,
+                            (void*)(uintptr_t)layout->sp);
   if (current->ctx->ic != NULL && current->ctx->ksp != NULL) {
     kmemmove(current->ctx->ic, current->ctx->ksp, sizeof(interrupt_context_t));
   }

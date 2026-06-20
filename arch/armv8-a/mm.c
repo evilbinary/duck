@@ -139,3 +139,6 @@ void mm_page_enable(u64 page_dir) {
 
   kprintf("VMSAv8-64 MMU enabled at %lx\n", p_pgd);
 }
+
+void mm_init_default(void) {
+}

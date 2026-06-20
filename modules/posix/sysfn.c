@@ -361,7 +361,11 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   current->exec = exec;
   current->name = exec->filename;
   thread_fill_fd(current);
+#if defined(ARM64) || defined(__aarch64__)
+  run_elf64_thread((long*)exec);
+#else
   run_elf_thread((long*)exec);
+#endif
   return 0;
 }
 
