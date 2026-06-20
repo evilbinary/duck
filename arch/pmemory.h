@@ -117,6 +117,8 @@ void mm_init();
 void* mm_alloc(size_t size);
 void mm_free(void* p);
 void* mm_alloc_zero_align(size_t size, u32 alignment);
+void* mm_alloc_page(void);
+void mm_free_page(void* p);
 void mm_alloc_init();
 void mm_dump_phy();
 void mm_dump();
