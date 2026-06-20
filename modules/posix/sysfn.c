@@ -360,6 +360,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   }
   current->exec = exec;
   current->name = exec->filename;
+  thread_fill_fd(current);
   run_elf_thread((long*)exec);
   return 0;
 }
@@ -1244,6 +1245,7 @@ void sys_fn_init() {
   syscall_table[SYS_DUMPS] = &sys_dumps;
 
   syscall_table[SYS_GETDENTS64] = &sys_getdents64;
+  syscall_table[SYS_GETDENTS] = &sys_getdents64;
   syscall_table[SYS_MUNMAP] = &sys_munmap;
 
   syscall_table[SYS_FCNT64] = &sys_fcntl64;

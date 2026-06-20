@@ -356,7 +356,8 @@ u32 vfs_readdir(vnode_t *node, vdirent_t *dirent, u32 *offset, u32 count) {
   }
 
   // Backed directories delegate to the underlying filesystem implementation.
-  if (node->super != NULL) {
+  if (node->super != NULL && node->super->op != NULL &&
+      node->super->op->readdir != NULL) {
     return node->super->op->readdir(node, dirent, offset, count);
   }
 

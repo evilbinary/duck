@@ -97,38 +97,99 @@ static int sys_copy_from_user(void* kbuf, const void* user, size_t size) {
   if (kbuf == NULL || user == NULL || size == 0) {
     return -1;
   }
-  if (!sys_user_range_mapped(user, size)) {
-    return -1;
+
+  const u8* src = (const u8*)user;
+  u8* dst = (u8*)kbuf;
+  size_t done = 0;
+  u32 last_page = ~0U;
+  while (done < size) {
+    u32 page = ((u32)(src + done)) & ~(PAGE_SIZE - 1);
+    if (page != last_page) {
+      if (!sys_user_page_mapped(page)) {
+        return -1;
+      }
+      last_page = page;
+    }
+    dst[done] = src[done];
+    done++;
   }
-  kmemcpy(kbuf, user, size);
   return 0;
 }
+
+#if defined(ARM) || defined(ARMV7) || defined(ARMV7_A) || defined(__arm__)
+static void sys_user_dcache_sync(const void* user, size_t size) {
+  if (user == NULL || size == 0) {
+    return;
+  }
+  u32 start = (u32)user & ~31U;
+  u32 end = ((u32)user + size + 31U) & ~31U;
+  for (u32 va = start; va < end; va += 32) {
+    asm volatile("mcr p15, 0, %0, c7, c14, 1" : : "r"(va) : "memory");
+  }
+  asm volatile("dsb sy" ::: "memory");
+}
+#else
+static void sys_user_dcache_sync(const void* user, size_t size) {
+  (void)user;
+  (void)size;
+}
+#endif
 
 static int sys_copy_to_user(void* user, const void* kbuf, size_t size) {
   if (user == NULL || kbuf == NULL || size == 0) {
     return -1;
   }
-  if (!sys_user_range_mapped(user, size)) {
-    return -1;
+  const u8* src = (const u8*)kbuf;
+  u8* dst = (u8*)user;
+  size_t done = 0;
+  u32 last_page = ~0U;
+  while (done < size) {
+    u32 page = ((u32)(dst + done)) & ~(PAGE_SIZE - 1);
+    if (page != last_page) {
+      if (!sys_user_page_mapped(page)) {
+        return -1;
+      }
+      last_page = page;
+    }
+    dst[done] = src[done];
+    done++;
   }
-  kmemcpy(user, kbuf, size);
+  // sys_user_dcache_sync(user, size);
   return 0;
 }
 
 #define SYS_DT_DIR 4
 #define SYS_DT_REG 8
 
-typedef struct linux_dirent64 {
-  u64 d_ino;
-  i64 d_off;
-  u16 d_reclen;
-  u8 d_type;
-  char d_name[];
-} linux_dirent64_t;
+/* musl struct dirent / getdents64 record layout (arch/generic/bits/dirent.h) */
+#define MUSL_DIRENT_INO_OFF   0
+#define MUSL_DIRENT_OFF_OFF   8
+#define MUSL_DIRENT_RECLEN_OFF 16
+#define MUSL_DIRENT_TYPE_OFF  18
+#define MUSL_DIRENT_NAME_OFF  19
 
 static u16 sys_dirent64_reclen(const char* name) {
   u32 n = kstrlen(name) + 1;
-  return (u16)((19 + n + 7) & ~7u);
+  return (u16)((MUSL_DIRENT_NAME_OFF + n + 7) & ~7u);
+}
+
+static void sys_put_dirent64_record(u8* base, u32 pos, u64 ino, i64 next_off,
+                                    u8 type, const char* name) {
+  u16 reclen = sys_dirent64_reclen(name);
+  u8* rec = base + pos;
+  size_t name_room = reclen > MUSL_DIRENT_NAME_OFF
+                         ? (size_t)(reclen - MUSL_DIRENT_NAME_OFF)
+                         : 0;
+
+  kmemset(rec, 0, reclen);
+  *(u64*)(rec + MUSL_DIRENT_INO_OFF) = ino;
+  *(i64*)(rec + MUSL_DIRENT_OFF_OFF) = next_off;
+  *(u16*)(rec + MUSL_DIRENT_RECLEN_OFF) = reclen;
+  rec[MUSL_DIRENT_TYPE_OFF] = type;
+  if (name != NULL && name_room > 0) {
+    kstrncpy((char*)(rec + MUSL_DIRENT_NAME_OFF), name, name_room);
+    rec[reclen - 1] = '\0';
+  }
 }
 
 static u8 sys_vtype_to_dirent(u8 type) {
@@ -248,6 +309,14 @@ static u32 sys_open_kpath(const char* name, int attr) {
       log_error("sys open path append failed name=%s file=%x\n", name, file);
       return -1;
     }
+  }
+  if (path_name[0] == '\0') {
+    if (name != NULL && name[0] != '\0') {
+      kstrncpy(path_name, name, sizeof(path_name) - 1);
+    } else {
+      kstrncpy(path_name, "/", sizeof(path_name) - 1);
+    }
+    path_name[sizeof(path_name) - 1] = '\0';
   }
 
   log_debug("path name %s to %s\n", name, path_name);
@@ -553,9 +622,9 @@ int sys_close(u32 fd) {
 
 size_t sys_write(u32 fd, void* buf, size_t nbytes) {
   thread_t* current = thread_current();
-  if (current != NULL && current->id > 1 && fd <= STDERR) {
-    log_debug("sys_write tid=%d fd=%d nbytes=%d\n", current->id, fd, nbytes);
-  }
+  // if (current != NULL && current->id > 1 && fd <= STDERR) {
+  //   log_debug("sys_write tid=%d fd=%d nbytes=%d\n", current->id, fd, nbytes);
+  // }
   fd_t* f = thread_find_fd_id(current, fd);
   if (f == NULL) {
     log_error("write not found fd %d tid %d\n", fd, current->id);
@@ -582,6 +651,14 @@ size_t sys_write(u32 fd, void* buf, size_t nbytes) {
       return -1;
     }
     write_buf = tmp_buf;
+    // if (current != NULL && current->id > 1 && fd == 1 && nbytes > 0) {
+    //   char dbg[65];
+    //   size_t n = nbytes < 64 ? nbytes : 64;
+    //   kmemcpy(dbg, tmp_buf, n);
+    //   dbg[n] = '\0';
+    //   kprintf("sys_write stdout tid=%d nbytes=%u text='%s'\n", current->id,
+    //           nbytes, dbg);
+    // }
   }
 
   u32 ret = vwrite(node, f->offset, nbytes, write_buf);
@@ -619,11 +696,6 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
 
   u8* read_buf = (u8*)buf;
   u8* tmp_buf = NULL;
-#ifdef VM_ENABLE
-  if (current != NULL && current->vm != NULL && current->vm->upage != NULL) {
-    context_switch_page(current->ctx, (u32)(uintptr_t)current->vm->upage);
-  }
-#endif
   if (buf != NULL && nbytes > 0 && (u32)buf >= PAGE_SIZE) {
     if (!sys_user_range_mapped(buf, nbytes)) {
       if (sys_buf_in_kernel(buf, nbytes)) {
@@ -641,14 +713,11 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
 
   u32 ret = vread(node, f->offset, nbytes, read_buf);
   if (ret > 0 && tmp_buf != NULL && buf != NULL) {
-    if (sys_user_range_mapped(buf, ret)) {
-#ifdef VM_ENABLE
-      if (current != NULL && current->vm != NULL && current->vm->upage != NULL) {
-        context_switch_page(current->ctx, (u32)(uintptr_t)current->vm->upage);
-      }
-#endif
-      kmemcpy(buf, tmp_buf, ret);
+    if (sys_copy_to_user(buf, tmp_buf, ret) < 0) {
+      ret = 0;
     }
+  } else if (ret > 0 && read_buf == (u8*)buf && buf != NULL) {
+    sys_user_dcache_sync(buf, ret);
   }
   if (tmp_buf != NULL) {
     kfree(tmp_buf);
@@ -861,6 +930,38 @@ int sys_unlink(const char* pathname) {
   }
 
 
+static void sys_getdents_dump_buf(const char* tag, const u8* buf, u32 nbytes) {
+  u32 pos = 0;
+  u32 idx = 0;
+
+  kprintf("%s begin total=%u bytes buf=%x\n", tag, nbytes, buf);
+  while (pos + MUSL_DIRENT_NAME_OFF + 1 <= nbytes) {
+    u16 reclen = *(u16*)(buf + pos + MUSL_DIRENT_RECLEN_OFF);
+    const char* name = (const char*)(buf + pos + MUSL_DIRENT_NAME_OFF);
+    u8 type = buf[pos + MUSL_DIRENT_TYPE_OFF];
+
+    if (reclen < 24 || pos + reclen > nbytes) {
+      kprintf("%s stop idx=%u pos=%u bad reclen=%u\n", tag, idx, pos, reclen);
+      break;
+    }
+
+    kprintf("  [%u] pos=%u reclen=%u type=%u name='%s'\n", idx, pos, reclen,
+            type, name);
+    pos += reclen;
+    idx++;
+    if (idx >= 5) {
+      kprintf("  ... (%u more entries)\n", (nbytes > pos) ? 1 : 0);
+      break;
+    }
+  }
+  kprintf("%s end parsed=%u\n", tag, idx);
+}
+
+static void sys_getdents_dump_user_buf(void* user, u32 nbytes) {
+
+  //sys_getdents_dump_buf("getdents user", (const u8*)user, nbytes);
+}
+
 int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
   thread_t* current = thread_current();
   if (current != NULL && current->id > 1) {
@@ -882,6 +983,7 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
   kmemset(kbuf, 0, count);
 
   u32 nbytes = 0;
+  u32 entry_idx = 0;
   vdirent_t kdirent;
   while (nbytes + 24 <= count) {
     kmemset(&kdirent, 0, sizeof(kdirent));
@@ -890,34 +992,43 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
       break;
     }
 
-    u16 reclen = kdirent.length;
-    if (reclen < 24 || reclen > count) {
-      reclen = sys_dirent64_reclen(kdirent.name);
-    }
+    u16 reclen = sys_dirent64_reclen(kdirent.name);
     if (nbytes + reclen > count) {
       break;
     }
 
-    linux_dirent64_t* out = (linux_dirent64_t*)(kbuf + nbytes);
-    kmemset(out, 0, reclen);
-    out->d_ino = kdirent.ino;
-    out->d_off = (i64)kdirent.offset;
-    out->d_reclen = reclen;
-    out->d_type = sys_vtype_to_dirent(kdirent.type);
-    kstrncpy(out->d_name, kdirent.name, reclen - 19);
+    sys_put_dirent64_record(kbuf, nbytes, kdirent.ino, (i64)(nbytes + reclen),
+                            sys_vtype_to_dirent(kdirent.type), kdirent.name);
+
+    if (current != NULL && current->id > 1) {
+      // kprintf("getdents build tid=%d idx=%u vfs='%s' reclen=%u type=%u\n",
+      //         current->id, entry_idx, kdirent.name, reclen,
+      //         sys_vtype_to_dirent(kdirent.type));
+    }
 
     nbytes += reclen;
+    entry_idx++;
   }
 
   if (nbytes > 0) {
+    if (current != NULL && current->id > 1) {
+      // sys_getdents_dump_buf("getdents kbuf", kbuf, nbytes);
+    }
     if (sys_copy_to_user(dir, kbuf, nbytes) < 0) {
+      // kprintf("getdents copy_to_user failed tid=%d nbytes=%u user=%x\n",
+      //         current != NULL ? current->id : -1, nbytes, dir);
       kfree(kbuf);
       return -1;
+    }
+    if (current != NULL && current->id > 1) {
+      sys_getdents_dump_user_buf(dir, nbytes);
     }
   }
   kfree(kbuf);
 
   if (current != NULL && current->id > 1) {
+    // kprintf("getdents64 done tid=%d ret=%u entries=%u offset=%u\n", current->id,
+    //         nbytes, entry_idx, findfd->offset);
     log_debug("sys_getdents64 tid=%d ret=%d offset=%d\n", current->id, nbytes,
               findfd->offset);
   }
