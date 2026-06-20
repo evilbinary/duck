@@ -456,21 +456,10 @@ int sys_fork() {
     log_error("sys fork thread copy failed\n");
     return -1;
   }
+
   thread_set_ret(copy_thread, 0);
-#ifdef DEBUG
-  log_debug("fork copy finished\n");
-#endif
-#ifdef LOG_DEBUG
-  log_debug("-------dump current thread %d %s-------------\n", current->id);
-  thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
-  log_debug("-------dump clone thread %d-------------\n", copy_thread->id);
-  thread_dump(copy_thread, DUMP_DEFAULT | DUMP_CONTEXT);
-#endif
+
   thread_run(copy_thread);
-  thread_run(current);
-#ifdef DEBUG
-  log_debug("fork end child=%d parent=%d\n", copy_thread->id, current->id);
-#endif
   return copy_thread->id;
 }
 
@@ -1125,19 +1114,14 @@ int sys_sched_setscheduler(pid_t pid, int policy,
 }
 
 pid_t sys_waitpid(pid_t pid, int* wstatus, int options) {
-  log_debug("sys_waitpid %d %d %d not impl\n", pid, *wstatus, options);
-  thread_t* current = thread_current();
-
-  int ret = -1;
-  if (pid < -1) {
-  } else if (pid == -1) {
-  } else if (pid == 0) {
-  } else if (pid > 0) {
+  log_debug("sys_waitpid %d %x %d not impl\n", pid, wstatus, options);
+  if (wstatus != NULL) {
+    *wstatus = 0;
   }
-
-  thread_wait(current);
-
-  return ret;
+  if (pid > 0) {
+    return pid;
+  }
+  return -1;
 }
 
 pid_t sys_wait4(pid_t pid, int* wstatus, int options, struct rusage* rusage) {
@@ -1165,6 +1149,10 @@ int sys_fn_faild_handler(int no, interrupt_context_t* ic) {
 }
 
 void sys_fn_call_handler(int no, interrupt_context_t* ic) {
+  thread_t* current = thread_current();
+  if (current != NULL && current->ctx != NULL) {
+    current->ctx->ic = ic;
+  }
   void* fn = syscall_table[context_fn(ic)];
   if (fn != NULL) {
     // kprintf("syscall fn:%d r0:%x r1:%x r2:%x r3:%x fn addr

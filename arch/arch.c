@@ -4,8 +4,22 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "arch.h"
+#include "context.h"
 
 boot_info_t* boot_info = NULL;
+
+void context_inherit_live(context_t* child, interrupt_context_t* live) {
+  if (child == NULL || live == NULL) {
+    return;
+  }
+  interrupt_context_t* slot = child->ksp;
+  if (slot == NULL) {
+    return;
+  }
+  kmemmove(slot, live, sizeof(interrupt_context_t));
+  child->ic = slot;
+  child->ksp = slot;
+}
 boot_info_t boot_data = {0};
 extern u32 write_channel_number;
 

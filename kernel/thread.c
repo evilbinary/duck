@@ -187,6 +187,7 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   ctx->usp_size = ustack_size;
 
   context_clone(copy->ctx, thread->ctx);
+  context_inherit_live(copy->ctx, thread->ctx->ic);
 
   if (thread->vfs != NULL) {
     copy->vfs = thread->vfs;

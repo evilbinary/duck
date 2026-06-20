@@ -259,18 +259,8 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
   vaddr_t end_addr = 0;
   char* type_str = NULL;
   if (type == MEMORY_STACK) {
-    addr = vm->alloc_addr;
-    end_addr = addr + vm->alloc_size;
-    if (end_addr > vm->vend) {
-      log_warn("tid %d stack copy range overflow: %lx > %lx, correcting\n",
-               vm_copy->tid, end_addr, vm->vend);
-      end_addr = vm->vend;
-    }
-    if (addr < vm->vaddr) {
-      log_warn("tid %d stack copy range underflow: %lx < %lx, correcting\n",
-               vm_copy->tid, addr, vm->vaddr);
-      addr = vm->vaddr;
-    }
+    addr = vm->vaddr;
+    end_addr = vm->vend;
     type_str = "stack";
   } else if (type == MEMORY_HEAP) {
     addr = vm->vaddr;
@@ -285,16 +275,22 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
   vaddr_t copy_start = addr;
   u32 copied_pages = 0;
   for (; addr < end_addr; addr += PAGE_SIZE) {
+    void* copy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
+    if (copy_addr == NULL) {
+      log_error("tid %d vm copy %s page alloc failed at %lx\n", vm_copy->tid,
+                type_str, addr);
+      continue;
+    }
     void* phy = page_v2p((u64*)vm_src->upage, (void*)addr);
     if (phy != NULL) {
-      void* copy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
       kmemmove(copy_addr, (void*)addr, PAGE_SIZE);
       log_debug("-copy vaddr %lx addr %lx to %lx\n", addr, phy, copy_addr);
-      vmemory_map(vm_copy->upage, addr, (vaddr_t)copy_addr, PAGE_SIZE);
-      copied_pages++;
+    } else {
+      kmemset(copy_addr, 0, PAGE_SIZE);
+      log_debug("-copy vaddr %lx zero page %lx\n", addr, copy_addr);
     }
-    // Pages not yet faulted in (lazy alloc) are intentionally skipped here.
-    // The child will fault them in on first access, getting a fresh zero page.
+    vmemory_map(vm_copy->upage, addr, (vaddr_t)copy_addr, PAGE_SIZE);
+    copied_pages++;
   }
   // Always inherit the parent's brk/alloc pointers regardless of how many
   // pages were physically copied; uncopied lazy pages will be demand-paged.
