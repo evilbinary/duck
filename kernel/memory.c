@@ -16,6 +16,41 @@ queue_pool_t* user_pool;
 lock_t memory_lock;
 memory_t memory_summary;
 
+typedef struct vpage_entry {
+  void* phy;
+  void* raw;
+  struct vpage_entry* next;
+} vpage_entry_t;
+
+static vpage_entry_t* vpage_used_list;
+
+static void vpage_track(void* phy, void* raw) {
+  vpage_entry_t* e = kmalloc(sizeof(vpage_entry_t), KERNEL_TYPE);
+  if (e == NULL) {
+    log_error("vpage_track: kmalloc failed phy=%x\n", phy);
+    return;
+  }
+  e->phy = phy;
+  e->raw = raw;
+  e->next = vpage_used_list;
+  vpage_used_list = e;
+}
+
+static void* vpage_untrack(void* phy) {
+  vpage_entry_t** pp = &vpage_used_list;
+  while (*pp != NULL) {
+    if ((*pp)->phy == phy) {
+      vpage_entry_t* e = *pp;
+      void* raw = e->raw;
+      *pp = e->next;
+      kfree(e);
+      return raw;
+    }
+    pp = &(*pp)->next;
+  }
+  return NULL;
+}
+
 void memory_init() {
   memory_summary.total = mm_get_total();
   memory_summary.free = mm_get_free();
@@ -348,6 +383,9 @@ void* valloc(void* addr, size_t size) {
       log_error("valloc: kmalloc_alignment failed vaddr=%lx\n", vaddr);
       return NULL;
     }
+    // Save raw block pointer before mapping to user space; p2[-1] sits in the
+    // previous page and gets overwritten by multi-page user buffers.
+    vpage_track(phy_addr, ((void**)phy_addr)[-1]);
     kmemset(phy_addr, 0, PAGE_SIZE);
     if (current != NULL) {
       page_map_on(current->vm->upage, vaddr, phy_addr,
@@ -375,13 +413,24 @@ void vfree(void* addr, size_t size) {
     log_debug("vfree vaddr:%x paddr:%x\n", vaddr, phy);
     #endif
     if (phy != NULL) {
-      int s = mm_get_align_size(phy);
-      if (s >= PAGE_SIZE) {
-        // fix me
-        kfree_alignment(phy);
-        page_unmap_on(current->vm->upage, vaddr);
+      void* raw = vpage_untrack(phy);
+      if (raw != NULL) {
+        size_t s = mm_get_size(raw);
+        if (s > 0) {
+          mm_free(raw);
+          memory_static(s, MEMORY_TYPE_FREE);
+          page_unmap_on(current->vm->upage, vaddr);
+        } else {
+          log_warn("vfree: bad raw size phy=%x raw=%x\n", phy, raw);
+        }
       } else {
-        log_warn("not match free size %x %d\n", phy, s);
+        int s = mm_get_align_size(phy);
+        if (s >= PAGE_SIZE) {
+          kfree_alignment(phy);
+          page_unmap_on(current->vm->upage, vaddr);
+        } else {
+          log_warn("not match free size %x %d\n", phy, s);
+        }
       }
     }
     vaddr += PAGE_SIZE;
