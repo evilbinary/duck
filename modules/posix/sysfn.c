@@ -1159,17 +1159,17 @@ void sys_fn_call_handler(int no, interrupt_context_t* ic) {
     // kprintf("syscall fn:%d r0:%x r1:%x r2:%x r3:%x fn addr
     // %x\n",ic->r7,ic->r0,ic->r1,ic->r2,ic->r3,fn);
     if (context_fn(ic) == SYS_EXEC) {
-      u32 ret = ((sys_call_fn)fn)(context_arg0(ic), context_arg1(ic),
-                                  context_arg2(ic), context_arg3(ic),
-                                  context_arg4(ic), ic->r5, ic->r6);
+      u32 ret = sys_exec((char*)context_arg0(ic),
+                         (char* const*)context_arg1(ic),
+                         (char* const*)context_arg2(ic));
       if ((int)ret < 0) {
         context_ret(ic) = ret;
       } else {
         thread_t* current = thread_current();
         if (current != NULL && current->ctx != NULL && current->ctx->ksp != NULL) {
           kmemmove(ic, current->ctx->ksp, sizeof(interrupt_context_t));
-          log_debug("sys exec return pc=%x sp=%x tid=%d\n", ic->pc, ic->sp,
-                    current->id);
+          log_debug("sys exec return pc=%x sp=%x tid=%d\n", ic->pc,
+                    current->ctx->usp, current->id);
         }
       }
     } else {
