@@ -15,6 +15,15 @@ extern vnode_t* root_node;
 
 int fat_node_path(vnode_t* node, char* buf, size_t bufsz);
 
+static int sys_user_page_mapped(u32 va) {
+  thread_t* current = thread_current();
+  if (current == NULL || current->vm == NULL) {
+    return 0;
+  }
+  va &= ~(PAGE_SIZE - 1);
+  return page_v2p(current->vm->upage, (void*)va) != NULL;
+}
+
 static int sys_user_range_mapped(const void* user, size_t size) {
   thread_t* current = thread_current();
   if (current == NULL || current->vm == NULL || user == NULL || size == 0) {
@@ -23,7 +32,7 @@ static int sys_user_range_mapped(const void* user, size_t size) {
   u32 start = (u32)user & ~(PAGE_SIZE - 1);
   u32 end = ((u32)user + size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
   for (u32 va = start; va < end; va += PAGE_SIZE) {
-    if (page_v2p(current->vm->upage, (void*)va) == NULL) {
+    if (!sys_user_page_mapped(va)) {
       return 0;
     }
   }
@@ -56,19 +65,24 @@ static int sys_copy_user_string(const char* user, char* kbuf, size_t ksize) {
     log_error("sys_copy_user_string bad user pointer %x\n", user);
     return -1;
   }
-  if (!sys_user_range_mapped(user, ksize)) {
-    log_error("sys_copy_user_string unmapped user=%x size=%x\n", user, ksize);
-    return -1;
-  }
 #ifdef VM_ENABLE
   if (current != NULL && current->vm != NULL && current->vm->upage != NULL) {
     context_switch_page(current->ctx, (u32)(uintptr_t)current->vm->upage);
   }
 #endif
-  /* Syscall handlers run with the user page table active: use user VA. */
+  /* Only require the pages we actually read; do not pre-check the full kbuf. */
   const char* src = user;
   size_t n = 0;
+  u32 last_page = ~0U;
   while (n + 1 < ksize) {
+    u32 page = ((u32)(src + n)) & ~(PAGE_SIZE - 1);
+    if (page != last_page) {
+      if (!sys_user_page_mapped(page)) {
+        log_error("sys_copy_user_string unmapped user=%x page=%x\n", user, page);
+        return -1;
+      }
+      last_page = page;
+    }
     char c = src[n];
     kbuf[n++] = c;
     if (c == '\0') {
