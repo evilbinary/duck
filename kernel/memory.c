@@ -342,27 +342,6 @@ void* valloc(void* addr, size_t size) {
   void* vaddr = (vaddr_t)addr & (~page_alignt);
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
 
-  // Try to allocate all pages as one contiguous block first.
-  // This reduces kernel heap fragmentation compared to per-page allocations.
-  if (pages > 1) {
-    void* bulk = kmalloc_alignment(pages * PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
-    if (bulk != NULL) {
-      kmemset(bulk, 0, pages * PAGE_SIZE);
-      for (u32 i = 0; i < pages; i++) {
-        void* paddr = bulk + i * PAGE_SIZE;
-        if (current != NULL) {
-          page_map_on(current->vm->upage, vaddr, paddr,
-                      PAGE_P | PAGE_USR | PAGE_RWX);
-        } else {
-          page_map(vaddr, paddr, PAGE_P | PAGE_USR | PAGE_RWX);
-        }
-        vaddr += PAGE_SIZE;
-      }
-      return addr;
-    }
-    // Bulk alloc failed, fall through to per-page allocation
-  }
-
   for (u32 i = 0; i < pages; i++) {
     void* phy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
     if (phy_addr == NULL) {
