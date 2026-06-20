@@ -418,20 +418,34 @@ void thread_set_arg(thread_t* thread, void* arg) {
 }
 
 void thread_reset_user_context(thread_t* thread, void* entry, void* stack_top) {
-  if (thread == NULL || thread->ctx == NULL || thread->ctx->ksp == NULL) {
+  if (thread == NULL || thread->ctx == NULL || thread->ctx->ksp_end == 0) {
     log_error("thread reset user context invalid thread\n");
     return;
   }
-  interrupt_context_t* ic = thread->ctx->ksp;
-  context_set_entry(ic, (u32)entry);
-  ic->sp = (u32)stack_top;
-  ic->lr = 0;
-  ic->r0 = (u32)stack_top;
-  ic->r1 = 0;
-  ic->r2 = 0;
-  ic->r3 = 0;
-  thread->ctx->usp = (u32)stack_top;
-  thread->ctx->eip = (u32)entry;
+  context_t* ctx = thread->ctx;
+#if defined(ARM64)
+  context_init(ctx, ctx->ksp_end, (u64)stack_top, (u64)entry, LEVEL_USER,
+               thread->cpu_id);
+#else
+  context_init(ctx, (u32*)ctx->ksp_end, (u32*)stack_top, (u32*)entry, LEVEL_USER,
+               thread->cpu_id);
+#endif
+  interrupt_context_t* ic = context_exec_live(ctx);
+  if (ic == NULL) {
+    return;
+  }
+  /* musl _start: first arg = stack pointer (argc/argv/auxv on stack) */
+#if defined(ARM64)
+  context_arg0(ic) = (u64)stack_top;
+  context_arg1(ic) = 0;
+  context_arg2(ic) = 0;
+  context_arg3(ic) = 0;
+#else
+  context_arg0(ic) = (u32)stack_top;
+  context_arg1(ic) = 0;
+  context_arg2(ic) = 0;
+  context_arg3(ic) = 0;
+#endif
 }
 
 void thread_set_ret(thread_t* thread, u32 ret) {
