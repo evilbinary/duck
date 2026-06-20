@@ -285,6 +285,8 @@ typedef struct context_t {
     ((interrupt_context_t*)(context))->lr = (u64)(entry); \
   } while (0)
 
+#define context_exec_live(ctx) ((ctx)->ksp)
+
 void context_switch_page(context_t* ctx, u64 page_dir);
 
 // context_restore: used by kernel_run() for the very first eret into a thread.
