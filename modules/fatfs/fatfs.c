@@ -543,6 +543,9 @@ uint fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 *offset,
   if (fat_volume_path(file_info, buf) < 0) {
     return 0;
   }
+  if (file_info->dir.obj.fs != NULL) {
+    f_closedir(&file_info->dir);
+  }
   res = f_opendir(&file_info->dir, buf);
   if (res != FR_OK) {
     return 0;

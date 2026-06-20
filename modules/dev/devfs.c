@@ -28,7 +28,11 @@ static vnode_t* devfs_stdout;
 static vnode_t* devfs_stderr;
 
 static device_t* devfs_pick_output_device(void) {
-  device_t* dev = device_find(DEVICE_VGA);
+  device_t* dev = device_find(DEVICE_SERIAL);
+  if (dev != NULL) {
+    return dev;
+  }
+  dev = device_find(DEVICE_VGA);
   if (dev != NULL) {
     return dev;
   }
@@ -40,7 +44,7 @@ static device_t* devfs_pick_output_device(void) {
   if (dev != NULL) {
     return dev;
   }
-  return device_find(DEVICE_SERIAL);
+  return NULL;
 }
 
 static device_t* devfs_pick_input_device(void) {
@@ -70,9 +74,7 @@ static void devfs_on_device_added(device_t* dev) {
   switch (dev->id) {
     case DEVICE_KEYBOARD:
     case DEVICE_SERIAL:
-    case DEVICE_VGA:
-    case DEVICE_VGA_QEMU:
-    case DEVICE_LCD:
+      kprintf("bind stdio %d\n", dev->id);
       devfs_bind_stdio();
       break;
     default:
@@ -115,6 +117,7 @@ int devfs_init(void) {
   vfs_mount(NULL, "/dev", null);
 
   device_set_notify(devfs_on_device_added);
+  devfs_bind_stdio();
   fd_init();
 
   return 0;

@@ -435,7 +435,10 @@ void thread_reset_user_context(thread_t* thread, void* entry, void* stack_top) {
 
 void thread_set_ret(thread_t* thread, u32 ret) {
   if (thread == NULL) return;
-  interrupt_context_t* ic = thread->ctx->ksp;
+  interrupt_context_t* ic = thread->ctx->ic;
+  if (ic == NULL) {
+    ic = thread->ctx->ksp;
+  }
   if (ic == NULL) {
     log_error("context is null cannot set ret\n");
     return;
