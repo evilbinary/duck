@@ -612,13 +612,12 @@ static void elf32_enter_user(thread_t* current, const elf32_image_info_t* image,
   }
 }
 
-void run_elf_thread(long* p) {
+int run_elf_thread(long* p) {
   (void)p;
   thread_t* current = thread_current();
   if (current == NULL || current->exec == NULL) {
     elf32_log_error("run_elf_thread missing exec params\n");
-    sys_exit(-1);
-    return;
+    return -1;
   }
   elf32_log_debug("elf32 run elf thread\n");
 
@@ -630,19 +629,18 @@ void run_elf_thread(long* p) {
 
   if (elf32_open_and_load(exec->filename, &image) < 0) {
     elf32_log_debug("elf32 open and load failed\n");
-    sys_exit(-1);
-    return;
+    return -1;
   }
   if (elf32_build_initial_stack(current, exec, &image, &layout) < 0) {
     elf32_log_debug("elf32 build initial stack failed\n");
-    sys_exit(-1);
-    return;
+    return -1;
   }
 
   elf32_log_debug("elf32 start entry=%x sp=%x phdr=%x phnum=%d file=%s\n",
                   image.entry, layout.sp, image.phdr, image.phnum,
                   exec->filename);
   elf32_enter_user(current, &image, &layout);
+  return 0;
 }
 
 void go_start(entry_fn entry, long* args) {

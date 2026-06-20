@@ -163,6 +163,7 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   // copy->name = kmalloc(kstrlen(thread->name), KERNEL_TYPE);
   // kstrcpy(copy->name, thread->name);
   copy->name = thread->name;
+  copy->exec = NULL;
   copy->counter = thread->counter;
   copy->fault_count = 0;
   copy->sleep_counter = 0;
