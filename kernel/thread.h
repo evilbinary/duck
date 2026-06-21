@@ -123,6 +123,7 @@ thread_t* thread_head();
 
 void thread_run_all();
 void thread_reset_stack3(thread_t* thread, u32* stack3);
+thread_t* thread_find_id(int id);
 
 void thread_fill_fd(thread_t* thread);
 u64 thread_user_tp();

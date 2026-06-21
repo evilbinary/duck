@@ -566,7 +566,12 @@ thread_t* thread_head() { return schedulable_head_thread[cpu_get_id()]; }
 void thread_exit(thread_t* thread, int code) {
   if (thread == NULL) return;
   thread->code = code;
+  u32 parent_id = thread->pid;
   thread_stop(thread);
+  thread_t* parent = thread_find_id((int)parent_id);
+  if (parent != NULL && parent->state == THREAD_WAITING) {
+    thread_wake(parent);
+  }
 }
 
 thread_t* thread_find_next(thread_t* thread) {
