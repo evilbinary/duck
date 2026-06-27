@@ -12,6 +12,7 @@
 
 extern boot_info_t* boot_info;
 extern memory_manager_t mmt;
+extern void dccmvac(unsigned long mva);
 
 u32* page_create(u32 level) {
   u32* page_dir_ptr_tab =
@@ -59,8 +60,14 @@ void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
   if (l2 == NULL) {
     l2 = mm_alloc_zero_align(256 * sizeof(u32), 0x1000);
     l1[l1_index] = (((u32)l2) & 0xFFFFFC00) | L1_DESC;
+    dccmvac((unsigned long)&l1[l1_index]);
   }
   l2[l2_index] = ((physaddr >> 12) << 12) | L2_DESC | flags;
+  dccmvac((unsigned long)&l2[l2_index]);
+  dmb();
+  tlbimva(virtualaddr);
+  dsb();
+  isb();
 }
 
 void page_unmap_on(page_dir_t* page, u32 virtualaddr) {
@@ -71,6 +78,11 @@ void page_unmap_on(page_dir_t* page, u32 virtualaddr) {
   if (l2 != NULL) {
     // l1[l1_index] = 0;
     l2[l2_index] = 0;
+    dccmvac((unsigned long)&l2[l2_index]);
+    dmb();
+    tlbimva(virtualaddr);
+    dsb();
+    isb();
   }
 }
 
