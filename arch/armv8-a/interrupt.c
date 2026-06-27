@@ -181,9 +181,10 @@ void* sync_handler(interrupt_context_t* ic) {
         ic->no = EX_SYS_CALL;
         break;
       }
-      kprintf("sync: unknown ec=%x esr=%lx pc=%lx\n", ec, esr, ic->pc);
+      kprintf("sync: unknown ec=%x esr=%lx pc=%lx sp=%lx x8=%lx\n", ec, esr,
+              ic->pc, ic->sp, ic->x8);
       context_dump_interrupt(ic);
-      cpu_halt();
+      ic->no = EX_UNDEF;
       break;
     case ESR_ELx_EC_DABT_LOW:
     case ESR_ELx_EC_DABT_CUR:
@@ -194,9 +195,10 @@ void* sync_handler(interrupt_context_t* ic) {
       ic->no = EX_PREF_ABORT;
       break;
     default:
-      kprintf("sync: unknown ec=%x esr=%lx pc=%lx\n", ec, esr, ic->pc);
+      kprintf("sync: unknown ec=%x esr=%lx pc=%lx sp=%lx x8=%lx\n", ec, esr,
+              ic->pc, ic->sp, ic->x8);
       context_dump_interrupt(ic);
-      cpu_halt();
+      ic->no = EX_UNDEF;
       break;
   }
 

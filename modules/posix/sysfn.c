@@ -1134,11 +1134,8 @@ pid_t sys_waitpid(pid_t pid, int* wstatus, int options) {
 }
 
 pid_t sys_wait4(pid_t pid, int* wstatus, int options, struct rusage* rusage) {
-  int ret = sys_waitpid(pid, wstatus, options);
-
-  log_debug("sys_wait4 %d %d %d %x\n", pid, *wstatus, options, rusage);
-
-  return ret;
+  (void)rusage;
+  return sys_waitpid(pid, wstatus, options);
 }
 
 int sys_fn_faild_handler(int no, interrupt_context_t* ic) {

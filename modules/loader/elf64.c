@@ -11,6 +11,8 @@
 #define PROT_WRITE 2
 #define PROT_EXEC 4
 
+// #define LOAD_ELF_DEBUG 1
+
 #ifdef LOAD_ELF_DEBUG
 #define elf64_log_debug kprintf
 #else
@@ -208,27 +210,23 @@ static u64 elf64_locate_phdr(const Elf64_Ehdr* ehdr, const Elf64_Phdr* phdr, u64
       return bias + phdr[i].p_vaddr + (ehdr->e_phoff - phdr[i].p_offset);
     }
   }
-
-  if (ehdr->e_phoff < PAGE_SIZE) {
-    return bias + ehdr->e_phoff;
-  }
-
   return 0;
 }
 
-static u64 elf64_copy_phdr_to_user(const Elf64_Ehdr* ehdr, const Elf64_Phdr* phdr) {
-  vmemory_area_t* exec = vmemory_area_find_flag(thread_current()->vm->vma, MEMORY_EXEC);
-  if (exec == NULL) {
+static u64 elf64_copy_phdr_to_user(const Elf64_Ehdr* ehdr, const Elf64_Phdr* phdr,
+                                   u64 max_vaddr) {
+  thread_t* current = thread_current();
+  if (current == NULL) {
     return 0;
   }
 
   u64 size = ehdr->e_phnum * ehdr->e_phentsize;
-  u64 dst = elf64_align_up(exec->alloc_addr, 16);
-  exec->alloc_addr = dst + size;
-  exec->alloc_size += dst + size - dst;
+  u64 dst = elf64_align_up(max_vaddr, PAGE_SIZE);
+  if (size == 0 || valloc((void*)dst, PAGE_SIZE) == NULL) {
+    return 0;
+  }
 
-  valloc((void*)dst, size);
-  kmemcpy((void*)dst, phdr, size);
+  elf64_user_memcpy(current, (void*)(uintptr_t)dst, phdr, size);
   return dst;
 }
 
@@ -334,8 +332,8 @@ static int elf64_load_image_fd(int fd, const Elf64_Ehdr* ehdr, elf64_image_info_
     }
   }
 
-  if (image->phdr == 0 || image->phdr < PAGE_SIZE) {
-    image->phdr_copy = elf64_copy_phdr_to_user(ehdr, phdr);
+  if (image->phdr == 0) {
+    image->phdr_copy = elf64_copy_phdr_to_user(ehdr, phdr, max_vaddr + bias);
     image->phdr = image->phdr_copy;
   }
 
