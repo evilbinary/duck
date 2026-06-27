@@ -15,6 +15,8 @@
 #include "kernel/vfs.h"
 #include "../loader/loader.h"
 
+#define log_debug 
+
 static void* syscall_table[SYSCALL_NUMBER];
 extern vnode_t* root_node;
 extern long xwin_syscall_handler(u32 num, long a1, long a2, long a3, long a4,

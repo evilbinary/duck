@@ -11,6 +11,8 @@
 #include "kernel/vfs.h"
 #include "sysfn.h"
 
+#define log_debug 
+
 extern vnode_t* root_node;
 
 int fat_node_path(vnode_t* node, char* buf, size_t bufsz);

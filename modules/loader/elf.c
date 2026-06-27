@@ -16,7 +16,7 @@ extern void cp15_invalidate_icache(void);
 #endif
 
 
-#define LOAD_ELF_DEBUG 1
+// #define LOAD_ELF_DEBUG 1
 
 #ifdef LOAD_ELF_DEBUG
 #define elf32_log_debug kprintf
