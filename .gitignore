@@ -8,3 +8,11 @@
 init/kernel
 __pycache__/ya.cpython-311.pyc
 **.pyc
+**/**/._*
+**/**/._.
+
+**/PaxHeader/
+**/**/PaxHeader/
+.DS_Store
+*.swp
+*/*._*

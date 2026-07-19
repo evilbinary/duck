@@ -7,5 +7,6 @@
 
 void ap_init(int cpu){
     cpu_init(cpu);
+    ipi_clear(cpu);
     interrupt_init(cpu);
 }
