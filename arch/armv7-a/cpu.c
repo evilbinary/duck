@@ -341,7 +341,7 @@ void cpu_enable_page() {
 
 extern void lcpu_wait_start(int cpu);
 
-void cpu_init(boot_info_t* boot, int cpu) {
+void cpu_init(int cpu) {
   if (cpu != 0) {
     lcpu_wait_start(cpu);
   }
