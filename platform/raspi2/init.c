@@ -121,19 +121,21 @@ void lcpu_wait_start(int cpu) {
   while (1) {
     dcimvac((unsigned long)&ap_release[cpu]);
     dsb();
-    if (ap_release[cpu]) break;
+    if (ap_release[cpu]) {
+      break;
+    }
     asm volatile("wfe");
   }
+  kprintf("ap %d start\n", cpu);
   io_write32(rdclr, 0xffffffff);
   dsb();
   isb();
 }
 
 void lcpu_send_start(u32 cpu, u32 entry) {
+  (void)entry;
   if (cpu < 0 || cpu > 4) return;
-  u32 mailbox = 3;
-  u32 addr = CORE0_MBOX0_SET + cpu * 0x10 + 4 * mailbox;
-  u32 rdclr = CORE0_MBOX0_RDCLR + cpu * 0x10 + 4 * mailbox;
+  u32 rdclr = CORE0_MBOX0_RDCLR + cpu * 0x10 + 4 * 3;
 
   io_write32(rdclr, 0xffffffff);
   dmb();
@@ -147,11 +149,6 @@ void lcpu_send_start(u32 cpu, u32 entry) {
   }
   dmb();
   dsb();
-
-  io_write32(addr, entry);
-  dmb();
-  dsb();
-  isb();
   asm volatile("sev");
 }
 

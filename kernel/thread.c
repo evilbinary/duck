@@ -19,6 +19,7 @@ u32 recycle_head_thread_count = 0;
 
 u32 thread_ids = 0;
 lock_t thread_lock;
+static volatile int thread_create_lock = 0;
 
 #define log_debug
 // #define DEBUG 1
@@ -88,6 +89,9 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
     log_error("thread create ex  user stack size is 0\n");
     return NULL;
   }
+  while (__sync_lock_test_and_set(&thread_create_lock, 1)) {
+  }
+
   thread_t* thread = kmalloc(sizeof(thread_t), KERNEL_TYPE);
   thread_init_default(thread, level, entry, data);
 
@@ -140,6 +144,7 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
 
   // check thread data
   int ret = thread_check(thread);
+  __sync_lock_release(&thread_create_lock);
   return thread;
 }
 

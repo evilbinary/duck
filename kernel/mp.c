@@ -20,7 +20,7 @@ void mp_init() {
   // delay
   cpu_delay(200);
 
-  u32 entry = (u32)(uintptr_t)boot_info->kernel_entry;
+  u32 entry = 0;
 
   kprintf("mp init, release %d ap(s)\n", cpu_nums - 1);
 

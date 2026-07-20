@@ -33,10 +33,10 @@ void kernel_init() {
     event_init();
     log_info("kernel init end\n");
   } else {
-    log_info("ap %d kernel init\n", cpu);
+    kprintf("ap %d kernel init\n", cpu);
     page_init();
     schedule_init();
-    log_info("ap %d kernel init end\n", cpu);
+    kprintf("ap %d kernel init end\n", cpu);
   }
 }
 
