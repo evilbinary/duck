@@ -5,6 +5,10 @@
 extern boot_info_t* boot_info;
 extern void dccmvac(unsigned long mva);
 
+static void dcimvac(unsigned long mva) {
+  asm volatile("mcr p15, 0, %0, c7, c6, 1" : : "r"(mva) : "memory");
+}
+
 static void io_write32(uint port, u32 data) { *(u32 *)port = data; }
 
 static u32 io_read32(uint port) {
@@ -106,21 +110,41 @@ void test_smp_entry() {
   for (;;) cpu_halt();
 }
 
+static volatile u32 ap_release[MAX_CPU];
+
+void lcpu_wait_start(int cpu) {
+  u32 mailbox = 3;
+  u32 rdclr = CORE0_MBOX0_RDCLR + cpu * 0x10 + 4 * mailbox;
+
+  if (cpu == 0) return;
+
+  while (1) {
+    dcimvac((unsigned long)&ap_release[cpu]);
+    dsb();
+    if (ap_release[cpu]) break;
+    asm volatile("wfe");
+  }
+  io_write32(rdclr, 0xffffffff);
+  dsb();
+  isb();
+}
+
 void lcpu_send_start(u32 cpu, u32 entry) {
   if (cpu < 0 || cpu > 4) return;
   u32 mailbox = 3;
   u32 addr = CORE0_MBOX0_SET + cpu * 0x10 + 4 * mailbox;
   u32 rdclr = CORE0_MBOX0_RDCLR + cpu * 0x10 + 4 * mailbox;
 
-  // Ensure shared boot parameters are visible to the secondary core before
-  // publishing the mailbox entry point.
+  io_write32(rdclr, 0xffffffff);
+  dmb();
+  dsb();
+
+  ap_release[cpu] = 1;
+  dccmvac((unsigned long)&ap_release[cpu]);
   if (boot_info != NULL) {
-    dccmvac((unsigned long)&boot_info->second_boot_entry);
+    dccmvac((unsigned long)&boot_info->kernel_entry);
     dccmvac((unsigned long)boot_info);
   }
-
-  // Drop any stale mailbox state from previous boots/restarts.
-  io_write32(rdclr, 0xffffffff);
   dmb();
   dsb();
 
@@ -128,6 +152,7 @@ void lcpu_send_start(u32 cpu, u32 entry) {
   dmb();
   dsb();
   isb();
+  asm volatile("sev");
 }
 
 void ipi_send(int cpu, int vec) {

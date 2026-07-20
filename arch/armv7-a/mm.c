@@ -109,6 +109,11 @@ void* page_v2p(void* page, void* vaddr) {
 }
 
 void mm_page_enable(u32 page_dir) {
+#ifdef MP_ENABLE
+  dccmvac((unsigned long)&page_dir);
+  dsb();
+  sev();   
+#endif
   // cpu_disable_page();
   // cpu_icache_disable();
 

@@ -20,14 +20,15 @@ void mp_init() {
   // delay
   cpu_delay(200);
 
-  u32 entry=boot_info->second_boot_entry;
+  u32 entry = (u32)(uintptr_t)boot_info->kernel_entry;
+
+  kprintf("mp init, release %d ap(s)\n", cpu_nums - 1);
 
   // start all cpu
   for (int i = 0; i < cpu_nums; i++) {
     int id = cpu_get_index(i);
     if (current_cpu_id != id) {
-      //启动cpu
-      cpu_start_id(id,entry);
+      cpu_start_id(id, entry);
     }
   }
 

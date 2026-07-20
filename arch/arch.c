@@ -20,13 +20,11 @@ void context_inherit_live(context_t* child, interrupt_context_t* live) {
   child->ic = slot;
   child->ksp = slot;
 }
-boot_info_t boot_data = {0};
 extern u32 write_channel_number;
 
 void arch_init(boot_info_t* boot, int cpu) {
   if (cpu == 0) {
-    kmemmove(&boot_data, boot, sizeof(boot_info_t));
-    boot_info = &boot_data;
+    boot_info = boot;
     write_channel_number = 0;
     platform_init();
 
@@ -38,7 +36,10 @@ void arch_init(boot_info_t* boot, int cpu) {
     platform_end();
   } else {
 #ifdef MP_ENABLE
-    ap_init(cpu);
+    if (boot_info == NULL) {
+      boot_info = boot;
+    }
+    ap_init(boot, cpu);
 #endif
   }
 }

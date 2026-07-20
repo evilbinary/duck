@@ -134,11 +134,10 @@ void page_map_current(vaddr_t virtualaddr, vaddr_t physaddr, u32 flags) {
 void *page_kernel_dir() { return kernel_page_dir; }
 
 void page_init() {
-  exception_regist(EX_DATA_FAULT, page_fault_handle);
-
 #ifdef VM_ENABLE
   int cpu = cpu_get_id();
   if (cpu == 0) {
+    exception_regist(EX_DATA_FAULT, page_fault_handle);
     // Bootstrap CPU creates the shared kernel page table.
     kernel_page_dir = page_create(0);
     if (kernel_page_dir == NULL) {

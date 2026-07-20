@@ -171,6 +171,8 @@ void* do_schedule(interrupt_context_t* ic) {
 }
 
 void schedule_init() {
-  exception_regist(EX_TIMER, do_schedule);
+  if (cpu_get_id() == 0) {
+    exception_regist(EX_TIMER, do_schedule);
+  }
   timer_init(SCHEDULE_FREQUENCY);
 }

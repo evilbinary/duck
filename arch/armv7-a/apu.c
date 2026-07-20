@@ -5,8 +5,12 @@
  ********************************************************************/
 #include "../arch.h"
 
-void ap_init(int cpu){
-    cpu_init(cpu);
-    ipi_clear(cpu);
-    interrupt_init(cpu);
+__attribute__((weak)) void lcpu_wait_start(int cpu) {
+  (void)cpu;
+}
+
+void ap_init(boot_info_t* boot, int cpu) {
+  cpu_init(boot, cpu);
+  ipi_clear(cpu);
+  interrupt_init(cpu);
 }
