@@ -55,7 +55,7 @@ typedef struct stack_frame {
   void* return_addr;
 } __attribute__((packed)) stack_frame_t;
 
-void cpu_init();
+void cpu_init(int cpu);
 void cpu_halt();
 
 #define KERNEL_MODE 0

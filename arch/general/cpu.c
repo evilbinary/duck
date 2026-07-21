@@ -30,7 +30,7 @@ void general_sys_fn_call_handler(int no, interrupt_context_t* ic) {
   }
 }
 
-void cpu_init() {
+void cpu_init(int cpu) {
   for (int i = 0; i < MAX_CPU; i++) {
     cpus_id[i] = i;
   }

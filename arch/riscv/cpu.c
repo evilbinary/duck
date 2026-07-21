@@ -10,7 +10,7 @@
 extern boot_info_t* boot_info;
 u32 cpus_id[MAX_CPU];
 
-void cpu_init() {}
+void cpu_init(int cpu) {}
 
 void cpu_halt() {
   for (;;) {

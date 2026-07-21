@@ -237,7 +237,7 @@ void cpu_enable_page() {
   isb();
 }
 
-void cpu_init() {
+void cpu_init(int cpu) {
 
 }
 

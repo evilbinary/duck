@@ -11,7 +11,7 @@ extern boot_info_t* boot_info;
 u32 cpus_id[MAX_CPU];
 
 // cpu 初始化处理
-void cpu_init() {
+void cpu_init(int cpu) {
   for (int i = 0; i < MAX_CPU; i++) {
     cpus_id[i] = i;
   }

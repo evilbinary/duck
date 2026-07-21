@@ -102,7 +102,7 @@ void cpu_enable_page() {
 
 inline void cpu_invalidate_tlbs(void) {}
 
-void cpu_init() {
+void cpu_init(int cpu) {
     kprintf("cpu_init\n");
 }
 
