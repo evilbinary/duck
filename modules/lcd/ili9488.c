@@ -258,6 +258,18 @@ void ili9488_set_pixel(u32 x, u32 y, u32 color) {
   ili9488_write_data(color);
 }
 
+void lcd_set_pixel(u16 x, u16 y, u16 color) {
+  ili9488_set_pixel(x, y, color);
+}
+
+void lcd_fill(u16 xsta, u16 ysta, u16 xend, u16 yend, u16 color) {
+  for (u16 y = ysta; y <= yend; y++) {
+    for (u16 x = xsta; x <= xend; x++) {
+      lcd_set_pixel(x, y, color);
+    }
+  }
+}
+
 int ili9488_write_pixel(vga_device_t* vga, const void* buf, size_t len) {
   u16* color = buf;
   int i = 0;
