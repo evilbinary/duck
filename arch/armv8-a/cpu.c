@@ -5,10 +5,13 @@
  ********************************************************************/
 #include "cpu.h"
 #include "context.h"
+#include "gpio.h"
 #include "libs/include/kernel/common.h"
 #include "libs/include/types.h"
 
 extern boot_info_t* boot_info;
+extern void lcpu_wait_start(int cpu);
+extern void lcpu_send_start(u32 cpu, u64 entry);
 u64 cpus_id[MAX_CPU];
 
 // Page table control
@@ -145,8 +148,12 @@ u64 cpu_get_index(int idx) {
 
 // Initialize CPU
 void cpu_init(int cpu_id) {
-  // Initialize CPU state
-  // Clear any pending interrupts, etc.
+  if (cpu_id != 0) {
+    lcpu_wait_start(cpu_id);
+  }
+  for (int i = 0; i < MAX_CPU; i++) {
+    cpus_id[i] = i;
+  }
 }
 
 // Halt CPU
@@ -225,14 +232,12 @@ unsigned int cpu_cyclecount(void) {
 
 // Multi-processor functions
 int cpu_init_id(u32 id) {
-  // Initialize IPI for this CPU
-  // For Raspberry Pi 3, use mailbox interrupts
+  ipi_enable(id);
   return 0;
 }
 
 int cpu_start_id(u32 id, u32 entry) {
-  // Start secondary CPU via mailbox
-  // For Raspberry Pi 3, write to mailbox
+  lcpu_send_start(id, entry);
   return 0;
 }
 

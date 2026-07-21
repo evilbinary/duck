@@ -6,6 +6,9 @@
 #include "context.h"
 #include "cpu.h"
 #include "arch/cpu.h"
+#include "kernel/io.h"
+#include "kernel/logger.h"
+#include "kernel/string.h"
 
 extern boot_info_t* boot_info;
 
@@ -63,12 +66,12 @@ int context_init(context_t* context, u64 ksp_top, u64 usp_top, u64 entry,
   // ARM64 SP must be 16-byte aligned. Round ksp_top down before placing ic.
   u64 aligned_top = ksp_top & ~(u64)0xF;
 
-  // Place ic one slot below aligned_top.
-  // context_switch copies in/out of this fixed slot; no ++/-- pointer games.
-  // interrupt_exit_context pops from ic → SP_EL1 ends up at aligned_top,
-  // and the thread's runtime stack grows down from there.
+  // Place ic two slots below aligned_top so context_switch's ++ksp / ksp--
+  // protocol has one spare interrupt-context slot above the live frame.
+  // interrupt_exit_context pops from the live ic → SP_EL1 ends up at
+  // aligned_top, and the thread's runtime stack grows down from there.
   interrupt_context_t* ic =
-      (interrupt_context_t*)(aligned_top - sizeof(interrupt_context_t));
+      (interrupt_context_t*)(aligned_top - sizeof(interrupt_context_t) * 2);
 
   kmemset(ic, 0, sizeof(interrupt_context_t));
   ic->lr  = (u64)entry;

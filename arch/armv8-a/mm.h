@@ -88,6 +88,7 @@ void* page_v2p(u64* pgd, void* vaddr);
 void page_copy(u64* old_pgd, u64* new_pgd);
 u64* page_clone(u64* old_pgd, u32 level);
 void mm_page_enable(u64 page_dir);
+void mm_init_default(void);
 
 static inline u64 pgd_index(u64 addr) { return (addr >> PGD_SHIFT) & 0x1FF; }
 static inline u64 pmd_index(u64 addr) { return (addr >> PMD_SHIFT) & 0x1FF; }

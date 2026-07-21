@@ -2,6 +2,13 @@
 #include "gpio.h"
 #include "libs/include/types.h"
 
+extern boot_info_t* boot_info;
+extern void dccmvac(unsigned long mva);
+
+static void dcimvac(unsigned long mva) {
+  asm volatile("mcr p15, 0, %0, c7, c6, 1" : : "r"(mva) : "memory");
+}
+
 static void io_write32(uint port, u32 data) { *(u32 *)port = data; }
 
 static u32 io_read32(uint port) {
@@ -36,9 +43,8 @@ u32 read_core_timer_pending(int cpu) {
 
 void timer_init(int hz) {
   int cpu = cpu_get_id();
-  kprintf("cpu %d timer init\n",cpu);
-
-  if(cpu==0){
+  if (cpu == 0) {
+    kprintf("cpu %d timer init\n", cpu);
     cntfrq[cpu] = read_cntfrq();
     cntfrq[cpu] = cntfrq[cpu] / hz;
     kprintf("cntfrq %d\n", cntfrq[cpu]);
@@ -48,26 +54,21 @@ void timer_init(int hz) {
     kprintf("val %d\n", val);
     io_write32(CORE0_TIMER_IRQCNTL + 0x4 * cpu, 0x08);
     enable_cntv(1);
+  } else {
+    kprintf("ap %d timer attach\n", cpu);
+    cntfrq[cpu] = read_cntfrq();
+    cntfrq[cpu] = cntfrq[cpu] / hz;
+    write_cntv_tval(cntfrq[cpu]);
+    io_write32(CORE0_TIMER_IRQCNTL + 0x4 * cpu, 0x08);
+    enable_cntv(1);
   }
 }
 
 void timer_end() {
-  if (read_core_timer_pending(0) & 0x08) {
-    write_cntv_tval(cntfrq[0]);
-    // kprintf("cntfrq:%x cnt val:%x\n", read_cntvct(),read_cntv_tval());
-    // cpu_sti();
-  }
-  if (read_core_timer_pending(1) & 0x08) {
-    write_cntv_tval(cntfrq[1]);
-    // kprintf("cpu1 cntfrq:%x cnt val:%x\n", read_cntvct(), read_cntv_tval());
-  }
-  if (read_core_timer_pending(2) & 0x08) {
-    write_cntv_tval(cntfrq[2]);
-    // kprintf("cpu2 cntfrq:%x cnt val:%x\n", read_cntvct(), read_cntv_tval());
-  }
-  if (read_core_timer_pending(3) & 0x08) {
-    write_cntv_tval(cntfrq[3]);
-    // kprintf("cpu3 cntfrq:%x cnt val:%x\n", read_cntvct(), read_cntv_tval());
+  int cpu = cpu_get_id();
+  u32 pending = read_core_timer_pending(cpu);
+  if (pending & INT_SRC_TIMER3) {
+    write_cntv_tval(cntfrq[cpu]);
   }
 }
 
@@ -84,8 +85,18 @@ void platform_map(){
 }
 
 int interrupt_get_source(u32 no) {
-  no=EX_TIMER;
-  return no;
+  int cpu = cpu_get_id();
+  u32 pending = read_core_timer_pending(cpu);
+
+  if (pending & INT_SRC_TIMER3) {
+    return EX_TIMER;
+  }
+
+  if (pending & (INT_SRC_MBOX0 | INT_SRC_MBOX1 | INT_SRC_MBOX2 | INT_SRC_MBOX3)) {
+    return EX_IRQ;
+  }
+
+  return EX_NONE;
 }
 
 void ipi_enable(int cpu) {
@@ -99,11 +110,46 @@ void test_smp_entry() {
   for (;;) cpu_halt();
 }
 
-void lcpu_send_start(u32 cpu, u32 entry) {
-  if (cpu < 0 || cpu > 4) return;
+static volatile u32 ap_release[MAX_CPU];
+
+void lcpu_wait_start(int cpu) {
   u32 mailbox = 3;
-  u32 addr = CORE0_MBOX0_SET + cpu * 0x10 + 4 * mailbox;
-  io_write32(addr, entry);
+  u32 rdclr = CORE0_MBOX0_RDCLR + cpu * 0x10 + 4 * mailbox;
+
+  if (cpu == 0) return;
+
+  while (1) {
+    dcimvac((unsigned long)&ap_release[cpu]);
+    dsb();
+    if (ap_release[cpu]) {
+      break;
+    }
+    asm volatile("wfe");
+  }
+  kprintf("ap %d start\n", cpu);
+  io_write32(rdclr, 0xffffffff);
+  dsb();
+  isb();
+}
+
+void lcpu_send_start(u32 cpu, u32 entry) {
+  (void)entry;
+  if (cpu < 0 || cpu > 4) return;
+  u32 rdclr = CORE0_MBOX0_RDCLR + cpu * 0x10 + 4 * 3;
+
+  io_write32(rdclr, 0xffffffff);
+  dmb();
+  dsb();
+
+  ap_release[cpu] = 1;
+  dccmvac((unsigned long)&ap_release[cpu]);
+  if (boot_info != NULL) {
+    dccmvac((unsigned long)&boot_info->kernel_entry);
+    dccmvac((unsigned long)boot_info);
+  }
+  dmb();
+  dsb();
+  asm volatile("sev");
 }
 
 void ipi_send(int cpu, int vec) {
@@ -115,9 +161,9 @@ void ipi_send(int cpu, int vec) {
 
 void ipi_clear(int cpu) {
   if (cpu < 0 || cpu > 4) return;
-  int addr = CORE0_MBOX0_RDCLR + cpu * 0x10 + 0xC0;
-  kprintf("clear addr %x\n", addr);
-  u32 val = io_read32(addr);
-  val = -1;
-  io_write32(addr, val);
+  u32 mailbox = 3;
+  u32 addr = CORE0_MBOX0_RDCLR + cpu * 0x10 + 4 * mailbox;
+  io_write32(addr, 0xffffffff);
+  dmb();
+  dsb();
 }

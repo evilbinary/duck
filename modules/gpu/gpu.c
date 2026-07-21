@@ -20,7 +20,7 @@ size_t gpu_write(device_t* dev, const void* buf, size_t len) {
     return ret;
   }
   kstrncpy(vga->frambuffer, (const char*)buf, len);
-  return ret;
+  return len;
 }
 
 size_t gpu_ioctl(device_t* dev, u32 cmd, void* args) {
@@ -30,20 +30,20 @@ size_t gpu_ioctl(device_t* dev, u32 cmd, void* args) {
     kprintf("not found vga\n");
     return ret;
   }
-  if (cmd == IOC_READ_FRAMBUFFER) {
-    ret = vga->frambuffer;
-  } else if (cmd == IOC_READ_FRAMBUFFER_WIDTH) {
+  if (cmd == VGA_IOC_READ_FRAMBUFFER) {
+    ret = (u32)(uintptr_t)vga->frambuffer;
+  } else if (cmd == VGA_IOC_READ_FRAMBUFFER_WIDTH) {
     ret = vga->width;
-  } else if (cmd == IOC_READ_FRAMBUFFER_HEIGHT) {
+  } else if (cmd == VGA_IOC_READ_FRAMBUFFER_HEIGHT) {
     ret = vga->height;
-  } else if (cmd == IOC_READ_FRAMBUFFER_BPP) {
+  } else if (cmd == VGA_IOC_READ_FRAMBUFFER_BPP) {
     ret = vga->bpp;
-  } else if (cmd == IOC_FLUSH_FRAMBUFFER) {
+  } else if (cmd == VGA_IOC_FLUSH_FRAMBUFFER) {
     if (vga->frambuffer != NULL && vga->flip_buffer != NULL) {
-      u32 offset = (u32*)args;
+      u32 offset = (u32)(uintptr_t)args;
       vga->flip_buffer(vga, offset % vga->framebuffer_count);
     }
-  } else if (cmd == IOC_READ_FRAMBUFFER_INFO) {
+  } else if (cmd == VGA_IOC_READ_FRAMBUFFER_INFO) {
     //gpu_init_device(vga);
     vga_device_t* buffer_info = (u32*)args;
     u32 size = (u32*)args;

@@ -127,6 +127,8 @@ typedef struct context_t {
 #define context_set_entry(context, entry) \
   ((interrupt_context_t*)(context))->lr = entry + 4;
 
+#define context_exec_live(ctx) ((interrupt_context_t*)((ctx)->usp))
+
 #define context_restore(duck_context)          \
   asm volatile(                              \ 
       "ldr r0,%0 \n"                           \

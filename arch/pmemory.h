@@ -74,7 +74,7 @@ typedef struct block {
 typedef void* (*mm_alloc_fn)(size_t size);
 typedef void (*mm_free_fn)(void* ptr);
 typedef void (*mm_init_fn)();
-typedef void* (*mm_size_fn)(void* ptr);
+typedef size_t (*mm_size_fn)(void* ptr);
 
 typedef struct memory_manager {
   mm_alloc_fn alloc;
@@ -117,6 +117,8 @@ void mm_init();
 void* mm_alloc(size_t size);
 void mm_free(void* p);
 void* mm_alloc_zero_align(size_t size, u32 alignment);
+void* mm_alloc_page(void);
+void mm_free_page(void* p);
 void mm_alloc_init();
 void mm_dump_phy();
 void mm_dump();

@@ -23,6 +23,65 @@ voperator_t device_operator = {.ioctl = device_ioctl,
                                .mount = vfs_mount,
                                .readdir = vfs_readdir};
 
+static vnode_t* devfs_stdin;
+static vnode_t* devfs_stdout;
+static vnode_t* devfs_stderr;
+
+static device_t* devfs_pick_output_device(void) {
+  device_t* dev = device_find(DEVICE_SERIAL);
+  if (dev != NULL) {
+    return dev;
+  }
+  dev = device_find(DEVICE_VGA);
+  if (dev != NULL) {
+    return dev;
+  }
+  dev = device_find(DEVICE_VGA_QEMU);
+  if (dev != NULL) {
+    return dev;
+  }
+  dev = device_find(DEVICE_LCD);
+  if (dev != NULL) {
+    return dev;
+  }
+  return NULL;
+}
+
+static device_t* devfs_pick_input_device(void) {
+  device_t* dev = device_find(DEVICE_KEYBOARD);
+  if (dev != NULL) {
+    return dev;
+  }
+  return device_find(DEVICE_SERIAL);
+}
+
+static void devfs_bind_stdio(void) {
+  if (devfs_stdin != NULL) {
+    devfs_stdin->device = devfs_pick_input_device();
+  }
+  if (devfs_stdout != NULL) {
+    devfs_stdout->device = devfs_pick_output_device();
+  }
+  if (devfs_stderr != NULL && devfs_stdout != NULL) {
+    devfs_stderr->device = devfs_stdout->device;
+  }
+}
+
+static void devfs_on_device_added(device_t* dev) {
+  if (dev == NULL) {
+    return;
+  }
+  switch (dev->id) {
+    case DEVICE_KEYBOARD:
+    case DEVICE_SERIAL:
+      kprintf("bind stdio %d\n", dev->id);
+      devfs_bind_stdio();
+      break;
+    default:
+      break;
+  }
+}
+
 vnode_t *devfs_create_device(device_t *dev) {
   vnode_t *t = vfs_create_node("dev", V_DIRECTORY);
   t->flags = V_BLOCKDEVICE | V_DIRECTORY;
@@ -43,33 +102,22 @@ int devfs_init(void) {
   vfs_mount(NULL, "/dev", stdout);
   vfs_mount(NULL, "/dev", stderr);
 
+  devfs_stdin = stdin;
+  devfs_stdout = stdout;
+  devfs_stderr = stderr;
+
   stdin->op = &device_operator;
   stdout->op = &device_operator;
   stderr->op = &device_operator;
 
-  stdin->device = device_find(DEVICE_KEYBOARD);
-  if (stdin->device == NULL) {
-    stdin->device = device_find(DEVICE_SERIAL);
-  }
-  stdout->device = device_find(DEVICE_VGA);
-
-  if (stdout->device == NULL) {
-    stdout->device = device_find(DEVICE_VGA_QEMU);
-  }
-  if (stdout->device == NULL) {
-    stdout->device = device_find(DEVICE_LCD);
-  }
-  if (stdout->device == NULL) {
-    stdout->device = device_find(DEVICE_SERIAL);
-  }
-  stderr->device = stdout->device;
-  
   //null
   vnode_t *null = vfs_create_node("null", V_FILE | V_BLOCKDEVICE);
   null->device = device_find(DEVICE_NULL);
   null->op = &device_operator;
   vfs_mount(NULL, "/dev", null);
 
+  device_set_notify(devfs_on_device_added);
+  devfs_bind_stdio();
   fd_init();
 
   return 0;

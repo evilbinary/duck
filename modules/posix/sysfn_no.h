@@ -60,6 +60,7 @@ enum {
   SYS_RT_SIGACTION = 174,
   SYS_RT_SIGPROCMASK = 175,
   SYS_GETCWD = 183,
+  SYS_OPENAT = 322,
   SYS_MMAP2 = 192,
   SYS_FSTAT64 = 197,
   SYS_MADVISE = 220,
@@ -123,6 +124,7 @@ enum {
   SYS_READ = 63,
   SYS_WRITE = 64,
   SYS_OPEN = 56,
+  SYS_OPENAT = 56,  /* aarch64: musl open/openat */
   SYS_CLOSE = 57,
   SYS_IOCTL = 29,
   SYS_FORK = 2,  // ARM64: fork not available, use clone instead
@@ -164,6 +166,7 @@ enum {
   SYS_STATFS64 = 43,
   SYS_FCNT64 = 25,
   SYS_GETDENTS64 = 61,
+  SYS_GETDENTS = 61,  /* no arm32 getdents(141); alias for musl */
   SYS_GETCWD = 17,
   SYS_CHDIR = 49,
   SYS_FCHDIR = 50,

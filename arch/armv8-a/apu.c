@@ -5,8 +5,13 @@
  ********************************************************************/
 #include "../arch.h"
 
+__attribute__((weak)) void lcpu_wait_start(int cpu) {
+  (void)cpu;
+}
+
 // 多核CPU初始化 (Application Processor init)
 void ap_init(int cpu) {
   cpu_init(cpu);
-  interrupt_init();
+  ipi_clear(cpu);
+  interrupt_init(cpu);
 }

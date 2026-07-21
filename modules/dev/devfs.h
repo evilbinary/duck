@@ -15,5 +15,4 @@
 extern voperator_t no_rw_operator;
 extern voperator_t device_operator;
 
-
 #endif

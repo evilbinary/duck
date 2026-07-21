@@ -37,7 +37,7 @@ u32 device_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
     return ret;
   }
   device_t *dev = (device_t *)node->device;
-  if (dev == NULL) {
+  if (dev == NULL || dev->read == NULL) {
     return ret;
   }
   ret = dev->read(dev, buffer, nbytes);
@@ -47,7 +47,7 @@ u32 device_read(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
 u32 device_write(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   u32 ret = 0;
   device_t *dev = (device_t *)node->device;
-  if (dev == NULL) {
+  if (dev == NULL || dev->write == NULL) {
     return ret;
   }
   ret = dev->write(dev, buffer, nbytes);

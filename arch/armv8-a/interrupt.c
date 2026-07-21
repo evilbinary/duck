@@ -8,6 +8,7 @@
 #include "interrupt.h"
 #include "context.h"
 #include "cpu.h"
+#include "kernel/io.h"
 
 extern boot_info_t* boot_info;
 
@@ -181,9 +182,10 @@ void* sync_handler(interrupt_context_t* ic) {
         ic->no = EX_SYS_CALL;
         break;
       }
-      kprintf("sync: unknown ec=%x esr=%lx pc=%lx\n", ec, esr, ic->pc);
+      kprintf("sync: unknown ec=%x esr=%lx pc=%lx sp=%lx x8=%lx\n", ec, esr,
+              ic->pc, ic->sp, ic->x8);
       context_dump_interrupt(ic);
-      cpu_halt();
+      ic->no = EX_UNDEF;
       break;
     case ESR_ELx_EC_DABT_LOW:
     case ESR_ELx_EC_DABT_CUR:
@@ -194,9 +196,10 @@ void* sync_handler(interrupt_context_t* ic) {
       ic->no = EX_PREF_ABORT;
       break;
     default:
-      kprintf("sync: unknown ec=%x esr=%lx pc=%lx\n", ec, esr, ic->pc);
+      kprintf("sync: unknown ec=%x esr=%lx pc=%lx sp=%lx x8=%lx\n", ec, esr,
+              ic->pc, ic->sp, ic->x8);
       context_dump_interrupt(ic);
-      cpu_halt();
+      ic->no = EX_UNDEF;
       break;
   }
 
@@ -210,18 +213,19 @@ void* sync_handler(interrupt_context_t* ic) {
 // C support functions
 // ============================================================
 
-void interrupt_init(void) {
-  kprintf("interrupt init\n");
+void interrupt_init(int cpu) {
+  kprintf("interrupt init cpu %d\n", cpu);
 
   asm volatile("msr vbar_el1, %0" : : "r"((u64)exception_vectors) : "memory");
   isb();
 
-  for (int i = 0; i < IDT_NUMBER; i++) {
-    interrutp_handlers[i] = NULL;
+  if (cpu_get_id() == 0) {
+    for (int i = 0; i < IDT_NUMBER; i++) {
+      interrutp_handlers[i] = NULL;
+    }
+    boot_info->idt_base = (void*)exception_vectors;
+    boot_info->idt_number = IDT_NUMBER;
   }
-
-  boot_info->idt_base   = (void*)exception_vectors;
-  boot_info->idt_number = IDT_NUMBER;
 }
 
 void interrupt_regist(u32 vec, interrupt_handler_t handler) {

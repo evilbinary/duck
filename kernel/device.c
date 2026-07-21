@@ -7,6 +7,9 @@
 
 device_t* devices[MAX_DEVICE];
 u32 device_number = 0;
+static device_notify_fn device_notify = NULL;
+
+void device_set_notify(device_notify_fn fn) { device_notify = fn; }
 
 device_t* device_create(u8* name, u32 id, u32 type) {
   device_t* dev = kmalloc(sizeof(device_t),KERNEL_TYPE);
@@ -25,6 +28,9 @@ void device_add(device_t* device) {
     return;
   }
   devices[device_number++] = device;
+  if (device_notify != NULL) {
+    device_notify(device);
+  }
 }
 
 void device_remove() {}

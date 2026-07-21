@@ -1,6 +1,9 @@
 #include "pmemory.h"
 
 #include "kernel/common.h"
+#include "kernel/logger.h"
+#include "kernel/page.h"
+#include "kernel/string.h"
 
 static u32 count = 0;
 const size_t align_to = 16;
@@ -10,6 +13,7 @@ extern boot_info_t* boot_info;
 #define PMEM_ALIGN 16
 
 memory_manager_t mmt;
+static void* mm_page_free_list = NULL;
 
 // #define DEBUG 1
 #define MM_YA_ALLOC 1
@@ -103,7 +107,7 @@ void* ya_sbrk(size_t size) {
   while (current) {
     if (current->type == MEM_FREE) {
       if (size <= (current->size - 4096)) {
-        addr = current->addr;
+        addr = (void*)current->addr;
         current->addr += size;
         current->size -= size;
         if ((current->size - 4096) <= 0) {
@@ -518,6 +522,41 @@ void mm_free_align(void* addr) {
   kprintf("free align %x\n", addr);
 #endif
   mm_free(((void**)addr)[-1]);
+}
+
+void* mm_alloc_page(void) {
+  if (mm_page_free_list != NULL) {
+    void* page = mm_page_free_list;
+    mm_page_free_list = *(void**)page;
+    return page;
+  }
+
+  mem_block_t* current = mmt.blocks;
+  while (current != NULL) {
+    if (current->type == MEM_FREE) {
+      uintptr_t aligned = ALIGN(current->addr, PAGE_SIZE);
+      size_t padding = aligned - current->addr;
+      size_t need = padding + PAGE_SIZE;
+      if (need <= current->size) {
+        current->addr = aligned + PAGE_SIZE;
+        current->size -= need;
+        if (current->size <= PAGE_SIZE) {
+          current->type = MEM_USED;
+        }
+        return (void*)aligned;
+      }
+    }
+    current = current->next;
+  }
+  return NULL;
+}
+
+void mm_free_page(void* p) {
+  if (p == NULL) {
+    return;
+  }
+  *(void**)p = mm_page_free_list;
+  mm_page_free_list = p;
 }
 
 ullong mm_get_total() {

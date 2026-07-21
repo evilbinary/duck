@@ -57,7 +57,7 @@
 #define CORE0_MBOX0_RDCLR    0x400000C0
 
 // Function declarations
-void uart_send(unsigned int c);
+void uart_send(u8 c);
 unsigned int uart_receive(void);
 void timer_init(int hz);
 void timer_end(void);

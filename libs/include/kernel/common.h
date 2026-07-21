@@ -9,6 +9,8 @@
 #include "io.h"
 #include "libs/include/types.h"
 
+void __assert_func(const char* file, int line, const char* func, const char* expr);
+
 void* kmemcpy(void* /* restrict */ s1, const void* /* restrict */ s2, size_t n);
 void* kmemset(void* s, int c, size_t n);
 

@@ -154,27 +154,21 @@ int context_clone(context_t* des, context_t* src) {
   des->eip = src->eip;
   des->level = src->level;
   des->usp_size = src->usp_size;
-  des->ic = src->ic;
 
-  // 这里重点关注 usp ksp
   kmemmove(des->ksp_start, src->ksp_start, src->ksp_size);
 
-  u32 offset = src->ksp_end - (u32)src->ksp;
-  interrupt_context_t* ic = des->ksp_end - offset;
-  interrupt_context_t* is = src->ksp;
-
+  interrupt_context_t* ic;
+  if (src->ic != NULL && (u32)src->ic >= src->ksp_start &&
+      (u32)src->ic < src->ksp_end) {
+    ic = (interrupt_context_t*)(des->ksp_start + ((u32)src->ic - src->ksp_start));
+  } else {
+    u32 offset = src->ksp_end - (u32)src->ksp;
+    ic = (interrupt_context_t*)(des->ksp_end - offset);
+    ic = (interrupt_context_t*)((u8*)ic + sizeof(interrupt_context_t));
+  }
   des->ksp = ic;
-
-  // cpsr_t cpsr;
-  // cpsr.val = ic->psr;
-  // cpsr.I = 0;
-  // cpsr.F = 1;
-  // ic->psr = cpsr.val;
-
-  // kprintf("------context clone dump des--------------\n");
-  // context_dump(des);
-  // kprintf("------context clone dump src--------------\n");
-  // context_dump(src);
+  des->ic = ic;
+  return 0;
 }
 
 interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,

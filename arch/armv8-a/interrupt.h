@@ -46,7 +46,7 @@
 // Use interrupt_handler_t from arch/interrupt.h
 
 // Functions
-void interrupt_init(void);
+void interrupt_init(int cpu);
 void interrupt_regist(u32 vec, interrupt_handler_t handler);
 void interrupt_regist_all(void);
 void exception_info(interrupt_context_t* ic);

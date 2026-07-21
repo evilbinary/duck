@@ -46,18 +46,18 @@ void log_default(int tag, const char* message, va_list args) {
   }
   kmemset(logger_buf, 0, LOG_MSG_BUF);
   char* tag_msg = (char*)log_level_strings[tag];
-  int size = kvsprintf(logger_buf, message, args);
-  if (size >= LOG_MSG_BUF - 1) {
-    const char* trunc = "...<truncated>";
-    int trunc_len = kstrlen(trunc);
-    int pos = LOG_MSG_BUF - 1 - trunc_len;
-    if (pos < 0) {
-      pos = 0;
-    }
-    kmemcpy(logger_buf + pos, trunc, trunc_len);
-    logger_buf[pos + trunc_len] = 0;
-  }
   if (log_info_mod.fd < 0) {
+    int size = kvsprintf(logger_buf, message, args);
+    if (size >= LOG_MSG_BUF - 1) {
+      const char* trunc = "...<truncated>";
+      int trunc_len = kstrlen(trunc);
+      int pos = LOG_MSG_BUF - 1 - trunc_len;
+      if (pos < 0) {
+        pos = 0;
+      }
+      kmemcpy(logger_buf + pos, trunc, trunc_len);
+      logger_buf[pos + trunc_len] = 0;
+    }
     kprintf("[%08d] tid: %d %s: ", ticks, tid, tag_msg);
     kprintf("%s", logger_buf);
   } else {
@@ -65,7 +65,7 @@ void log_default(int tag, const char* message, va_list args) {
     kvsprintf(logger_buf, "[%08d] tid: %d %s: ", ticks, tid, tag_msg);
     log_write(log_info_mod.fd, logger_buf, kstrlen(logger_buf));
     kmemset(logger_buf, 0, LOG_MSG_BUF);
-    size = kvsprintf(logger_buf, message, args);
+    int size = kvsprintf(logger_buf, message, args);
     if (size >= LOG_MSG_BUF - 1) {
       const char* trunc = "...<truncated>";
       int trunc_len = kstrlen(trunc);

@@ -5,6 +5,7 @@
  ********************************************************************/
 #include "io.h"
 #include "common.h"
+#include "string.h"
 
 #include "stdarg.h"
 

@@ -121,6 +121,8 @@ typedef struct context_t {
 #define context_arg4(context) context->r4
 #define context_set_entry(context, entry) (((interrupt_context_t*)context)->pc = entry);
 
+#define context_exec_live(ctx) ((ctx)->ksp)
+
 #define context_restore(duck_context) interrupt_exit_context(duck_context->ksp);
 
 int context_clone(context_t* context, context_t* src);

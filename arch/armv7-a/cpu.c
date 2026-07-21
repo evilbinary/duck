@@ -339,7 +339,12 @@ void cpu_enable_page() {
 
 }
 
+extern void lcpu_wait_start(int cpu);
+
 void cpu_init(int cpu) {
+  if (cpu != 0) {
+    lcpu_wait_start(cpu);
+  }
   // cpu_enable_smp_mode();
   // cpu_enable_ca7_smp();
   for (int i = 0; i < MAX_CPU; i++) {

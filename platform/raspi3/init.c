@@ -1,6 +1,11 @@
 #include "arch/arch.h"
 #include "gpio.h"
+#include "kernel/page.h"
 #include "libs/include/types.h"
+
+static void io_write32(volatile unsigned int* port, u32 data);
+static u32 io_read32(volatile unsigned int* port);
+void ipi_clear(int cpu);
 
 static void io_write32(volatile unsigned int* port, u32 data) {
   *port = data;
@@ -28,6 +33,7 @@ static u32 io_read32(volatile unsigned int* port) {
 #define EMMC_IRPT_EN_REG        ((volatile unsigned int*)(BCM2835_EMMC_BASE_ADDR + 0x38))
 
 static u64 cntfrq[MAX_CPU] = {0};
+static volatile u32 ap_release[MAX_CPU] = {0};
 
 static void delay_cycles(int n) {
   for (volatile int i = 0; i < n; i++) {
@@ -79,7 +85,7 @@ static void uart_init(void) {
   }
 }
 
-void uart_send(unsigned int c) {
+void uart_send(u8 c) {
   while (io_read32(UART0_FR) & 0x20) {
   }
   io_write32(UART0_DR, c);
@@ -103,21 +109,17 @@ void timer_init(int hz) {
   int cpu = cpu_get_id();
   kprintf("cpu %d timer init\n", cpu);
 
-  if (cpu == 0) {
-    cntfrq[cpu] = read_cntfrq();
-    cntfrq[cpu] = cntfrq[cpu] / hz;
-    if (cntfrq[cpu] == 0) {
-      // Avoid IRQ storm if frequency calculation underflows.
-      cntfrq[cpu] = 1;
-    }
-    kprintf("cntfrq %d\n", cntfrq[cpu]);
-    write_cntv_tval(cntfrq[cpu]);
-
-    u64 val = read_cntv_tval();
-    kprintf("val %d\n", val);
-    io_write32((volatile unsigned int*)(CORE0_TIMER_IRQCNTL + 0x4 * cpu), 0x08);
-    enable_cntv(1);
+  cntfrq[cpu] = read_cntfrq() / hz;
+  if (cntfrq[cpu] == 0) {
+    // Avoid IRQ storm if frequency calculation underflows.
+    cntfrq[cpu] = 1;
   }
+  if (cpu == 0) {
+    kprintf("cntfrq %d\n", cntfrq[cpu]);
+  }
+  write_cntv_tval(cntfrq[cpu]);
+  io_write32((volatile unsigned int*)(CORE0_TIMER_IRQCNTL + 0x4 * cpu), 0x08);
+  enable_cntv(1);
 }
 
 void timer_end(void) {
@@ -211,21 +213,32 @@ void ipi_enable(int cpu) {
   io_write32((volatile unsigned int*)(CORE0_MBOX_IRQCNTL + cpu * 4), 1);
 }
 
+void lcpu_wait_start(int cpu) {
+  if (cpu <= 0 || cpu >= MAX_CPU) return;
+  while (!ap_release[cpu]) {
+    asm volatile("wfe" ::: "memory");
+  }
+  kprintf("ap %d start\n", cpu);
+}
+
 void lcpu_send_start(u32 cpu, u64 entry) {
-  if (cpu < 0 || cpu >= MAX_CPU) return;
-  u32 mailbox = 3;
-  io_write32((volatile unsigned int*)(CORE0_MBOX0_SET + cpu * 0x10 + 4 * mailbox), entry);
+  (void)entry;
+  if (cpu >= MAX_CPU) return;
+  ap_release[cpu] = 1;
+  dmb();
+  asm volatile("sev" ::: "memory");
 }
 
 void ipi_send(int cpu, int vec) {
   if (cpu < 0 || cpu >= MAX_CPU) return;
-  io_write32((volatile unsigned int*)(CORE0_MBOX0_SET + cpu * 0x10 + 0x80), 1 << vec);
+  io_write32((volatile unsigned int*)(CORE0_MBOX0_SET + cpu * 0x10), 1 << vec);
   dsb();
 }
 
 void ipi_clear(int cpu) {
   if (cpu < 0 || cpu >= MAX_CPU) return;
-  volatile unsigned int* addr = (volatile unsigned int*)(CORE0_MBOX0_RDCLR + cpu * 0x10 + 0xC0);
+  volatile unsigned int* addr =
+      (volatile unsigned int*)(CORE0_MBOX0_RDCLR + cpu * 0x10);
   u32 val = io_read32(addr);
   val = 0xFFFFFFFF;
   io_write32(addr, val);

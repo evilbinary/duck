@@ -103,6 +103,10 @@ int fd_close(fd_t* fd) {
     kprintf("fd close is null\n");
     return -1;
   }
+  if ((u32)fd < PAGE_SIZE) {
+    log_error("fd close bad ptr %x\n", fd);
+    return -1;
+  }
   fd->use_count--;
   if (fd->use_count <= 0) {
     vnode_t* file = (vnode_t*)fd->data;

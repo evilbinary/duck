@@ -16,6 +16,31 @@
 
 #define MAX_INTERP_PATH 64
 
+#include "types.h"
+#include "kernel/elf.h"
+
+typedef struct exec_params {
+  char* filename;
+  int argc;
+  int envc;
+  u32 string_bytes;
+  char** argv;
+  char** envp;
+} exec_params_t;
+
+typedef struct elf32_image_info {
+  u32 base;
+  u32 entry;
+  u32 phdr;
+  u32 phent;
+  u32 phnum;
+  Elf32_Phdr phdrs[MAX_PHDR];
+  u32 tls_vaddr;
+  u32 tls_filesz;
+  u32 tls_memsz;
+  u32 tls_align;
+  char interp_path[MAX_INTERP_PATH];
+} elf32_image_info_t;
 
 typedef int (*load_fn)(void* data, u32 fd);
 typedef int (*check_type_fn)(void* data, u32 fd);
@@ -30,8 +55,8 @@ typedef struct load{
 typedef int (*entry_fn)(long * args);
 
 
-void run_elf_thread(long* p);
-void run_elf64_thread(long* p);
+int run_elf_thread(long* p);
+int run_elf64_thread(long* p);
 void* load_elf_interp(char* filename,void* arg);
 void go_start(entry_fn entry,long* exec);
 

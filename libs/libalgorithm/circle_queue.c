@@ -114,8 +114,8 @@ void cqueue_resize(cqueue_t* queue) {
   }
 }
 
-int cqueue_put_byte(cqueue_t* queue, u8* element) {
-  unsigned int result;
+int cqueue_put_byte(cqueue_t* queue, u8 element) {
+  unsigned int result = 0;
 
   if (!queue->is_full) {
     ((u8*)queue->elements)[queue->tail++] = element;
@@ -142,8 +142,8 @@ int cqueue_put_byte(cqueue_t* queue, u8* element) {
   return result;
 }
 
-u8* cqueue_poll_byte(cqueue_t* queue) {
-  void* data = NULL;
+u8 cqueue_poll_byte(cqueue_t* queue) {
+  u8 data = 0;
   if (!cqueue_is_empty(queue)) {
     if (queue->is_full) {
       queue->is_full = 0;
@@ -156,8 +156,8 @@ u8* cqueue_poll_byte(cqueue_t* queue) {
   return data;
 }
 
-u8* cqueue_peek_byte(cqueue_t* queue) {
-  void* data = NULL;
+u8 cqueue_peek_byte(cqueue_t* queue) {
+  u8 data = 0;
   if (!cqueue_is_empty(queue)) {
     data = ((u8*)queue->elements)[queue->head];
   }
@@ -193,7 +193,7 @@ void cqueue_for_each(cqueue_t* queue, cqueue_loop_fn fun) {
   }
 }
 
-void cqueue_for_each_byte(cqueue_t* queue, cqueue_loop_fn fun) {
+void cqueue_for_each_byte(cqueue_t* queue, cqueue_byte_loop_fn fun) {
   if (!cqueue_is_empty(queue)) {
     u32 h = queue->head;
     do {

@@ -37,7 +37,7 @@ thread_t* schedule_next(int cpu) {
   
   // find first runnable thread
   for (; v != NULL; v = v->next) {
-    if (v->state == THREAD_RUNNING && v != current) {
+    if (v->state == THREAD_RUNNING && v->cpu_id == cpu && v != current) {
       next = v;
       break;
     }
@@ -45,7 +45,8 @@ thread_t* schedule_next(int cpu) {
   
   // if no other runnable thread, return current if it's runnable
   if (next == NULL) {
-    if (current != NULL && current->state == THREAD_RUNNING) {
+    if (current != NULL && current->state == THREAD_RUNNING &&
+        current->cpu_id == cpu) {
       return current;
     }
     return NULL;
@@ -53,7 +54,7 @@ thread_t* schedule_next(int cpu) {
   
   // find thread with lowest counter (highest priority)
   for (v = thread_head(); v != NULL; v = v->next) {
-    if (v->state != THREAD_RUNNING || v == current) {
+    if (v->state != THREAD_RUNNING || v->cpu_id != cpu || v == current) {
       continue;
     }
     if (v->counter < next->counter) {
@@ -170,6 +171,8 @@ void* do_schedule(interrupt_context_t* ic) {
 }
 
 void schedule_init() {
-  exception_regist(EX_TIMER, do_schedule);
+  if (cpu_get_id() == 0) {
+    exception_regist(EX_TIMER, do_schedule);
+  }
   timer_init(SCHEDULE_FREQUENCY);
 }

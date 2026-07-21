@@ -13,10 +13,97 @@
 #include "kernel/loader.h"
 #include "kernel/thread.h"
 #include "kernel/vfs.h"
+#include "../loader/loader.h"
+
+#define log_debug 
 
 static void* syscall_table[SYSCALL_NUMBER];
+extern vnode_t* root_node;
 extern long xwin_syscall_handler(u32 num, long a1, long a2, long a3, long a4,
                                  long a5);
+
+static int sys_mmap_pages_mapped(thread_t* current, void* addr, size_t length) {
+  if (current == NULL || current->vm == NULL || addr == NULL || length == 0) {
+    return 0;
+  }
+  u32 start = (u32)addr & ~(PAGE_SIZE - 1);
+  u32 end = ((u32)addr + length + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+  for (u32 va = start; va < end; va += PAGE_SIZE) {
+    if (page_v2p(current->vm->upage, (void*)va) != NULL) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int sys_mmap_child_overlaps(vmemory_area_t* child, u32 addr, size_t length) {
+  u32 end = addr + length;
+  for (vmemory_area_t* p = child; p != NULL; p = p->next) {
+    if (p->flags == MEMORY_FREE) {
+      continue;
+    }
+    if (addr < p->vend && end > p->vaddr) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static void* sys_mmap_pick_anon_addr(thread_t* current, vmemory_area_t* vm,
+                                     size_t length) {
+  if (current == NULL || vm == NULL || length == 0) {
+    return NULL;
+  }
+  if ((uintptr_t)vm->vaddr + length > vm->vend) {
+    return NULL;
+  }
+  u32 try = (vm->vend - length) & ~(PAGE_SIZE - 1);
+  while (try >= vm->vaddr) {
+    if (!sys_mmap_pages_mapped(current, (void*)try, length) &&
+        !sys_mmap_child_overlaps(vm->child, try, length)) {
+      return (void*)try;
+    }
+    if (try <= vm->vaddr) {
+      break;
+    }
+    try -= PAGE_SIZE;
+  }
+  return NULL;
+}
+
+static int sys_mmap_install_area(vmemory_area_t* vm, void* start_addr,
+                                 size_t length) {
+  vmemory_area_t* reuse = NULL;
+  if (vm->child != NULL) {
+    for (vmemory_area_t* p = vm->child; p != NULL; p = p->next) {
+      if (p->flags == MEMORY_FREE && p->size >= length &&
+          p->vaddr == (vaddr_t)start_addr) {
+        reuse = p;
+        break;
+      }
+    }
+  }
+  if (reuse != NULL) {
+    reuse->flags = MEMORY_MMAP;
+    reuse->size = length;
+    reuse->vend = reuse->vaddr + length;
+    return 0;
+  }
+  if (vm->child == NULL) {
+    vm->child = vmemory_area_create(start_addr, length, MEMORY_MMAP);
+    return vm->child != NULL ? 0 : -1;
+  }
+  vmemory_area_t* last_area = vmemory_area_find_last(vm->child);
+  if (last_area == NULL) {
+    return -1;
+  }
+  vmemory_area_t* new_area = vmemory_area_create(start_addr, length, MEMORY_MMAP);
+  if (new_area == NULL) {
+    return -1;
+  }
+  last_area->next = new_area;
+  return 0;
+}
 
 // #define log_debug  // 取消注释以禁用调试日志
 
@@ -45,406 +132,14 @@ int sys_print_at(char* s, u32 x, u32 y) {
   return 0;
 }
 
-size_t sys_ioctl(u32 fd, u32 cmd, void* args) {
-  u32 ret = 0;
-  thread_t* current = thread_current();
-  fd_t* f = thread_find_fd_id(current, fd);
-  if (f == NULL) {
-    // f = find_fd(fd);
-  }
-  if (f == NULL) {
-    log_error("ioctl not found fd %d\n", fd);
-    return 0;
-  }
-  vnode_t* node = f->data;
-  if (node == NULL) {
-    log_error("sys ioctl node is null tid %d fd %d name %s ptr %x cmd %x\n",
-              current != NULL ? current->id : -1, fd,
-              f->name != NULL ? f->name : 0, f, cmd);
-    return 0;
-  }
-  ret = vioctl(node, cmd, args);
-
-  // log_debug("sys ioctl fd %d %s cmd %x ret %x\n", fd, f->name, cmd, ret);
-  return ret;
-}
-
-u32 sys_open(char* name, int attr, ...) {
-  // mm_dump();
-  // kprintf("open %s attr %x\n",name,attr&O_CREAT==O_CREAT);
-  if (name == NULL) {
-    log_error("open name is null\n");
-    return -1;
-  }
-  if (name[0] == '\0') {
-    log_error("open name is empty attr %x\n", attr);
-    return -1;
-  }
-  if ((unsigned char)name[0] < 0x20 && name[0] != '/' && name[0] != '.') {
-    log_error("open invalid path start 0x%x attr %x\n", (unsigned char)name[0],
-              attr);
-    return -1;
-  }
-  if (attr > 020200000) {
-    log_error("open attr range error %x\n", attr);
-    return -1;
-  }
-
-  thread_t* current = thread_current();
-  if (current == NULL) {
-    log_error(" cannot find current thread\n");
-    return -1;
-  }
-  // current pwd
-  vnode_t* pwd = current->vfs->pwd;
-  vnode_t* root = current->vfs->root;
-
-  // 使用 vfs_find_relative 支持相对路径和 ..
-  vnode_t* file = vfs_find_relative(root, pwd, name);
-  if (file == NULL && (attr & O_CREAT) == O_CREAT) {
-    // 文件不存在但需要创建
-    file = vfs_open_attr(pwd, name, attr);
-  }
-  if (file == NULL) {
-    log_error("sys open file %s error, attr %x \n", name, attr);
-    return -1;
-  }
-
-  char path_name[256];
-  vfs_path_append(file, "", path_name);
-
-  log_debug("path name %s to %s\n", name, path_name);
-
-  // 初始化线程时 devfs 可能还没就绪，首次 open 前补充 stdin/stdout/stderr。
-  if (current->fds[STDIN] == NULL) {
-    thread_fill_fd(current);
-  }
-
-  // 打开文件
-  vfs_open(file, attr);
-
-  fd_t* fd = fd_open(file, DEVICE_TYPE_FILE, path_name);
-  if (fd == NULL) {
-    log_error(" new fd error\n");
-    return -1;
-  }
-  fd->offset = 0;
-  int f = thread_add_fd(current, fd);
-  if (f < 0) {
-    log_error("sys open %s error\n", name);
-    return -1;
-  }
-  if (current->id > 0) {
-    log_debug(
-        "sys open new path name: %s name: %s addr:%x fd:%d fd->id:%d ptr:%x "
-        "fd->name:%s\n",
-        path_name, name, name, f, fd->id, fd, fd->name);
-  }
-  return f;
-}
-
-// ---------------------------------------------------------------------------
-// AArch64 Linux ABI compatibility
-//   syscall 56 is openat(dirfd, pathname, flags, mode)
-//   There is no legacy open(2) syscall on aarch64.
-// Our userspace (musl/busybox) will typically issue openat.
-// ---------------------------------------------------------------------------
-// Dispatcher for aarch64 syscall 56.
-// - Linux aarch64: openat(dirfd, pathname, flags, mode)
-// - Some bare-metal/musl ports (or older code) may still issue open(pathname, flags, mode)
-//   but with syscall number 56.
-// Keep both working by inspecting the first argument.
-static u64 sys_open_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5) {
-  (void)a3;
-  (void)a4;
-  (void)a5;
-  // If a0 looks like a small dirfd (including AT_FDCWD=-100), treat as openat.
-  // Otherwise treat a0 as pathname pointer (open).
-  long s0 = (long)a0;
-  const char* pathname = NULL;
-  int flags = 0;
-  int dirfd = -100;
-  int is_openat = 0;
-
-  if (s0 >= -4096 && s0 <= 4096) {
-    // openat layout
-    dirfd = (int)a0;
-    pathname = (const char*)a1;
-    flags = (int)a2;
-    is_openat = 1;
-  } else {
-    // open layout
-    pathname = (const char*)a0;
-    flags = (int)a1;
-  }
-
-  if (pathname == NULL) {
-    log_error("sys_open_dispatch null pathname a0=%lx a1=%lx a2=%lx a3=%lx\n",
-              a0, a1, a2, a3);
-    return (u64)-1;
-  }
-
-  if (is_openat) {
-    return (u64)sys_openat(dirfd, pathname, flags, (int)a3);
-  }
-  return (u64)sys_open((char*)pathname, flags);
-}
-
-static u64 sys_access_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5) {
-  (void)a4;
-  (void)a5;
-  long s0 = (long)a0;
-  const char* pathname = NULL;
-  int mode = 0;
-  int flags = 0;
-  int dirfd = 0;
-
-  if (s0 >= -4096 && s0 <= 4096) {
-    dirfd = (int)a0;
-    pathname = (const char*)a1;
-    mode = (int)a2;
-    flags = (int)a3;
-    if (pathname == NULL) {
-      log_error(
-          "sys_access_dispatch faccessat null pathname dirfd=%d mode=%x flags=%x\n",
-          dirfd, mode, flags);
-      return (u64)-1;
-    }
-    log_debug("sys_access_dispatch faccessat dirfd=%d path=%s mode=%x flags=%x\n",
-              dirfd, pathname, mode, flags);
-    return (u64)sys_faccessat(dirfd, pathname, mode, flags);
-  }
-
-  pathname = (const char*)a0;
-  mode = (int)a1;
-  if (pathname == NULL) {
-    log_error("sys_access_dispatch access null pathname mode=%x\n", mode);
-    return (u64)-1;
-  }
-  log_debug("sys_access_dispatch access path=%s mode=%x\n", pathname, mode);
-  return (u64)sys_access(pathname, mode);
-}
-
-static u64 sys_stat_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5) {
-  (void)a4;
-  (void)a5;
-  long s0 = (long)a0;
-  const char* pathname = NULL;
-  struct stat* statbuf = NULL;
-  int dirfd = 0;
-  int flags = 0;
-
-  if (s0 >= -4096 && s0 <= 4096) {
-    dirfd = (int)a0;
-    pathname = (const char*)a1;
-    statbuf = (struct stat*)a2;
-    flags = (int)a3;
-    if (pathname == NULL || statbuf == NULL) {
-      log_error("sys_stat_dispatch newfstatat bad args dirfd=%d path=%lx stat=%lx flags=%x\n",
-                dirfd, pathname, statbuf, flags);
-      return (u64)-1;
-    }
-    return (u64)sys_newfstatat(dirfd, pathname, statbuf, flags);
-  }
-
-  pathname = (const char*)a0;
-  statbuf = (struct stat*)a1;
-  if (pathname == NULL || statbuf == NULL) {
-    log_error("sys_stat_dispatch stat bad args path=%lx stat=%lx\n", pathname,
-              statbuf);
-    return (u64)-1;
-  }
-  return (u64)sys_stat(pathname, statbuf);
-}
-
-static u64 sys_readlink_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5) {
-  (void)a4;
-  (void)a5;
-  long s0 = (long)a0;
-  const char* pathname = NULL;
-  char* buf = NULL;
-  size_t bufsiz = 0;
-  int dirfd = 0;
-
-  if (s0 >= -4096 && s0 <= 4096) {
-    dirfd = (int)a0;
-    pathname = (const char*)a1;
-    buf = (char*)a2;
-    bufsiz = (size_t)a3;
-    if (pathname == NULL || buf == NULL) {
-      log_error("sys_readlink_dispatch readlinkat bad args dirfd=%d path=%lx buf=%lx size=%lx\n",
-                dirfd, pathname, buf, bufsiz);
-      return (u64)-1;
-    }
-    return (u64)sys_readlinkat(dirfd, pathname, buf, bufsiz);
-  }
-
-  pathname = (const char*)a0;
-  buf = (char*)a1;
-  bufsiz = (size_t)a2;
-  if (pathname == NULL || buf == NULL) {
-    log_error("sys_readlink_dispatch readlink bad args path=%lx buf=%lx size=%lx\n",
-              pathname, buf, bufsiz);
-    return (u64)-1;
-  }
-  return (u64)sys_readlink(pathname, buf, bufsiz);
-}
-
-u32 sys_openat(int dirfd, const char* pathname, int flags, int mode) {
-  (void)mode;
-  if (pathname == NULL) {
-    log_error("sys_openat null pathname dirfd=%d flags=%x\n", dirfd, flags);
-    return -1;
-  }
-  if (pathname[0] == '\0') {
-    // Some userspace paths for "current directory" end up here as openat with
-    // an empty pathname. Treat that as "." for AT_FDCWD-style calls so tools
-    // like ls can continue.
-    if (dirfd == -100 || dirfd == 0) {
-      pathname = ".";
-    } else {
-      log_error("sys_openat empty pathname dirfd=%d flags=%x\n", dirfd, flags);
-      return -1;
-    }
-  }
-  log_debug("sys_openat dirfd=%d path=%s flags=%x\n", dirfd, pathname, flags);
-  return sys_open((char*)pathname, flags);
-}
-
-int sys_mkdirat(int dirfd, const char* pathname, mode_t mode) {
-  (void)dirfd;
-  return sys_mkdir(pathname, mode);
-}
-
-int sys_unlinkat(int dirfd, const char* pathname, int flags) {
-  (void)dirfd;
-  (void)flags;
-  return sys_unlink(pathname);
-}
-
-int sys_renameat(int olddirfd, const char* oldpath, int newdirfd,
-                 const char* newpath) {
-  (void)olddirfd;
-  (void)newdirfd;
-  return sys_rename(oldpath, newpath);
-}
-
-int sys_newfstatat(int dirfd, const char* pathname, struct stat* stat,
-                   int flags) {
-  (void)dirfd;
-  (void)flags;
-  return sys_stat(pathname, stat);
-}
-
-ssize_t sys_readlinkat(int dirfd, const char* restrict pathname,
-                       char* restrict buf, size_t bufsiz) {
-  (void)dirfd;
-  return sys_readlink(pathname, buf, bufsiz);
-}
-
-int sys_faccessat(int dirfd, const char* pathname, int mode, int flags) {
-  if (pathname == NULL) {
-    log_error("sys_faccessat null pathname dirfd=%d mode=%x flags=%x\n", dirfd,
-              mode, flags);
-    return -1;
-  }
-  log_debug("sys_faccessat dirfd=%d path=%s mode=%x flags=%x\n", dirfd, pathname,
-            mode, flags);
-  return sys_access(pathname, mode);
-}
-
-int sys_close(u32 fd) {
-  thread_t* current = thread_current();
-  fd_t* f = thread_find_fd_id(current, fd);
-  if (f == NULL) {
-    log_error("close not found fd %d tid %d\n", fd, current->id);
-    return 0;
-  }
-  // fd_close already calls vclose and sets fd->data = NULL.
-  thread_set_fd(current, fd, NULL);
-  return fd_close(f);
-}
-
-size_t sys_write(u32 fd, void* buf, size_t nbytes) {
-  thread_t* current = thread_current();
-  fd_t* f = thread_find_fd_id(current, fd);
-  if (f == NULL) {
-    log_error("write not found fd %d tid %d\n", fd, current->id);
-    return 0;
-  }
-  vnode_t* node = f->data;
-  if (node == NULL) {
-    log_error("sys write node is null tid %d \n", current->id);
-    return -1;
-  }
-  // kprintf("sys write %d %s fd:%s\n",current->id,buf,f->name);
-  u32 ret = vwrite(node, f->offset, nbytes, buf);
-  f->offset += nbytes;
-  return ret;
-}
-
-size_t sys_read(u32 fd, void* buf, size_t nbytes) {
-  thread_t* current = thread_current();
-  fd_t* f = thread_find_fd_id(current, fd);
-  if (f == NULL) {
-    log_error("read not found fd %d tid %d\n", fd, current->id);
-    return 0;
-  }
-  vnode_t* node = f->data;
-  if (node == NULL) {
-    if (fd <= STDERR) {
-      thread_fill_fd(current);
-      f = thread_find_fd_id(current, fd);
-      if (f != NULL) {
-        node = f->data;
-      }
-    }
-    if (node == NULL) {
-      log_error("sys read node is null tid %d fd %d name %s ptr %x\n",
-                current->id, fd, f != NULL ? f->name : 0, f);
-      return -1;
-    }
-  }
-  u32 ret = vread(node, f->offset, nbytes, buf);
-  if (ret > 0) {
-    f->offset += ret;
-  }
-#ifdef USE_BLOCK
-  if (ret == 0) {
-    source_t* source = event_source_io_create(node, f, nbytes, buf);
-    event_wait(current, source);
-  }
-#endif
-  return ret;
-}
-
-size_t sys_seek(u32 fd, size_t offset, int whence) {
-  fd_t* f = thread_find_fd_id(thread_current(), fd);
-  if (f == NULL) {
-    log_error("seek not found fd %d\n", fd);
-    return 0;
-  }
-  // set start offset
-  if (whence == 0) {  // seek set
-    f->offset = offset;
-  } else if (whence == 1) {  // seek current
-    f->offset += offset;
-  } else if (whence == 2) {  // seek end
-    vnode_t* file = f->data;
-    if (file != NULL) {
-      f->offset = file->length + offset;
-    }
-  } else {
-    log_error("seek whence error %d\n", whence);
-    return -1;
-  }
-  return f->offset;
-}
 
 size_t sys_yeild() { thread_yield(); }
 
 void sys_exit(int status) {
   thread_t* current = thread_current();
+  if (current != NULL && current->id > 1) {
+    log_debug("sys_exit tid=%d status=%d\n", current->id, status);
+  }
   if (current != NULL && current->clear_child_tid != NULL) {
     int* tidptr = (int*)current->clear_child_tid;
     *tidptr = 0;
@@ -496,8 +191,122 @@ void sys_vfree(void* addr) {
   vfree(addr, PAGE_SIZE);
 }
 
+static void exec_params_free(exec_params_t* exec) {
+  if (exec == NULL) {
+    return;
+  }
+  if (exec->argv != NULL) {
+    for (int i = 0; i < exec->argc; i++) {
+      if (exec->argv[i] != NULL) {
+        kfree(exec->argv[i]);
+      }
+    }
+    kfree(exec->argv);
+  }
+  if (exec->envp != NULL) {
+    for (int i = 0; i < exec->envc; i++) {
+      if (exec->envp[i] != NULL) {
+        kfree(exec->envp[i]);
+      }
+    }
+    kfree(exec->envp);
+  }
+  if (exec->filename != NULL) {
+    kfree(exec->filename);
+  }
+  kfree(exec);
+}
+
+static char* exec_dup_string(const char* src) {
+  if (src == NULL) {
+    return NULL;
+  }
+  size_t len = kstrlen(src) + 1;
+  char* out = kmalloc(len, KERNEL_TYPE);
+  if (out == NULL) {
+    return NULL;
+  }
+  kstrcpy(out, src);
+  return out;
+}
+
+static exec_params_t* exec_params_build(const char* filename, char* const argv[],
+                                        char* const envp[]) {
+  int argc = 0;
+  int envc = 0;
+  size_t string_bytes = 0;
+  int i = 0;
+  while (argv != NULL && argv[i] != NULL) {
+    if (argv[i][0] != '\0') {
+      argc++;
+      string_bytes += kstrlen(argv[i]) + 1;
+    }
+    i++;
+  }
+  if (argc == 0) {
+    argc = 1;
+    string_bytes += kstrlen(filename) + 1;
+  }
+  if (envp != NULL) {
+    for (i = 0; i < 38 && envp[i] != NULL; i++) {
+      envc++;
+      string_bytes += kstrlen(envp[i]) + 1;
+    }
+  }
+
+  exec_params_t* exec = kmalloc(sizeof(exec_params_t), KERNEL_TYPE);
+  if (exec == NULL) {
+    return NULL;
+  }
+  kmemset(exec, 0, sizeof(exec_params_t));
+  exec->filename = exec_dup_string(filename);
+  exec->argc = argc;
+  exec->envc = envc;
+  exec->string_bytes = string_bytes;
+  exec->argv = kmalloc(sizeof(char*) * (argc + 1), KERNEL_TYPE);
+  exec->envp = kmalloc(sizeof(char*) * (envc + 1), KERNEL_TYPE);
+  if (exec->filename == NULL || exec->argv == NULL || exec->envp == NULL) {
+    exec_params_free(exec);
+    return NULL;
+  }
+  kmemset(exec->argv, 0, sizeof(char*) * (argc + 1));
+  kmemset(exec->envp, 0, sizeof(char*) * (envc + 1));
+
+  int pos = 0;
+  for (i = 0; argv != NULL && argv[i] != NULL; i++) {
+    if (argv[i][0] == '\0') {
+      continue;
+    }
+    exec->argv[pos] = exec_dup_string(argv[i]);
+    if (exec->argv[pos] == NULL) {
+      exec_params_free(exec);
+      return NULL;
+    }
+    pos++;
+  }
+  if (pos == 0) {
+    exec->argv[0] = exec_dup_string(filename);
+    if (exec->argv[0] == NULL) {
+      exec_params_free(exec);
+      return NULL;
+    }
+  }
+  for (i = 0; i < envc; i++) {
+    exec->envp[i] = exec_dup_string(envp[i]);
+    if (exec->envp[i] == NULL) {
+      exec_params_free(exec);
+      return NULL;
+    }
+  }
+  return exec;
+}
+
 u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   thread_t* current = thread_current();
+  if (current == NULL) {
+    log_error("sys exec current is null\n");
+    return -1;
+  }
   log_debug("sys exec file %s addr %x tid name %s\n", filename, filename,
             current->name);
   // filename = kpage_v2p(filename, 0);
@@ -511,112 +320,59 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     return -1;
   }
 
-  char* name = kmalloc(kstrlen(filename) + 1, KERNEL_TYPE);
-  kstrcpy(name, filename);
-  current->name = name;
+  exec_params_t* exec = exec_params_build(filename, argv, envp);
+  if (exec == NULL) {
+    log_error("sys exec build params failed %s\n", filename);
+    return -1;
+  }
 
-  int fd = sys_open(filename, 0);
+  int fd = (int)sys_open_kernel(exec->filename, 0);
   if (fd < 0) {
-    log_error("sys exec file not found %s\n", name);
+    log_error("sys exec file not found %s\n", exec->filename);
+    exec_params_free(exec);
     return -1;
   }
   fd_t* f = thread_find_fd_id(current, fd);
   if (f == NULL) {
     log_error("read not found fd %d tid %d\n", fd, current->id);
-    return 0;
+    sys_close(fd);
+    exec_params_free(exec);
+    return -1;
   }
-  thread_set_entry(current, load_thread_entry);
-  kprintf("sys_exec set load_thread_entry=%lx current=%d\n", load_thread_entry,
-          current->id);
   vnode_t* node = f->data;
   if (node == NULL) {
     log_error("sys exec node is null pwd\n");
+    sys_close(fd);
+    exec_params_free(exec);
     return -1;
   }
-  if (node->parent != NULL) {
-    // current->vfs->pwd = node->parent;
-  } else {
-    current->vfs->pwd = node;
-  }
+  sys_close(fd);
 
-  // init data
-  int argc = 0;
-  int i = 0;
-  while (argv != NULL && argv[i] != NULL) {
-    if (argv[i] != NULL && kstrlen(argv[i]) > 0) {
-      log_debug("argv[%d]=%s %x\n", argc, argv[argc], &argv[argc]);
-      argc++;
+  if (current->vfs != NULL) {
+    if (!vfs_node_is_valid(current->vfs->root)) {
+      current->vfs->root = root_node;
     }
-    i++;
+    if (!vfs_node_is_valid(current->vfs->pwd)) {
+      current->vfs->pwd = current->vfs->root;
+    }
   }
 
-  // args layout is used as the initial user stack for ELF entry:
-  // [argc][argv...][NULL][envp...][NULL][auxv...]
-  // Reserve enough longs for argv/envp and a small auxv (type,val pairs + AT_NULL).
+  if (current->exec != NULL) {
+    exec_params_free(current->exec);
+  }
+  current->exec = exec;
+  current->name = exec->filename;
+  thread_fill_fd(current);
 #if defined(ARM64) || defined(__aarch64__)
-  const int auxv_pairs = 24;  // Keep headroom for AT_EXECFN and future auxv entries.
+  if (run_elf64_thread((long*)exec) < 0) {
+    return -1;
+  }
 #else
-  const int auxv_pairs = 12;
+  if (run_elf_thread((long*)exec) < 0) {
+    return -1;
+  }
 #endif
-  const int auxv_words = auxv_pairs * 2;
-  int exec_argc = argc > 0 ? argc : 1;
-  int envc = 0;
-  size_t string_bytes = 0;
-  for (i = 0; i < argc; i++) {
-    string_bytes += kstrlen(argv[i]) + 1;
-  }
-  if (argc == 0) {
-    string_bytes += kstrlen(filename) + 1;
-  }
-  if (envp != NULL) {
-    for (i = 0; i < 38 && envp[i]; i++) {
-      string_bytes += kstrlen(envp[i]) + 1;
-      envc++;
-    }
-  }
-  int header_words = 1 + exec_argc + 1 + envc + 1 + auxv_words;
-  long* args =
-      kmalloc(sizeof(long) * header_words + string_bytes + 16, DEFAULT_TYPE);
-  char* strp = (char*)(args + header_words);
-  args[0] = exec_argc;
-  i = 0;
-  int pos = 1;
-  for (i = 0; i < argc; i++) {
-    size_t len = kstrlen(argv[i]) + 1;
-    kstrcpy(strp, argv[i]);
-    args[pos++] = (long)strp;
-    strp += len;
-  }
-  if (argc == 0) {
-    size_t len = kstrlen(filename) + 1;
-    kstrcpy(strp, filename);
-    args[pos++] = (long)strp;
-    strp += len;
-  }
-  log_debug("envp %x argc %d filename %s\n", envp, exec_argc, filename);
-
-  long* p = args;
-  char** pargv = (void*)(p + 1);
-  char** penvp = pargv + exec_argc + 1;
-
-  args[pos++] = 0;
-  for (i = 0; i < envc; i++) {
-    size_t len = kstrlen(envp[i]) + 1;
-    kstrcpy(strp, envp[i]);
-    args[pos++] = (long)strp;
-    strp += len;
-  }
-  args[pos++] = 0;
-
-  current->exec = args;
-  thread_set_arg(current, args);
-  // kprintf("sys_exec args=%lx pc=%lx lr=%lx x0=%lx\n", args, current->ctx->ksp->pc,
-  //         current->ctx->ksp->lr, current->ctx->ksp->x0);
-  thread_run(current);
-
-  kmemmove(current->ctx->ic, current->ctx->ksp, sizeof(interrupt_context_t));
-
-  return args;
+  return 0;
 }
 
 int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
@@ -707,22 +463,15 @@ int sys_fork() {
 #endif
   // thread_stop(current);
   thread_t* copy_thread = thread_copy(current, THREAD_FORK);
+  if (copy_thread == NULL) {
+    log_error("sys fork thread copy failed\n");
+    return -1;
+  }
+
   thread_set_ret(copy_thread, 0);
-#ifdef DEBUG
-  log_debug("fork copy finished\n");
-#endif
-#ifdef LOG_DEBUG
-  log_debug("-------dump current thread %d %s-------------\n", current->id);
-  thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
-  log_debug("-------dump clone thread %d-------------\n", copy_thread->id);
-  thread_dump(copy_thread, DUMP_DEFAULT | DUMP_CONTEXT);
-#endif
+
   thread_run(copy_thread);
-  thread_run(current);
-#ifdef DEBUG
-  log_debug("fork end\n");
-#endif
-  return current->id;
+  return copy_thread->id;
 }
 
 int sys_pipe(int fds[2]) {
@@ -746,136 +495,7 @@ int sys_getppid() {
   return current->pid;
 }
 
-int sys_dup(int oldfd) {
-  thread_t* current = thread_current();
-  fd_t* fd = thread_find_fd_id(current, oldfd);
-  if (fd == NULL) {
-    log_error("dup not found fd %d\n", oldfd);
-    return 0;
-  }
-  int newfd = thread_add_fd(current, fd);
-#ifdef DEBUG_SYS_FN
-  log_debug("sys dup %d %s\n", newfd, fd->name);
-#endif
-  return newfd;
-}
 
-int sys_dup2(int oldfd, int newfd) {
-  thread_t* current = thread_current();
-  fd_t* fd = thread_find_fd_id(current, oldfd);
-  if (fd == NULL) {
-    log_error("dup not found fd %d\n", fd);
-    return -1;
-  }
-  if (oldfd == newfd) {
-    return newfd;
-  }
-
-  fd_t* nfd = thread_find_fd_id(current, newfd);
-  if (nfd != NULL && nfd != fd) {
-    fd_close(nfd);
-  }
-
-  if (newfd >= current->fd_size) {
-    log_error("dup2 newfd limit %d >= %d\n", newfd, current->fd_size);
-    return -1;
-  }
-
-  thread_set_fd(current, newfd, fd);
-  fd->use_count++;
-  if (newfd >= current->fd_number) {
-    current->fd_number = newfd + 1;
-  }
-  return newfd;
-}
-
-int sys_readdir(int fd, int index, void* dirent) {
-  thread_t* current = thread_current();
-  fd_t* findfd = thread_find_fd_id(current, fd);
-  if (fd == NULL) {
-    log_error("readdir not found fd %d\n", fd);
-    return 0;
-  }
-  u32 ret = vreaddir(findfd->data, dirent, &findfd->offset, index);
-  return ret;
-}
-
-int sys_readv(int fd, iovec_t* vector, int count) {
-  int ret = -1;
-  int n;
-  int i;
-  int num = 0;
-  int total = 0;
-  int pos = 0;
-  // kprintf("sys_readv====>%d %x %d\n",fd,vector,count);
-
-  for (i = 0; i < count; i++) {
-    // kprintf("sys_read=>i=%d %d %x
-    // %d\n",i,fd,vector[pos].iov_base,vector[pos].iov_len);
-    int len = vector[pos].iov_len;
-    n = sys_read(fd, vector[pos].iov_base, len);
-    // kprintf("read %d ret =%d\n",i,n);
-    if (n > 0) {
-      num += n;
-      ret = num;
-      total += vector[pos].iov_len;
-    } else if (n <= 0) {
-      break;
-    }
-    if (num >= total) {
-      pos++;
-    }
-  }
-  return ret;
-}
-
-int sys_writev(int fd, iovec_t* vector, int count) {
-  int ret = 0;
-  int n;
-  int i;
-  if (count == 0) {
-    return 0;
-  }
-  for (i = 0; i < count; i++, vector++) {
-    if (vector->iov_base == NULL || vector->iov_len <= 0) {
-      continue;
-    }
-    n = sys_write(fd, vector->iov_base, vector->iov_len);
-    if (n < 0) {
-      return n;
-    }
-    ret += n;
-    if (n != vector->iov_len) break;
-  }
-  return ret;
-}
-
-int sys_chdir(const char* path) {
-  int ret = 0;
-  thread_t* current = thread_current();
-
-  if (path == NULL) {
-    return -1;
-  }
-
-  log_debug("sys_chdir: path='%s' len=%d\n", path, kstrlen(path));
-
-  // 使用相对路径查找
-  vnode_t* node = vfs_find_relative(current->vfs->root, current->vfs->pwd, path);
-  if (node == NULL) {
-    log_error("chdir: cannot find %s\n", path);
-    return -1;
-  }
-
-  // 检查是否是目录
-  if ((node->flags & V_DIRECTORY) != V_DIRECTORY) {
-    log_error("chdir: not a directory %s\n", path);
-    return -1;
-  }
-
-  current->vfs->pwd = node;
-  return ret;
-}
 
 int sys_brk(u32 end) {
   thread_t* current = thread_current();
@@ -917,6 +537,10 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
                 size_t pgoffset) {
   int ret = 0;
   thread_t* current = thread_current();
+  if (current != NULL && current->id > 1) {
+    log_debug("sys_mmap2 tid=%d addr=%x len=%d prot=%x flags=%x fd=%d off=%d\n",
+              current->id, addr, length, prot, flags, fd, pgoffset);
+  }
   vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
   if (vm == NULL) {
     log_error("sys mmap2 not found vm\n");
@@ -937,8 +561,6 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
   // 内存大小 对齐 16 page-aligned
   length = ALIGN(length, PAGE_SIZE);
 
-  void* start_addr = addr;
-
   if (fd > 0) {
     fd_t* f = thread_find_fd_id(current, fd);
     if (f == NULL) {
@@ -950,23 +572,50 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
   }
 
   if ((flags & MAP_FIXED) == MAP_FIXED) {
-    // 固定地址，说明地址存在，不需要处理
     vmemory_area_t* findvm = vmemory_area_find(current->vm->vma, addr, length);
     if (findvm == NULL) {
-      log_error("map fix %x faild out of range\n", start_addr);
+      log_error("map fix %x faild out of range\n", addr);
       return MAP_FAILED;
     }
-#ifdef LOG_MMAP
-    log_debug("map fix return addr %x\n", start_addr);
-#endif
+    if (prot != 0 && valloc(addr, length) == NULL) {
+      log_error("map fix valloc failed addr=%x len=%x\n", addr, length);
+      return MAP_FAILED;
+    }
+    if (sys_mmap_install_area(vm, addr, length) < 0) {
+      log_error("map fix install area failed addr=%x\n", addr);
+      return MAP_FAILED;
+    }
+    return addr;
+  }
+
+  void* start_addr = NULL;
+  if ((flags & MAP_ANON) == MAP_ANON) {
+    start_addr = sys_mmap_pick_anon_addr(current, vm, length);
+    if (start_addr == NULL) {
+      log_error("mmap: no free anon region len=%x\n", length);
+      return MAP_FAILED;
+    }
+    if (prot != 0 && valloc(start_addr, length) == NULL) {
+      log_error("mmap anon valloc failed addr=%x len=%x\n", start_addr, length);
+      return MAP_FAILED;
+    }
+    if (sys_mmap_install_area(vm, start_addr, length) < 0) {
+      log_error("mmap install area failed addr=%x\n", start_addr);
+      return MAP_FAILED;
+    }
+    log_debug("mmap anon addr %x len %x prot %x\n", start_addr, length, prot);
     return start_addr;
   }
+
+  // Legacy/file-backed path below (still unused for musl TLS).
+  start_addr = addr;
 
   // 先找合适大小的已释放节点复用，避免地址单向增长导致堆溢出
   vmemory_area_t* reuse = NULL;
   if (vm->child != NULL) {
     for (vmemory_area_t* p = vm->child; p != NULL; p = p->next) {
-      if (p->flags == MEMORY_FREE && p->size >= length) {
+      if (p->flags == MEMORY_FREE && p->size >= length &&
+          !sys_mmap_pages_mapped(current, (void*)p->vaddr, length)) {
         reuse = p;
         break;
       }
@@ -1001,26 +650,21 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
     }
   }
 
-  // 匿名内存：登记 VMA 后懒分配，page fault 时逐页分配物理帧
-  // prot==0 (PROT_NONE) 表示 guard page，不映射物理页
-  if ((flags & MAP_ANON) == MAP_ANON) {
-    log_debug("mmap anon addr %x len %x prot %x\n", start_addr, length, prot);
-    return start_addr;
-  } else if ((flags & MAP_ANON) == 0) {
-    // 有名
-    fd_t* f = thread_find_fd_id(current, fd);
-    if (f == NULL) {
-      log_error("sys mmap not found fd %d tid %d\n", fd, current->id);
-      return MAP_FAILED;
-    }
-  }
   if ((flags & MAP_SHARED) == MAP_SHARED) {
 #ifdef LOG_MMAP
     log_debug("map shared return addr %x\n", start_addr);
 #endif
+    if (prot != 0 && valloc(start_addr, length) == NULL) {
+      log_error("mmap shared valloc failed addr=%x len=%x\n", start_addr, length);
+      return MAP_FAILED;
+    }
     return start_addr;
   } else if ((flags & MAP_PRIVATE) == MAP_PRIVATE) {
     log_debug("map private return addr %x\n", start_addr);
+    if (prot != 0 && valloc(start_addr, length) == NULL) {
+      log_error("mmap private valloc failed addr=%x len=%x\n", start_addr, length);
+      return MAP_FAILED;
+    }
     return start_addr;
   }
   log_error("map failed end\n");
@@ -1135,114 +779,22 @@ unsigned int sys_alarm(unsigned int seconds) {
   return -1;
 }
 
-int sys_unlink(const char* pathname) {
-  log_debug("sys unlink not impl %s\n", pathname);
-  return -1;
-}
-
-int sys_rename(const char* old, const char* new) {
-  log_debug("sys rename not impl %s\n", old);
-
-  return -1;
-}
 
 int sys_set_thread_area(void* set) {
-  log_debug("sys set thread area not impl \n");
-  return 0;
-}
-
-int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
-  thread_t* current = thread_current();
-  fd_t* findfd = thread_find_fd_id(current, fd);
-  if (findfd == NULL) {
-    log_error("getdents64 not found fd %d\n", fd);
-    return 0;
-  }
-  u32 ret = vreaddir(findfd->data, dir, &findfd->offset, count);
-  return ret;
-}
-
-int sys_fcntl64(int fd, int cmd, void* arg) {
-  log_debug("sys fcntl64 fd: %d cmd: %x flag: %x\n", fd, cmd, arg);
-  thread_t* current = thread_current();
-  fd_t* findfd = thread_find_fd_id(current, fd);
-  if (findfd == NULL) {
-    log_error("sys fcntl64 not found fd %d\n", fd);
-    return -1;
-  }
-  vnode_t* node = findfd->data;
-  if ((cmd == F_GETFL || cmd == F_SETFL) && node == NULL) {
-    log_error("sys fcntl64 node is null tid %d fd %d name %s ptr %x cmd %x\n",
-              current != NULL ? current->id : -1, fd,
-              findfd->name != NULL ? findfd->name : 0, findfd, cmd);
-    return -1;
-  }
-  if (cmd == F_SETFD) {
-    findfd->flags = (u32)(uintptr_t)arg;
-    return fd;
-  } else if (cmd == F_DUPFD) {
-    u32 ret = sys_dup(fd);
-
-    return ret;
-  } else if (cmd == F_GETFD) {
-    return findfd->flags;
-  } else if (cmd == F_GETFL) {
-    u32 ret = vioctl(node, cmd, arg);
-    return ret;
-  } else if (cmd == F_SETFL) {
-    u32 ret = vioctl(node, cmd, arg);
-    return ret;
-  } else {
-    log_error("not support cmd %d\n", cmd);
-  }
-
-  return 1;
-}
-
-int sys_getcwd(char* buf, size_t size) {
   thread_t* current = thread_current();
   if (current == NULL) {
-    log_error("current is null\n");
     return -1;
   }
-  int ret = 0;
-  vfs_t* vfs = current->vfs;
-  if (vfs == NULL) {
-    return -1;
+  if (current->id > 1) {
+    log_debug("sys_set_thread_area tid=%d tp=%x\n", current->id, set);
   }
-  if (vfs->pwd != NULL) {
-    ret = vfs_path_append(vfs->pwd, "", buf);
-  } else {
-    buf[0] = 0;
-  }
-  return ret;
-}
-
-int sys_fchdir(int fd) {
-  u32 ret = 0;
-  thread_t* current = thread_current();
-  fd_t* f = thread_find_fd_id(current, fd);
-  if (f == NULL) {
-    log_error("read not found fd %d tid %d\n", fd, current->id);
-    return -1;
-  }
-  vnode_t* node = f->data;
-  if ((node->flags & V_DIRECTORY) == V_DIRECTORY) {
-    current->vfs->pwd = node;
-  } else {
-    log_error("not directory\n");
-    return -1;
-  }
-  return ret;
-}
-
-int sys_llseek(int fd, int offset_hi, int offset_lo, off_t* result,
-               int whence) {
-  int i = sizeof(off_t);
-  int offset = sys_seek(fd, offset_hi << 32 | offset_lo, whence);
-  *result = offset;
+  current->user_tp = set;
+#if defined(__arm__)
+  asm volatile("mcr p15, 0, %0, c13, c0, 3" : : "r"(set) : "memory");
+#endif
   return 0;
 }
+
 
 int sys_umask(int mask) {
   thread_t* current = thread_current();
@@ -1255,45 +807,6 @@ int sys_umask(int mask) {
   return mask;
 }
 
-int sys_stat(const char* path, struct stat* stat) {
-  if (stat == NULL) {
-    return -1;
-  }
-  if (path == NULL) {
-    return -1;
-  }
-  int fd = sys_open(path, 0);
-  if (fd < 0) {
-    log_error("open file error %s\n", path);
-    return -1;
-  }
-  return sys_fstat(fd, stat);
-}
-
-int sys_fstat(int fd, struct stat* stat) {
-  if (stat == NULL) {
-    return -1;
-  }
-  if (fd < 0) {
-    return -1;
-  }
-  thread_t* current = thread_current();
-  fd_t* f = thread_find_fd_id(current, fd);
-  if (f == NULL) {
-    log_error("stat not found fd %d tid %d\n", fd, current->id);
-    return -1;
-  }
-  vnode_t* node = f->data;
-  if (node == NULL) {
-    log_error("sys fstat node is null tid %d fd %d name %s ptr %x\n",
-              current != NULL ? current->id : -1, fd,
-              f->name != NULL ? f->name : 0, f);
-    return -1;
-  }
-  u32 cmd = IOC_STAT;
-  u32 ret = vioctl(node, cmd, stat);
-  return ret;
-}
 
 int sys_self(void* t) {
   if (t == NULL) return -2;
@@ -1338,6 +851,12 @@ int sys_info(sysinfo_t* info) {
 
 int sys_thread_self() {
   thread_t* current = thread_current();
+  if (current == NULL) {
+    return 0;
+  }
+  if (current->user_tp != NULL) {
+    return (int)current->user_tp;
+  }
   thread_info_t* tinfo = current->tinfo;
 
   if (tinfo == NULL) {
@@ -1453,6 +972,9 @@ int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
 
 int sys_set_tid_adress(void* ptr) {
   thread_t* current = thread_current();
+  if (current != NULL && current->id > 1) {
+    log_debug("sys_set_tid_address tid=%d ptr=%x\n", current->id, ptr);
+  }
   if (current != NULL) {
     current->clear_child_tid = ptr;
   }
@@ -1539,27 +1061,6 @@ int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
   return 0;
 }
 
-int sys_mkdir(const char* pathname, mode_t mode) {
-  log_debug("sys mkdir not impl %s\n", pathname);
-
-  return 0;
-}
-
-int sys_access(const char* pathname, int mode) {
-  log_debug("sys_access pathname=%lx mode=%x\n", pathname, mode);
-  if (pathname == NULL) {
-    log_error("sys_access null pathname\n");
-    return -1;
-  }
-  log_debug("sys_access path=%s\n", pathname);
-  int fd = sys_open(pathname, 0);
-  if (fd < 0) {
-    log_error("access faild %s\n", pathname);
-    return -1;
-  }
-  sys_close(fd);
-  return 0;
-}
 
 int sys_gettid() {
   thread_t* current = thread_current();
@@ -1591,36 +1092,6 @@ int sys_thread_map(int tid, u32 virt_addr, u32 phy_addr, u32 size, u32 attr) {
   return ret;
 }
 
-int sys_fstat64(int fd, struct stat* stat) { return sys_fstat(fd, stat); }
-
-int sys_statfs64(const char* filename, struct statfs* stat) {
-  if (stat == NULL) {
-    return -1;
-  }
-  thread_t* current = thread_current();
-  int f = thread_find_fd_name(current, filename);
-  if (f < 0) {
-    f = sys_open(filename, 0);
-  }
-  if (f < 0) {
-    log_error("statfs not found name %s tid %d\n", filename, current->id);
-    return -1;
-  }
-  fd_t* fd = thread_find_fd_id(current, f);
-  if (fd == NULL) {
-    log_error("statfs fd not found name %s tid %d\n", filename, current->id);
-    return 0;
-  }
-  vnode_t* node = fd->data;
-  if (node == NULL) {
-    log_error("sys statfs64 node is null name %s tid %d fd %d fdptr %x\n",
-              filename, current != NULL ? current->id : -1, f, fd);
-    return -1;
-  }
-  u32 cmd = IOC_STATFS;
-  u32 ret = vioctl(node, cmd, stat);
-  return ret;
-}
 
 int sys_sched_getparam(int pid, sched_param_t* param) {
   log_debug("sys sched getparam not impl\n");
@@ -1654,27 +1125,19 @@ int sys_sched_setscheduler(pid_t pid, int policy,
 }
 
 pid_t sys_waitpid(pid_t pid, int* wstatus, int options) {
-  log_debug("sys_waitpid %d %d %d not impl\n", pid, *wstatus, options);
-  thread_t* current = thread_current();
-
-  int ret = -1;
-  if (pid < -1) {
-  } else if (pid == -1) {
-  } else if (pid == 0) {
-  } else if (pid > 0) {
+  log_debug("sys_waitpid %d %x %d not impl\n", pid, wstatus, options);
+  if (wstatus != NULL) {
+    *wstatus = 0;
   }
-
-  thread_wait(current);
-
-  return ret;
+  if (pid > 0) {
+    return pid;
+  }
+  return -1;
 }
 
 pid_t sys_wait4(pid_t pid, int* wstatus, int options, struct rusage* rusage) {
-  int ret = sys_waitpid(pid, wstatus, options);
-
-  log_debug("sys_wait4 %d %d %d %x\n", pid, *wstatus, options, rusage);
-
-  return ret;
+  (void)rusage;
+  return sys_waitpid(pid, wstatus, options);
 }
 
 int sys_fn_faild_handler(int no, interrupt_context_t* ic) {
@@ -1694,11 +1157,31 @@ int sys_fn_faild_handler(int no, interrupt_context_t* ic) {
 }
 
 void sys_fn_call_handler(int no, interrupt_context_t* ic) {
+  thread_t* current = thread_current();
+  if (current != NULL && current->ctx != NULL) {
+    current->ctx->ic = ic;
+  }
   void* fn = syscall_table[context_fn(ic)];
   if (fn != NULL) {
     // kprintf("syscall fn:%d r0:%x r1:%x r2:%x r3:%x fn addr
     // %x\n",ic->r7,ic->r0,ic->r1,ic->r2,ic->r3,fn);
-    sys_fn_call((ic), fn);
+    if (context_fn(ic) == SYS_EXEC) {
+      u32 ret = sys_exec((char*)context_arg0(ic),
+                         (char* const*)context_arg1(ic),
+                         (char* const*)context_arg2(ic));
+      if ((int)ret < 0) {
+        context_ret(ic) = ret;
+      } else {
+        thread_t* current = thread_current();
+        if (current != NULL && current->ctx != NULL && current->ctx->ksp != NULL) {
+          kmemmove(ic, current->ctx->ksp, sizeof(interrupt_context_t));
+          log_debug("sys exec return pc=%x sp=%x tid=%d\n", ic->pc,
+                    current->ctx->usp, current->id);
+        }
+      }
+    } else {
+      sys_fn_call((ic), fn);
+    }
     // kprintf(" ret=%x\n",context_ret(ic));
   } else {
     log_warn("syscall %d not found handler\n", context_fn(ic));
@@ -1715,9 +1198,10 @@ void sys_fn_init() {
   syscall_table[SYS_PRINT] = &sys_print;
   syscall_table[SYS_PRINT_AT] = &sys_print_at;
   syscall_table[SYS_IOCTL] = &sys_ioctl;
-#if defined(ARM64) || defined(__aarch64__)
-  // Linux aarch64 syscall 56 is openat, but some userspace may still use open-layout args.
+#if defined(ARM64) || defined(__aarch64__) || defined(ARM)
+  // openat(dirfd, path, flags, mode) and legacy open(path, flags, mode).
   syscall_table[SYS_OPEN] = &sys_open_dispatch;
+  syscall_table[SYS_OPENAT] = &sys_open_dispatch;
 #else
   syscall_table[SYS_OPEN] = &sys_open;
 #endif
@@ -1768,6 +1252,7 @@ void sys_fn_init() {
   syscall_table[SYS_DUMPS] = &sys_dumps;
 
   syscall_table[SYS_GETDENTS64] = &sys_getdents64;
+  syscall_table[SYS_GETDENTS] = &sys_getdents64;
   syscall_table[SYS_MUNMAP] = &sys_munmap;
 
   syscall_table[SYS_FCNT64] = &sys_fcntl64;

@@ -52,6 +52,7 @@ typedef enum {
 
 u32 mailbox_read(int channel);
 void mailbox_send(int channel, u32 data);
+uint32_t mailbox_write_read(uint8_t channel, uint32_t data);
 
 
 #endif

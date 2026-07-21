@@ -23,9 +23,11 @@ typedef struct cqueue {
 } cqueue_t;
 
 typedef void (*cqueue_loop_fn)(void*);
+typedef void (*cqueue_byte_loop_fn)(u8);
 
 extern cqueue_t* cqueue_create(u32 size,u32 type);
 void cqueue_destroy(cqueue_t* queue);
+void cqueue_clear(cqueue_t* queue);
 int cqueue_put(cqueue_t* queue, void* element);
 void* cqueue_poll(cqueue_t* queue);
 
@@ -36,9 +38,9 @@ u32 cqueue_count(cqueue_t* queue);
 void cqueue_for_each(cqueue_t* queue, cqueue_loop_fn fun);
 u32 cqueue_is_full(cqueue_t* queue);
 
-u8* cqueue_poll_byte(cqueue_t* queue);
-u8* cqueue_peek_byte(cqueue_t* queue);
-int cqueue_put_byte(cqueue_t* queue, u8* element);
-void cqueue_for_each_byte(cqueue_t* queue, cqueue_loop_fn fun);
+u8 cqueue_poll_byte(cqueue_t* queue);
+u8 cqueue_peek_byte(cqueue_t* queue);
+int cqueue_put_byte(cqueue_t* queue, u8 element);
+void cqueue_for_each_byte(cqueue_t* queue, cqueue_byte_loop_fn fun);
 
 #endif

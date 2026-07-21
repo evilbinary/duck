@@ -134,21 +134,33 @@ void page_map_current(vaddr_t virtualaddr, vaddr_t physaddr, u32 flags) {
 void *page_kernel_dir() { return kernel_page_dir; }
 
 void page_init() {
-  exception_regist(EX_DATA_FAULT, page_fault_handle);
-
 #ifdef VM_ENABLE
-  // create kernel page
-  kernel_page_dir = page_create(0);
-  if (kernel_page_dir == NULL) {
-    log_warn("page_create returned NULL, virtual memory not available\n");
-    return;
-  }
-  // parse
-  mm_parse_map(kernel_page_dir);
+  int cpu = cpu_get_id();
+  if (cpu == 0) {
+    exception_regist(EX_DATA_FAULT, page_fault_handle);
+    // Bootstrap CPU creates the shared kernel page table.
+    kernel_page_dir = page_create(0);
+    if (kernel_page_dir == NULL) {
+      log_warn("page_create returned NULL, virtual memory not available\n");
+      return;
+    }
 
-  // enable page
-  log_info("page enable page: %x\n", kernel_page_dir);
-  mm_page_enable((u64)kernel_page_dir);
-  log_info("page enable end\n");
+    mm_parse_map(kernel_page_dir);
+
+    log_info("page enable page: %x\n", kernel_page_dir);
+    mm_page_enable((page_dir_t)(uintptr_t)kernel_page_dir);
+    log_info("page enable end\n");
+  } else {
+    // Secondary cores only need to attach the existing shared kernel page
+    // table locally instead of rebuilding it.
+    if (kernel_page_dir == NULL) {
+      log_warn("ap %d kernel page dir is null\n", cpu);
+      return;
+    }
+
+    log_info("ap %d page attach: %x\n", cpu, kernel_page_dir);
+    mm_page_enable((page_dir_t)(uintptr_t)kernel_page_dir);
+    log_info("ap %d page attach end\n", cpu);
+  }
 #endif
 }
