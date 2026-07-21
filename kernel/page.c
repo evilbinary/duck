@@ -148,7 +148,7 @@ void page_init() {
     mm_parse_map(kernel_page_dir);
 
     log_info("page enable page: %x\n", kernel_page_dir);
-    mm_page_enable((u64)kernel_page_dir);
+    mm_page_enable((page_dir_t)(uintptr_t)kernel_page_dir);
     log_info("page enable end\n");
   } else {
     // Secondary cores only need to attach the existing shared kernel page
@@ -159,9 +159,7 @@ void page_init() {
     }
 
     log_info("ap %d page attach: %x\n", cpu, kernel_page_dir);
-    cpu_set_domain(0x07070707);
-    cpu_set_page((u32)(uintptr_t)kernel_page_dir);
-    cpu_enable_page();
+    mm_page_enable((page_dir_t)(uintptr_t)kernel_page_dir);
     log_info("ap %d page attach end\n", cpu);
   }
 #endif
