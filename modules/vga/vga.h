@@ -60,6 +60,7 @@ typedef struct vga_device {
 
 size_t vga_read(device_t* dev, void* buf, size_t len);
 size_t vga_write(device_t* dev, const void* buf, size_t len);
-size_t vga_ioctl(device_t* dev, u32 cmd, void* args);
+size_t vga_ioctl(device_t* dev, u32 cmd, ...);
+void vga_init_mode(vga_device_t* vga, int mode);
 
 #endif

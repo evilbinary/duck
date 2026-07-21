@@ -106,6 +106,10 @@
 
 #endif
 
+#ifndef ISR_USB
+#define ISR_USB 0x09
+#endif
+
 void platform_init(void);
 void platform_end(void);
 void platform_map(void);

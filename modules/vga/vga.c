@@ -6,6 +6,7 @@
 #include "vga.h"
 #include "dev/devfs.h"
 #include "dma/dma.h"
+#include "kernel/page.h"
 
 size_t vga_read(device_t* dev, void* buf, size_t len) {
   u32 ret = 0;
@@ -19,35 +20,43 @@ size_t vga_write(device_t* dev, const void* buf, size_t len) {
     log_error("not found vga\n");
     return ret;
   }
-  kstrncpy(vga->frambuffer, (const char*)buf, len);
-  return ret;
+  u8* dst = (u8*)vga->frambuffer;
+  const u8* src = (const u8*)buf;
+  for (size_t i = 0; i < len; i++) {
+    dst[i] = src[i];
+  }
+  return len;
 }
 
-size_t vga_ioctl(device_t* dev, u32 cmd, void* args) {
-  u32 ret = 0;
+size_t vga_ioctl(device_t* dev, u32 cmd, ...) {
+  size_t ret = 0;
+  va_list args;
+  va_start(args, cmd);
+  void* arg = va_arg(args, void*);
   vga_device_t* vga = dev->data;
   if (vga == NULL) {
     log_error("not found vga\n");
+    va_end(args);
     return ret;
   }
-  if (cmd == IOC_READ_FRAMBUFFER) {
-    ret = vga->frambuffer;
-  } else if (cmd == IOC_READ_FRAMBUFFER_WIDTH) {
+  if (cmd == VGA_IOC_READ_FRAMBUFFER) {
+    ret = (size_t)vga->frambuffer;
+  } else if (cmd == VGA_IOC_READ_FRAMBUFFER_WIDTH) {
     ret = vga->width;
-  } else if (cmd == IOC_READ_FRAMBUFFER_HEIGHT) {
+  } else if (cmd == VGA_IOC_READ_FRAMBUFFER_HEIGHT) {
     ret = vga->height;
-  } else if (cmd == IOC_READ_FRAMBUFFER_BPP) {
+  } else if (cmd == VGA_IOC_READ_FRAMBUFFER_BPP) {
     ret = vga->bpp;
-  } else if (cmd == IOC_FLUSH_FRAMBUFFER) {
+  } else if (cmd == VGA_IOC_FLUSH_FRAMBUFFER) {
     if (vga->frambuffer != NULL && vga->flip_buffer != NULL) {
-      u32 offset = (u32*)args;
+      u32 offset = (u32)(size_t)arg;
       vga->flip_buffer(vga, offset % vga->framebuffer_count);
     }
-  } else if (cmd == IOC_READ_FRAMBUFFER_INFO) {
-    vga_device_t* buffer_info = (u32*)args;
-    u32 size = (u32*)args;
+  } else if (cmd == VGA_IOC_READ_FRAMBUFFER_INFO) {
+    vga_device_t* buffer_info = (vga_device_t*)arg;
     *buffer_info = *vga;
   }
+  va_end(args);
   return ret;
 }
 
@@ -65,7 +74,7 @@ void vga_init_device(device_t* dev) {
 
   // kprintf("bar0:%x ", bar0);
   vga_device_t* vga = kmalloc(sizeof(vga_device_t),DEFAULT_TYPE);
-  vga->frambuffer = bar0;
+  vga->frambuffer = (u32*)bar0;
   dev->data = vga;
   u32 addr = bar0;
   for (int i = 0; i < 128; i++) {
@@ -77,7 +86,7 @@ void vga_init_device(device_t* dev) {
   vga_init_mode(vga, VGA_MODE_320x200x256);
 }
 
-int vga_init(void) {
+void vga_init(void) {
   device_t* dev = kmalloc(sizeof(device_t),DEFAULT_TYPE);
   dev->name = "vga";
   dev->read = vga_read;
@@ -103,7 +112,6 @@ int vga_init(void) {
     log_error("dev fb not found\n");
   }
 
-  return 0;
 }
 
 void vga_exit(void) { log_debug("vga exit\n"); }
