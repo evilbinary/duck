@@ -36,7 +36,8 @@ enum {
 
 void interrupt_regist(u32 vec, interrupt_handler_t handler);
 
-void interrupt_init();
+void interrupt_init(int cpu);
+void interrupt_regist_all(void);
 
 void interrupt_regist_service(interrupt_handler_t handler);
 

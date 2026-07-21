@@ -6,6 +6,9 @@
 #include "context.h"
 #include "cpu.h"
 #include "arch/cpu.h"
+#include "kernel/io.h"
+#include "kernel/logger.h"
+#include "kernel/string.h"
 
 extern boot_info_t* boot_info;
 

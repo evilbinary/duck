@@ -1,4 +1,5 @@
 #include "buffer.h"
+#include "kernel/io.h"
 
 // #define DEBUG_BUFFER 1
 
@@ -84,8 +85,8 @@ size_t buffer_write(buffer_t* buffer, u8* buf, size_t len) {
   return i;
 }
 
-void buffer_print(u8* ch){
-  kprintf("%c",ch);
+void buffer_print(u8 ch){
+  kprintf("%c", ch);
 }
 
 void buffer_dump(buffer_t* buffer){

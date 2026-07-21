@@ -62,7 +62,6 @@ void cpu_halt();
 #define USER_MODE 3
 #define GET_CPL(x) (((x)&0x03))  //0-3
 
-
 int cpu_tas(volatile int* addr, int newval);
 
 #endif

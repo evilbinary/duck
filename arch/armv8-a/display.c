@@ -7,6 +7,7 @@
 
 #include "../boot.h"
 #include "../lock.h"
+#include "gpio.h"
 extern boot_info_t* boot_info;
 
 void cls() {}

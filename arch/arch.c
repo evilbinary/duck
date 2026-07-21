@@ -5,6 +5,7 @@
  ********************************************************************/
 #include "arch.h"
 #include "context.h"
+#include "kernel/string.h"
 
 boot_info_t* boot_info = NULL;
 
@@ -36,10 +37,7 @@ void arch_init(boot_info_t* boot, int cpu) {
     platform_end();
   } else {
 #ifdef MP_ENABLE
-    if (boot_info == NULL) {
-      boot_info = boot;
-    }
-    ap_init(boot, cpu);
+    ap_init(cpu);
 #endif
   }
 }

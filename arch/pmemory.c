@@ -1,6 +1,9 @@
 #include "pmemory.h"
 
 #include "kernel/common.h"
+#include "kernel/logger.h"
+#include "kernel/page.h"
+#include "kernel/string.h"
 
 static u32 count = 0;
 const size_t align_to = 16;
@@ -104,7 +107,7 @@ void* ya_sbrk(size_t size) {
   while (current) {
     if (current->type == MEM_FREE) {
       if (size <= (current->size - 4096)) {
-        addr = current->addr;
+        addr = (void*)current->addr;
         current->addr += size;
         current->size -= size;
         if ((current->size - 4096) <= 0) {

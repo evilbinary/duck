@@ -74,7 +74,7 @@ typedef struct block {
 typedef void* (*mm_alloc_fn)(size_t size);
 typedef void (*mm_free_fn)(void* ptr);
 typedef void (*mm_init_fn)();
-typedef void* (*mm_size_fn)(void* ptr);
+typedef size_t (*mm_size_fn)(void* ptr);
 
 typedef struct memory_manager {
   mm_alloc_fn alloc;

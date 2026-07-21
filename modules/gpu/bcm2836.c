@@ -1,5 +1,6 @@
 #include "bcm2836.h"
 
+#include "kernel/page.h"
 #include "vga/vga.h"
 
 #define RGB24_2_RGB565(r, g, b) \
@@ -51,7 +52,8 @@ int bcm2836_init(vga_device_t* vga) {
 
   mailbuffer[25] = 0;
 
-  mailbox_write_read(BCM2835_MAILBOX_PROP_CHANNEL, mailbuffer);
+  mailbox_write_read(BCM2835_MAILBOX_PROP_CHANNEL,
+                     GPU_MEM_BASE + (uint32_t)(uintptr_t)mailbuffer);
   // mailbox_write_read(BCM2835_MAILBOX_FB_CHANNEL, mailbuffer);
 
   if (mailbuffer[1] != BCM2835_MAILBOX_SUCCESS) {
@@ -62,8 +64,8 @@ int bcm2836_init(vga_device_t* vga) {
   u32 fb_addr = mailbuffer[23] & 0x3FFFFFFF;
   u32 fb_size = mailbuffer[24];
 
-  vga->pframbuffer = fb_addr;
-  vga->frambuffer = 0xfb000000;
+  vga->pframbuffer = (u32*)(uintptr_t)fb_addr;
+  vga->frambuffer = (u32*)(uintptr_t)0xfb000000UL;
 
   vga->framebuffer_length = fb_size*8;
 
@@ -102,7 +104,8 @@ int gpu_init_mode(vga_device_t* vga, int mode) {
     vga->height = 768;
     vga->bpp = 32;
   } else {
-    log_error("no support mode %x\n");
+    log_error("no support mode %x\n", mode);
+    return -1;
   }
   vga->mode = mode;
   vga->write = NULL;
@@ -115,14 +118,14 @@ int gpu_init_mode(vga_device_t* vga, int mode) {
 
   vga->framebuffer_index = 0;
   vga->framebuffer_count = 1;
-  log_debug("fb addr:%x end:%x len:%x\n", vga->frambuffer,
-            vga->frambuffer + vga->framebuffer_length, vga->framebuffer_length);
-  u32 addr = vga->frambuffer;
-  if (addr <= 0) {
-    return;
+  u32 addr = (u32)(uintptr_t)vga->frambuffer;
+  log_debug("fb addr:%x end:%x len:%x\n", addr,
+            addr + vga->framebuffer_length, vga->framebuffer_length);
+  if (addr == 0) {
+    return -1;
   }
 
-  u32 paddr = vga->pframbuffer;
+  u32 paddr = (u32)(uintptr_t)vga->pframbuffer;
   log_debug("map fb start %x %x\n", addr, paddr);
 
   for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {

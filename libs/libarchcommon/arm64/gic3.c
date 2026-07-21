@@ -4,8 +4,8 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "archcommon/gic3.h"
-
-// ARM GICv3: MMIO for Distributor/Redistributor, system registers for CPU interface.
+#include "gic3.h"
+extern int kprintf(const char* fmt, ...);
 // Keep the legacy gic2-style API (gic_init/gic_enable/gic_irqwho/gic_irqack/gic_send_sgi).
 
 typedef struct {

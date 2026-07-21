@@ -8,6 +8,10 @@
 
 #include "types.h"
 
+void* kmalloc(size_t size, u32 flag);
+void kfree(void* ptr);
+void* kmemset(void* s, int c, size_t n);
+
 #define DEFAULT_TYPE 1 << 0
 #define KERNEL_TYPE 1 << 1
 #define DEVICE_TYPE 1 << 2

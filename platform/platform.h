@@ -4,6 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #ifndef PLATFORM_H
+#define PLATFORM_H
 
 #ifdef RASPI2
 
@@ -104,5 +105,12 @@
 #define MP_ENABLE 1  //多cpu
 
 #endif
+
+void platform_init(void);
+void platform_end(void);
+void platform_map(void);
+void ipi_enable(int cpu);
+void ipi_send(int cpu, int vec);
+void ipi_clear(int cpu);
 
 #endif

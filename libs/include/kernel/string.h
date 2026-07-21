@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 #include "../types.h"
+#include "stdarg.h"
 
 void    *kmemccpy(void *, const void *, int, size_t);
 void    *kmemchr(const void *, int, size_t);
@@ -36,6 +37,8 @@ size_t   kstrxfrm(char *, const char *, size_t);
 
 char*	kstrndup(const char *s, size_t n);	// This is not in the standard.
 char*	kstrdup(const char *s);				// This is not in the standard.
+
+int kvsprintf(char *buf, const char *fmt, va_list args);
 
 #ifdef __cplusplus
 }
