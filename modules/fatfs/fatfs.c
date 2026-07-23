@@ -161,7 +161,7 @@ static uint fat_device_read(vnode_t *node, uint offset, size_t nbytes,
                            u8 *buffer) {
   uint ret = 0;
   device_t *dev = (device_t *)node->device;
-  if (dev == NULL) {
+  if (dev == NULL || dev->read == NULL) {
     return ret;
   }
   if (dev->ioctl != NULL) {
@@ -175,7 +175,7 @@ static uint fat_device_write(vnode_t *node, uint offset, size_t nbytes,
                             u8 *buffer) {
   uint ret = 0;
   device_t *dev = (device_t *)node->device;
-  if (dev == NULL) {
+  if (dev == NULL || dev->write == NULL) {
     return ret;
   }
   if (dev->ioctl != NULL) {
