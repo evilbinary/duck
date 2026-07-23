@@ -2,14 +2,14 @@
  * Copyright 2021-present evilbinary
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
+ * Allwinner (T113-S3 / V3S) USB host stub — MUSB/XHCI TODO
  ********************************************************************/
-#ifndef EXCEPTIONS_H
-#define EXCEPTIONS_H
+#include "usb.h"
 
-#include "arch/arch.h"
-#include "thread.h"
+void usb_host_init(void) {
+    /* TODO: MUSB / XHCI host for sunxi */
+}
 
-void exception_init();
-
-
-#endif
+void usb_device_init(void) {
+    /* TODO: MUSB device mode for sunxi */
+}

@@ -29,10 +29,10 @@ plat_source={
         'dwc2.c',
     ],
     'v3s':[
-        'dwc2.c',
+        'sunxi.c',
     ],
     't113-s3':[
-        'dwc2.c',
+        'sunxi.c',
     ],
 }
 

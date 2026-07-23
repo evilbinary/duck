@@ -9,6 +9,12 @@
 #include "kernel/page.h"
 #include "platform/platform.h"
 
+// DWC2 only exists on BCM28xx (Raspberry Pi). T113/V3S use MUSB/XHCI —
+// touching 0x3F980000 there hangs the bus with no abort.
+#if defined(RASPI3) || defined(RASPI2) || defined(ARMV8_A)
+#define DWC2_HW 1
+#endif
+
 // DWC2 基地址 - raspi3 (物理地址)
 #define DWC2_BASE_PHYS   0x3F980000
 #define DWC2_BASE        DWC2_BASE_PHYS
@@ -198,7 +204,7 @@ static void dwc2_flush_all_fifos(void) {
 static int dwc2_core_init(void) {
     USB_INFO("DWC2: initializing core...\n");
 
-#if defined(RASPI3) || defined(RASPI2) || defined(ARMV8_A)
+#ifdef DWC2_HW
     // 读取 GUSBCFG
     u32 gusbcfg = dwc2_read(DWC2_GUSBCFG);
 
@@ -251,7 +257,7 @@ static int dwc2_core_init(void) {
 static int dwc2_host_init(void) {
     USB_INFO("DWC2: initializing host mode...\n");
 
-#if defined(RASPI3) || defined(RASPI2) || defined(ARMV8_A) || defined(V3S) || defined(T113_S3)
+#ifdef DWC2_HW
     // 配置主机模式
     u32 hcfg = dwc2_read(DWC2_HCFG);
     hcfg &= ~DWC2_HCFG_FSLSPCS_MASK;
@@ -765,7 +771,7 @@ int dwc2_init(void) {
 
 // 检测并枚举端口上的设备
 static void dwc2_detect_device(void) {
-#if defined(RASPI3) || defined(RASPI2) || defined(ARMV8_A) || defined(V3S) || defined(T113_S3)
+#ifdef DWC2_HW
     USB_INFO("DWC2: checking port status...\n");
     
     // 先启用端口电源
@@ -866,11 +872,13 @@ void dwc2_shutdown(void) {
     
     USB_INFO("DWC2 USB controller shutting down...\n");
     
+#ifdef DWC2_HW
     // 禁用端口
     dwc2_write(DWC2_HPRT0, 0);
     
     // 刷新 FIFO
     dwc2_flush_all_fifos();
+#endif
     
     dwc2_initialized = 0;
     USB_INFO("DWC2 USB controller shut down\n");
@@ -896,10 +904,12 @@ static hcd_ops_t dwc2_hcd_ops = {
 
 // 模块初始化
 void dwc2_module_init(void) {
+#ifdef DWC2_HW
     // 映射 USB 外设地址 (ARMv8-A 需要在启用 MMU 后映射)
     page_map(DWC2_BASE_PHYS & ~0xfff, DWC2_BASE_PHYS & ~0xfff, PAGE_DEV);
 
     hcd_register_ops(&dwc2_hcd_ops);
+#endif
 }
 
 module_t dwc2_module = {
