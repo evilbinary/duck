@@ -164,7 +164,9 @@ static uint fat_device_read(vnode_t *node, uint offset, size_t nbytes,
   if (dev == NULL) {
     return ret;
   }
-  dev->ioctl(dev, IOC_WRITE_OFFSET, offset);
+  if (dev->ioctl != NULL) {
+    dev->ioctl(dev, IOC_WRITE_OFFSET, offset);
+  }
   ret = dev->read(dev, buffer, nbytes);
   return ret;
 }
@@ -176,7 +178,9 @@ static uint fat_device_write(vnode_t *node, uint offset, size_t nbytes,
   if (dev == NULL) {
     return ret;
   }
-  dev->ioctl(dev, IOC_WRITE_OFFSET, offset);
+  if (dev->ioctl != NULL) {
+    dev->ioctl(dev, IOC_WRITE_OFFSET, offset);
+  }
   ret = dev->write(dev, buffer, nbytes);
   return ret;
 }
@@ -272,8 +276,7 @@ uint get_fattime(void) {
   time.second = 0;
   time.year = 1900;
 
-  int time_fd = -1;
-  time_fd = sys_open("/dev/time", 0);
+  int time_fd = (int)sys_open_kernel("/dev/time", 0);
   if (time_fd < 0) return 0;
 
   int ret = sys_read(time_fd, &time, sizeof(rtc_time_t));

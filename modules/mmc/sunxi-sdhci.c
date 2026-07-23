@@ -665,10 +665,9 @@ int sdhci_sunxi_probe(sdhci_device_t *hci) {
   int status;
 
   sdhci_sunxi_reset(hci);
-  // sdhci_sunxi_setclock(hci, 400 * 1000);
-  // sdhci_sunxi_setwidth(hci, MMC_BUS_WIDTH_1);
-  sdhci_sunxi_setclock(hci, pdat->clock);
-  sdhci_sunxi_setwidth(hci, pdat->width);
+  // Identification must start at <= 400kHz / 1-bit
+  sdhci_sunxi_setclock(hci, 400 * 1000);
+  sdhci_sunxi_setwidth(hci, MMC_BUS_WIDTH_1);
 
   if (!go_idle_state(hci)) {
     kprintf("prob go idle false\n");
