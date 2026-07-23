@@ -26,7 +26,7 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   pdat->port= 0;
 
   pdat->voltage = MMC_VDD_27_36;
-  pdat->clock = 52000000;
+  pdat->clock = 52000000;  // 工作时钟上限；识别阶段用 400kHz，见 sdhci_sunxi_probe
   pdat->width = MMC_BUS_WIDTH_4;
 
   pdat->reset = 8;

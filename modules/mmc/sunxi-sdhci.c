@@ -665,7 +665,7 @@ int sdhci_sunxi_probe(sdhci_device_t *hci) {
   int status;
 
   sdhci_sunxi_reset(hci);
-  // Identification must start at <= 400kHz / 1-bit
+  // SD 识别阶段必须用 <=400kHz / 1-bit；pdat->clock 是识别成功后的工作时钟上限
   sdhci_sunxi_setclock(hci, 400 * 1000);
   sdhci_sunxi_setwidth(hci, MMC_BUS_WIDTH_1);
 
