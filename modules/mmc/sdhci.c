@@ -54,7 +54,9 @@ static size_t sdhci_ioctl(device_t* dev, uint cmd, ...) {
 
 int sdhci_init(void) {
   log_info("sdhci_init\n");
-  device_t* dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
+  /* KERNEL_TYPE：避免 DEFAULT_TYPE(vm) 被后续模块踩掉 */
+  device_t* dev = kmalloc(sizeof(device_t), KERNEL_TYPE);
+  kmemset(dev, 0, sizeof(device_t));
   dev->name = "sata";
   dev->read = sdhci_read;
   dev->write = sdhci_write;
@@ -63,15 +65,13 @@ int sdhci_init(void) {
   dev->type = DEVICE_TYPE_BLOCK;
   device_add(dev);
 
-  sdhci_device_t* sdhci_dev = kmalloc(sizeof(sdhci_device_t), DEFAULT_TYPE);
-  sdhci_dev->offseth = 0;
-  sdhci_dev->offsetl = 0;
+  sdhci_device_t* sdhci_dev = kmalloc(sizeof(sdhci_device_t), KERNEL_TYPE);
+  kmemset(sdhci_dev, 0, sizeof(sdhci_device_t));
   sdhci_dev->port = dev->id - DEVICE_SATA;
   dev->data = sdhci_dev;
 
   sdhci_dev->read_buf = kmalloc(BYTE_PER_SECTOR, DEVICE_TYPE);
   sdhci_dev->read_buf_size = BYTE_PER_SECTOR;
-
   sdhci_dev->write_buf = kmalloc(BYTE_PER_SECTOR, DEVICE_TYPE);
   sdhci_dev->write_buf_size = BYTE_PER_SECTOR;
   sdhci_dev_init(sdhci_dev);

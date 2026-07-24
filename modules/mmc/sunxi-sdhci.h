@@ -205,6 +205,7 @@ enum {
   SD_DATA1_CRC = 0x12c,
   SD_DATA0_CRC = 0x130,
   SD_CRC_STA = 0x134,
+  SD_SAMP_DL = 0x144,
   SD_FIFO = 0x200,
 };
 
