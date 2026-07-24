@@ -174,7 +174,9 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   // kstrcpy(copy->name, thread->name);
   copy->name = thread->name;
   copy->exec = NULL;
-  copy->counter = thread->counter;
+  /* 调度按 counter 最低优先；继承父进程 counter 会让新进程长期饿死。
+   * 新线程从 0 起跑，跑一会儿自然与其它线程汇合。 */
+  copy->counter = 0;
   copy->fault_count = 0;
   copy->sleep_counter = 0;
   copy->dump_count = 0;

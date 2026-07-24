@@ -66,9 +66,13 @@ void timer_init(int hz) {
 
 void timer_end() {
   int cpu = cpu_get_id();
-  u32 pending = read_core_timer_pending(cpu);
-  if (pending & INT_SRC_TIMER3) {
+  /* 与 raspi3 一致：始终重装 TVAL。若依赖 pending 位，QEMU 上可能漏重装导致 tick 极慢。 */
+  if (cntfrq[cpu] != 0) {
     write_cntv_tval(cntfrq[cpu]);
+  } else if (cntfrq[0] != 0) {
+    write_cntv_tval(cntfrq[0]);
+  } else {
+    write_cntv_tval(1);
   }
 }
 
