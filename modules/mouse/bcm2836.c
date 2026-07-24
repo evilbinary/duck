@@ -7,12 +7,51 @@
 #include "mouse.h"
 #include "dev/devfs.h"
 
-int mouse_init(void) {
-  // BCM2836/BCM2837 没有 PS/2 鼠标，USB 鼠标由 usb_mouse 驱动处理
-  // 不注册 DEVICE_MOUSE，避免占用设备 ID
-  return 0;
+/* QEMU/raspi 无 PS/2；USB 鼠标另接。提供空 /dev/mouse，避免 GUI open 失败。 */
+
+static mouse_device_t mouse_device;
+
+static size_t mouse_read(device_t* dev, void* buf, size_t len) {
+  mouse_event_t* data;
+  (void)dev;
+  if (buf == NULL || len < sizeof(mouse_event_t)) {
+    return 0;
+  }
+  data = (mouse_event_t*)buf;
+  data->sate = 0;
+  data->x = (i32)mouse_device.x;
+  data->y = (i32)mouse_device.y;
+  return sizeof(mouse_event_t);
 }
 
+int mouse_init(void) {
+  device_t* dev = kmalloc(sizeof(device_t), KERNEL_TYPE);
+  if (dev == NULL) {
+    return -1;
+  }
+  kmemset(dev, 0, sizeof(device_t));
+  kmemset(&mouse_device, 0, sizeof(mouse_device));
+
+  dev->name = "mouse";
+  dev->read = mouse_read;
+  dev->id = DEVICE_MOUSE;
+  dev->type = DEVICE_TYPE_CHAR;
+  dev->data = &mouse_device;
+  device_add(dev);
+
+  {
+    device_t* mouse_dev = device_find(DEVICE_MOUSE);
+    if (mouse_dev != NULL) {
+      vnode_t* mouse = vfs_create_node("mouse", V_FILE);
+      vfs_mount(NULL, "/dev", mouse);
+      mouse->device = mouse_dev;
+      mouse->op = &device_operator;
+    } else {
+      kprintf("dev mouse not found\n");
+    }
+  }
+  return 0;
+}
 
 void mouse_exit(void) { kprintf("mouse exit\n"); }
 

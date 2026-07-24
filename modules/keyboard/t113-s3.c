@@ -85,8 +85,17 @@ struct gpiopins {
 int pcal_write(u8 cmd, u16 data);
 u16 pcal_read(u8 reg);
 
+/* 板子无 PCAL6416A 时禁止继续轮询 I2C，避免刷屏 */
+static int pcal_present = 0;
+
 static size_t read(device_t* dev, void* buf, size_t len) {
   u32 ret = 0;
+  (void)dev;
+  (void)len;
+
+  if (!pcal_present) {
+    return 0;
+  }
 
   u16 gpio0 = pcal_read(PCAL6416A_INPUT);
   u16 gpio1 = pcal_read(PCAL6416A_INPUT1);
@@ -143,7 +152,7 @@ static size_t read(device_t* dev, void* buf, size_t len) {
   // kprintf("pres key_cnt %d scan_code_index %d\n",scan_code_index,key_cnt);
 
 
-  return key_cnt > 0 ? key_cnt : -1;
+  return key_cnt > 0 ? key_cnt : 0;
 }
 
 int pcal_write(u8 cmd, u16 data) {
@@ -171,6 +180,10 @@ u16 pcal_read(u8 reg) {
   int twi = 0;
   char buf[2];
 
+  if (!pcal_present) {
+    return 0xffff;
+  }
+
   buf[0] = reg;
   i2c_msg_t msg;
   msg.buf = buf;
@@ -183,6 +196,9 @@ u16 pcal_read(u8 reg) {
 
   int ret = sunxi_i2c_write_data(twi, &msg);
   // kprintf("pcal read write ret=%x\n", ret);
+  if ((u32)ret == (u32)-1) {
+    return 0xffff;
+  }
 
   buf[0] = 0;
   buf[1] = 0;
@@ -195,6 +211,9 @@ u16 pcal_read(u8 reg) {
 
   ret = sunxi_i2c_read_data(twi, &msg);
   sunxi_i2c_stop(twi);
+  if ((u32)ret == (u32)-1) {
+    return 0xffff;
+  }
 
   return *((u16*)msg.buf);
 }
@@ -208,7 +227,14 @@ void* i2c_handler(interrupt_context_t* ic) {
 }
 
 void pacl_init() {
-  pcal_write(PCAL6416A_CONFIG, 0xffff);
+  int ret = pcal_write(PCAL6416A_CONFIG, 0xffff);
+  if ((u32)ret == (u32)-1) {
+    pcal_present = 0;
+    kprintf("pcal6416a not present, skip gpio keypad\n");
+    return;
+  }
+
+  pcal_present = 1;
 
   pcal_write(PCAL6416A_INPUT_LATCH, 0);
 
@@ -220,7 +246,7 @@ void pacl_init() {
 
   u16 data = pcal_read(PCAL6416A_INPUT);
 
-  kprintf("read data %x\n", data);
+  kprintf("pcal6416a ok, input %x\n", data);
 }
 
 int keyboard_init(void) {
