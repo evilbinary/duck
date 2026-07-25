@@ -404,9 +404,10 @@ u64 sys_open_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5) {
     // open(path, flags, mode)
     pathname = (const char*)a0;
     flags = (int)a1;
-    /* Some saved syscall frames swap r1/r2; mode looks like 0666, flags like 0x20000. */
-    if (((u32)a1 & 0xF0000) == 0 && ((u32)a2 & 0xF0000) != 0 &&
-        (u32)a1 <= 07777U) {
+    /* 部分调用约定会把 flags/mode 对调。仅当 a1 像 mode、a2 像合理
+     * flags（非用户指针）时才交换；否则 O_RDONLY=0 时 a2 残留垃圾会误伤。 */
+    if ((u32)a1 <= 07777U && (u32)a2 < 0x100000u &&
+        ((u32)a2 & 0xF0000) != 0) {
       flags = (int)a2;
     }
   }
