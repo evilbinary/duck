@@ -47,11 +47,12 @@ long xwin_syscall_create(long x, long y, long width, long height, long uflags,
         }
     }
     
-    u32 flags = (u32)uflags | XWIN_FLAG_VISIBLE | XWIN_FLAG_FOCUSABLE;
-    if (flags & XWIN_FLAG_DIRECT) {
-        flags &= ~(XWIN_FLAG_BORDERED | XWIN_FLAG_DRAGGABLE);
-    } else if (disp->vga == NULL || (u32)width != disp->vga->width ||
-               (u32)height != disp->vga->height || x != 0 || y != 0) {
+    /* 只认用户显式传入的 DIRECT；勿把 r4 垃圾位当成 BORDERED */
+    u32 flags = ((u32)uflags & XWIN_FLAG_DIRECT) | XWIN_FLAG_VISIBLE |
+                XWIN_FLAG_FOCUSABLE;
+    if (!(flags & XWIN_FLAG_DIRECT) &&
+        (disp->vga == NULL || (u32)width != disp->vga->width ||
+         (u32)height != disp->vga->height || x != 0 || y != 0)) {
         flags |= XWIN_FLAG_BORDERED | XWIN_FLAG_DRAGGABLE;
     }
     xwindow_t* win = xwin_create_window(disp, disp->root_window, 

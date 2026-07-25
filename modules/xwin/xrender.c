@@ -220,38 +220,57 @@ void xwin_composite_window(xdisplay_t* disp, xwindow_t* win) {
     u32 screen_w = disp->vga->width;
     u32 screen_h = disp->vga->height;
     
-    // 计算可见区域
+    // 窗口外框
     i32 sx = win->abs_x;
     i32 sy = win->abs_y;
     i32 ex = sx + win->width;
     i32 ey = sy + win->height;
+
+    /* 有边框时：客户区画在标题栏/边框内侧，避免被装饰盖住 */
+    i32 cox = 0, coy = 0, cbw = 0;
+    int bordered = (win->flags & XWIN_FLAG_BORDERED) && win != disp->root_window;
+    if (bordered) {
+        xtheme_t* t = xtheme_current(disp);
+        cbw = (i32)t->border_width;
+        coy = (i32)t->title_bar_height;
+        cox = cbw;
+    }
+
+    i32 csx = sx + cox;
+    i32 csy = sy + coy;
+    i32 cex = ex - cbw;
+    i32 cey = ey - cbw;
     
-    // 裁剪到屏幕范围
-    i32 clip_sx = (sx < 0) ? 0 : sx;
-    i32 clip_sy = (sy < 0) ? 0 : sy;
-    i32 clip_ex = (ex > (i32)screen_w) ? screen_w : ex;
-    i32 clip_ey = (ey > (i32)screen_h) ? screen_h : ey;
+    // 客户区裁剪到屏幕
+    i32 clip_sx = (csx < 0) ? 0 : csx;
+    i32 clip_sy = (csy < 0) ? 0 : csy;
+    i32 clip_ex = (cex > (i32)screen_w) ? (i32)screen_w : cex;
+    i32 clip_ey = (cey > (i32)screen_h) ? (i32)screen_h : cey;
     
     i32 copy_width = clip_ex - clip_sx;
-    if (copy_width <= 0) return;
-    
-    // 优化：按行复制窗口内容
-    for (i32 y = clip_sy; y < clip_ey; y++) {
-        i32 src_y = y - sy;
-        i32 src_x = clip_sx - sx;
-        
-        u32* dst_row = dst + y * screen_w + clip_sx;
-        u32* src_row = src + src_y * win->width + src_x;
-        
-        kmemcpy(dst_row, src_row, copy_width * sizeof(u32));
+    if (copy_width > 0 && clip_sy < clip_ey) {
+        for (i32 y = clip_sy; y < clip_ey; y++) {
+            i32 src_y = y - csy;
+            i32 src_x = clip_sx - csx;
+            if (src_y < 0 || src_y >= (i32)win->height) continue;
+            if (src_x < 0) src_x = 0;
+            i32 row_w = copy_width;
+            if (src_x + row_w > (i32)win->width) {
+                row_w = (i32)win->width - src_x;
+            }
+            if (row_w <= 0) continue;
+
+            u32* dst_row = dst + y * screen_w + clip_sx;
+            u32* src_row = src + src_y * win->width + src_x;
+            kmemcpy(dst_row, src_row, row_w * sizeof(u32));
+        }
     }
     
-    // 使用主题渲染窗口装饰
-    if (win->flags & XWIN_FLAG_BORDERED && win != disp->root_window) {
+    // 装饰画在外框上（标题栏/边框），不覆盖客户区
+    if (bordered) {
         xtheme_render_decoration(disp, win, dst, screen_w, screen_h, sx, sy, ex, ey);
     }
     
-    // 清除损坏标记
     win->damaged = 0;
 }
 
