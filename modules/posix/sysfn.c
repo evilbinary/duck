@@ -20,7 +20,7 @@
 static void* syscall_table[SYSCALL_NUMBER];
 extern vnode_t* root_node;
 extern long xwin_syscall_handler(u32 num, long a1, long a2, long a3, long a4,
-                                 long a5);
+                                 long a5, long a6);
 
 static int sys_mmap_pages_mapped(thread_t* current, void* addr, size_t length) {
   if (current == NULL || current->vm == NULL || addr == NULL || length == 0) {
@@ -1149,7 +1149,8 @@ int sys_fn_faild_handler(int no, interrupt_context_t* ic) {
     context_ret(ic) =
         xwin_syscall_handler((u32)call_id, (long)context_arg0(ic),
                              (long)context_arg1(ic), (long)context_arg2(ic),
-                             (long)context_arg3(ic), (long)context_arg4(ic));
+                             (long)context_arg3(ic), (long)context_arg4(ic),
+                             (long)context_arg5(ic));
     return 0;
   }
   log_debug("sys fn faild %x\n", call_id);

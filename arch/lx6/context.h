@@ -216,6 +216,8 @@ typedef struct context_t {
 #define context_arg2(context) context->a4
 #define context_arg3(context) context->a5
 #define context_arg4(context) context->a6
+/* Xtensa syscall 惯例下 a7 已作 call number，第 6 参暂不支持 */
+#define context_arg5(context) ((u32)0)
 #define context_set_entry(context, entry) \
         (((interrupt_context_t*)(context))->pc = (u32)(entry));
 

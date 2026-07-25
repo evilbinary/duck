@@ -280,6 +280,7 @@ typedef struct context_t {
 #define context_arg2(context) context->a2
 #define context_arg3(context) context->a3
 #define context_arg4(context) context->a4
+#define context_arg5(context) context->a5
 
 #define context_set_entry(context, entry) \
   (((interrupt_context_t*)context)->ra = entry);

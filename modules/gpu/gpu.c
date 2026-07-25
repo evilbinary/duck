@@ -44,10 +44,24 @@ size_t gpu_ioctl(device_t* dev, u32 cmd, void* args) {
       vga->flip_buffer(vga, offset % vga->framebuffer_count);
     }
   } else if (cmd == VGA_IOC_READ_FRAMBUFFER_INFO) {
-    //gpu_init_device(vga);
-    vga_device_t* buffer_info = (u32*)args;
-    u32 size = (u32*)args;
-    *buffer_info = *vga;
+    /* 用户态是 framebuffer_info_t，比 vga_device_t 短；只拷前段安全字段 */
+    if (args != NULL) {
+      u32 info[12];
+      info[0] = vga->width;
+      info[1] = vga->height;
+      info[2] = vga->bpp;
+      info[3] = vga->mode;
+      info[4] = (u32)(uintptr_t)vga->frambuffer;
+      info[5] = vga->framebuffer_count;
+      info[6] = vga->framebuffer_index;
+      info[7] = vga->framebuffer_length;
+      info[8] = vga->inited;
+      info[9] = 0;
+      info[10] = 0;
+      info[11] = vga->format;
+      kmemcpy(args, info, sizeof(info));
+    }
+    ret = (u32)(uintptr_t)vga->frambuffer;
   }
   return ret;
 }

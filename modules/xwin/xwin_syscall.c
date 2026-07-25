@@ -34,12 +34,10 @@ extern xdisplay_t* g_display;
 
 // ========== Syscall 实现函数 ==========
 
-long xwin_syscall_create(long x, long y, long wh, long uflags, long title) {
+long xwin_syscall_create(long x, long y, long width, long height, long uflags,
+                         long title) {
     xdisplay_t* disp = g_display;
     if (disp == NULL) return 0;
-
-    u32 width = (u32)wh & 0xFFFF;
-    u32 height = ((u32)wh >> 16) & 0xFFFF;
     
     char ktitle[64] = {0};
     const char* utitle = (const char*)title;
@@ -52,13 +50,13 @@ long xwin_syscall_create(long x, long y, long wh, long uflags, long title) {
     u32 flags = (u32)uflags | XWIN_FLAG_VISIBLE | XWIN_FLAG_FOCUSABLE;
     if (flags & XWIN_FLAG_DIRECT) {
         flags &= ~(XWIN_FLAG_BORDERED | XWIN_FLAG_DRAGGABLE);
-    } else if (disp->vga == NULL || width != disp->vga->width ||
-               height != disp->vga->height || x != 0 || y != 0) {
+    } else if (disp->vga == NULL || (u32)width != disp->vga->width ||
+               (u32)height != disp->vga->height || x != 0 || y != 0) {
         flags |= XWIN_FLAG_BORDERED | XWIN_FLAG_DRAGGABLE;
     }
     xwindow_t* win = xwin_create_window(disp, disp->root_window, 
                                         (i32)x, (i32)y, 
-                                        width, height,
+                                        (u32)width, (u32)height,
                                         flags);
     if (win == NULL) return 0;
     
@@ -263,10 +261,11 @@ long xwin_syscall_update(long win_id) {
 
 // ========== Syscall 分发器 ==========
 
-long xwin_syscall_handler(u32 num, long a1, long a2, long a3, long a4, long a5) {
+long xwin_syscall_handler(u32 num, long a1, long a2, long a3, long a4, long a5,
+                          long a6) {
     switch (num) {
         case SYS_XWIN_CREATE:
-            return xwin_syscall_create(a1, a2, a3, a4, a5);
+            return xwin_syscall_create(a1, a2, a3, a4, a5, a6);
         case SYS_XWIN_DESTROY:
             return xwin_syscall_destroy(a1);
         case SYS_XWIN_MOVE:

@@ -472,7 +472,8 @@ int xwin_intersects(xwindow_t* a, xwindow_t* b);
 void xwin_get_screen_rect(xwindow_t* win, i32* x, i32* y, u32* w, u32* h);
 
 // syscall
-long xwin_syscall_handler(u32 num, long a1, long a2, long a3, long a4, long a5);
+long xwin_syscall_handler(u32 num, long a1, long a2, long a3, long a4, long a5,
+                          long a6);
 void xwin_register_syscall(void);
 
 #endif

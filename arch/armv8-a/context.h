@@ -279,6 +279,7 @@ typedef struct context_t {
 #define context_arg2(context) ((context)->x2)
 #define context_arg3(context) ((context)->x3)
 #define context_arg4(context) ((context)->x4)
+#define context_arg5(context) ((context)->x5)
 #define context_set_entry(context, entry)                \
   do {                                                   \
     ((interrupt_context_t*)(context))->pc = (u64)(entry); \

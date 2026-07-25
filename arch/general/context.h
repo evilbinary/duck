@@ -120,6 +120,7 @@ typedef struct context_t {
 #define context_arg2(context) context->edx
 #define context_arg3(context) context->ecx
 #define context_arg4(context) context->ebx
+#define context_arg5(context) context->ebp
 #define context_set_entry(context, entry) \
   ((interrupt_context_t*)context)->eip = entry
 

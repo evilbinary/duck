@@ -128,7 +128,7 @@ void xwin_render_window(xdisplay_t* disp, xwindow_t* win) {
     xwin_composite_window(disp, win);
 }
 
-/* SVC 下 TTBR0=upage；把 LCD FB 映进当前进程（create 时做一次即可） */
+/* SVC 下 TTBR0=upage；把 LCD FB 映进当前进程 */
 void xwin_map_framebuffer(xdisplay_t* disp) {
     if (disp == NULL || disp->vga == NULL || disp->vga->frambuffer == NULL ||
         disp->buffer_size == 0) {
@@ -143,7 +143,11 @@ void xwin_map_framebuffer(xdisplay_t* disp) {
     if (cur == NULL || cur->vm == NULL || cur->vm->upage == NULL) {
         return;
     }
-    if (page_v2p(cur->vm->upage, (void*)(uintptr_t)va) != NULL) {
+
+    /* 已正确映射才跳过（须校验 PA，避免误判后跳过） */
+    void* phy = page_v2p(cur->vm->upage, (void*)(uintptr_t)va);
+    if (phy != NULL &&
+        (((u32)(uintptr_t)phy) & ~(PAGE_SIZE - 1)) == (pa & ~(PAGE_SIZE - 1))) {
         return;
     }
 
@@ -158,10 +162,12 @@ void xwin_flip_buffer(xdisplay_t* disp) {
         return;
     }
 
-    /* 有 flip_buffer 时也要先拷 back→fb（旧逻辑只 flush，T113 黑屏） */
-    if (disp->vga->frambuffer != NULL && disp->buffer_size > 0 &&
-        disp->back_buffer != (u32*)disp->vga->frambuffer) {
-        kmemcpy(disp->vga->frambuffer, disp->back_buffer, disp->buffer_size);
+    /* flip 时再确保映射：create 时 map 可能未进当前 upage / PA 不对 */
+    if (disp->vga->frambuffer != NULL && disp->buffer_size > 0) {
+        xwin_map_framebuffer(disp);
+        if (disp->back_buffer != (u32*)disp->vga->frambuffer) {
+            kmemcpy(disp->vga->frambuffer, disp->back_buffer, disp->buffer_size);
+        }
     }
     if (disp->vga->flip_buffer != NULL) {
         disp->vga->flip_buffer(disp->vga, 0);
