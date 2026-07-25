@@ -503,13 +503,16 @@ u32 xwin_text_height(u32 size) {
 
 void xwin_blit(xwindow_t* win, i32 x, i32 y, const u32* data, u32 w, u32 h) {
     if (win == NULL || win->framebuffer == NULL || data == NULL) return;
-    
+
     for (u32 py = 0; py < h; py++) {
         for (u32 px = 0; px < w; px++) {
             i32 sx = x + px;
             i32 sy = y + py;
-            if (sx >= 0 && sx < (i32)win->width && sy >= 0 && sy < (i32)win->height) {
-                win->framebuffer[sy * win->width + sx] = data[py * w + px];
+            if (sx >= 0 && sx < (i32)win->width && sy >= 0 &&
+                sy < (i32)win->height) {
+                /* DE ARGB：alpha=0 会当全透明 */
+                win->framebuffer[sy * win->width + sx] =
+                    data[py * w + px] | 0xFF000000u;
             }
         }
     }

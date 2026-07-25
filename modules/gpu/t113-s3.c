@@ -237,14 +237,16 @@ static void fb_t113_cfg_gpios(int gpio, int pin, int n, int cfg, int pull,
 }
 
 void t113_flush_screen(vga_device_t *vga, u32 index) {
-  // vga->framebuffer_index = index;
-  // kprintf("flip %d %d %d\n",index,vga->width,vga->height);
-  // rgb2nv12(vga->pframbuffer, vga->frambuffer, vga->width, vga->height);
-  // kmemcpy(vga->pframbuffer, vga->frambuffer, vga->width * vga->height);
-  cpu_invalid_tlb();
-  cache_inv_range(vga->pframbuffer,vga->width * vga->height*4);
-  // cpu_cache_flush_range(vga->pframbuffer, vga->width * vga->height*4);
-  // cpu_cache_flush_range(vga->frambuffer, vga->width * vga->height*4);
+  (void)index;
+  u32 len = vga->framebuffer_length;
+  if (len == 0) {
+    len = vga->width * vga->height * 4;
+  }
+  /* 只 flush CPU 映射的 frambuffer；pframbuffer 是物理地址不能当 VA */
+  if (vga->frambuffer != NULL) {
+    cpu_cache_flush_range((u32)(uintptr_t)vga->frambuffer,
+                          (u32)(uintptr_t)vga->frambuffer + len);
+  }
 }
 
 int gpu_init_mode(vga_device_t *vga, int mode) {
@@ -491,7 +493,6 @@ int t113_lcd_init(vga_device_t *vga) {
   // for (int i = 0; i < vga->framebuffer_length / 8; i++) {
   //   buffer[i] = 0;
   // }
-
 
   log_info("t113_lcd_init end\n");
 

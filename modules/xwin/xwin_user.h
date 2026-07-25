@@ -13,10 +13,19 @@
 typedef u32 xwin_handle_t;
 #define XWIN_INVALID_HANDLE  0
 
+#define XWIN_FLAG_VISIBLE    0x01
+#define XWIN_FLAG_FOCUSABLE  0x02
+#define XWIN_FLAG_BORDERED   0x04
+#define XWIN_FLAG_DRAGGABLE  0x08
+#define XWIN_FLAG_RESIZABLE  0x10
+#define XWIN_FLAG_DIRECT     0x20
+
 // ========== 用户空间 API (通过 syscall 调用) ==========
 
 // 窗口管理
 xwin_handle_t xwin_create(i32 x, i32 y, u32 width, u32 height, const char* title);
+xwin_handle_t xwin_create_flags(i32 x, i32 y, u32 width, u32 height,
+                                const char* title, u32 flags);
 void xwin_destroy(xwin_handle_t win);
 void xwin_move(xwin_handle_t win, i32 x, i32 y);
 void xwin_resize(xwin_handle_t win, u32 width, u32 height);
@@ -104,9 +113,16 @@ static inline long xwin_syscall(int num, long a1, long a2, long a3, long a4, lon
     return ret;
 }
 
+static inline xwin_handle_t xwin_create_flags(i32 x, i32 y, u32 width, u32 height,
+                                              const char* title, u32 flags) {
+    return (xwin_handle_t)xwin_syscall(
+        SYS_XWIN_CREATE, (long)x, (long)y,
+        (long)((width & 0xFFFF) | ((height & 0xFFFF) << 16)), (long)flags,
+        (long)title);
+}
+
 static inline xwin_handle_t xwin_create(i32 x, i32 y, u32 width, u32 height, const char* title) {
-    return (xwin_handle_t)xwin_syscall(SYS_XWIN_CREATE, 
-        (long)x, (long)y, (long)width, (long)height, (long)title);
+    return xwin_create_flags(x, y, width, height, title, 0);
 }
 
 static inline void xwin_destroy(xwin_handle_t win) {

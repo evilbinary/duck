@@ -123,7 +123,9 @@ void xwin_exit(xdisplay_t* disp) {
     if (disp->screen_buffer != NULL) {
         kfree(disp->screen_buffer);
     }
-    if (disp->back_buffer != NULL) {
+    if (disp->back_buffer != NULL &&
+        (disp->vga == NULL ||
+         disp->back_buffer != (u32*)disp->vga->frambuffer)) {
         kfree(disp->back_buffer);
     }
     if (disp->windows != NULL) {
@@ -213,6 +215,19 @@ xwindow_t* xwin_create_window(xdisplay_t* disp,
     
     log_debug("xwin: created window %d (%dx%d at %d,%d)\n", 
               win->id, width, height, x, y);
+
+    /* 当前进程页表映射 LCD FB，后续 flip 可写 */
+    xwin_map_framebuffer(disp);
+
+    /* DIRECT：合成目标绑到 frambuffer，flip 不再 memcpy */
+    if ((flags & XWIN_FLAG_DIRECT) && disp->vga != NULL &&
+        disp->vga->frambuffer != NULL) {
+        u32* fb = (u32*)disp->vga->frambuffer;
+        if (disp->back_buffer != NULL && disp->back_buffer != fb) {
+            kfree(disp->back_buffer);
+        }
+        disp->back_buffer = fb;
+    }
     
     return win;
 }

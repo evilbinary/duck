@@ -6,6 +6,7 @@
  ********************************************************************/
 #include "xwin.h"
 #include "font.h"
+#include "kernel/page.h"
 
 // ========== 鼠标光标 (16x16) ==========
 static const u32 cursor_arrow[16][16] = {
@@ -127,15 +128,43 @@ void xwin_render_window(xdisplay_t* disp, xwindow_t* win) {
     xwin_composite_window(disp, win);
 }
 
-void xwin_flip_buffer(xdisplay_t* disp) {
-    if (disp == NULL || disp->vga == NULL) return;
+/* SVC 下 TTBR0=upage；把 LCD FB 映进当前进程（create 时做一次即可） */
+void xwin_map_framebuffer(xdisplay_t* disp) {
+    if (disp == NULL || disp->vga == NULL || disp->vga->frambuffer == NULL ||
+        disp->buffer_size == 0) {
+        return;
+    }
 
-    // 如果VGA有flip_buffer函数，调用它（由驱动处理显示）
+    u32 va = (u32)(uintptr_t)disp->vga->frambuffer;
+    u32 pa = (u32)(uintptr_t)(disp->vga->pframbuffer != NULL
+                                  ? disp->vga->pframbuffer
+                                  : disp->vga->frambuffer);
+    thread_t* cur = thread_current();
+    if (cur == NULL || cur->vm == NULL || cur->vm->upage == NULL) {
+        return;
+    }
+    if (page_v2p(cur->vm->upage, (void*)(uintptr_t)va) != NULL) {
+        return;
+    }
+
+    u32 pages = (disp->buffer_size + PAGE_SIZE - 1) / PAGE_SIZE;
+    for (u32 i = 0; i < pages; i++) {
+        page_map_current(va + i * PAGE_SIZE, pa + i * PAGE_SIZE, PAGE_DEV);
+    }
+}
+
+void xwin_flip_buffer(xdisplay_t* disp) {
+    if (disp == NULL || disp->vga == NULL || disp->back_buffer == NULL) {
+        return;
+    }
+
+    /* 有 flip_buffer 时也要先拷 back→fb（旧逻辑只 flush，T113 黑屏） */
+    if (disp->vga->frambuffer != NULL && disp->buffer_size > 0 &&
+        disp->back_buffer != (u32*)disp->vga->frambuffer) {
+        kmemcpy(disp->vga->frambuffer, disp->back_buffer, disp->buffer_size);
+    }
     if (disp->vga->flip_buffer != NULL) {
         disp->vga->flip_buffer(disp->vga, 0);
-    } else if (disp->vga->frambuffer != NULL) {
-        // 直接写入framebuffer
-        kmemcpy(disp->vga->frambuffer, disp->back_buffer, disp->buffer_size);
     }
 }
 
