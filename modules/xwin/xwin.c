@@ -81,10 +81,10 @@ int xwin_init(xdisplay_t* disp, vga_device_t* vga) {
     disp->root_window->bg_color = XCOLOR_DARK_GRAY;
     xwin_set_title(disp->root_window, "Desktop");
     
-    // 初始化鼠标状态
+    // 初始化鼠标状态（默认不画合成器光标，避免与 etk/sdl 自绘光标叠加重刷）
     disp->mouse_x = vga->width / 2;
     disp->mouse_y = vga->height / 2;
-    disp->mouse_visible = 1;
+    disp->mouse_visible = 0;
     disp->mouse_cursor = 0;
     
     // 初始化窗口ID计数器

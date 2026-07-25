@@ -80,7 +80,8 @@ void qemu_init_mode(pci_device_t* pdev, vga_device_t* vga, int mode) {
   qemu_write_reg(VBE_DISPI_INDEX_XRES, vga->width);
   qemu_write_reg(VBE_DISPI_INDEX_YRES, vga->height);
   qemu_write_reg(VBE_DISPI_INDEX_VIRT_WIDTH, vga->width);
-  qemu_write_reg(VBE_DISPI_INDEX_VIRT_HEIGHT, vga->height);
+  /* 双缓冲需要虚拟高度 >= 物理高度 * 2，否则 Y_OFFSET 切到第二屏会黑闪 */
+  qemu_write_reg(VBE_DISPI_INDEX_VIRT_HEIGHT, (u16)(vga->height * 2));
   qemu_write_reg(VBE_DISPI_INDEX_X_OFFSET, 0);
   qemu_write_reg(VBE_DISPI_INDEX_Y_OFFSET, 0);
   qemu_write_reg(VBE_DISPI_INDEX_ENABLE,

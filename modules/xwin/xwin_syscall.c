@@ -243,8 +243,8 @@ long xwin_syscall_process_events(void) {
 long xwin_syscall_render(void) {
     xdisplay_t* disp = g_display;
     if (disp == NULL) return -1;
-    
-    xinput_poll();
+
+    /* present 路径不要夹杂 input poll，避免额外副作用拖慢/加重刷 */
     xwin_render(disp);
     return 0;
 }
