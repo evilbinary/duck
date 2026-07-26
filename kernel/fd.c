@@ -48,11 +48,30 @@ fd_t* fd_open(u32* file, u32 type, char* name) {
     kprintf("fd new file is null\n");
     return NULL;
   }
-  if (fd_number >= MAX_FD_NUMBER) {
-    kprintf("new fd limit\n");
-    return NULL;
+
+  /* Reuse closed slots — otherwise fd_number only grows and hits MAX after
+   * apps like gmenu open/close many files, then shell cannot run /bin/*. */
+  for (int i = 0; i < MAX_FD_NUMBER; i++) {
+    fd_t* slot = &fd_list[i];
+    if (slot->data != NULL) {
+      continue;
+    }
+    /* free (use_count==0) or never allocated (init sentinel -1 as u32) */
+    if (slot->use_count != 0 && slot->use_count != (u32)-1) {
+      continue;
+    }
+    if (slot->name != NULL) {
+      kfree(slot->name);
+      slot->name = NULL;
+    }
+    if (i >= fd_number) {
+      fd_number = i + 1;
+    }
+    return fd_alloc_slot(file, type, name, i);
   }
-  return fd_alloc_slot(file, type, name, fd_number++);
+
+  kprintf("new fd limit (%d)\n", MAX_FD_NUMBER);
+  return NULL;
 }
 
 static int fd_reopen_stdio_slot(int id, char* path) {
@@ -107,14 +126,21 @@ int fd_close(fd_t* fd) {
     log_error("fd close bad ptr %x\n", fd);
     return -1;
   }
-  fd->use_count--;
-  if (fd->use_count <= 0) {
+  if (fd->use_count > 0) {
+    fd->use_count--;
+  }
+  if (fd->use_count == 0) {
     vnode_t* file = (vnode_t*)fd->data;
     if (file != NULL) {
       vclose(file);
     }
     fd->data = NULL;
-    fd->use_count = 0;
+    if (fd->name != NULL) {
+      kfree(fd->name);
+      fd->name = NULL;
+    }
+    fd->offset = 0;
+    fd->flags = 0;
   }
   return 0;
 }

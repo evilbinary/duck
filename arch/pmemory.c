@@ -125,22 +125,43 @@ void* ya_sbrk(size_t size) {
   }
   kassert(found > 0);
   kassert(addr != NULL);
-  if (mmt.last_map_addr > 0 &&
-      ((uintptr_t)addr + PAGE_SIZE * 900) > mmt.last_map_addr) {
-    kprintf("extend kernel phy mem addr:%lx last addr:%lx extend count:%d\n",
-            addr, mmt.last_map_addr, mmt.extend_phy_count);
-    int len = 0;
-    uintptr_t baddr = mmt.last_map_addr;
-    mmt.extend_phy_count++;
-    for (int i = 0; i < 1000; i++) {
-      page_map(mmt.last_map_addr, mmt.last_map_addr,
-               PAGE_P | PAGE_USR | PAGE_RWX);
-      page_map_current(mmt.last_map_addr, mmt.last_map_addr,
-               PAGE_P | PAGE_USR | PAGE_RWX);
-      mmt.last_map_addr += PAGE_SIZE;
-      len += PAGE_SIZE;
+
+  /*
+   * Boot only maps ~40MB of each free block. Carving past last_map_addr needs
+   * more PTEs. page_map_on may kmalloc an L2 table → nested ya_sbrk.
+   * Never return an unmapped VA: always cover [addr, addr+size) even when nested.
+   * Only the optional headroom loop is gated to avoid extend storms.
+   */
+  if (mmt.last_map_addr > 0) {
+    uintptr_t need = (uintptr_t)addr + size;
+    if (need > mmt.last_map_addr) {
+      static int extending_headroom;
+      while (mmt.last_map_addr < need) {
+        page_map(mmt.last_map_addr, mmt.last_map_addr,
+                 PAGE_P | PAGE_USR | PAGE_RWX);
+        page_map_current(mmt.last_map_addr, mmt.last_map_addr,
+                         PAGE_P | PAGE_USR | PAGE_RWX);
+        mmt.last_map_addr += PAGE_SIZE;
+      }
+      if (!extending_headroom) {
+        uintptr_t map_to = (need + PAGE_SIZE * 256 + (PAGE_SIZE - 1)) &
+                           ~(PAGE_SIZE - 1);
+        extending_headroom = 1;
+        mmt.extend_phy_count++;
+        if ((mmt.extend_phy_count & 0x3f) == 1) {
+          kprintf("extend kernel phy map to %lx (from %lx count %d)\n", map_to,
+                  mmt.last_map_addr, mmt.extend_phy_count);
+        }
+        while (mmt.last_map_addr < map_to) {
+          page_map(mmt.last_map_addr, mmt.last_map_addr,
+                   PAGE_P | PAGE_USR | PAGE_RWX);
+          page_map_current(mmt.last_map_addr, mmt.last_map_addr,
+                           PAGE_P | PAGE_USR | PAGE_RWX);
+          mmt.last_map_addr += PAGE_SIZE;
+        }
+        extending_headroom = 0;
+      }
     }
-    mm_add_block(baddr, len);
   }
   return addr;
 }

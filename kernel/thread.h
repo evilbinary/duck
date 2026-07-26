@@ -37,7 +37,8 @@ typedef struct exec_params exec_params_t;
 
 #define THREAD_NEW (VM_CLONE)
 #define THREAD_FORK (VM_CLONE_ALL)
-#define THREAD_CLONE (VM_CLONE_ALL | FS_CLONE)
+/* pthread: share address space + fd table (see CLONE_VM in sys_clone). */
+#define THREAD_CLONE (VM_SAME | FS_CLONE)
 #define THREAD_VFORK (VM_CLONE_ALL)
 
 #define DUMP_DEFAULT 1

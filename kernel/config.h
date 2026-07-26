@@ -124,7 +124,7 @@
 
 #else
 
-#define MAX_FD_NUMBER 128
+#define MAX_FD_NUMBER 256
 #define MAX_PHDR 25
 #define MAX_SHDR 25
 

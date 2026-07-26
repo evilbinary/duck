@@ -222,6 +222,7 @@ void vmemory_init(vmemory_t* vm, u32 level, vaddr_t usp, u32 usp_size, u32 flags
   }
   vm->vma = vmemory_create_default(koffset);
   vm->kpage = page_kernel_dir();
+  vm->ref = 1;
   if (level == LEVEL_KERNEL_SHARE) {
     vm->upage = vm->kpage;
   } else if (level == LEVEL_KERNEL) {
@@ -301,11 +302,26 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
 }
 
 void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
-  log_debug("vm clone init\n");
+  log_debug("vm clone init flags=%x\n", flags);
+
+  if ((flags & VM_SAME) != 0) {
+    /* pthread CLONE_VM: share page tables and VMA list with parent. */
+    vmcopy->vma = vmthread->vma;
+    vmcopy->kpage = vmthread->kpage;
+    vmcopy->upage = vmthread->upage;
+    if (vmthread->ref == 0) {
+      vmthread->ref = 1;
+    }
+    vmthread->ref++;
+    vmcopy->ref = vmthread->ref;
+    log_debug("vm share upage %x ref %d\n", vmcopy->upage, vmcopy->ref);
+    return;
+  }
 
   vmcopy->vma = vmemory_area_clone(vmthread->vma, 1);
   vmcopy->kpage = page_kernel_dir();
   vmcopy->upage = page_clone((u64*)vmthread->upage, 3);
+  vmcopy->ref = 1;
 
   // 栈拷贝并映射
   vmemory_copy_data(vmcopy, vmthread, MEMORY_STACK);
@@ -314,7 +330,9 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
   vmemory_copy_data(vmcopy, vmthread, MEMORY_HEAP);
 
   // init 0
-  vmcopy->vma->alloc_size = 0;
+  if (vmcopy->vma != NULL) {
+    vmcopy->vma->alloc_size = 0;
+  }
 
   log_debug("vm clone end\n");
 }

@@ -403,39 +403,59 @@ int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
     return copy_thread->id;  // 父进程返回子进程ID
   }
 
+  /*
+   * musl pthread: __clone(start, stack, CLONE_VM|...|CLONE_SETTLS, args, ...)
+   * ARM clone.s expects child to resume after svc with r0=0 and call start(args).
+   * YiYiYa instead starts at start_args on the new stack (same layout).
+   * Must share VM (CLONE_VM) or SDL timer/audio threads see a stale heap copy
+   * and PREF ABORT (pc=0) walking timers/mutexes.
+   */
+  u32 tflags = FS_CLONE;
+  if ((flags & CLONE_VM) != 0) {
+    tflags |= VM_SAME;
+  } else {
+    tflags |= VM_CLONE_ALL;
+  }
+
   start_args_t* start_args = stack;
   void* fn = start_args->start_func;
   void* arg = start_args->start_arg;
 
-  // log_debug("stack %x praent tid %x tls %x child_tid
-  // %x\n",stack,parent_tid,tls,child_tid);
-  thread_t* find = current;
-  if (find == NULL) {
-    log_error("find parent tid %d is null\n", *parent_tid);
-    find = current;
+  thread_t* copy_thread = thread_copy(current, tflags);
+  if (copy_thread == NULL) {
+    log_error("sys_clone: thread_copy failed\n");
+    return -1;
   }
-  /* pthread（musl: CLONE_FILES 等）创建的子线程须共享父进程 fd。
-   * 旧逻辑用 THREAD_FORK（无 FS_CLONE），SDL 音频线程写 /dev/dsp
-   * 会报 "write not found fd N"。 */
-  (void)flags;
-  thread_t* copy_thread = thread_copy(find, THREAD_CLONE);
-  *parent_tid = copy_thread->id;
 
-  thread_info_t* tinfo = ((char*)tls) - sizeof(thread_info_t);
-  copy_thread->tinfo = tinfo;
+  if (parent_tid != NULL && (flags & CLONE_PARENT_SETTID) != 0) {
+    *parent_tid = copy_thread->id;
+  }
 
-#ifdef LOG_DEBUG
-  kprintf("-------dump current thread %d %s-------------\n", current->id);
-  thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
-  kprintf("-------dump clone thread %d-------------\n", copy_thread->id);
-  thread_dump(copy_thread, DUMP_DEFAULT | DUMP_CONTEXT);
-  kprintf("entry ===>%x arg %x\n", fn, arg);
+  /* CLONE_SETTLS: tls is already TP_ADJ(pthread). Do not keep parent's TP. */
+  if ((flags & CLONE_SETTLS) != 0 && tls != NULL) {
+    copy_thread->user_tp = tls;
+#if defined(TLS_ABOVE_TP)
+    copy_thread->tinfo = (thread_info_t*)((char*)tls - sizeof(thread_info_t));
+#else
+    copy_thread->tinfo = tls;
 #endif
+  } else if (tls != NULL) {
+    copy_thread->user_tp = tls;
+    copy_thread->tinfo = ((char*)tls) - sizeof(thread_info_t);
+  }
 
-  thread_set_ret(copy_thread, copy_thread->id);
+  /* Run on the pthread stack (mmap), not the parent's process stack. */
+  interrupt_context_t* ic = copy_thread->ctx->ksp;
+  if (ic != NULL) {
+    ic->sp = (u32)stack;
+    copy_thread->ctx->usp = (u32)stack;
+  }
+
+  thread_set_ret(copy_thread, 0); /* clone child return value */
   thread_set_arg(copy_thread, arg);
   thread_set_entry(copy_thread, fn);
 
+  (void)child_tid;
   thread_run(copy_thread);
   return copy_thread->id;
 }

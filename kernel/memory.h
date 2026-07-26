@@ -91,6 +91,7 @@ typedef struct vmemory{
   void* kpage;
   vmemory_area_t* vma;
   u32 tid;
+  u32 ref; /* shared by CLONE_VM threads; free only when last ref drops */
 }vmemory_t;
 
 
