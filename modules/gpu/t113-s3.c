@@ -239,8 +239,7 @@ static void fb_t113_cfg_gpios(int gpio, int pin, int n, int cfg, int pull,
 void t113_flush_screen(vga_device_t *vga, u32 index) {
   (void)vga;
   (void)index;
-  /* FB 已按 PAGE_DEV 映射，写直达 DRAM，DE 直接读；
-   * 对 Device VA 做全屏 cache_flush 无收益，实机上极慢（约 1fps）。 */
+  /* FB 为 PAGE_RW_NC（Normal NC），DE 直接读 DRAM；勿对整屏做 cache_flush。 */
   dsb();
 }
 
@@ -366,7 +365,7 @@ int t113_lcd_init(vga_device_t *vga) {
   u32 addr = vga->frambuffer;
   u32 paddr = vga->pframbuffer;
   for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    page_map(addr, paddr, PAGE_DEV);
+    page_map(addr, paddr, PAGE_RW_NC);
     addr += 0x1000;
     paddr += 0x1000;
   }

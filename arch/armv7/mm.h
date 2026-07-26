@@ -16,10 +16,10 @@
 #define L1_DOMAIN(n) (n << 5)
 
 #define L2_XN (0 << 0)  // The Execute-never bit
-#define L2_CB (3 << 2)  // 0b11 cache write-back
-#define L2_NCNB (0 << 2) // 0b00 Non-cacheable
-#define L2_NCB (1 << 2) // 0b01 Write-Back, Write-Allocate
-#define L2_CNB (0 << 2) // 0b10 Write-Through, no Write-Allocate
+#define L2_CB (3 << 2)    // 0b11 Outer/Inner WB, no WA (with TEX=0)
+#define L2_NCNB (0 << 2)  // 0b00
+#define L2_NCB (1 << 2)   // 0b01 Shareable Device when TEX=0
+#define L2_CNB (2 << 2)   // 0b10 Outer/Inner WT, no WA when TEX=0
 
 
 #define L2_AP_ACCESS (3 << 4)
@@ -44,11 +44,12 @@
 #define PAGE_RX   L2_NCB   //读执行
 #define PAGE_RW   (L2_NCB) //读写
 #define PAGE_RWX  (L2_TEXT_1 | L2_CB) //读/写/执行
-#define PAGE_RW_NC   (L2_NCB)
+/* Normal Non-cacheable: TEX=001, C=B=0 */
+#define PAGE_RW_NC (L2_TEXT_1 | L2_NCNB)
 
 #define PAGE_SYS   (L2_TEXT_1|L2_CB) //系统级
 #define PAGE_USR   (L2_TEXT_1|L2_CB) //用户级
-#define PAGE_DEV   (L2_TEXT_0|L2_NCB) //设备级
+#define PAGE_DEV   (L2_TEXT_0|L2_NCB) //设备级（Shareable Device）
 
 
 typedef u32 page_dir_t;

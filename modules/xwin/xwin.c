@@ -6,8 +6,32 @@
  ********************************************************************/
 #include "xwin.h"
 #include "kernel/memory.h"
+#include "kernel/page.h"
 
 #define MAX_WINDOWS 64
+
+/* kmalloc 池默认 PAGE_RW_NC；画图缓冲改为 WB，加速 CPU 填充/blit */
+static void xwin_remap_cached(void* buf, u32 size) {
+  u32 start;
+  u32 end;
+  u32 v;
+  void* kpd;
+
+  if (buf == NULL || size == 0) {
+    return;
+  }
+  kpd = page_kernel_dir();
+  if (kpd == NULL) {
+    return;
+  }
+  start = ((u32)(uintptr_t)buf) & ~(PAGE_SIZE - 1);
+  end = ((u32)(uintptr_t)buf + size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+  for (v = start; v < end; v += PAGE_SIZE) {
+    void* phy = page_v2p((u64*)kpd, (void*)(uintptr_t)v);
+    u32 paddr = phy != NULL ? ((u32)(uintptr_t)phy & ~(PAGE_SIZE - 1)) : v;
+    page_map(v, paddr, PAGE_RW);
+  }
+}
 
 // ========== 全局显示服务器 ==========
 xdisplay_t* g_display = NULL;
@@ -35,6 +59,7 @@ int xwin_init(xdisplay_t* disp, vga_device_t* vga) {
         return -1;
     }
     kmemset(disp->screen_buffer, 0, disp->buffer_size);
+    xwin_remap_cached(disp->screen_buffer, disp->buffer_size);
     
     // 分配后备缓冲区 (双缓冲)
     disp->back_buffer = kmalloc(disp->buffer_size, KERNEL_TYPE);
@@ -44,6 +69,7 @@ int xwin_init(xdisplay_t* disp, vga_device_t* vga) {
         return -1;
     }
     kmemset(disp->back_buffer, 0, disp->buffer_size);
+    xwin_remap_cached(disp->back_buffer, disp->buffer_size);
     
     // 分配窗口数组
     disp->window_capacity = MAX_WINDOWS;
@@ -187,6 +213,7 @@ xwindow_t* xwin_create_window(xdisplay_t* disp,
         return NULL;
     }
     kmemset(win->framebuffer, 0, win->fb_size);
+    xwin_remap_cached(win->framebuffer, win->fb_size);
     
     // 设置窗口树
     win->parent = parent;
@@ -392,6 +419,7 @@ void xwin_resize(xdisplay_t* disp, xwindow_t* win, u32 w, u32 h) {
         kfree(win->framebuffer);
         win->framebuffer = new_fb;
         win->fb_size = new_size;
+        xwin_remap_cached(win->framebuffer, win->fb_size);
     }
     
     // 标记损坏

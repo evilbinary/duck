@@ -153,7 +153,8 @@ void xwin_map_framebuffer(xdisplay_t* disp) {
 
     u32 pages = (disp->buffer_size + PAGE_SIZE - 1) / PAGE_SIZE;
     for (u32 i = 0; i < pages; i++) {
-        page_map_current(va + i * PAGE_SIZE, pa + i * PAGE_SIZE, PAGE_DEV);
+        /* LCD FB：Normal NC，勿用 PAGE_DEV（整屏 memcpy 极慢） */
+        page_map_current(va + i * PAGE_SIZE, pa + i * PAGE_SIZE, PAGE_RW_NC);
     }
 }
 

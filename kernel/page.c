@@ -64,10 +64,18 @@ void* page_fault_handle(interrupt_context_t *ic) {
 #ifdef DEBUG
         log_debug("page lookup kernel found phy: %lx\n", phy);
 #endif
-        /* MMIO/外设常在 EXEC_ADDR 以下（如 raspi EMMC 0x3f3xxxxx），按设备页映射 */
-        u32 attr = (fault_addr < (vaddr_t)EXEC_ADDR)
-                       ? PAGE_DEV
-                       : (PAGE_P | PAGE_USR | PAGE_RWX);
+        /* MMIO/外设常在 EXEC_ADDR 以下 → PAGE_DEV。
+         * 高位 FB 别名（T113: 0xfb→0xfe）→ PAGE_RW_NC，与 gpu 映射一致。 */
+        u32 attr;
+        u32 paddr = (u32)(uintptr_t)phy;
+        if (fault_addr < (vaddr_t)EXEC_ADDR) {
+          attr = PAGE_DEV;
+        } else if (paddr >= 0xF0000000u ||
+                   (u32)(uintptr_t)fault_addr >= 0xF0000000u) {
+          attr = PAGE_RW_NC;
+        } else {
+          attr = PAGE_P | PAGE_USR | PAGE_RWX;
+        }
         page_map_on((u64*)current->vm->upage, fault_addr, (u64)phy, attr);
       } else {
         if (current->fault_count < 1) {

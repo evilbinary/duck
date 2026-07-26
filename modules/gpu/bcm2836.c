@@ -166,7 +166,7 @@ int gpu_init_mode(vga_device_t* vga, int mode) {
   log_debug("map fb start %x %x\n", addr, paddr);
 
   for (int i = 0; i < (int)(vga->framebuffer_length / PAGE_SIZE); i++) {
-    page_map(addr, paddr, PAGE_DEV);
+    page_map(addr, paddr, PAGE_RW_NC);
     addr += PAGE_SIZE;
     paddr += PAGE_SIZE;
   }
