@@ -47,14 +47,17 @@ long xwin_syscall_create(long x, long y, long width, long height, long uflags,
         }
     }
     
-    /* 只认用户显式传入的 DIRECT；勿把 r4 垃圾位当成 BORDERED */
+    /* 全屏客户窗：自动 DIRECT（旧 libgui 只调 xwin_create 时也能走零拷贝） */
     u32 flags = ((u32)uflags & XWIN_FLAG_DIRECT) | XWIN_FLAG_VISIBLE |
                 XWIN_FLAG_FOCUSABLE;
-    if (!(flags & XWIN_FLAG_DIRECT) &&
-        (disp->vga == NULL || (u32)width != disp->vga->width ||
-         (u32)height != disp->vga->height || x != 0 || y != 0)) {
+    if (disp->vga != NULL && (u32)width == disp->vga->width &&
+        (u32)height == disp->vga->height && x == 0 && y == 0) {
+        flags |= XWIN_FLAG_DIRECT;
+    }
+    if (!(flags & XWIN_FLAG_DIRECT)) {
         flags |= XWIN_FLAG_BORDERED | XWIN_FLAG_DRAGGABLE;
     }
+    log_info("xwin: create %dx%d flags=0x%x\n", (u32)width, (u32)height, flags);
     xwindow_t* win = xwin_create_window(disp, disp->root_window, 
                                         (i32)x, (i32)y, 
                                         (u32)width, (u32)height,

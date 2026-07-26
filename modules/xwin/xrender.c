@@ -8,6 +8,8 @@
 #include "font.h"
 #include "kernel/page.h"
 #include "kernel/thread.h"
+#include "kernel/memory.h"
+#include "kernel/config.h"
 #include "arch/cpu.h"
 
 // ========== 鼠标光标 (16x16) ==========
@@ -40,6 +42,7 @@ void xwin_render(xdisplay_t* disp) {
     static u32 t_clear = 0, t_composite = 0, t_cursor = 0, t_flip = 0;
     static u32 frame_count = 0;
     static u32 skip_count = 0;
+    static u32 fps_t0 = 0;
     static int printed_info = 0;
     
     // 只打印一次分辨率信息
@@ -48,6 +51,7 @@ void xwin_render(xdisplay_t* disp) {
                  disp->vga->width, disp->vga->height, 
                  disp->buffer_size, disp->buffer_size / 1024);
         printed_info = 1;
+        fps_t0 = schedule_get_ticks();
     }
     
     // 检查是否有窗口需要更新
@@ -74,27 +78,40 @@ void xwin_render(xdisplay_t* disp) {
         return;
     }
 
-    /* DIRECT 全屏：只合成该窗 → LCD，跳过根窗 + flip memcpy */
+    /* 全屏覆盖窗：只走该窗（可无 DIRECT 标志），跳过根窗 + 多余 memcpy */
     xwindow_t* direct_win = NULL;
-    if (disp->vga->frambuffer != NULL &&
-        disp->back_buffer == (u32*)disp->vga->frambuffer) {
-        for (u32 i = 0; i < disp->window_count; i++) {
-            xwindow_t* win = disp->windows[i];
-            if (win != NULL && win->visible && win->damaged &&
-                (win->flags & XWIN_FLAG_DIRECT) &&
-                win->width == disp->vga->width &&
-                win->height == disp->vga->height && win->abs_x == 0 &&
-                win->abs_y == 0) {
-                direct_win = win;
-                break;
-            }
+    for (u32 i = 0; i < disp->window_count; i++) {
+        xwindow_t* win = disp->windows[i];
+        if (win == NULL || !win->visible || !win->damaged) continue;
+        if (win == disp->root_window) continue;
+        if (win->width == disp->vga->width &&
+            win->height == disp->vga->height && win->abs_x == 0 &&
+            win->abs_y == 0) {
+            direct_win = win;
+            break;
         }
     }
     if (direct_win != NULL) {
+        u32* fb = disp->vga->frambuffer != NULL
+                      ? (u32*)disp->vga->frambuffer
+                      : NULL;
+
         t0 = schedule_get_ticks();
-        /* 已绑 LCD 时 blit 已写屏；src==dst 勿再自拷 */
-        if (direct_win->framebuffer != (u32*)disp->vga->frambuffer) {
+        if (fb != NULL && direct_win->framebuffer != fb) {
+            /* 本帧：先把离屏内容拷到 LCD，再绑零拷贝供后续 blit */
+            if (disp->back_buffer != NULL && disp->back_buffer != fb) {
+                kfree(disp->back_buffer);
+            }
+            disp->back_buffer = fb;
+            disp->fb_mapped_tid = 0;
+            xwin_map_framebuffer(disp);
             xwin_composite_window(disp, direct_win);
+            if (direct_win->framebuffer != NULL) {
+                kfree(direct_win->framebuffer);
+            }
+            direct_win->framebuffer = fb;
+            direct_win->flags |= XWIN_FLAG_DIRECT;
+            log_info("xwin: late DIRECT bind LCD\n");
         }
         t1 = schedule_get_ticks();
         t_composite += (t1 - t0);
@@ -112,11 +129,16 @@ void xwin_render(xdisplay_t* disp) {
         disp->frame_count++;
         frame_count++;
         if (frame_count >= 60) {
-            log_info("Render: direct-lcd composite=%d flip=%d (skipped=%d)\n",
-                     t_composite, t_flip, skip_count);
+            u32 now = schedule_get_ticks();
+            u32 dt = now - fps_t0;
+            u32 fps = dt > 0 ? (frame_count * SCHEDULE_FREQUENCY) / dt : 0;
+            log_info("Render: direct-lcd fps=%d composite=%d flip=%d "
+                     "(skipped=%d dt=%d)\n",
+                     fps, t_composite, t_flip, skip_count, dt);
             t_clear = t_composite = t_cursor = t_flip = 0;
             frame_count = 0;
             skip_count = 0;
+            fps_t0 = now;
         }
         return;
     }
@@ -162,11 +184,16 @@ void xwin_render(xdisplay_t* disp) {
     
     // 每 60 帧打印一次
     if (frame_count >= 60) {
-        log_info("Render: clear=%d composite=%d cursor=%d flip=%d (skipped=%d)\n",
-                 t_clear, t_composite, t_cursor, t_flip, skip_count);
+        u32 now = schedule_get_ticks();
+        u32 dt = now - fps_t0;
+        u32 fps = dt > 0 ? (frame_count * SCHEDULE_FREQUENCY) / dt : 0;
+        log_info("Render: fps=%d clear=%d composite=%d cursor=%d flip=%d "
+                 "(skipped=%d dt=%d)\n",
+                 fps, t_clear, t_composite, t_cursor, t_flip, skip_count, dt);
         t_clear = t_composite = t_cursor = t_flip = 0;
         frame_count = 0;
         skip_count = 0;
+        fps_t0 = now;
     }
 }
 
