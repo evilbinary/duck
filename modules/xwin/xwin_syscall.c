@@ -306,21 +306,14 @@ long xwin_syscall_get_fb(long win_id) {
     win = xwin_find_window(disp, (u32)win_id);
     if (win == NULL) return 0;
 
-    /* 必须返回 LCD VA（0xfb...）。若返回 kmalloc 指针，随后 late-bind
-     * kfree 会让用户态直绘野指针 → 黑屏。 */
+    /* 返回驱动 LCD VA，并确保映进当前进程页表 */
     lcd = xwin_bind_lcd(disp, win);
     if (lcd == NULL) {
         log_error("xwin: get_fb bind LCD failed\n");
         return 0;
     }
-    if (xwin_map_framebuffer(disp) != 0) {
-        log_error("xwin: get_fb map failed\n");
-        return 0;
-    }
     log_info("xwin: get_fb -> LCD va=%x pa=%x\n", (u32)(uintptr_t)lcd,
-             disp->vga->pframbuffer != NULL
-                 ? (u32)(uintptr_t)disp->vga->pframbuffer
-                 : 0);
+             (u32)(uintptr_t)disp->vga->pframbuffer);
     return (long)(uintptr_t)lcd;
 }
 

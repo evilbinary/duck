@@ -41,155 +41,54 @@
    }
  }
  
- /* T113/常见别名：仅 0xfb...... 是 LCD VA，仅 0xfe...... 是 LCD PA。
-  * 堆指针（如 0x42......）绝不能当 VA/PA，否则会把用户写映射到堆 → 黑屏。 */
- static int xwin_is_lcd_va(u32 addr) {
-   return (addr & 0xff000000u) == 0xfb000000u;
- }
- 
- static int xwin_is_lcd_pa(u32 addr) {
-   return (addr & 0xff000000u) == 0xfe000000u;
- }
- 
- static void xwin_force_lcd_alias(vga_device_t* vga, xdisplay_t* disp) {
-   if (vga == NULL) {
-     return;
-   }
-   vga->frambuffer = (u32*)(uintptr_t)0xfb000000UL;
-   vga->pframbuffer = (u32*)(uintptr_t)0xfe000000UL;
-   if (disp != NULL) {
-     disp->lcd_va = vga->frambuffer;
-     disp->lcd_pa = vga->pframbuffer;
-   }
- }
- 
- /* 保证 disp/vga 有可用 LCD VA。create 时曾见 frambuffer=0，首帧又恢复。 */
- static void xwin_ensure_lcd(xdisplay_t* disp) {
-   vga_device_t* vga;
-   device_t* dev;
-   u32 va;
-   u32 pa;
- 
-   if (disp == NULL) {
-     return;
-   }
- 
-   /* 刷新设备指针（与 device 上的为同一份） */
-   dev = device_find(DEVICE_VGA);
-   if (dev == NULL) {
-     dev = device_find(DEVICE_VGA_QEMU);
-   }
-   if (dev == NULL) {
-     dev = device_find(DEVICE_LCD);
-   }
-   if (dev != NULL && dev->data != NULL) {
-     disp->vga = (vga_device_t*)dev->data;
-   }
- 
-   vga = disp->vga;
-   if (vga == NULL) {
-     return;
-   }
- 
-   /* T113 面板是 480x320；若宽高被写穿成 320x480，纠正（DE 仍按 init 的 pitch） */
-   if (vga->width == 320 && vga->height == 480) {
-     log_warn("xwin: fix swapped vga size 320x480 -> 480x320\n");
-     vga->width = 480;
-     vga->height = 320;
-   }
- 
-   va = (u32)(uintptr_t)vga->frambuffer;
-   pa = (u32)(uintptr_t)vga->pframbuffer;
- 
-   if (xwin_is_lcd_va(va) && xwin_is_lcd_pa(pa)) {
-     disp->lcd_va = vga->frambuffer;
-     disp->lcd_pa = vga->pframbuffer;
-     return;
-   }
- 
-   /* 缓存若仍是合法 VA/PA，可恢复；堆地址一律丢掉 */
-   if (xwin_is_lcd_va((u32)(uintptr_t)disp->lcd_va) &&
-       xwin_is_lcd_pa((u32)(uintptr_t)disp->lcd_pa)) {
-     vga->frambuffer = disp->lcd_va;
-     vga->pframbuffer = disp->lcd_pa;
-     log_warn("xwin: restored LCD va=%x pa=%x\n",
-              (u32)(uintptr_t)disp->lcd_va, (u32)(uintptr_t)disp->lcd_pa);
-     return;
-   }
- 
-   log_warn("xwin: bad fb va=%x pa=%x cache=%x/%x, force alias\n", va, pa,
-            (u32)(uintptr_t)disp->lcd_va, (u32)(uintptr_t)disp->lcd_pa);
-   xwin_force_lcd_alias(vga, disp);
- }
- 
- /* DIRECT：窗口缓冲 + back_buffer 绑到 LCD VA（绝不能是 PA 0xfe...）。 */
- u32* xwin_bind_lcd(xdisplay_t* disp, xwindow_t* win) {
-   u32* lcd;
-   u32* pa;
- 
-   if (disp == NULL || win == NULL) {
-     return NULL;
-   }
- 
-   xwin_ensure_lcd(disp);
-   if (disp->vga == NULL) {
-     return NULL;
-   }
- 
-   lcd = disp->vga->frambuffer;
-   pa = disp->vga->pframbuffer;
- 
-   /* 任一端非法就强制别名；绝不能把堆地址映成 LCD */
-   if (!xwin_is_lcd_va((u32)(uintptr_t)lcd) ||
-       !xwin_is_lcd_pa((u32)(uintptr_t)pa)) {
-     log_warn("xwin: bind force alias (was va=%x pa=%x)\n",
-              (u32)(uintptr_t)lcd, (u32)(uintptr_t)pa);
-     xwin_force_lcd_alias(disp->vga, disp);
-     lcd = disp->vga->frambuffer;
-     pa = disp->vga->pframbuffer;
-   }
- 
-  disp->vga->frambuffer = lcd;
-  disp->vga->pframbuffer = pa;
-  disp->lcd_va = lcd;
-  disp->lcd_pa = pa;
+/* DIRECT：绑到驱动给出的 LCD VA，映进当前进程页表。 */
+u32* xwin_bind_lcd(xdisplay_t* disp, xwindow_t* win) {
+  u32* lcd;
+  u32* pa;
 
-  /* 勿清 fb_mapped_tid：多进程各自 upage，清了会迫使对方下帧全量重映 */
+  if (disp == NULL || win == NULL || disp->vga == NULL) {
+    return NULL;
+  }
+
+  lcd = disp->vga->frambuffer;
+  pa = disp->vga->pframbuffer;
+  if (lcd == NULL || pa == NULL) {
+    log_error("xwin: bind_lcd missing fb va=%x pa=%x\n",
+              (u32)(uintptr_t)lcd, (u32)(uintptr_t)pa);
+    return NULL;
+  }
+
   if (xwin_map_framebuffer(disp) != 0) {
     log_error("xwin: bind_lcd map failed va=%x pa=%x\n",
               (u32)(uintptr_t)lcd, (u32)(uintptr_t)pa);
     return NULL;
   }
- 
-   /* 勿 kfree 旧 framebuffer：曾 remap_cached，用户 TTBR0 下 free 会炸堆。泄漏可接受。 */
-   win->framebuffer = lcd;
-   win->flags |= XWIN_FLAG_DIRECT;
-   disp->back_buffer = lcd;
-   return lcd;
- }
- 
- // ========== 全局显示服务器 ==========
- xdisplay_t* g_display = NULL;
- 
- // ========== 初始化 ==========
- 
- int xwin_init(xdisplay_t* disp, vga_device_t* vga) {
-     if (disp == NULL || vga == NULL) {
-         return -1;
-     }
- 
-     // 设置全局显示服务器
-     g_display = disp;
- 
-     kmemset(disp, 0, sizeof(xdisplay_t));
-     disp->vga = vga;
- 
-     /* 尽早缓存合法 LCD 别名；非法指针不要进 cache */
-     xwin_ensure_lcd(disp);
-     log_info("xwin: lcd va=%x pa=%x (%dx%d)\n",
-              disp->lcd_va != NULL ? (u32)(uintptr_t)disp->lcd_va : 0,
-              disp->lcd_pa != NULL ? (u32)(uintptr_t)disp->lcd_pa : 0,
-              vga->width, vga->height);
+
+  win->framebuffer = lcd;
+  win->flags |= XWIN_FLAG_DIRECT;
+  disp->back_buffer = lcd;
+  return lcd;
+}
+
+// ========== 全局显示服务器 ==========
+xdisplay_t* g_display = NULL;
+
+// ========== 初始化 ==========
+
+int xwin_init(xdisplay_t* disp, vga_device_t* vga) {
+    if (disp == NULL || vga == NULL) {
+        return -1;
+    }
+
+    // 设置全局显示服务器
+    g_display = disp;
+
+    kmemset(disp, 0, sizeof(xdisplay_t));
+    disp->vga = vga;
+
+    log_info("xwin: lcd va=%x pa=%x (%dx%d)\n",
+             (u32)(uintptr_t)vga->frambuffer,
+             (u32)(uintptr_t)vga->pframbuffer, vga->width, vga->height);
      
      // 计算缓冲区大小
      disp->buffer_size = vga->width * vga->height * sizeof(u32);

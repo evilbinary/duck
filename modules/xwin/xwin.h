@@ -323,10 +323,6 @@ typedef struct xdisplay {
 
     /* 已对 tid 强制映过 LCD=PAGE_RW_NC；勿用 upage 指针（地址可能复用） */
     u32 fb_mapped_tid;
-
-    /* 缓存 LCD VA/PA：部分路径下 vga->frambuffer 会被清成 0 */
-    u32* lcd_va;
-    u32* lcd_pa;
     
 } xdisplay_t;
 

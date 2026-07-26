@@ -207,8 +207,7 @@ void xwin_render_window(xdisplay_t* disp, xwindow_t* win) {
     xwin_composite_window(disp, win);
 }
 
-/* SVC 下 TTBR0=upage；LCD 必须 PAGE_RW_NC。
- * 多进程各自有 upage：不能用全局 fb_mapped_tid 互斥，否则 A/B 每帧互踢重映 150 页。 */
+/* SVC 下 TTBR0=upage；把驱动的 frambuffer→pframbuffer 映进当前进程。 */
 int xwin_map_framebuffer(xdisplay_t* disp) {
     if (disp == NULL || disp->vga == NULL || disp->buffer_size == 0) {
         return -1;
@@ -216,28 +215,13 @@ int xwin_map_framebuffer(xdisplay_t* disp) {
 
     u32 va = (u32)(uintptr_t)disp->vga->frambuffer;
     u32 pa = (u32)(uintptr_t)disp->vga->pframbuffer;
-
-    /* 防止 VA/PA 颠倒或被堆指针污染 */
-    if ((va & 0xff000000u) == 0xfe000000u &&
-        (pa & 0xff000000u) == 0xfb000000u) {
-        u32 tmp = va;
-        va = pa;
-        pa = tmp;
-        log_warn("xwin: swapped inverted va/pa -> va=%x pa=%x\n", va, pa);
+    if (va == 0 || pa == 0) {
+        return -1;
     }
-    if ((va & 0xff000000u) != 0xfb000000u ||
-        (pa & 0xff000000u) != 0xfe000000u) {
-        log_warn("xwin: map force alias (was va=%x pa=%x)\n", va, pa);
-        va = 0xfb000000u;
-        pa = 0xfe000000u;
-    }
-    disp->vga->frambuffer = (u32*)(uintptr_t)va;
-    disp->vga->pframbuffer = (u32*)(uintptr_t)pa;
-    disp->lcd_va = disp->vga->frambuffer;
-    disp->lcd_pa = disp->vga->pframbuffer;
 
     thread_t* cur = thread_current();
     void* kpd = page_kernel_dir();
+    u32 pa_page = pa & ~(PAGE_SIZE - 1);
 
     if (cur == NULL || cur->vm == NULL || cur->vm->upage == NULL) {
         if (kpd != NULL &&
@@ -248,11 +232,11 @@ int xwin_map_framebuffer(xdisplay_t* disp) {
         return -1;
     }
 
-    /* 以当前进程页表为准：已是 fb→fe 则跳过（多 gui 各自保留映射） */
+    /* 当前进程已映到正确 PA 则跳过（多 gui 不互踢） */
     {
         void* got = page_v2p((u64*)cur->vm->upage, (void*)(uintptr_t)va);
         if (got != NULL &&
-            ((u32)(uintptr_t)got & 0xff000000u) == 0xfe000000u) {
+            (((u32)(uintptr_t)got) & ~(PAGE_SIZE - 1)) == pa_page) {
             disp->fb_mapped_tid = cur->id;
             return 0;
         }
@@ -268,7 +252,7 @@ int xwin_map_framebuffer(xdisplay_t* disp) {
     {
         void* got = page_v2p((u64*)cur->vm->upage, (void*)(uintptr_t)va);
         if (got == NULL ||
-            ((u32)(uintptr_t)got & 0xff000000u) != 0xfe000000u) {
+            (((u32)(uintptr_t)got) & ~(PAGE_SIZE - 1)) != pa_page) {
             log_error("xwin: fb map failed va=%x pa=%x got=%x tid=%d\n", va,
                       pa, (u32)(uintptr_t)got, cur->id);
             return -1;
