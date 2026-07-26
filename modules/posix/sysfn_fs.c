@@ -635,7 +635,7 @@ size_t sys_write(u32 fd, void* buf, size_t nbytes) {
   // }
   fd_t* f = thread_find_fd_id(current, fd);
   if (f == NULL) {
-    log_error("write not found fd %d tid %d\n", fd, current->id);
+    log_error("write not found fd %d name: %s tid %d\n", fd,f->name, current->id);
     return 0;
   }
   vnode_t* node = f->data;
@@ -1195,10 +1195,11 @@ int sys_stat(const char* path, struct stat* stat) {
     }
     int fd = sys_open(path, 0);
     if (fd < 0) {
-      log_error("open file error %s\n", path);
       return -1;
     }
-    return sys_fstat(fd, stat);
+    int ret = sys_fstat(fd, stat);
+    sys_close(fd);
+    return ret;
   }
   
   int sys_fstat(int fd, struct stat* stat) {

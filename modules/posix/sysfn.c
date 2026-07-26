@@ -325,6 +325,10 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     log_error("sys exec build params failed %s\n", filename);
     return -1;
   }
+  log_debug("sys exec %s argc=%d argv0=%s argv1=%s\n", exec->filename,
+            exec->argc,
+            exec->argv != NULL && exec->argv[0] != NULL ? exec->argv[0] : "-",
+            exec->argc > 1 && exec->argv[1] != NULL ? exec->argv[1] : "-");
 
   int fd = (int)sys_open_kernel(exec->filename, 0);
   if (fd < 0) {
@@ -410,7 +414,11 @@ int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
     log_error("find parent tid %d is null\n", *parent_tid);
     find = current;
   }
-  thread_t* copy_thread = thread_copy(find, THREAD_FORK);
+  /* pthread（musl: CLONE_FILES 等）创建的子线程须共享父进程 fd。
+   * 旧逻辑用 THREAD_FORK（无 FS_CLONE），SDL 音频线程写 /dev/dsp
+   * 会报 "write not found fd N"。 */
+  (void)flags;
+  thread_t* copy_thread = thread_copy(find, THREAD_CLONE);
   *parent_tid = copy_thread->id;
 
   thread_info_t* tinfo = ((char*)tls) - sizeof(thread_info_t);
