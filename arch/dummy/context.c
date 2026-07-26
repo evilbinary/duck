@@ -39,3 +39,8 @@ int context_clone(context_t* des, context_t* src)  {}
 
 // 打印中断信息
 void context_dump_interrupt(interrupt_context_t* context) {}
+
+int context_irq_preemptible(interrupt_context_t* ic) {
+  (void)ic;
+  return 1;
+}

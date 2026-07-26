@@ -194,3 +194,15 @@ void context_switch_page(context_t* context, u32 page_table) {
   //cpu_set_page(page_dir);
 
 }
+
+/* CPSR.M：USR=0x10 SYS=0x1f 可抢占；SVC/IRQ 嵌套只记账 */
+int context_irq_preemptible(interrupt_context_t* ic) {
+  if (ic == NULL) {
+    return 0;
+  }
+  u32 mode = ic->psr & 0x1fu;
+  if (mode == 0x13u /* SVC */ || mode == 0x12u /* IRQ */) {
+    return 0;
+  }
+  return 1;
+}

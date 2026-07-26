@@ -199,3 +199,14 @@ void context_switch_page(context_t* context, u32 page_table) {
   //cpu_set_page(page_dir);
 
 }
+
+int context_irq_preemptible(interrupt_context_t* ic) {
+  if (ic == NULL) {
+    return 0;
+  }
+  u32 mode = ic->psr & 0x1fu;
+  if (mode == 0x13u || mode == 0x12u) {
+    return 0;
+  }
+  return 1;
+}

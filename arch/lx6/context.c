@@ -143,3 +143,8 @@ int context_clone(context_t* des, context_t* src) {
   }
   
 }
+
+int context_irq_preemptible(interrupt_context_t* ic) {
+  (void)ic;
+  return 1;
+}

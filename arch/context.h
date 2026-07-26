@@ -54,6 +54,10 @@ int context_clone(context_t* des, context_t* src);
 void context_inherit_live(context_t* child, interrupt_context_t* live);
 interrupt_context_t* context_switch(interrupt_context_t* ic,context_t* current,context_t* next);
 
+/* 定时器 IRQ 是否允许 context_switch。
+ * 返回 0：嵌套在 syscall/内核异常中，只记账勿切换（由各 arch 实现）。 */
+int context_irq_preemptible(interrupt_context_t* ic);
+
 #ifndef context_exec_live
 #define context_exec_live(ctx) ((ctx)->ksp)
 #endif

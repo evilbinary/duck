@@ -182,3 +182,14 @@ int context_clone(context_t* des, context_t* src) {
 
   return 0;
 }
+
+int context_irq_preemptible(interrupt_context_t* ic) {
+  if (ic == NULL) {
+    return 0;
+  }
+  u32 mode = ic->psr & 0x1fu;
+  if (mode == 0x13u || mode == 0x12u) {
+    return 0;
+  }
+  return 1;
+}

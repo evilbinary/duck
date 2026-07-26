@@ -58,6 +58,8 @@ INTERRUPT_SERVICE
 void svc_handler() {
   // asm("msr   cpsr, #0xD3 \n");
   interrupt_entering_code(EX_SYS_CALL, 0, 0);
+  /* 异常入口关 IRQ；长 syscall（FS/GUI）期间需开中断，否则 ticks/输入假死 */
+  cpu_sti();
   interrupt_process(interrupt_default_handler);
   interrupt_exit();
 }

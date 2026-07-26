@@ -133,6 +133,15 @@ void* do_schedule(interrupt_context_t* ic) {
     return ic;
   }
 
+  /* arch：嵌套在 SVC 等内核态时只记账，禁止 context_switch */
+  if (!context_irq_preemptible(ic)) {
+    schedule_state(cpu);
+    current_thread->ticks++;
+    timer_ticks[cpu]++;
+    timer_end();
+    return ic;
+  }
+
   int count = schedule_state(cpu);
 
   thread_t* next_thread = schedule_next(cpu);

@@ -180,3 +180,9 @@ void context_switch_page(context_t* context, u64 page_table) {
   cp15_invalidate_icache();
   dmb();
 }
+
+int context_irq_preemptible(interrupt_context_t* ic) {
+  (void)ic;
+  /* AArch64 异常模型不同；当前未在 sync 路径开中断嵌套调度 */
+  return 1;
+}

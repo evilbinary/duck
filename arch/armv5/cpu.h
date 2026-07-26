@@ -47,6 +47,9 @@ typedef u32 (*sys_call_fn)(u32 arg1, u32 arg2, u32 arg3, u32 arg4, u32 arg5,
 
 #define cpu_cpl() (cpu_get_cs() & 0x3)
 
+void cpu_cli(void);
+void cpu_sti(void);
+
 #define isb() __asm__ __volatile__("" : : : "memory")
 #define dsb() \
   __asm__ __volatile__("mcr p15, 0, %0, c7, c10,  4" : : "r"(0) : "memory")

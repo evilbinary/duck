@@ -237,3 +237,8 @@ void context_save(interrupt_context_t* ic, context_t* current) {
   current->ksp = ic;
   current->usp = ic->esp;
 }
+
+int context_irq_preemptible(interrupt_context_t* ic) {
+  (void)ic;
+  return 1;
+}

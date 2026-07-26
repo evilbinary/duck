@@ -147,3 +147,8 @@ void context_dump_fault(interrupt_context_t* context, u32 fault_addr) {
   kprintf("----------------------------\n");
 }
 void context_dump_interrupt(interrupt_context_t* context) {}
+
+int context_irq_preemptible(interrupt_context_t* ic) {
+  (void)ic;
+  return 1;
+}

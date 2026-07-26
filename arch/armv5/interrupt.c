@@ -67,6 +67,7 @@ INTERRUPT_SERVICE
 void svc_handler() {
   // asm("msr   cpsr, #0xD3 \n");
   interrupt_entering_code(EX_SYS_CALL, 0, 0);
+  cpu_sti();
   interrupt_process(interrupt_default_handler);
   interrupt_exit();
 }

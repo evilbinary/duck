@@ -155,3 +155,8 @@ interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
 
   return next->ksp;
 }
+
+int context_irq_preemptible(interrupt_context_t* ic) {
+  (void)ic;
+  return 1;
+}
