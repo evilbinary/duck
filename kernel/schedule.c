@@ -52,11 +52,13 @@ thread_t* schedule_next(int cpu) {
     return NULL;
   }
 
+  /* 先比 priority（越小越高），再比 counter */
   for (v = thread_head(); v != NULL; v = v->next) {
     if (v->state != THREAD_RUNNING || v->cpu_id != cpu || v == current) {
       continue;
     }
-    if (v->counter < next->counter) {
+    if (v->priority < next->priority ||
+        (v->priority == next->priority && v->counter < next->counter)) {
       next = v;
     }
   }
@@ -175,12 +177,15 @@ void* do_schedule(interrupt_context_t* ic) {
   {
     thread_t* next_thread = schedule_next(cpu);
     if (next_thread == NULL) {
-      log_debug("schedule error next\n");
-      thread_t* v = thread_head();
-      for (; v != NULL; v = v->next) {
-        kprintf("TS tid=%d state=%d sleep=%d counter=%d cpu=%d name=%s\n",
-                v->id, v->state, v->sleep_counter, v->counter, v->cpu_id,
-                v->name != NULL ? v->name : "null");
+      /* RT park：当前 WAITING 且暂无其它可跑线程，等下一拍 */
+      if (current_thread->state != THREAD_WAITING) {
+        log_debug("schedule error next\n");
+        thread_t* v = thread_head();
+        for (; v != NULL; v = v->next) {
+          kprintf("TS tid=%d state=%d sleep=%d counter=%d cpu=%d name=%s\n",
+                  v->id, v->state, v->sleep_counter, v->counter, v->cpu_id,
+                  v->name != NULL ? v->name : "null");
+        }
       }
       timer_end();
       return ic;

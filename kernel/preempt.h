@@ -14,7 +14,7 @@ enum {
   PREEMPT_NONE = 0,      /* 仅回用户态前可调度 */
   PREEMPT_VOLUNTARY = 1, /* + cond_resched 显式点 */
   PREEMPT_FULL = 2,      /* 内核态也可被时钟抢走（preempt_count==0） */
-  PREEMPT_RT = 3,        /* FULL + 长临界区用 rt_mutex，持锁不长期禁抢占 */
+  PREEMPT_RT = 3, /* FULL + rt_mutex 睡眠等待/PI，持锁不长期禁抢占 */
 };
 
 #ifndef PREEMPT_MODEL_DEFAULT

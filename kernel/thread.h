@@ -54,11 +54,13 @@ typedef struct thread {
   u32 id;
   u8* name;
   int priority;
+  int priority_base; /* PI 恢复用 */
   int counter;
   u32 ticks;
   int state;
   int sleep_counter;
   struct thread* next;
+  struct thread* rt_wait_next; /* rt_mutex 等待链 */
   void* data;
   exec_params_t* exec;
   context_t* ctx;

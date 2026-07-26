@@ -147,7 +147,7 @@
 
 /* 抢占模型：0 NONE / 1 VOLUNTARY / 2 FULL / 3 RT */
 #ifndef PREEMPT_MODEL_DEFAULT
-#define PREEMPT_MODEL_DEFAULT 0 /* PREEMPT_NONE；RT 改为 3 */
+#define PREEMPT_MODEL_DEFAULT 0 /* PREEMPT_NONE；完整 RT 改为 3 */
 #endif
 
 //是否打印加载ELF信息

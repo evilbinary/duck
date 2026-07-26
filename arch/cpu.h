@@ -57,6 +57,7 @@ typedef struct stack_frame {
 
 void cpu_init(int cpu);
 void cpu_halt();
+void cpu_wait(void);
 
 #define KERNEL_MODE 0
 #define USER_MODE 3

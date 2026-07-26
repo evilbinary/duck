@@ -8,13 +8,19 @@
 
 #include "thread.h"
 
-/* 可重入互斥：持锁期间不长期 preempt_disable，争用时开中断自旋并做简易 PI。
- * RT 模式下替代“spin + 整段禁抢占”；真正 block+返回需后续补全调度路径。 */
+/* RT 可重入互斥：
+ * - RT：持锁不长期禁抢占；争用者 THREAD_WAITING + cpu_wait，解锁唤醒
+ * - FULL：持锁不长期禁抢占；争用开中断自旋
+ * - NONE/VOLUNTARY：持锁 preempt_disable，避免 SVC 下互等死锁
+ * PI：等待者抬升持有者 priority/counter */
 typedef struct rt_mutex {
   thread_t* owner;
   int depth;
+  int hold_preempt;
+  int owner_priority_saved;
   int owner_counter_saved;
   int pi_active;
+  thread_t* wait_head;
 } rt_mutex_t;
 
 void rt_mutex_init(rt_mutex_t* m);

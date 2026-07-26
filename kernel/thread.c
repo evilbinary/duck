@@ -69,7 +69,9 @@ void thread_init_default(thread_t* thread, u32 level, u32* entry, void* data) {
   thread->id = thread_ids++;
   thread->lock = 0;
   thread->next = NULL;
+  thread->rt_wait_next = NULL;
   thread->priority = 1;
+  thread->priority_base = 1;
   thread->counter = 0;
   thread->sleep_counter = 0;
   thread->state = THREAD_CREATE;
