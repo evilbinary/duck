@@ -502,18 +502,31 @@ u32 xwin_text_height(u32 size) {
 // ========== 图像操作 ==========
 
 void xwin_blit(xwindow_t* win, i32 x, i32 y, const u32* data, u32 w, u32 h) {
-    if (win == NULL || win->framebuffer == NULL || data == NULL) return;
+    if (win == NULL || win->framebuffer == NULL || data == NULL || w == 0 ||
+        h == 0) {
+        return;
+    }
 
-    for (u32 py = 0; py < h; py++) {
-        for (u32 px = 0; px < w; px++) {
-            i32 sx = x + px;
-            i32 sy = y + py;
-            if (sx >= 0 && sx < (i32)win->width && sy >= 0 &&
-                sy < (i32)win->height) {
-                /* DE ARGB：alpha=0 会当全透明 */
-                win->framebuffer[sy * win->width + sx] =
-                    data[py * w + px] | 0xFF000000u;
-            }
+    /* 裁剪到窗口，再按行拷贝；逐像素会把 480x320 拖到约 1fps */
+    i32 dx0 = x < 0 ? 0 : x;
+    i32 dy0 = y < 0 ? 0 : y;
+    i32 dx1 = x + (i32)w;
+    i32 dy1 = y + (i32)h;
+    if (dx1 > (i32)win->width) dx1 = (i32)win->width;
+    if (dy1 > (i32)win->height) dy1 = (i32)win->height;
+    if (dx0 >= dx1 || dy0 >= dy1) return;
+
+    i32 src_x0 = dx0 - x;
+    i32 src_y0 = dy0 - y;
+    u32 copy_w = (u32)(dx1 - dx0);
+
+    for (i32 dy = dy0; dy < dy1; dy++) {
+        const u32* src =
+            data + (u32)(src_y0 + (dy - dy0)) * w + (u32)src_x0;
+        u32* dst = win->framebuffer + (u32)dy * win->width + (u32)dx0;
+        for (u32 i = 0; i < copy_w; i++) {
+            /* DE ARGB：alpha=0 会当全透明 */
+            dst[i] = src[i] | 0xFF000000u;
         }
     }
 }

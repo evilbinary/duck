@@ -237,16 +237,11 @@ static void fb_t113_cfg_gpios(int gpio, int pin, int n, int cfg, int pull,
 }
 
 void t113_flush_screen(vga_device_t *vga, u32 index) {
+  (void)vga;
   (void)index;
-  u32 len = vga->framebuffer_length;
-  if (len == 0) {
-    len = vga->width * vga->height * 4;
-  }
-  /* 只 flush CPU 映射的 frambuffer；pframbuffer 是物理地址不能当 VA */
-  if (vga->frambuffer != NULL) {
-    cpu_cache_flush_range((u32)(uintptr_t)vga->frambuffer,
-                          (u32)(uintptr_t)vga->frambuffer + len);
-  }
+  /* FB 已按 PAGE_DEV 映射，写直达 DRAM，DE 直接读；
+   * 对 Device VA 做全屏 cache_flush 无收益，实机上极慢（约 1fps）。 */
+  dsb();
 }
 
 int gpu_init_mode(vga_device_t *vga, int mode) {
