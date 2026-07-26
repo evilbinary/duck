@@ -685,55 +685,103 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
 
 void* sys_mremap(void* old_address, size_t old_size, size_t new_size, int flags,
                  ... /* void *new_address */) {
+  (void)old_size;
   thread_t* current = thread_current();
+  if (current == NULL || current->vm == NULL) {
+    return MAP_FAILED;
+  }
   vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
   if (vm == NULL) {
     log_error("sys mremap not found vm\n");
     return MAP_FAILED;
   }
-
-  log_debug("sys mremap old addr %x old size %d new size %d\n", old_address,
-            old_size, new_size);
-
-  // 内存大小 对齐 16
-  new_size = ALIGN(new_size, MEMORY_ALIGMENT);
-  int size = new_size - old_size;
-
-  vmemory_area_t* old_area =
-      vmemory_area_find(vm->child, old_address, old_size);
-  if (old_area == NULL) {
-    log_error("not fount vm area\n");
+  if (old_address == NULL || new_size == 0) {
+    return MAP_FAILED;
+  }
+  if ((flags & MREMAP_FIXED) == MREMAP_FIXED) {
+    log_error("mremap: MREMAP_FIXED not supported\n");
     return MAP_FAILED;
   }
 
-  if ((flags & MREMAP_MAYMOVE) == MREMAP_MAYMOVE) {
-    int addr = NULL;
-    if (old_area->next == NULL) {
-      old_area->size += size;
-      old_area->vend += size;
-      addr = old_area->alloc_addr;
-    } else {
-      vmemory_area_t* last_area = vmemory_area_find_last(vm->child);
-      u32 start_addr = last_area->vend;
-      vmemory_area_t* new_area =
-          vmemory_area_create(start_addr, new_size, MEMORY_MMAP);
-      last_area->next = new_area;
-      addr = new_area->alloc_addr;
+  new_size = ALIGN(new_size, PAGE_SIZE);
+
+  log_debug("sys mremap old=%x new=%x flags=%x\n", old_address, new_size, flags);
+
+  vmemory_area_t* old_area = vmemory_area_find(vm->child, old_address, 0);
+  if (old_area == NULL || old_area->flags == MEMORY_FREE) {
+    log_error("mremap: area not found at %x\n", old_address);
+    return MAP_FAILED;
+  }
+  /* mallocng passes the mapping base (g->mem). */
+  if ((vaddr_t)old_address != old_area->vaddr) {
+    log_error("mremap: %x is not mapping base %x\n", old_address,
+              old_area->vaddr);
+    return MAP_FAILED;
+  }
+
+  size_t map_old = old_area->size;
+  if (new_size == map_old) {
+    return old_address;
+  }
+
+  /* Shrink: drop trailing pages. */
+  if (new_size < map_old) {
+    vfree((void*)(old_area->vaddr + new_size), map_old - new_size);
+    old_area->size = new_size;
+    old_area->vend = old_area->vaddr + new_size;
+    return old_address;
+  }
+
+  size_t grow = new_size - map_old;
+  u32 extend_at = (u32)old_area->vend;
+  int can_inplace =
+      (extend_at + grow <= (u32)vm->vend) &&
+      !sys_mmap_child_overlaps(vm->child, extend_at, grow) &&
+      !sys_mmap_pages_mapped(current, (void*)(uintptr_t)extend_at, grow);
+
+  if (can_inplace) {
+    if (valloc((void*)(uintptr_t)extend_at, grow) == NULL) {
+      log_error("mremap: inplace valloc failed at %x len %x\n", extend_at,
+                grow);
+      return MAP_FAILED;
     }
-    log_debug("mremap maymove return addr %x\n", addr);
-    return addr;
-  }
-
-  if ((flags & MREMAP_FIXED) == MREMAP_FIXED) {
-    log_debug("mremap fixed return addr %x\n", old_address);
+    old_area->size = new_size;
+    old_area->vend = old_area->vaddr + new_size;
+    log_debug("mremap inplace %x size %x\n", old_area->vaddr, new_size);
     return old_address;
   }
 
-  if (flags == 0) {
-    return old_address;
+  if ((flags & MREMAP_MAYMOVE) == 0) {
+    log_error("mremap: cannot grow in place\n");
+    return MAP_FAILED;
   }
 
-  return MAP_FAILED;
+  /*
+   * Old code only bumped vend / created a VMA and never mapped pages or
+   * copied — realloc(256K→512K) then wrote into unmapped VA (PREF/data abort).
+   */
+  void* new_addr = sys_mmap_pick_anon_addr(current, vm, new_size);
+  if (new_addr == NULL) {
+    log_error("mremap: no anon space for %x\n", new_size);
+    return MAP_FAILED;
+  }
+  if (valloc(new_addr, new_size) == NULL) {
+    log_error("mremap: valloc new %x len %x failed\n", new_addr, new_size);
+    return MAP_FAILED;
+  }
+  if (sys_mmap_install_area(vm, new_addr, new_size) < 0) {
+    vfree(new_addr, new_size);
+    log_error("mremap: install area failed\n");
+    return MAP_FAILED;
+  }
+
+  kmemcpy(new_addr, old_address, map_old);
+  if (sys_munmap(old_address, map_old) != 0) {
+    log_warn("mremap: munmap old %x failed\n", old_address);
+  }
+
+  log_debug("mremap moved %x -> %x size %x\n", old_address, new_addr, new_size);
+  return new_addr;
 }
 
 int sys_munmap(void* addr, size_t size) {

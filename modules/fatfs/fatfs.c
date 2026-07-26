@@ -308,7 +308,8 @@ uint fat_op_read(vnode_t *node, uint offset, size_t nbytes, u8 *buffer) {
     return -1;
   }
 
-  if (offset >= 0) {
+  /* 顺序读时 fptr 已在 offset，跳过 f_lseek（省一次 FAT 窗口访问） */
+  if (offset != (uint)file_info->fil.fptr) {
     int seek_res = f_lseek(&file_info->fil, offset);
     if (seek_res == FR_INVALID_OBJECT) {
       if (fat_reopen_file(node) < 0) {
