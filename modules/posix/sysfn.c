@@ -1149,7 +1149,7 @@ int sys_fn_faild_handler(int no, interrupt_context_t* ic) {
   if (call_id == 0xf0005) {
     return sys_fn_call(ic, &sys_set_thread_area);
   }
-  if (call_id >= 0x5000 && call_id <= 0x5017) {
+  if (call_id >= 0x5000 && call_id <= 0x5019) {
     context_ret(ic) =
         xwin_syscall_handler((u32)call_id, (long)context_arg0(ic),
                              (long)context_arg1(ic), (long)context_arg2(ic),

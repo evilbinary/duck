@@ -40,6 +40,7 @@ void xwin_render(xdisplay_t* disp) {
     extern u32 schedule_get_ticks(void);
     u32 t0, t1;
     static u32 t_clear = 0, t_composite = 0, t_cursor = 0, t_flip = 0;
+    static u32 t_kernel = 0; /* 仅内核 render 路径累计 tick */
     static u32 frame_count = 0;
     static u32 skip_count = 0;
     static u32 fps_t0 = 0;
@@ -50,6 +51,7 @@ void xwin_render(xdisplay_t* disp) {
         log_info("xwin: %dx%d, buffer=%d bytes, %d KB\n", 
                  disp->vga->width, disp->vga->height, 
                  disp->buffer_size, disp->buffer_size / 1024);
+        log_info("xwin: stats: app_fps=墙钟(含用户态); k_us=内核render均耗\n");
         printed_info = 1;
         fps_t0 = schedule_get_ticks();
     }
@@ -78,6 +80,8 @@ void xwin_render(xdisplay_t* disp) {
         return;
     }
 
+    u32 k0 = schedule_get_ticks();
+
     /* 全屏覆盖窗：只走该窗（可无 DIRECT 标志），跳过根窗 + 多余 memcpy */
     xwindow_t* direct_win = NULL;
     for (u32 i = 0; i < disp->window_count; i++) {
@@ -98,20 +102,11 @@ void xwin_render(xdisplay_t* disp) {
 
         t0 = schedule_get_ticks();
         if (fb != NULL && direct_win->framebuffer != fb) {
-            /* 本帧：先把离屏内容拷到 LCD，再绑零拷贝供后续 blit */
-            if (disp->back_buffer != NULL && disp->back_buffer != fb) {
-                kfree(disp->back_buffer);
+            /* 用户态应已通过 get_fb 拿到 LCD；此处只补绑，勿再合成离屏 */
+            if (xwin_bind_lcd(disp, direct_win) != NULL) {
+                log_info("xwin: late DIRECT bind LCD %x\n",
+                         (u32)(uintptr_t)fb);
             }
-            disp->back_buffer = fb;
-            disp->fb_mapped_tid = 0;
-            xwin_map_framebuffer(disp);
-            xwin_composite_window(disp, direct_win);
-            if (direct_win->framebuffer != NULL) {
-                kfree(direct_win->framebuffer);
-            }
-            direct_win->framebuffer = fb;
-            direct_win->flags |= XWIN_FLAG_DIRECT;
-            log_info("xwin: late DIRECT bind LCD\n");
         }
         t1 = schedule_get_ticks();
         t_composite += (t1 - t0);
@@ -126,16 +121,20 @@ void xwin_render(xdisplay_t* disp) {
                 disp->windows[i]->damaged = 0;
             }
         }
+        t_kernel += schedule_get_ticks() - k0;
         disp->frame_count++;
         frame_count++;
         if (frame_count >= 60) {
             u32 now = schedule_get_ticks();
             u32 dt = now - fps_t0;
-            u32 fps = dt > 0 ? (frame_count * SCHEDULE_FREQUENCY) / dt : 0;
-            log_info("Render: direct-lcd fps=%d composite=%d flip=%d "
-                     "(skipped=%d dt=%d)\n",
-                     fps, t_composite, t_flip, skip_count, dt);
-            t_clear = t_composite = t_cursor = t_flip = 0;
+            /* app_fps：两次统计间隔的墙钟帧率（含 fill/blit/sleep 等）
+             * k_us：内核本路径均耗；composite=flip=0 时内核不是瓶颈 */
+            u32 app_fps = dt > 0 ? (frame_count * SCHEDULE_FREQUENCY) / dt : 0;
+            u32 k_us = (t_kernel * 1000) / frame_count; /* tick=ms@1kHz → us */
+            log_info("Render: direct-lcd app_fps=%d k_us=%d "
+                     "composite=%d flip=%d (skip=%d)\n",
+                     app_fps, k_us, t_composite, t_flip, skip_count);
+            t_clear = t_composite = t_cursor = t_flip = t_kernel = 0;
             frame_count = 0;
             skip_count = 0;
             fps_t0 = now;
@@ -177,6 +176,8 @@ void xwin_render(xdisplay_t* disp) {
     xwin_flip_buffer(disp);
     t1 = schedule_get_ticks();
     t_flip += (t1 - t0);
+
+    t_kernel += schedule_get_ticks() - k0;
     
     // 更新FPS
     disp->frame_count++;
@@ -186,11 +187,13 @@ void xwin_render(xdisplay_t* disp) {
     if (frame_count >= 60) {
         u32 now = schedule_get_ticks();
         u32 dt = now - fps_t0;
-        u32 fps = dt > 0 ? (frame_count * SCHEDULE_FREQUENCY) / dt : 0;
-        log_info("Render: fps=%d clear=%d composite=%d cursor=%d flip=%d "
-                 "(skipped=%d dt=%d)\n",
-                 fps, t_clear, t_composite, t_cursor, t_flip, skip_count, dt);
-        t_clear = t_composite = t_cursor = t_flip = 0;
+        u32 app_fps = dt > 0 ? (frame_count * SCHEDULE_FREQUENCY) / dt : 0;
+        u32 k_us = (t_kernel * 1000) / frame_count;
+        log_info("Render: app_fps=%d k_us=%d clear=%d composite=%d "
+                 "cursor=%d flip=%d (skip=%d)\n",
+                 app_fps, k_us, t_clear, t_composite, t_cursor, t_flip,
+                 skip_count);
+        t_clear = t_composite = t_cursor = t_flip = t_kernel = 0;
         frame_count = 0;
         skip_count = 0;
         fps_t0 = now;

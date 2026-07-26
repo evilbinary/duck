@@ -71,6 +71,8 @@ void xwin_update(xwin_handle_t win);
 #define SYS_XWIN_PROCESS_EVENTS (SYS_XWIN_BASE + 21)
 #define SYS_XWIN_RENDER        (SYS_XWIN_BASE + 22)
 #define SYS_XWIN_UPDATE        (SYS_XWIN_BASE + 23)
+#define SYS_XWIN_GET_FB        (SYS_XWIN_BASE + 24)
+#define SYS_XWIN_GET_TICKS     (SYS_XWIN_BASE + 25)
 
 // ========== 用户空间实现 (示例) ==========
 
@@ -184,6 +186,15 @@ static inline void xwin_render(void) {
 
 static inline void xwin_update(xwin_handle_t win) {
     xwin_syscall(SYS_XWIN_UPDATE, (long)win, 0, 0, 0, 0, 0);
+}
+
+static inline u32* xwin_get_fb(xwin_handle_t win) {
+    return (u32*)(uintptr_t)xwin_syscall(SYS_XWIN_GET_FB, (long)win, 0, 0, 0, 0,
+                                         0);
+}
+
+static inline u32 xwin_get_ticks(void) {
+    return (u32)xwin_syscall(SYS_XWIN_GET_TICKS, 0, 0, 0, 0, 0, 0);
 }
 
 #endif // XWIN_USER_IMPL

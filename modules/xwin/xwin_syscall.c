@@ -28,6 +28,8 @@
 #define SYS_XWIN_PROCESS_EVENTS (SYS_XWIN_BASE + 21)
 #define SYS_XWIN_RENDER        (SYS_XWIN_BASE + 22)
 #define SYS_XWIN_UPDATE        (SYS_XWIN_BASE + 23)
+#define SYS_XWIN_GET_FB        (SYS_XWIN_BASE + 24)
+#define SYS_XWIN_GET_TICKS     (SYS_XWIN_BASE + 25)
 
 // ========== 外部全局显示服务器 ==========
 extern xdisplay_t* g_display;
@@ -263,6 +265,32 @@ long xwin_syscall_update(long win_id) {
     return 0;
 }
 
+long xwin_syscall_get_fb(long win_id) {
+    xdisplay_t* disp = g_display;
+    xwindow_t* win;
+    u32* lcd;
+
+    if (disp == NULL || disp->vga == NULL) return 0;
+
+    win = xwin_find_window(disp, (u32)win_id);
+    if (win == NULL) return 0;
+
+    /* 必须返回 LCD VA（0xfb...）。若返回 kmalloc 指针，随后 late-bind
+     * kfree 会让用户态直绘野指针 → 黑屏。 */
+    lcd = xwin_bind_lcd(disp, win);
+    if (lcd == NULL) {
+        log_error("xwin: get_fb bind LCD failed\n");
+        return 0;
+    }
+    log_info("xwin: get_fb -> LCD %x\n", (u32)(uintptr_t)lcd);
+    return (long)(uintptr_t)lcd;
+}
+
+long xwin_syscall_get_ticks(void) {
+    extern u32 schedule_get_ticks(void);
+    return (long)schedule_get_ticks();
+}
+
 // ========== Syscall 分发器 ==========
 
 long xwin_syscall_handler(u32 num, long a1, long a2, long a3, long a4, long a5,
@@ -302,6 +330,10 @@ long xwin_syscall_handler(u32 num, long a1, long a2, long a3, long a4, long a5,
             return xwin_syscall_render();
         case SYS_XWIN_UPDATE:
             return xwin_syscall_update(a1);
+        case SYS_XWIN_GET_FB:
+            return xwin_syscall_get_fb(a1);
+        case SYS_XWIN_GET_TICKS:
+            return xwin_syscall_get_ticks();
         default:
             return -1;
     }

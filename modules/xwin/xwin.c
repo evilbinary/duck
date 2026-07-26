@@ -40,6 +40,34 @@ static void xwin_remap_cached(void* buf, u32 size) {
   }
 }
 
+/* DIRECT：窗口缓冲 + back_buffer 绑到 LCD VA。返回 LCD，失败返回 NULL。 */
+u32* xwin_bind_lcd(xdisplay_t* disp, xwindow_t* win) {
+  u32* lcd;
+
+  if (disp == NULL || disp->vga == NULL || win == NULL) {
+    return NULL;
+  }
+  lcd = (u32*)disp->vga->frambuffer;
+  if (lcd == NULL) {
+    return NULL;
+  }
+
+  disp->fb_mapped_tid = 0;
+  xwin_map_framebuffer(disp);
+
+  if (win->framebuffer != NULL && win->framebuffer != lcd) {
+    kfree(win->framebuffer);
+  }
+  win->framebuffer = lcd;
+  win->flags |= XWIN_FLAG_DIRECT;
+
+  if (disp->back_buffer != NULL && disp->back_buffer != lcd) {
+    kfree(disp->back_buffer);
+  }
+  disp->back_buffer = lcd;
+  return lcd;
+}
+
 // ========== 全局显示服务器 ==========
 xdisplay_t* g_display = NULL;
 
@@ -256,21 +284,19 @@ xwindow_t* xwin_create_window(xdisplay_t* disp,
     disp->fb_mapped_tid = 0;
     xwin_map_framebuffer(disp);
 
-    /* DIRECT 全屏：窗口缓冲直接绑 LCD。blit 一次写屏，render 跳过合成。
-     * 勿对 LCD 做 remap_cached(WB)，否则脏 cache 会冲掉 DRAM → 黑屏。 */
+    /* DIRECT 全屏：绑 LCD。勿对 LCD 做 remap_cached(WB)。 */
     if ((flags & XWIN_FLAG_DIRECT) && disp->vga != NULL &&
-        disp->vga->frambuffer != NULL && width == disp->vga->width &&
-        height == disp->vga->height) {
-        u32* fb = (u32*)disp->vga->frambuffer;
-        if (win->framebuffer != NULL && win->framebuffer != fb) {
-            kfree(win->framebuffer);
+        width == disp->vga->width && height == disp->vga->height) {
+        u32* lcd = xwin_bind_lcd(disp, win);
+        if (lcd != NULL) {
+            log_info("xwin: DIRECT %dx%d bind LCD %x\n", width, height,
+                     (u32)(uintptr_t)lcd);
+        } else {
+            log_error("xwin: DIRECT bind failed (frambuffer=%x)\n",
+                      disp->vga->frambuffer != NULL
+                          ? (u32)(uintptr_t)disp->vga->frambuffer
+                          : 0);
         }
-        win->framebuffer = fb;
-        if (disp->back_buffer != NULL && disp->back_buffer != fb) {
-            kfree(disp->back_buffer);
-        }
-        disp->back_buffer = fb;
-        log_info("xwin: DIRECT %dx%d bind LCD (zero-copy)\n", width, height);
     }
 
     return win;

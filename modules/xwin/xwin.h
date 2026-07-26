@@ -455,6 +455,7 @@ void xwin_render(xdisplay_t* disp);
 void xwin_render_window(xdisplay_t* disp, xwindow_t* win);
 void xwin_flip_buffer(xdisplay_t* disp);
 void xwin_map_framebuffer(xdisplay_t* disp);
+u32* xwin_bind_lcd(xdisplay_t* disp, xwindow_t* win);
 void xwin_update_mouse_cursor(xdisplay_t* disp);
 
 // 窗口合成
