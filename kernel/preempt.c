@@ -26,8 +26,8 @@ void preempt_set_model(int model) {
   if (model < PREEMPT_NONE) {
     model = PREEMPT_NONE;
   }
-  if (model > PREEMPT_FULL) {
-    model = PREEMPT_FULL;
+  if (model > PREEMPT_RT) {
+    model = PREEMPT_RT;
   }
   preempt_model = model;
 }
@@ -97,7 +97,8 @@ int preempt_may_switch(interrupt_context_t* ic) {
     return 0;
   }
   /* NONE/VOLUNTARY：打断的是 SVC(syscall) 则只记账，回用户/显式点再切。
-   * SYS 上的内核线程仍允许时钟切换（否则 init 等不到 module_ready）。 */
+   * FULL/RT：允许在 SVC 路径抢占（preempt_count==0）。
+   * SYS 上的内核线程在各模式下仍允许时钟切换。 */
   if (context_in_kernel(ic) && preempt_model < PREEMPT_FULL) {
     return 0;
   }

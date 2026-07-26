@@ -8,40 +8,18 @@
 
 #include "fd.h"
 #include "preempt.h"
+#include "rt_mutex.h"
 #include "thread.h"
 
 /* User mappings on ARM32 YiYiYa start around 0x70000000 (stack/heap/exec). */
 #define VFS_USER_PTR_MIN 0x70000000U
 
-/* 全局 VFS 锁：防 FatFs/目录树重入。可重入；持锁期间 preempt_disable。 */
-static lock_t vfs_biglock;
-static thread_t* vfs_lock_owner;
-static int vfs_lock_depth;
+/* 全局 VFS 锁：rt_mutex，持锁不长期禁抢占（RT/FULL 可切走持锁线程） */
+static rt_mutex_t vfs_biglock;
 
-static void vfs_lock(void) {
-  thread_t* cur = thread_current();
-  /* 含 early-init（cur==NULL）同上下文重入 */
-  if (vfs_lock_depth > 0 && vfs_lock_owner == cur) {
-    vfs_lock_depth++;
-    return;
-  }
-  preempt_disable();
-  lock_acquire(&vfs_biglock);
-  vfs_lock_owner = cur;
-  vfs_lock_depth = 1;
-}
+static void vfs_lock(void) { rt_mutex_lock(&vfs_biglock); }
 
-static void vfs_unlock(void) {
-  if (vfs_lock_depth > 1) {
-    vfs_lock_depth--;
-    return;
-  }
-  vfs_lock_depth = 0;
-  vfs_lock_owner = NULL;
-  lock_release(&vfs_biglock);
-  preempt_enable();
-  cond_resched();
-}
+static void vfs_unlock(void) { rt_mutex_unlock(&vfs_biglock); }
 
 /* 只拒绝空/低地址/用户态指针。禁止用「四字节皆可打印」判断：
  * 内核堆指针如 0x415d6f64（'d','o',']','A'）会被误杀，导致
@@ -762,9 +740,7 @@ vnode_t *vfs_find_relative(vnode_t *root, vnode_t *pwd, const char *path) {
 }
 
 int vfs_init() {
-  lock_init(&vfs_biglock);
-  vfs_lock_owner = NULL;
-  vfs_lock_depth = 0;
+  rt_mutex_init(&vfs_biglock);
   root_node = vfs_create_node("/", V_DIRECTORY);
   return 1;
 }

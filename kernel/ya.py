@@ -16,6 +16,7 @@ add_files(
     'thread.c',
     'schedule.c',
     'preempt.c',
+    'rt_mutex.c',
     'syscall.c',
     'exceptions.c',
     'memory.c',
