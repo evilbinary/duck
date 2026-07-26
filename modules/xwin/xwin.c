@@ -149,17 +149,17 @@
      pa = disp->vga->pframbuffer;
    }
  
-   disp->vga->frambuffer = lcd;
-   disp->vga->pframbuffer = pa;
-   disp->lcd_va = lcd;
-   disp->lcd_pa = pa;
- 
-   disp->fb_mapped_tid = 0;
-   if (xwin_map_framebuffer(disp) != 0) {
-     log_error("xwin: bind_lcd map failed va=%x pa=%x\n",
-               (u32)(uintptr_t)lcd, (u32)(uintptr_t)pa);
-     return NULL;
-   }
+  disp->vga->frambuffer = lcd;
+  disp->vga->pframbuffer = pa;
+  disp->lcd_va = lcd;
+  disp->lcd_pa = pa;
+
+  /* 勿清 fb_mapped_tid：多进程各自 upage，清了会迫使对方下帧全量重映 */
+  if (xwin_map_framebuffer(disp) != 0) {
+    log_error("xwin: bind_lcd map failed va=%x pa=%x\n",
+              (u32)(uintptr_t)lcd, (u32)(uintptr_t)pa);
+    return NULL;
+  }
  
    /* 勿 kfree 旧 framebuffer：曾 remap_cached，用户 TTBR0 下 free 会炸堆。泄漏可接受。 */
    win->framebuffer = lcd;

@@ -208,7 +208,7 @@ void xwin_render_window(xdisplay_t* disp, xwindow_t* win) {
 }
 
 /* SVC 下 TTBR0=upage；LCD 必须 PAGE_RW_NC。
- * 若曾被映成 WB，改属性前必须 clean+invalidate，否则脏 cache 写回会冲掉 DRAM → 黑屏。 */
+ * 多进程各自有 upage：不能用全局 fb_mapped_tid 互斥，否则 A/B 每帧互踢重映 150 页。 */
 int xwin_map_framebuffer(xdisplay_t* disp) {
     if (disp == NULL || disp->vga == NULL || disp->buffer_size == 0) {
         return -1;
@@ -248,15 +248,16 @@ int xwin_map_framebuffer(xdisplay_t* disp) {
         return -1;
     }
 
-    if (disp->fb_mapped_tid == cur->id) {
+    /* 以当前进程页表为准：已是 fb→fe 则跳过（多 gui 各自保留映射） */
+    {
         void* got = page_v2p((u64*)cur->vm->upage, (void*)(uintptr_t)va);
         if (got != NULL &&
             ((u32)(uintptr_t)got & 0xff000000u) == 0xfe000000u) {
+            disp->fb_mapped_tid = cur->id;
             return 0;
         }
     }
 
-    /* 先建页表。未映射时对 0xfb... 做 cache 维护会 data abort。 */
     u32 pages = (disp->buffer_size + PAGE_SIZE - 1) / PAGE_SIZE;
     for (u32 i = 0; i < pages; i++) {
         page_map_current(va + i * PAGE_SIZE, pa + i * PAGE_SIZE, PAGE_RW_NC);
