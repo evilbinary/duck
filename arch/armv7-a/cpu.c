@@ -314,21 +314,21 @@ void cpu_enable_page() {
   // read mmu
   asm("mrc p15, 0, %0, c1, c0, 0" : "=r"(reg) : : "cc");  // SCTLR
   reg |= 0x1;                                             // M enable mmu
-  reg |= (1 << 29);                                       // AFE
-  reg |= 1 << 28;                                         // TEX remap enable.
-  reg |= 1 << 12;  // Instruction cache enable:
-  reg &= ~(1 << 1);   // Alignment check disable.
-  reg |= 1 << 11;  // Branch prediction enable
+  /* 勿开 AFE/TEX remap：mm.h 用的是传统 TEX/C/B + AP 编码。
+   * TRE=1 却未配 PRRR/NMRR 时，实机（T113）上用户堆可能变成 Device/
+   * 错误属性，musl mallocng 元数据错乱 → a_crash；QEMU 往往仍能跑。 */
+  reg &= ~(1u << 29);  // AFE off
+  reg &= ~(1u << 28);  // TEX remap off
+  reg |= 1 << 12;      // Instruction cache enable
+  reg |= 1 << 2;       // Data cache enable
+  reg &= ~(1 << 1);    // Alignment check disable
+  reg |= 1 << 11;      // Branch prediction enable
   asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");  // SCTLR
-
- // Disable L1 Cache
-  cpu_disable_l1_cache();
 
   // Invalidate L1 Caches Invalidate Instruction cache
   cp15_invalidate_icache();
 
   // Invalidate Data cache
-  // __builtin___clear_cache(0, ~0);
   cache_inv_range(0, ~0);
 
   cpu_invalid_tlb();
@@ -336,7 +336,6 @@ void cpu_enable_page() {
   dmb();
   dsb();
   isb();
-
 }
 
 extern void lcpu_wait_start(int cpu);

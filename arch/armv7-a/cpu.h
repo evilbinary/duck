@@ -55,6 +55,9 @@ typedef u32 (*sys_call_fn)(u32 arg1, u32 arg2, u32 arg3, u32 arg4, u32 arg5,
 
 #define cpu_faa(ptr) __sync_fetch_and_add(ptr, 1)
 
+void cpu_cache_flush_range(unsigned long start, unsigned long stop);
+void cache_inv_range(unsigned long start, unsigned long stop);
+
 #define syscall0(syscall_num)    \
   ({                             \
     int ret;                     \
