@@ -323,6 +323,10 @@ typedef struct xdisplay {
 
     /* 已对 tid 强制映过 LCD=PAGE_RW_NC；勿用 upage 指针（地址可能复用） */
     u32 fb_mapped_tid;
+
+    /* 缓存 LCD VA/PA：部分路径下 vga->frambuffer 会被清成 0 */
+    u32* lcd_va;
+    u32* lcd_pa;
     
 } xdisplay_t;
 
@@ -454,7 +458,7 @@ void xwin_damage_all(xwindow_t* win);
 void xwin_render(xdisplay_t* disp);
 void xwin_render_window(xdisplay_t* disp, xwindow_t* win);
 void xwin_flip_buffer(xdisplay_t* disp);
-void xwin_map_framebuffer(xdisplay_t* disp);
+int xwin_map_framebuffer(xdisplay_t* disp);
 u32* xwin_bind_lcd(xdisplay_t* disp, xwindow_t* win);
 void xwin_update_mouse_cursor(xdisplay_t* disp);
 

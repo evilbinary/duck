@@ -4,611 +4,721 @@
  * 邮箱: rootdebug@163.com
  * X Window System - Core Implementation
  ********************************************************************/
-#include "xwin.h"
-#include "kernel/memory.h"
-#include "kernel/page.h"
-#include "kernel/thread.h"
-
-#define MAX_WINDOWS 64
-
-/* kmalloc 池默认 PAGE_RW_NC；画图缓冲改为 WB。
- * SVC 用 TTBR0=upage，须同时改内核页表与当前进程页表。 */
-static void xwin_remap_cached(void* buf, u32 size) {
-  u32 start;
-  u32 end;
-  u32 v;
-  void* kpd;
-  thread_t* cur;
-
-  if (buf == NULL || size == 0) {
-    return;
-  }
-  kpd = page_kernel_dir();
-  if (kpd == NULL) {
-    return;
-  }
-  cur = thread_current();
-  start = ((u32)(uintptr_t)buf) & ~(PAGE_SIZE - 1);
-  end = ((u32)(uintptr_t)buf + size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-  for (v = start; v < end; v += PAGE_SIZE) {
-    void* phy = page_v2p((u64*)kpd, (void*)(uintptr_t)v);
-    u32 paddr = phy != NULL ? ((u32)(uintptr_t)phy & ~(PAGE_SIZE - 1)) : v;
-    page_map(v, paddr, PAGE_RW);
-    if (cur != NULL && cur->vm != NULL && cur->vm->upage != NULL) {
-      page_map_current(v, paddr, PAGE_RW);
-    }
-  }
-}
-
-/* DIRECT：窗口缓冲 + back_buffer 绑到 LCD VA。返回 LCD，失败返回 NULL。 */
-u32* xwin_bind_lcd(xdisplay_t* disp, xwindow_t* win) {
-  u32* lcd;
-
-  if (disp == NULL || disp->vga == NULL || win == NULL) {
-    return NULL;
-  }
-  lcd = (u32*)disp->vga->frambuffer;
-  if (lcd == NULL) {
-    return NULL;
-  }
-
-  disp->fb_mapped_tid = 0;
-  xwin_map_framebuffer(disp);
-
-  if (win->framebuffer != NULL && win->framebuffer != lcd) {
-    kfree(win->framebuffer);
-  }
-  win->framebuffer = lcd;
-  win->flags |= XWIN_FLAG_DIRECT;
-
-  if (disp->back_buffer != NULL && disp->back_buffer != lcd) {
-    kfree(disp->back_buffer);
-  }
-  disp->back_buffer = lcd;
-  return lcd;
-}
-
-// ========== 全局显示服务器 ==========
-xdisplay_t* g_display = NULL;
-
-// ========== 初始化 ==========
-
-int xwin_init(xdisplay_t* disp, vga_device_t* vga) {
-    if (disp == NULL || vga == NULL) {
-        return -1;
-    }
-
-    // 设置全局显示服务器
-    g_display = disp;
-
-    kmemset(disp, 0, sizeof(xdisplay_t));
-    disp->vga = vga;
-    
-    // 计算缓冲区大小
-    disp->buffer_size = vga->width * vga->height * sizeof(u32);
-    
-    // 分配屏幕缓冲区
-    disp->screen_buffer = kmalloc(disp->buffer_size, KERNEL_TYPE);
-    if (disp->screen_buffer == NULL) {
-        log_error("xwin: failed to allocate screen buffer\n");
-        return -1;
-    }
-    kmemset(disp->screen_buffer, 0, disp->buffer_size);
-    xwin_remap_cached(disp->screen_buffer, disp->buffer_size);
-    
-    // 分配后备缓冲区 (双缓冲)
-    disp->back_buffer = kmalloc(disp->buffer_size, KERNEL_TYPE);
-    if (disp->back_buffer == NULL) {
-        log_error("xwin: failed to allocate back buffer\n");
-        kfree(disp->screen_buffer);
-        return -1;
-    }
-    kmemset(disp->back_buffer, 0, disp->buffer_size);
-    xwin_remap_cached(disp->back_buffer, disp->buffer_size);
-    
-    // 分配窗口数组
-    disp->window_capacity = MAX_WINDOWS;
-    disp->windows = kmalloc(sizeof(xwindow_t*) * disp->window_capacity, KERNEL_TYPE);
-    if (disp->windows == NULL) {
-        log_error("xwin: failed to allocate window array\n");
-        kfree(disp->screen_buffer);
-        kfree(disp->back_buffer);
-        return -1;
-    }
-    kmemset(disp->windows, 0, sizeof(xwindow_t*) * disp->window_capacity);
-    
-    // 创建事件队列
-    disp->event_queue = ring_queue_create(256, sizeof(xevent_t));
-    if (disp->event_queue == NULL) {
-        log_error("xwin: failed to create event queue\n");
-        kfree(disp->screen_buffer);
-        kfree(disp->back_buffer);
-        kfree(disp->windows);
-        return -1;
-    }
-    
-    // 创建根窗口 (桌面)
-    disp->root_window = xwin_create_window(disp, NULL, 0, 0, 
-                                            vga->width, vga->height,
-                                            XWIN_FLAG_ROOT | XWIN_FLAG_VISIBLE);
-    if (disp->root_window == NULL) {
-        log_error("xwin: failed to create root window\n");
-        ring_queue_destroy(disp->event_queue);
-        kfree(disp->screen_buffer);
-        kfree(disp->back_buffer);
-        kfree(disp->windows);
-        return -1;
-    }
-    disp->root_window->bg_color = XCOLOR_DARK_GRAY;
-    xwin_set_title(disp->root_window, "Desktop");
-    
-    // 初始化鼠标状态（默认不画合成器光标，避免与 etk/sdl 自绘光标叠加重刷）
-    disp->mouse_x = vga->width / 2;
-    disp->mouse_y = vga->height / 2;
-    disp->mouse_visible = 0;
-    disp->mouse_cursor = 0;
-    
-    // 初始化窗口ID计数器
-    disp->next_window_id = 1;
-    
-    // 初始化主题（使用默认深色主题）
-    xtheme_set(disp, XTHEME_DARK);
-    
-    g_display = disp;
-    
-    log_info("xwin: initialized (%dx%d, %d bpp)\n", 
-             vga->width, vga->height, vga->bpp);
-    
-    return 0;
-}
-
-void xwin_exit(xdisplay_t* disp) {
-    if (disp == NULL) return;
-
-    // 销毁所有窗口
-    for (u32 i = 0; i < disp->window_count; i++) {
-        if (disp->windows[i] != NULL && disp->windows[i] != disp->root_window) {
-            xwin_destroy_window(disp, disp->windows[i]);
-        }
-    }
-
-    // 销毁根窗口
-    if (disp->root_window != NULL) {
-        xwin_destroy_window(disp, disp->root_window);
-    }
-
-    // 释放资源
-    if (disp->event_queue != NULL) {
-        ring_queue_destroy(disp->event_queue);
-    }
-    if (disp->screen_buffer != NULL) {
-        kfree(disp->screen_buffer);
-    }
-    if (disp->back_buffer != NULL &&
-        (disp->vga == NULL ||
-         disp->back_buffer != (u32*)disp->vga->frambuffer)) {
-        kfree(disp->back_buffer);
-    }
-    if (disp->windows != NULL) {
-        kfree(disp->windows);
-    }
-
-    // 清除全局显示服务器
-    if (g_display == disp) {
-        g_display = NULL;
-    }
-
-    g_display = NULL;
-    log_info("xwin: exited\n");
-}
-
-// ========== 窗口管理 ==========
-
-xwindow_t* xwin_create_window(xdisplay_t* disp, 
-                              xwindow_t* parent,
-                              i32 x, i32 y, 
-                              u32 width, u32 height,
-                              u32 flags) {
-    if (disp == NULL) return NULL;
-    
-    // 分配窗口结构
-    xwindow_t* win = kmalloc(sizeof(xwindow_t), KERNEL_TYPE);
-    if (win == NULL) {
-        log_error("xwin: failed to allocate window\n");
-        return NULL;
-    }
-    kmemset(win, 0, sizeof(xwindow_t));
-    
-    // 设置窗口属性
-    win->id = disp->next_window_id++;
-    win->x = x;
-    win->y = y;
-    win->width = width;
-    win->height = height;
-    win->flags = flags;
-    win->visible = (flags & XWIN_FLAG_VISIBLE) ? 1 : 0;
-    win->bg_color = XCOLOR_WHITE;
-    win->zorder = disp->window_count;
-    
-    // 计算绝对位置
-    if (parent != NULL) {
-        win->abs_x = parent->abs_x + x;
-        win->abs_y = parent->abs_y + y;
-    } else {
-        win->abs_x = x;
-        win->abs_y = y;
-    }
-    
-    // 分配窗口缓冲区
-    win->fb_size = width * height * sizeof(u32);
-    win->framebuffer = kmalloc(win->fb_size, KERNEL_TYPE);
-    if (win->framebuffer == NULL) {
-        log_error("xwin: failed to allocate window framebuffer\n");
-        kfree(win);
-        return NULL;
-    }
-    kmemset(win->framebuffer, 0, win->fb_size);
-    xwin_remap_cached(win->framebuffer, win->fb_size);
-    /* DE 用像素 alpha：全 0 即全透明；初始化成不透明背景 */
-    xwin_clear_color(win, win->bg_color | 0xFF000000u);
-    
-    // 设置窗口树
-    win->parent = parent;
-    if (parent != NULL) {
-        if (parent->first_child == NULL) {
-            parent->first_child = win;
-            parent->last_child = win;
-        } else {
-            parent->last_child->next_sibling = win;
-            win->prev_sibling = parent->last_child;
-            parent->last_child = win;
-        }
-    }
-    
-    // 添加到窗口数组
-    if (disp->window_count < disp->window_capacity) {
-        disp->windows[disp->window_count++] = win;
-    }
-    
-    // 发送创建事件
-    xevent_t event;
-    kmemset(&event, 0, sizeof(event));
-    event.type = XEVENT_CREATE;
-    event.window_id = win->id;
-    xwin_send_event(disp, win, &event);
-    
-    log_debug("xwin: created window %d (%dx%d at %d,%d)\n", 
-              win->id, width, height, x, y);
-
-    /* 当前进程强制 LCD=PAGE_RW_NC */
-    disp->fb_mapped_tid = 0;
-    xwin_map_framebuffer(disp);
-
-    /* DIRECT 全屏：绑 LCD。勿对 LCD 做 remap_cached(WB)。 */
-    if ((flags & XWIN_FLAG_DIRECT) && disp->vga != NULL &&
-        width == disp->vga->width && height == disp->vga->height) {
-        u32* lcd = xwin_bind_lcd(disp, win);
-        if (lcd != NULL) {
-            log_info("xwin: DIRECT %dx%d bind LCD %x\n", width, height,
-                     (u32)(uintptr_t)lcd);
-        } else {
-            log_error("xwin: DIRECT bind failed (frambuffer=%x)\n",
-                      disp->vga->frambuffer != NULL
-                          ? (u32)(uintptr_t)disp->vga->frambuffer
-                          : 0);
-        }
-    }
-
-    return win;
-}
-
-void xwin_destroy_window(xdisplay_t* disp, xwindow_t* win) {
-    if (disp == NULL || win == NULL) return;
-    
-    // 发送销毁事件
-    xevent_t event;
-    kmemset(&event, 0, sizeof(event));
-    event.type = XEVENT_DESTROY;
-    event.window_id = win->id;
-    xwin_send_event(disp, win, &event);
-    
-    // 递归销毁子窗口
-    xwindow_t* child = win->first_child;
-    while (child != NULL) {
-        xwindow_t* next = child->next_sibling;
-        xwin_destroy_window(disp, child);
-        child = next;
-    }
-    
-    // 从窗口树中移除
-    if (win->parent != NULL) {
-        if (win->parent->first_child == win) {
-            win->parent->first_child = win->next_sibling;
-        }
-        if (win->parent->last_child == win) {
-            win->parent->last_child = win->prev_sibling;
-        }
-        if (win->prev_sibling != NULL) {
-            win->prev_sibling->next_sibling = win->next_sibling;
-        }
-        if (win->next_sibling != NULL) {
-            win->next_sibling->prev_sibling = win->prev_sibling;
-        }
-    }
-    
-    // 从窗口数组中移除
-    for (u32 i = 0; i < disp->window_count; i++) {
-        if (disp->windows[i] == win) {
-            // 移动后面的窗口
-            for (u32 j = i; j < disp->window_count - 1; j++) {
-                disp->windows[j] = disp->windows[j + 1];
-            }
-            disp->window_count--;
-            break;
-        }
-    }
-    
-    // 清除焦点
-    if (disp->focused_window == win) {
-        disp->focused_window = disp->root_window;
-    }
-    
-    u32 win_id = win->id;
-    /* LCD 是显示设备缓冲，不是 kmalloc 出来的 */
-    if (win->framebuffer != NULL &&
-        (disp->vga == NULL ||
-         win->framebuffer != (u32*)disp->vga->frambuffer)) {
-        kfree(win->framebuffer);
-    }
-    kfree(win);
-
-    log_debug("xwin: destroyed window %d\n", win_id);
-}
-
-xwindow_t* xwin_find_window(xdisplay_t* disp, u32 id) {
-    if (disp == NULL) return NULL;
-    
-    for (u32 i = 0; i < disp->window_count; i++) {
-        if (disp->windows[i] != NULL && disp->windows[i]->id == id) {
-            return disp->windows[i];
-        }
-    }
-    return NULL;
-}
-
-xwindow_t* xwin_find_window_at(xdisplay_t* disp, i32 x, i32 y) {
-    if (disp == NULL) return NULL;
-    
-    // 从顶层窗口开始查找 (逆序遍历)
-    for (i32 i = disp->window_count - 1; i >= 0; i--) {
-        xwindow_t* win = disp->windows[i];
-        if (win != NULL && win->visible) {
-            if (x >= win->abs_x && x < (i32)(win->abs_x + win->width) &&
-                y >= win->abs_y && y < (i32)(win->abs_y + win->height)) {
-                return win;
-            }
-        }
-    }
-    return disp->root_window;
-}
-
-// ========== 窗口属性 ==========
-
-void xwin_set_title(xwindow_t* win, const char* title) {
-    if (win == NULL || title == NULL) return;
-    kstrncpy(win->title, title, sizeof(win->title) - 1);
-}
-
-void xwin_move(xdisplay_t* disp, xwindow_t* win, i32 x, i32 y) {
-    if (win == NULL) return;
-    
-    i32 old_x = win->abs_x;
-    i32 old_y = win->abs_y;
-    
-    win->x = x;
-    win->y = y;
-    
-    // 更新绝对位置
-    if (win->parent != NULL) {
-        win->abs_x = win->parent->abs_x + x;
-        win->abs_y = win->parent->abs_y + y;
-    } else {
-        win->abs_x = x;
-        win->abs_y = y;
-    }
-    
-    // 递归更新子窗口
-    xwindow_t* child = win->first_child;
-    while (child != NULL) {
-        child->abs_x = win->abs_x + child->x;
-        child->abs_y = win->abs_y + child->y;
-        // TODO: 递归更新子窗口的子窗口
-        child = child->next_sibling;
-    }
-    
-    // 标记损坏区域
-    xwin_damage_all(win);
-    
-    // 发送移动事件
-    xevent_t event;
-    kmemset(&event, 0, sizeof(event));
-    event.type = XEVENT_MOVE;
-    event.window_id = win->id;
-    event.data.move.x = x;
-    event.data.move.y = y;
-    event.data.move.old_x = old_x;
-    event.data.move.old_y = old_y;
-    xwin_send_event(disp, win, &event);
-}
-
-void xwin_resize(xdisplay_t* disp, xwindow_t* win, u32 w, u32 h) {
-    if (win == NULL || w == 0 || h == 0) return;
-    
-    u32 old_w = win->width;
-    u32 old_h = win->height;
-    
-    win->width = w;
-    win->height = h;
-    
-    // 重新分配缓冲区
-    u32 new_size = w * h * sizeof(u32);
-    u32* new_fb = kmalloc(new_size, KERNEL_TYPE);
-    if (new_fb != NULL) {
-        // 复制旧数据
-        u32 copy_w = (w < old_w) ? w : old_w;
-        u32 copy_h = (h < old_h) ? h : old_h;
-        for (u32 y = 0; y < copy_h; y++) {
-            for (u32 x = 0; x < copy_w; x++) {
-                new_fb[y * w + x] = win->framebuffer[y * old_w + x];
-            }
-        }
-        kfree(win->framebuffer);
-        win->framebuffer = new_fb;
-        win->fb_size = new_size;
-        xwin_remap_cached(win->framebuffer, win->fb_size);
-    }
-    
-    // 标记损坏
-    xwin_damage_all(win);
-    
-    // 发送大小改变事件
-    xevent_t event;
-    kmemset(&event, 0, sizeof(event));
-    event.type = XEVENT_RESIZE;
-    event.window_id = win->id;
-    event.data.resize.width = w;
-    event.data.resize.height = h;
-    event.data.resize.old_width = old_w;
-    event.data.resize.old_height = old_h;
-    xwin_send_event(disp, win, &event);
-}
-
-void xwin_raise(xdisplay_t* disp, xwindow_t* win) {
-    if (disp == NULL || win == NULL || win == disp->root_window) return;
-    
-    // 将窗口移到数组末尾 (顶层)
-    u32 idx = 0;
-    for (u32 i = 0; i < disp->window_count; i++) {
-        if (disp->windows[i] == win) {
-            idx = i;
-            break;
-        }
-    }
-    
-    // 移动到末尾
-    for (u32 i = idx; i < disp->window_count - 1; i++) {
-        disp->windows[i] = disp->windows[i + 1];
-    }
-    disp->windows[disp->window_count - 1] = win;
-    
-    // 更新 zorder
-    for (u32 i = 0; i < disp->window_count; i++) {
-        disp->windows[i]->zorder = i;
-    }
-}
-
-void xwin_lower(xdisplay_t* disp, xwindow_t* win) {
-    if (disp == NULL || win == NULL || win == disp->root_window) return;
-    
-    // 将窗口移到数组开头 (底层)
-    u32 idx = 0;
-    for (u32 i = 0; i < disp->window_count; i++) {
-        if (disp->windows[i] == win) {
-            idx = i;
-            break;
-        }
-    }
-    
-    // 移动到开头
-    for (i32 i = idx; i > 0; i--) {
-        disp->windows[i] = disp->windows[i - 1];
-    }
-    disp->windows[0] = win;
-    
-    // 更新 zorder
-    for (u32 i = 0; i < disp->window_count; i++) {
-        disp->windows[i]->zorder = i;
-    }
-}
-
-void xwin_show(xdisplay_t* disp, xwindow_t* win, int show) {
-    if (win == NULL) return;
-    win->visible = show ? 1 : 0;
-    if (show) {
-        xwin_raise(disp, win);
-    }
-    xwin_damage_all(win);
-}
-
-void xwin_set_bg_color(xwindow_t* win, u32 color) {
-    if (win == NULL) return;
-    win->bg_color = color;
-}
-
-// ========== 焦点管理 ==========
-
-void xwin_set_focus(xdisplay_t* disp, xwindow_t* win) {
-    if (disp == NULL || win == NULL) return;
-    
-    xwindow_t* old_focus = disp->focused_window;
-    
-    // 发送失去焦点事件
-    if (old_focus != NULL && old_focus != win) {
-        xevent_t event;
-        kmemset(&event, 0, sizeof(event));
-        event.type = XEVENT_FOCUS_OUT;
-        event.window_id = old_focus->id;
-        xwin_send_event(disp, old_focus, &event);
-        old_focus->focused = 0;
-    }
-    
-    // 设置新焦点
-    disp->focused_window = win;
-    win->focused = 1;
-    
-    // 发送获得焦点事件
-    xevent_t event;
-    kmemset(&event, 0, sizeof(event));
-    event.type = XEVENT_FOCUS_IN;
-    event.window_id = win->id;
-    xwin_send_event(disp, win, &event);
-    
-    // 提升窗口
-    xwin_raise(disp, win);
-}
-
-xwindow_t* xwin_get_focused(xdisplay_t* disp) {
-    if (disp == NULL) return NULL;
-    return disp->focused_window;
-}
-
-// ========== 辅助函数 ==========
-
-int xwin_contains_point(xwindow_t* win, i32 x, i32 y) {
-    if (win == NULL) return 0;
-    return (x >= win->abs_x && x < (i32)(win->abs_x + win->width) &&
-            y >= win->abs_y && y < (i32)(win->abs_y + win->height));
-}
-
-void xwin_screen_to_window(xwindow_t* win, i32* x, i32* y) {
-    if (win == NULL || x == NULL || y == NULL) return;
-    *x -= win->abs_x;
-    *y -= win->abs_y;
-}
-
-void xwin_window_to_screen(xwindow_t* win, i32* x, i32* y) {
-    if (win == NULL || x == NULL || y == NULL) return;
-    *x += win->abs_x;
-    *y += win->abs_y;
-}
-
-void xwin_damage(xwindow_t* win, i32 x, i32 y, u32 w, u32 h) {
-    if (win == NULL) return;
-    // 简单实现：标记整个窗口为损坏
-    win->damaged = 1;
-}
-
-void xwin_damage_all(xwindow_t* win) {
-    if (win == NULL) return;
-    win->damaged = 1;
-}
+ #include "xwin.h"
+ #include "kernel/memory.h"
+ #include "kernel/page.h"
+ #include "kernel/thread.h"
+ #include "kernel/device.h"
+ 
+ #define MAX_WINDOWS 64
+ 
+ /* kmalloc 池默认 PAGE_RW_NC；画图缓冲改为 WB。
+  * SVC 用 TTBR0=upage，须同时改内核页表与当前进程页表。 */
+ static void xwin_remap_cached(void* buf, u32 size) {
+   u32 start;
+   u32 end;
+   u32 v;
+   void* kpd;
+   thread_t* cur;
+ 
+   if (buf == NULL || size == 0) {
+     return;
+   }
+   kpd = page_kernel_dir();
+   if (kpd == NULL) {
+     return;
+   }
+   cur = thread_current();
+   start = ((u32)(uintptr_t)buf) & ~(PAGE_SIZE - 1);
+   end = ((u32)(uintptr_t)buf + size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+   for (v = start; v < end; v += PAGE_SIZE) {
+     void* phy = page_v2p((u64*)kpd, (void*)(uintptr_t)v);
+     u32 paddr = phy != NULL ? ((u32)(uintptr_t)phy & ~(PAGE_SIZE - 1)) : v;
+     page_map(v, paddr, PAGE_RW);
+     if (cur != NULL && cur->vm != NULL && cur->vm->upage != NULL) {
+       page_map_current(v, paddr, PAGE_RW);
+     }
+   }
+ }
+ 
+ /* T113/常见别名：仅 0xfb...... 是 LCD VA，仅 0xfe...... 是 LCD PA。
+  * 堆指针（如 0x42......）绝不能当 VA/PA，否则会把用户写映射到堆 → 黑屏。 */
+ static int xwin_is_lcd_va(u32 addr) {
+   return (addr & 0xff000000u) == 0xfb000000u;
+ }
+ 
+ static int xwin_is_lcd_pa(u32 addr) {
+   return (addr & 0xff000000u) == 0xfe000000u;
+ }
+ 
+ static void xwin_force_lcd_alias(vga_device_t* vga, xdisplay_t* disp) {
+   if (vga == NULL) {
+     return;
+   }
+   vga->frambuffer = (u32*)(uintptr_t)0xfb000000UL;
+   vga->pframbuffer = (u32*)(uintptr_t)0xfe000000UL;
+   if (disp != NULL) {
+     disp->lcd_va = vga->frambuffer;
+     disp->lcd_pa = vga->pframbuffer;
+   }
+ }
+ 
+ /* 保证 disp/vga 有可用 LCD VA。create 时曾见 frambuffer=0，首帧又恢复。 */
+ static void xwin_ensure_lcd(xdisplay_t* disp) {
+   vga_device_t* vga;
+   device_t* dev;
+   u32 va;
+   u32 pa;
+ 
+   if (disp == NULL) {
+     return;
+   }
+ 
+   /* 刷新设备指针（与 device 上的为同一份） */
+   dev = device_find(DEVICE_VGA);
+   if (dev == NULL) {
+     dev = device_find(DEVICE_VGA_QEMU);
+   }
+   if (dev == NULL) {
+     dev = device_find(DEVICE_LCD);
+   }
+   if (dev != NULL && dev->data != NULL) {
+     disp->vga = (vga_device_t*)dev->data;
+   }
+ 
+   vga = disp->vga;
+   if (vga == NULL) {
+     return;
+   }
+ 
+   /* T113 面板是 480x320；若宽高被写穿成 320x480，纠正（DE 仍按 init 的 pitch） */
+   if (vga->width == 320 && vga->height == 480) {
+     log_warn("xwin: fix swapped vga size 320x480 -> 480x320\n");
+     vga->width = 480;
+     vga->height = 320;
+   }
+ 
+   va = (u32)(uintptr_t)vga->frambuffer;
+   pa = (u32)(uintptr_t)vga->pframbuffer;
+ 
+   if (xwin_is_lcd_va(va) && xwin_is_lcd_pa(pa)) {
+     disp->lcd_va = vga->frambuffer;
+     disp->lcd_pa = vga->pframbuffer;
+     return;
+   }
+ 
+   /* 缓存若仍是合法 VA/PA，可恢复；堆地址一律丢掉 */
+   if (xwin_is_lcd_va((u32)(uintptr_t)disp->lcd_va) &&
+       xwin_is_lcd_pa((u32)(uintptr_t)disp->lcd_pa)) {
+     vga->frambuffer = disp->lcd_va;
+     vga->pframbuffer = disp->lcd_pa;
+     log_warn("xwin: restored LCD va=%x pa=%x\n",
+              (u32)(uintptr_t)disp->lcd_va, (u32)(uintptr_t)disp->lcd_pa);
+     return;
+   }
+ 
+   log_warn("xwin: bad fb va=%x pa=%x cache=%x/%x, force alias\n", va, pa,
+            (u32)(uintptr_t)disp->lcd_va, (u32)(uintptr_t)disp->lcd_pa);
+   xwin_force_lcd_alias(vga, disp);
+ }
+ 
+ /* DIRECT：窗口缓冲 + back_buffer 绑到 LCD VA（绝不能是 PA 0xfe...）。 */
+ u32* xwin_bind_lcd(xdisplay_t* disp, xwindow_t* win) {
+   u32* lcd;
+   u32* pa;
+ 
+   if (disp == NULL || win == NULL) {
+     return NULL;
+   }
+ 
+   xwin_ensure_lcd(disp);
+   if (disp->vga == NULL) {
+     return NULL;
+   }
+ 
+   lcd = disp->vga->frambuffer;
+   pa = disp->vga->pframbuffer;
+ 
+   /* 任一端非法就强制别名；绝不能把堆地址映成 LCD */
+   if (!xwin_is_lcd_va((u32)(uintptr_t)lcd) ||
+       !xwin_is_lcd_pa((u32)(uintptr_t)pa)) {
+     log_warn("xwin: bind force alias (was va=%x pa=%x)\n",
+              (u32)(uintptr_t)lcd, (u32)(uintptr_t)pa);
+     xwin_force_lcd_alias(disp->vga, disp);
+     lcd = disp->vga->frambuffer;
+     pa = disp->vga->pframbuffer;
+   }
+ 
+   disp->vga->frambuffer = lcd;
+   disp->vga->pframbuffer = pa;
+   disp->lcd_va = lcd;
+   disp->lcd_pa = pa;
+ 
+   disp->fb_mapped_tid = 0;
+   if (xwin_map_framebuffer(disp) != 0) {
+     log_error("xwin: bind_lcd map failed va=%x pa=%x\n",
+               (u32)(uintptr_t)lcd, (u32)(uintptr_t)pa);
+     return NULL;
+   }
+ 
+   /* 勿 kfree 旧 framebuffer：曾 remap_cached，用户 TTBR0 下 free 会炸堆。泄漏可接受。 */
+   win->framebuffer = lcd;
+   win->flags |= XWIN_FLAG_DIRECT;
+   disp->back_buffer = lcd;
+   return lcd;
+ }
+ 
+ // ========== 全局显示服务器 ==========
+ xdisplay_t* g_display = NULL;
+ 
+ // ========== 初始化 ==========
+ 
+ int xwin_init(xdisplay_t* disp, vga_device_t* vga) {
+     if (disp == NULL || vga == NULL) {
+         return -1;
+     }
+ 
+     // 设置全局显示服务器
+     g_display = disp;
+ 
+     kmemset(disp, 0, sizeof(xdisplay_t));
+     disp->vga = vga;
+ 
+     /* 尽早缓存合法 LCD 别名；非法指针不要进 cache */
+     xwin_ensure_lcd(disp);
+     log_info("xwin: lcd va=%x pa=%x (%dx%d)\n",
+              disp->lcd_va != NULL ? (u32)(uintptr_t)disp->lcd_va : 0,
+              disp->lcd_pa != NULL ? (u32)(uintptr_t)disp->lcd_pa : 0,
+              vga->width, vga->height);
+     
+     // 计算缓冲区大小
+     disp->buffer_size = vga->width * vga->height * sizeof(u32);
+     
+     // 分配屏幕缓冲区
+     disp->screen_buffer = kmalloc(disp->buffer_size, KERNEL_TYPE);
+     if (disp->screen_buffer == NULL) {
+         log_error("xwin: failed to allocate screen buffer\n");
+         return -1;
+     }
+     kmemset(disp->screen_buffer, 0, disp->buffer_size);
+     xwin_remap_cached(disp->screen_buffer, disp->buffer_size);
+     
+     // 分配后备缓冲区 (双缓冲)
+     disp->back_buffer = kmalloc(disp->buffer_size, KERNEL_TYPE);
+     if (disp->back_buffer == NULL) {
+         log_error("xwin: failed to allocate back buffer\n");
+         kfree(disp->screen_buffer);
+         return -1;
+     }
+     kmemset(disp->back_buffer, 0, disp->buffer_size);
+     xwin_remap_cached(disp->back_buffer, disp->buffer_size);
+     
+     // 分配窗口数组
+     disp->window_capacity = MAX_WINDOWS;
+     disp->windows = kmalloc(sizeof(xwindow_t*) * disp->window_capacity, KERNEL_TYPE);
+     if (disp->windows == NULL) {
+         log_error("xwin: failed to allocate window array\n");
+         kfree(disp->screen_buffer);
+         kfree(disp->back_buffer);
+         return -1;
+     }
+     kmemset(disp->windows, 0, sizeof(xwindow_t*) * disp->window_capacity);
+     
+     // 创建事件队列
+     disp->event_queue = ring_queue_create(256, sizeof(xevent_t));
+     if (disp->event_queue == NULL) {
+         log_error("xwin: failed to create event queue\n");
+         kfree(disp->screen_buffer);
+         kfree(disp->back_buffer);
+         kfree(disp->windows);
+         return -1;
+     }
+     
+     // 创建根窗口 (桌面)
+     disp->root_window = xwin_create_window(disp, NULL, 0, 0, 
+                                             vga->width, vga->height,
+                                             XWIN_FLAG_ROOT | XWIN_FLAG_VISIBLE);
+     if (disp->root_window == NULL) {
+         log_error("xwin: failed to create root window\n");
+         ring_queue_destroy(disp->event_queue);
+         kfree(disp->screen_buffer);
+         kfree(disp->back_buffer);
+         kfree(disp->windows);
+         return -1;
+     }
+     disp->root_window->bg_color = XCOLOR_DARK_GRAY;
+     xwin_set_title(disp->root_window, "Desktop");
+     
+     // 初始化鼠标状态（默认不画合成器光标，避免与 etk/sdl 自绘光标叠加重刷）
+     disp->mouse_x = vga->width / 2;
+     disp->mouse_y = vga->height / 2;
+     disp->mouse_visible = 0;
+     disp->mouse_cursor = 0;
+     
+     // 初始化窗口ID计数器
+     disp->next_window_id = 1;
+     
+     // 初始化主题（使用默认深色主题）
+     xtheme_set(disp, XTHEME_DARK);
+     
+     g_display = disp;
+     
+     log_info("xwin: initialized (%dx%d, %d bpp)\n", 
+              vga->width, vga->height, vga->bpp);
+     
+     return 0;
+ }
+ 
+ void xwin_exit(xdisplay_t* disp) {
+     if (disp == NULL) return;
+ 
+     // 销毁所有窗口
+     for (u32 i = 0; i < disp->window_count; i++) {
+         if (disp->windows[i] != NULL && disp->windows[i] != disp->root_window) {
+             xwin_destroy_window(disp, disp->windows[i]);
+         }
+     }
+ 
+     // 销毁根窗口
+     if (disp->root_window != NULL) {
+         xwin_destroy_window(disp, disp->root_window);
+     }
+ 
+     // 释放资源
+     if (disp->event_queue != NULL) {
+         ring_queue_destroy(disp->event_queue);
+     }
+     if (disp->screen_buffer != NULL) {
+         kfree(disp->screen_buffer);
+     }
+     if (disp->back_buffer != NULL &&
+         (disp->vga == NULL ||
+          disp->back_buffer != (u32*)disp->vga->frambuffer)) {
+         kfree(disp->back_buffer);
+     }
+     if (disp->windows != NULL) {
+         kfree(disp->windows);
+     }
+ 
+     // 清除全局显示服务器
+     if (g_display == disp) {
+         g_display = NULL;
+     }
+ 
+     g_display = NULL;
+     log_info("xwin: exited\n");
+ }
+ 
+ // ========== 窗口管理 ==========
+ 
+ xwindow_t* xwin_create_window(xdisplay_t* disp, 
+                               xwindow_t* parent,
+                               i32 x, i32 y, 
+                               u32 width, u32 height,
+                               u32 flags) {
+     if (disp == NULL) return NULL;
+     
+     // 分配窗口结构
+     xwindow_t* win = kmalloc(sizeof(xwindow_t), KERNEL_TYPE);
+     if (win == NULL) {
+         log_error("xwin: failed to allocate window\n");
+         return NULL;
+     }
+     kmemset(win, 0, sizeof(xwindow_t));
+     
+     // 设置窗口属性
+     win->id = disp->next_window_id++;
+     win->x = x;
+     win->y = y;
+     win->width = width;
+     win->height = height;
+     win->flags = flags;
+     win->visible = (flags & XWIN_FLAG_VISIBLE) ? 1 : 0;
+     win->bg_color = XCOLOR_WHITE;
+     win->zorder = disp->window_count;
+     
+     // 计算绝对位置
+     if (parent != NULL) {
+         win->abs_x = parent->abs_x + x;
+         win->abs_y = parent->abs_y + y;
+     } else {
+         win->abs_x = x;
+         win->abs_y = y;
+     }
+ 
+     win->fb_size = width * height * sizeof(u32);
+ 
+     /* DIRECT：有标志就绑 LCD（勿再要求 size 一致——用户可能用 ioctl 分辨率
+      * 而 vga 字段偶发不一致，导致误走 kmalloc）。 */
+     if ((flags & XWIN_FLAG_DIRECT) && disp->vga != NULL) {
+         win->framebuffer = NULL;
+         if (xwin_bind_lcd(disp, win) == NULL) {
+             log_error("xwin: DIRECT bind failed, fallback offscreen\n");
+             win->framebuffer = kmalloc(win->fb_size, KERNEL_TYPE);
+             if (win->framebuffer == NULL) {
+                 kfree(win);
+                 return NULL;
+             }
+             kmemset(win->framebuffer, 0, win->fb_size);
+             xwin_remap_cached(win->framebuffer, win->fb_size);
+             xwin_clear_color(win, win->bg_color | 0xFF000000u);
+         } else {
+             log_info("xwin: DIRECT %dx%d bind LCD %x (vga %dx%d)\n", width,
+                      height, (u32)(uintptr_t)win->framebuffer,
+                      disp->vga->width, disp->vga->height);
+         }
+     } else {
+         win->framebuffer = kmalloc(win->fb_size, KERNEL_TYPE);
+         if (win->framebuffer == NULL) {
+             log_error("xwin: failed to allocate window framebuffer\n");
+             kfree(win);
+             return NULL;
+         }
+         kmemset(win->framebuffer, 0, win->fb_size);
+         xwin_remap_cached(win->framebuffer, win->fb_size);
+         xwin_clear_color(win, win->bg_color | 0xFF000000u);
+     }
+     
+     // 设置窗口树
+     win->parent = parent;
+     if (parent != NULL) {
+         if (parent->first_child == NULL) {
+             parent->first_child = win;
+             parent->last_child = win;
+         } else {
+             parent->last_child->next_sibling = win;
+             win->prev_sibling = parent->last_child;
+             parent->last_child = win;
+         }
+     }
+     
+     // 添加到窗口数组
+     if (disp->window_count < disp->window_capacity) {
+         disp->windows[disp->window_count++] = win;
+     }
+     
+     // 发送创建事件
+     xevent_t event;
+     kmemset(&event, 0, sizeof(event));
+     event.type = XEVENT_CREATE;
+     event.window_id = win->id;
+     xwin_send_event(disp, win, &event);
+     
+     log_debug("xwin: created window %d (%dx%d at %d,%d)\n", 
+               win->id, width, height, x, y);
+ 
+     return win;
+ }
+ 
+ void xwin_destroy_window(xdisplay_t* disp, xwindow_t* win) {
+     if (disp == NULL || win == NULL) return;
+     
+     // 发送销毁事件
+     xevent_t event;
+     kmemset(&event, 0, sizeof(event));
+     event.type = XEVENT_DESTROY;
+     event.window_id = win->id;
+     xwin_send_event(disp, win, &event);
+     
+     // 递归销毁子窗口
+     xwindow_t* child = win->first_child;
+     while (child != NULL) {
+         xwindow_t* next = child->next_sibling;
+         xwin_destroy_window(disp, child);
+         child = next;
+     }
+     
+     // 从窗口树中移除
+     if (win->parent != NULL) {
+         if (win->parent->first_child == win) {
+             win->parent->first_child = win->next_sibling;
+         }
+         if (win->parent->last_child == win) {
+             win->parent->last_child = win->prev_sibling;
+         }
+         if (win->prev_sibling != NULL) {
+             win->prev_sibling->next_sibling = win->next_sibling;
+         }
+         if (win->next_sibling != NULL) {
+             win->next_sibling->prev_sibling = win->prev_sibling;
+         }
+     }
+     
+     // 从窗口数组中移除
+     for (u32 i = 0; i < disp->window_count; i++) {
+         if (disp->windows[i] == win) {
+             // 移动后面的窗口
+             for (u32 j = i; j < disp->window_count - 1; j++) {
+                 disp->windows[j] = disp->windows[j + 1];
+             }
+             disp->window_count--;
+             break;
+         }
+     }
+     
+     // 清除焦点
+     if (disp->focused_window == win) {
+         disp->focused_window = disp->root_window;
+     }
+     
+     u32 win_id = win->id;
+     /* LCD 是显示设备缓冲，不是 kmalloc 出来的 */
+     if (win->framebuffer != NULL &&
+         (disp->vga == NULL ||
+          win->framebuffer != (u32*)disp->vga->frambuffer)) {
+         kfree(win->framebuffer);
+     }
+     kfree(win);
+ 
+     log_debug("xwin: destroyed window %d\n", win_id);
+ }
+ 
+ xwindow_t* xwin_find_window(xdisplay_t* disp, u32 id) {
+     if (disp == NULL) return NULL;
+     
+     for (u32 i = 0; i < disp->window_count; i++) {
+         if (disp->windows[i] != NULL && disp->windows[i]->id == id) {
+             return disp->windows[i];
+         }
+     }
+     return NULL;
+ }
+ 
+ xwindow_t* xwin_find_window_at(xdisplay_t* disp, i32 x, i32 y) {
+     if (disp == NULL) return NULL;
+     
+     // 从顶层窗口开始查找 (逆序遍历)
+     for (i32 i = disp->window_count - 1; i >= 0; i--) {
+         xwindow_t* win = disp->windows[i];
+         if (win != NULL && win->visible) {
+             if (x >= win->abs_x && x < (i32)(win->abs_x + win->width) &&
+                 y >= win->abs_y && y < (i32)(win->abs_y + win->height)) {
+                 return win;
+             }
+         }
+     }
+     return disp->root_window;
+ }
+ 
+ // ========== 窗口属性 ==========
+ 
+ void xwin_set_title(xwindow_t* win, const char* title) {
+     if (win == NULL || title == NULL) return;
+     kstrncpy(win->title, title, sizeof(win->title) - 1);
+ }
+ 
+ void xwin_move(xdisplay_t* disp, xwindow_t* win, i32 x, i32 y) {
+     if (win == NULL) return;
+     
+     i32 old_x = win->abs_x;
+     i32 old_y = win->abs_y;
+     
+     win->x = x;
+     win->y = y;
+     
+     // 更新绝对位置
+     if (win->parent != NULL) {
+         win->abs_x = win->parent->abs_x + x;
+         win->abs_y = win->parent->abs_y + y;
+     } else {
+         win->abs_x = x;
+         win->abs_y = y;
+     }
+     
+     // 递归更新子窗口
+     xwindow_t* child = win->first_child;
+     while (child != NULL) {
+         child->abs_x = win->abs_x + child->x;
+         child->abs_y = win->abs_y + child->y;
+         // TODO: 递归更新子窗口的子窗口
+         child = child->next_sibling;
+     }
+     
+     // 标记损坏区域
+     xwin_damage_all(win);
+     
+     // 发送移动事件
+     xevent_t event;
+     kmemset(&event, 0, sizeof(event));
+     event.type = XEVENT_MOVE;
+     event.window_id = win->id;
+     event.data.move.x = x;
+     event.data.move.y = y;
+     event.data.move.old_x = old_x;
+     event.data.move.old_y = old_y;
+     xwin_send_event(disp, win, &event);
+ }
+ 
+ void xwin_resize(xdisplay_t* disp, xwindow_t* win, u32 w, u32 h) {
+     if (win == NULL || w == 0 || h == 0) return;
+     
+     u32 old_w = win->width;
+     u32 old_h = win->height;
+     
+     win->width = w;
+     win->height = h;
+     
+     // 重新分配缓冲区
+     u32 new_size = w * h * sizeof(u32);
+     u32* new_fb = kmalloc(new_size, KERNEL_TYPE);
+     if (new_fb != NULL) {
+         // 复制旧数据
+         u32 copy_w = (w < old_w) ? w : old_w;
+         u32 copy_h = (h < old_h) ? h : old_h;
+         for (u32 y = 0; y < copy_h; y++) {
+             for (u32 x = 0; x < copy_w; x++) {
+                 new_fb[y * w + x] = win->framebuffer[y * old_w + x];
+             }
+         }
+         kfree(win->framebuffer);
+         win->framebuffer = new_fb;
+         win->fb_size = new_size;
+         xwin_remap_cached(win->framebuffer, win->fb_size);
+     }
+     
+     // 标记损坏
+     xwin_damage_all(win);
+     
+     // 发送大小改变事件
+     xevent_t event;
+     kmemset(&event, 0, sizeof(event));
+     event.type = XEVENT_RESIZE;
+     event.window_id = win->id;
+     event.data.resize.width = w;
+     event.data.resize.height = h;
+     event.data.resize.old_width = old_w;
+     event.data.resize.old_height = old_h;
+     xwin_send_event(disp, win, &event);
+ }
+ 
+ void xwin_raise(xdisplay_t* disp, xwindow_t* win) {
+     if (disp == NULL || win == NULL || win == disp->root_window) return;
+     
+     // 将窗口移到数组末尾 (顶层)
+     u32 idx = 0;
+     for (u32 i = 0; i < disp->window_count; i++) {
+         if (disp->windows[i] == win) {
+             idx = i;
+             break;
+         }
+     }
+     
+     // 移动到末尾
+     for (u32 i = idx; i < disp->window_count - 1; i++) {
+         disp->windows[i] = disp->windows[i + 1];
+     }
+     disp->windows[disp->window_count - 1] = win;
+     
+     // 更新 zorder
+     for (u32 i = 0; i < disp->window_count; i++) {
+         disp->windows[i]->zorder = i;
+     }
+ }
+ 
+ void xwin_lower(xdisplay_t* disp, xwindow_t* win) {
+     if (disp == NULL || win == NULL || win == disp->root_window) return;
+     
+     // 将窗口移到数组开头 (底层)
+     u32 idx = 0;
+     for (u32 i = 0; i < disp->window_count; i++) {
+         if (disp->windows[i] == win) {
+             idx = i;
+             break;
+         }
+     }
+     
+     // 移动到开头
+     for (i32 i = idx; i > 0; i--) {
+         disp->windows[i] = disp->windows[i - 1];
+     }
+     disp->windows[0] = win;
+     
+     // 更新 zorder
+     for (u32 i = 0; i < disp->window_count; i++) {
+         disp->windows[i]->zorder = i;
+     }
+ }
+ 
+ void xwin_show(xdisplay_t* disp, xwindow_t* win, int show) {
+     if (win == NULL) return;
+     win->visible = show ? 1 : 0;
+     if (show) {
+         xwin_raise(disp, win);
+     }
+     xwin_damage_all(win);
+ }
+ 
+ void xwin_set_bg_color(xwindow_t* win, u32 color) {
+     if (win == NULL) return;
+     win->bg_color = color;
+     /* 故意不 clear：DIRECT 的 framebuffer 可能尚未按 VA 可写 */
+ }
+ 
+ // ========== 焦点管理 ==========
+ 
+ void xwin_set_focus(xdisplay_t* disp, xwindow_t* win) {
+     if (disp == NULL || win == NULL) return;
+     
+     xwindow_t* old_focus = disp->focused_window;
+     
+     // 发送失去焦点事件
+     if (old_focus != NULL && old_focus != win) {
+         xevent_t event;
+         kmemset(&event, 0, sizeof(event));
+         event.type = XEVENT_FOCUS_OUT;
+         event.window_id = old_focus->id;
+         xwin_send_event(disp, old_focus, &event);
+         old_focus->focused = 0;
+     }
+     
+     // 设置新焦点
+     disp->focused_window = win;
+     win->focused = 1;
+     
+     // 发送获得焦点事件
+     xevent_t event;
+     kmemset(&event, 0, sizeof(event));
+     event.type = XEVENT_FOCUS_IN;
+     event.window_id = win->id;
+     xwin_send_event(disp, win, &event);
+     
+     // 提升窗口
+     xwin_raise(disp, win);
+ }
+ 
+ xwindow_t* xwin_get_focused(xdisplay_t* disp) {
+     if (disp == NULL) return NULL;
+     return disp->focused_window;
+ }
+ 
+ // ========== 辅助函数 ==========
+ 
+ int xwin_contains_point(xwindow_t* win, i32 x, i32 y) {
+     if (win == NULL) return 0;
+     return (x >= win->abs_x && x < (i32)(win->abs_x + win->width) &&
+             y >= win->abs_y && y < (i32)(win->abs_y + win->height));
+ }
+ 
+ void xwin_screen_to_window(xwindow_t* win, i32* x, i32* y) {
+     if (win == NULL || x == NULL || y == NULL) return;
+     *x -= win->abs_x;
+     *y -= win->abs_y;
+ }
+ 
+ void xwin_window_to_screen(xwindow_t* win, i32* x, i32* y) {
+     if (win == NULL || x == NULL || y == NULL) return;
+     *x += win->abs_x;
+     *y += win->abs_y;
+ }
+ 
+ void xwin_damage(xwindow_t* win, i32 x, i32 y, u32 w, u32 h) {
+     if (win == NULL) return;
+     // 简单实现：标记整个窗口为损坏
+     win->damaged = 1;
+ }
+ 
+ void xwin_damage_all(xwindow_t* win) {
+     if (win == NULL) return;
+     win->damaged = 1;
+ }
+ 

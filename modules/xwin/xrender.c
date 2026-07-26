@@ -209,37 +209,74 @@ void xwin_render_window(xdisplay_t* disp, xwindow_t* win) {
 
 /* SVC 下 TTBR0=upage；LCD 必须 PAGE_RW_NC。
  * 若曾被映成 WB，改属性前必须 clean+invalidate，否则脏 cache 写回会冲掉 DRAM → 黑屏。 */
-void xwin_map_framebuffer(xdisplay_t* disp) {
-    if (disp == NULL || disp->vga == NULL || disp->vga->frambuffer == NULL ||
-        disp->buffer_size == 0) {
-        return;
+int xwin_map_framebuffer(xdisplay_t* disp) {
+    if (disp == NULL || disp->vga == NULL || disp->buffer_size == 0) {
+        return -1;
     }
 
     u32 va = (u32)(uintptr_t)disp->vga->frambuffer;
-    u32 pa = (u32)(uintptr_t)(disp->vga->pframbuffer != NULL
-                                  ? disp->vga->pframbuffer
-                                  : disp->vga->frambuffer);
+    u32 pa = (u32)(uintptr_t)disp->vga->pframbuffer;
+
+    /* 防止 VA/PA 颠倒或被堆指针污染 */
+    if ((va & 0xff000000u) == 0xfe000000u &&
+        (pa & 0xff000000u) == 0xfb000000u) {
+        u32 tmp = va;
+        va = pa;
+        pa = tmp;
+        log_warn("xwin: swapped inverted va/pa -> va=%x pa=%x\n", va, pa);
+    }
+    if ((va & 0xff000000u) != 0xfb000000u ||
+        (pa & 0xff000000u) != 0xfe000000u) {
+        log_warn("xwin: map force alias (was va=%x pa=%x)\n", va, pa);
+        va = 0xfb000000u;
+        pa = 0xfe000000u;
+    }
+    disp->vga->frambuffer = (u32*)(uintptr_t)va;
+    disp->vga->pframbuffer = (u32*)(uintptr_t)pa;
+    disp->lcd_va = disp->vga->frambuffer;
+    disp->lcd_pa = disp->vga->pframbuffer;
+
     thread_t* cur = thread_current();
+    void* kpd = page_kernel_dir();
+
     if (cur == NULL || cur->vm == NULL || cur->vm->upage == NULL) {
-        return;
+        if (kpd != NULL &&
+            page_v2p((u64*)kpd, (void*)(uintptr_t)va) != NULL) {
+            return 0;
+        }
+        log_warn("xwin: map fb no user vm va=%x\n", va);
+        return -1;
     }
 
     if (disp->fb_mapped_tid == cur->id) {
-        return;
+        void* got = page_v2p((u64*)cur->vm->upage, (void*)(uintptr_t)va);
+        if (got != NULL &&
+            ((u32)(uintptr_t)got & 0xff000000u) == 0xfe000000u) {
+            return 0;
+        }
     }
 
-    /* 丢掉该 VA 上可能残留的 WB 行 */
-    cpu_cache_flush_range(va, va + disp->buffer_size);
-
+    /* 先建页表。未映射时对 0xfb... 做 cache 维护会 data abort。 */
     u32 pages = (disp->buffer_size + PAGE_SIZE - 1) / PAGE_SIZE;
     for (u32 i = 0; i < pages; i++) {
         page_map_current(va + i * PAGE_SIZE, pa + i * PAGE_SIZE, PAGE_RW_NC);
         page_map(va + i * PAGE_SIZE, pa + i * PAGE_SIZE, PAGE_RW_NC);
     }
 
-    cache_inv_range(va, va + disp->buffer_size);
     dsb();
+    {
+        void* got = page_v2p((u64*)cur->vm->upage, (void*)(uintptr_t)va);
+        if (got == NULL ||
+            ((u32)(uintptr_t)got & 0xff000000u) != 0xfe000000u) {
+            log_error("xwin: fb map failed va=%x pa=%x got=%x tid=%d\n", va,
+                      pa, (u32)(uintptr_t)got, cur->id);
+            return -1;
+        }
+    }
     disp->fb_mapped_tid = cur->id;
+    log_info("xwin: mapped LCD va=%x -> pa=%x (%d pages tid=%d)\n", va, pa,
+             pages, cur->id);
+    return 0;
 }
 
 void xwin_flip_buffer(xdisplay_t* disp) {

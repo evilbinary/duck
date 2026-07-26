@@ -5,6 +5,10 @@
  * X Window System - Kernel Syscall Handler
  ********************************************************************/
 #include "xwin.h"
+#include "kernel/page.h"
+#include "kernel/thread.h"
+
+extern void context_switch_page(context_t* context, u32 page_table);
 
 // ========== Syscall 编号定义 (内核端) ==========
 #define SYS_XWIN_BASE          0x5000
@@ -34,6 +38,37 @@
 // ========== 外部全局显示服务器 ==========
 extern xdisplay_t* g_display;
 
+static void xwin_user_page_on(void) {
+#ifdef VM_ENABLE
+    thread_t* cur = thread_current();
+    if (cur != NULL && cur->vm != NULL && cur->vm->upage != NULL &&
+        cur->ctx != NULL) {
+        context_switch_page(cur->ctx, (u32)(uintptr_t)cur->vm->upage);
+    }
+#endif
+}
+
+static void xwin_copy_user_title(const char* utitle, char* ktitle, u32 ksize) {
+    u32 i;
+
+    if (ktitle == NULL || ksize == 0) {
+        return;
+    }
+    ktitle[0] = '\0';
+    if (utitle == NULL) {
+        return;
+    }
+    xwin_user_page_on();
+    for (i = 0; i + 1 < ksize; i++) {
+        char c = utitle[i];
+        ktitle[i] = c;
+        if (c == '\0') {
+            return;
+        }
+    }
+    ktitle[ksize - 1] = '\0';
+}
+
 // ========== Syscall 实现函数 ==========
 
 long xwin_syscall_create(long x, long y, long width, long height, long uflags,
@@ -43,11 +78,7 @@ long xwin_syscall_create(long x, long y, long width, long height, long uflags,
     
     char ktitle[64] = {0};
     const char* utitle = (const char*)title;
-    if (utitle != NULL) {
-        for (int i = 0; i < 63 && utitle[i] != '\0'; i++) {
-            ktitle[i] = utitle[i];
-        }
-    }
+    xwin_copy_user_title(utitle, ktitle, sizeof(ktitle));
     
     /* 全屏客户窗：自动 DIRECT（旧 libgui 只调 xwin_create 时也能走零拷贝） */
     u32 flags = ((u32)uflags & XWIN_FLAG_DIRECT) | XWIN_FLAG_VISIBLE |
@@ -282,7 +313,14 @@ long xwin_syscall_get_fb(long win_id) {
         log_error("xwin: get_fb bind LCD failed\n");
         return 0;
     }
-    log_info("xwin: get_fb -> LCD %x\n", (u32)(uintptr_t)lcd);
+    if (xwin_map_framebuffer(disp) != 0) {
+        log_error("xwin: get_fb map failed\n");
+        return 0;
+    }
+    log_info("xwin: get_fb -> LCD va=%x pa=%x\n", (u32)(uintptr_t)lcd,
+             disp->vga->pframbuffer != NULL
+                 ? (u32)(uintptr_t)disp->vga->pframbuffer
+                 : 0);
     return (long)(uintptr_t)lcd;
 }
 

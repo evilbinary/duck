@@ -592,11 +592,18 @@ void xwin_clear(xwindow_t* win) {
 
 void xwin_clear_color(xwindow_t* win, u32 color) {
     if (win == NULL || win->framebuffer == NULL) return;
-    
+
     u32* fb = win->framebuffer;
+    u32 fb_addr = (u32)(uintptr_t)fb;
+    /* 仅拒绝物理地址窗口（T113 PA 0xfe......）；kmalloc/LCD VA 都允许 */
+    if ((fb_addr & 0xff000000u) == 0xfe000000u) {
+        log_error("xwin: clear refused PA fb=%x\n", fb_addr);
+        return;
+    }
+
     u32 count = win->width * win->height;
     u32 c = color | 0xFF000000u;
-    
+
     for (u32 i = 0; i < count; i++) {
         fb[i] = c;
     }

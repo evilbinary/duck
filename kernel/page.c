@@ -154,7 +154,10 @@ void page_map(vaddr_t virtualaddr, vaddr_t physaddr, u32 flags) {
 
 void page_map_current(vaddr_t virtualaddr, vaddr_t physaddr, u32 flags) {
 #ifdef VM_ENABLE
-  thread_t* current=thread_current();
+  thread_t* current = thread_current();
+  if (current == NULL || current->vm == NULL || current->vm->upage == NULL) {
+    return;
+  }
   page_map_on((u64*)current->vm->upage, virtualaddr, physaddr, flags);
 #endif
 }

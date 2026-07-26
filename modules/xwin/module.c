@@ -8,9 +8,15 @@
 #include "kernel/module.h"
 #include "dev/devfs.h"
 
+/* module.o 若未随 xwin.h 重编，xwin_display 会偏小，lcd_pa 写穿 g_display
+ *（曾表现为 get_fb 时 g_display==0xfe000000 → fault at fe000000）。 */
+_Static_assert(sizeof(xdisplay_t) >= 120,
+               "xdisplay_t shrunk; rebuild all xwin objs");
+
 // ========== 设备接口 ==========
 
 static xdisplay_t xwin_display;
+static u32 xwin_display_guard = 0xA5A5A5A5u; /* 紧挨 BSS，防止再写穿 */
 static xwin_device_t xwin_device;
 
 size_t xwin_dev_read(device_t* dev, void* buf, size_t len) {

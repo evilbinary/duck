@@ -237,10 +237,17 @@ static void fb_t113_cfg_gpios(int gpio, int pin, int n, int cfg, int pull,
 }
 
 void t113_flush_screen(vga_device_t *vga, u32 index) {
-  (void)vga;
   (void)index;
   /* 地址/dbuff 已在 init 配好。每帧重写会逼 DE 重同步，体感接近 1fps。
-   * FB 是 PAGE_RW_NC：dsb 保证 CPU 写对 DRAM 可见即可。 */
+   * 但若 frambuffer/pframbuffer 曾被污染，补一次 top_laddr 到 PA。 */
+  // if (vga != NULL && vga->priv != NULL && vga->pframbuffer != NULL) {
+  //   t113_s3_lcd_t *lcd = (t113_s3_lcd_t *)vga->priv;
+  //   u32 pa = (u32)(uintptr_t)vga->pframbuffer;
+  //   if ((pa & 0xff000000u) == 0xfe000000u) {
+  //     t113_de_set_address(lcd, (void *)(uintptr_t)pa);
+  //   }
+  // }
+  /* FB 是 PAGE_RW_NC：dsb 保证 CPU 写对 DRAM 可见即可。 */
   dsb();
 }
 
