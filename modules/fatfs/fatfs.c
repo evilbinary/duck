@@ -1,6 +1,7 @@
 #include "diskio.h"
 #include "ff.h"
 #include "kernel/device.h"
+#include "kernel/fd.h"
 #include "kernel/memory.h"
 #include "kernel/stat.h"
 #include "posix/sysfn.h"
@@ -430,7 +431,14 @@ uint fat_op_open(vnode_t *node, uint mode) {
     }
 
     if (file_info->fil.obj.fs == NULL) {
-      int res = f_open(&file_info->fil, buf, FA_READ | FA_WRITE);
+      BYTE fat_mode = FA_READ;
+      if ((mode & (O_WRONLY | O_RDWR | O_CREAT | O_TRUNC | O_APPEND)) != 0) {
+        fat_mode = FA_READ | FA_WRITE;
+      }
+      int res = f_open(&file_info->fil, buf, fat_mode);
+      if (res != FR_OK && fat_mode != FA_READ) {
+        res = f_open(&file_info->fil, buf, FA_READ);
+      }
       if (res != FR_OK) {
         log_error("open file %s path %s error code %d\n", node->name, buf, res);
         return -1;

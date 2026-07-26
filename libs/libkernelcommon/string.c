@@ -19,87 +19,55 @@ void* memset(void* ptr, int value, size_t num) {
 
 void* memcpy(void* /* restrict */ s1, const void* /* restrict */ s2,
               size_t n) {
-  char* cdest;
-  char* csrc;
-  uint32_t* ldest = (uint32_t*)s1;
-  uint32_t* lsrc = (uint32_t*)s2;
+  unsigned char* d = (unsigned char*)s1;
+  const unsigned char* s = (const unsigned char*)s2;
 
+  /* 未对齐时按字节拷：FatFs 常用 (buf + fptr%512)，字访问会在严对齐 CPU 上 fault */
+  if ((((uintptr_t)d | (uintptr_t)s) & 3) != 0) {
+    while (n--) {
+      *d++ = *s++;
+    }
+    return s1;
+  }
+
+  uint32_t* ld = (uint32_t*)d;
+  const uint32_t* ls = (const uint32_t*)s;
   while (n >= 4) {
-    *ldest++ = *lsrc++;
+    *ld++ = *ls++;
     n -= 4;
   }
-
-  cdest = (char*)ldest;
-  csrc = (char*)lsrc;
-
-  while (n > 0) {
-    *cdest++ = *csrc++;
-    n -= 1;
+  d = (unsigned char*)ld;
+  s = (const unsigned char*)ls;
+  while (n--) {
+    *d++ = *s++;
   }
-
   return s1;
 }
 
+void* kmemcpy(void* s1, const void* s2, size_t n) { return memcpy(s1, s2, n); }
 
-void* kmemcpy(void* /* restrict */ s1, const void* /* restrict */ s2,
-              size_t n) {
-  char* cdest;
-  char* csrc;
-  
-#if defined(ARM64) || defined(__aarch64__)
-  // ARM64: 使用 64 位操作
-  uint64_t* ldest = (uint64_t*)s1;
-  uint64_t* lsrc = (uint64_t*)s2;
-
-  while (n >= 8) {
-    *ldest++ = *lsrc++;
-    n -= 8;
-  }
-
-  cdest = (char*)ldest;
-  csrc = (char*)lsrc;
-#else
-  // 32 位: 使用 32 位操作
-  uint32_t* ldest = (uint32_t*)s1;
-  uint32_t* lsrc = (uint32_t*)s2;
-
-  while (n >= 4) {
-    *ldest++ = *lsrc++;
-    n -= 4;
-  }
-
-  cdest = (char*)ldest;
-  csrc = (char*)lsrc;
-#endif
-
-  while (n > 0) {
-    *cdest++ = *csrc++;
-    n -= 1;
-  }
-
-  return s1;
-}
-
-// 64-bit version for ARM64 context switching
 void* kmemcpy64(void* s1, const void* s2, size_t n) {
-  uint64_t* ldest = (uint64_t*)s1;
-  uint64_t* lsrc = (uint64_t*)s2;
-  char* cdest;
-  char* csrc;
+  unsigned char* d = (unsigned char*)s1;
+  const unsigned char* s = (const unsigned char*)s2;
 
+  if ((((uintptr_t)d | (uintptr_t)s) & 7) != 0) {
+    while (n--) {
+      *d++ = *s++;
+    }
+    return s1;
+  }
+
+  uint64_t* ld = (uint64_t*)d;
+  const uint64_t* ls = (const uint64_t*)s;
   while (n >= 8) {
-    *ldest++ = *lsrc++;
+    *ld++ = *ls++;
     n -= 8;
   }
-
-  cdest = (char*)ldest;
-  csrc = (char*)lsrc;
-
-  while (n > 0) {
-    *cdest++ = *csrc++;
-    n -= 1;
+  d = (unsigned char*)ld;
+  s = (const unsigned char*)ls;
+  while (n--) {
+    *d++ = *s++;
   }
-
   return s1;
 }
 
