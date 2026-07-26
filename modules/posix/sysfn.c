@@ -960,26 +960,36 @@ u32 sys_time(time_t* t) {
 }
 
 int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
-  if (clockid == CLOCK_REALTIME || clockid == CLOCK_MONOTONIC ||
-      clockid == CLOCK_MONOTONIC_RAW) {
-    time_t seconds;
-    int rc = sys_time(&seconds);
-    ts->tv_sec = seconds;
-    int ticks = TICK_TO_NANOSECOND(schedule_get_ticks() % SCHEDULE_FREQUENCY);
-    ts->tv_nsec = ticks;
-
-    // u32 s0=seconds&(~0);
-    // u32 s1=seconds>>32;
-    // kprintf("ts->tv_sec %d %d ts->tv_nsec %d\n", s1,s0, ts->tv_nsec);
+  if (ts == NULL) {
+    return -1;
+  }
+  if (clockid == CLOCK_MONOTONIC || clockid == CLOCK_MONOTONIC_RAW ||
+      clockid == CLOCK_MONOTONIC_COARSE || clockid == CLOCK_BOOTTIME) {
+    /* 单调时钟必须用累计 tick，不能 ticks%1000（会回绕导致 GetTicks 倒退、
+     * SDL_Delay/sys_sleep 算出超长睡眠 → 黑屏）。 */
+    u64 ticks = schedule_get_ticks();
+    ts->tv_sec = (time_t)(ticks / SCHEDULE_FREQUENCY);
+    ts->tv_nsec =
+        (long)((ticks % SCHEDULE_FREQUENCY) * (1000000000u / SCHEDULE_FREQUENCY));
     return 0;
-  } else if (clockid == CLOCK_THREAD_CPUTIME_ID ||
-             clockid == CLOCK_PROCESS_CPUTIME_ID) {
+  }
+  if (clockid == CLOCK_REALTIME || clockid == CLOCK_REALTIME_COARSE) {
+    time_t seconds;
+    sys_time(&seconds);
+    u64 ticks = schedule_get_ticks();
+    ts->tv_sec = seconds;
+    ts->tv_nsec =
+        (long)((ticks % SCHEDULE_FREQUENCY) * (1000000000u / SCHEDULE_FREQUENCY));
+    return 0;
+  }
+  if (clockid == CLOCK_THREAD_CPUTIME_ID ||
+      clockid == CLOCK_PROCESS_CPUTIME_ID) {
     ts->tv_sec = 0;
     ts->tv_nsec = 0;
-  } else {
-    log_warn("clock not support %d\n", clockid);
+    return 0;
   }
-  return 0;
+  log_warn("clock not support %d\n", clockid);
+  return -1;
 }
 
 int sys_set_tid_adress(void* ptr) {
