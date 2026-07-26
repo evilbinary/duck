@@ -320,6 +320,9 @@ typedef struct xdisplay {
     // 主题
     xtheme_t* theme;           // 当前主题
     xtheme_id_t theme_id;      // 当前主题ID
+
+    /* 已对 tid 强制映过 LCD=PAGE_RW_NC；勿用 upage 指针（地址可能复用） */
+    u32 fb_mapped_tid;
     
 } xdisplay_t;
 

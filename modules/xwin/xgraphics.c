@@ -597,8 +597,9 @@ void xwin_clear_color(xwindow_t* win, u32 color) {
     
     u32* fb = win->framebuffer;
     u32 count = win->width * win->height;
+    u32 c = color | 0xFF000000u;
     
     for (u32 i = 0; i < count; i++) {
-        fb[i] = color;
+        fb[i] = c;
     }
 }

@@ -7,6 +7,8 @@
 #include "xwin.h"
 #include "font.h"
 #include "kernel/page.h"
+#include "kernel/thread.h"
+#include "arch/cpu.h"
 
 // ========== 鼠标光标 (16x16) ==========
 static const u32 cursor_arrow[16][16] = {
@@ -128,7 +130,8 @@ void xwin_render_window(xdisplay_t* disp, xwindow_t* win) {
     xwin_composite_window(disp, win);
 }
 
-/* SVC 下 TTBR0=upage；把 LCD FB 映进当前进程 */
+/* SVC 下 TTBR0=upage；LCD 必须 PAGE_RW_NC。
+ * 若曾被映成 WB，改属性前必须 clean+invalidate，否则脏 cache 写回会冲掉 DRAM → 黑屏。 */
 void xwin_map_framebuffer(xdisplay_t* disp) {
     if (disp == NULL || disp->vga == NULL || disp->vga->frambuffer == NULL ||
         disp->buffer_size == 0) {
@@ -144,18 +147,22 @@ void xwin_map_framebuffer(xdisplay_t* disp) {
         return;
     }
 
-    /* 已正确映射才跳过（须校验 PA，避免误判后跳过） */
-    void* phy = page_v2p(cur->vm->upage, (void*)(uintptr_t)va);
-    if (phy != NULL &&
-        (((u32)(uintptr_t)phy) & ~(PAGE_SIZE - 1)) == (pa & ~(PAGE_SIZE - 1))) {
+    if (disp->fb_mapped_tid == cur->id) {
         return;
     }
 
+    /* 丢掉该 VA 上可能残留的 WB 行 */
+    cpu_cache_flush_range(va, va + disp->buffer_size);
+
     u32 pages = (disp->buffer_size + PAGE_SIZE - 1) / PAGE_SIZE;
     for (u32 i = 0; i < pages; i++) {
-        /* LCD FB：Normal NC，勿用 PAGE_DEV（整屏 memcpy 极慢） */
         page_map_current(va + i * PAGE_SIZE, pa + i * PAGE_SIZE, PAGE_RW_NC);
+        page_map(va + i * PAGE_SIZE, pa + i * PAGE_SIZE, PAGE_RW_NC);
     }
+
+    cache_inv_range(va, va + disp->buffer_size);
+    dsb();
+    disp->fb_mapped_tid = cur->id;
 }
 
 void xwin_flip_buffer(xdisplay_t* disp) {
@@ -163,12 +170,13 @@ void xwin_flip_buffer(xdisplay_t* disp) {
         return;
     }
 
-    /* flip 时再确保映射：create 时 map 可能未进当前 upage / PA 不对 */
     if (disp->vga->frambuffer != NULL && disp->buffer_size > 0) {
         xwin_map_framebuffer(disp);
         if (disp->back_buffer != (u32*)disp->vga->frambuffer) {
             kmemcpy(disp->vga->frambuffer, disp->back_buffer, disp->buffer_size);
         }
+        /* NC 目标：保证写完成后再让 DE 扫 */
+        dsb();
     }
     if (disp->vga->flip_buffer != NULL) {
         disp->vga->flip_buffer(disp->vga, 0);

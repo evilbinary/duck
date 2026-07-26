@@ -7,15 +7,18 @@
 #include "xwin.h"
 #include "kernel/memory.h"
 #include "kernel/page.h"
+#include "kernel/thread.h"
 
 #define MAX_WINDOWS 64
 
-/* kmalloc 池默认 PAGE_RW_NC；画图缓冲改为 WB，加速 CPU 填充/blit */
+/* kmalloc 池默认 PAGE_RW_NC；画图缓冲改为 WB。
+ * SVC 用 TTBR0=upage，须同时改内核页表与当前进程页表。 */
 static void xwin_remap_cached(void* buf, u32 size) {
   u32 start;
   u32 end;
   u32 v;
   void* kpd;
+  thread_t* cur;
 
   if (buf == NULL || size == 0) {
     return;
@@ -24,12 +27,16 @@ static void xwin_remap_cached(void* buf, u32 size) {
   if (kpd == NULL) {
     return;
   }
+  cur = thread_current();
   start = ((u32)(uintptr_t)buf) & ~(PAGE_SIZE - 1);
   end = ((u32)(uintptr_t)buf + size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
   for (v = start; v < end; v += PAGE_SIZE) {
     void* phy = page_v2p((u64*)kpd, (void*)(uintptr_t)v);
     u32 paddr = phy != NULL ? ((u32)(uintptr_t)phy & ~(PAGE_SIZE - 1)) : v;
     page_map(v, paddr, PAGE_RW);
+    if (cur != NULL && cur->vm != NULL && cur->vm->upage != NULL) {
+      page_map_current(v, paddr, PAGE_RW);
+    }
   }
 }
 
@@ -214,6 +221,8 @@ xwindow_t* xwin_create_window(xdisplay_t* disp,
     }
     kmemset(win->framebuffer, 0, win->fb_size);
     xwin_remap_cached(win->framebuffer, win->fb_size);
+    /* DE 用像素 alpha：全 0 即全透明；初始化成不透明背景 */
+    xwin_clear_color(win, win->bg_color | 0xFF000000u);
     
     // 设置窗口树
     win->parent = parent;
@@ -243,18 +252,12 @@ xwindow_t* xwin_create_window(xdisplay_t* disp,
     log_debug("xwin: created window %d (%dx%d at %d,%d)\n", 
               win->id, width, height, x, y);
 
-    /* 当前进程页表映射 LCD FB，后续 flip 可写 */
+    /* 当前进程强制 LCD=PAGE_RW_NC（按 tid，避免 PA early-out 留下 WB） */
+    disp->fb_mapped_tid = 0;
     xwin_map_framebuffer(disp);
 
-    /* DIRECT：合成目标绑到 frambuffer，flip 不再 memcpy */
-    if ((flags & XWIN_FLAG_DIRECT) && disp->vga != NULL &&
-        disp->vga->frambuffer != NULL) {
-        u32* fb = (u32*)disp->vga->frambuffer;
-        if (disp->back_buffer != NULL && disp->back_buffer != fb) {
-            kfree(disp->back_buffer);
-        }
-        disp->back_buffer = fb;
-    }
+    /* 保持离屏 WB back_buffer；flip 再 memcpy 到 NC LCD（避免直绑 LCD 偶发黑屏） */
+    (void)flags;
     
     return win;
 }
