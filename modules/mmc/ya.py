@@ -72,6 +72,7 @@ arch_source={
 }
 common_source=[
     'i2c.c',
+    'mmc_cache.c',
 ]
 
 

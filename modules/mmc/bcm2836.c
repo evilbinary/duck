@@ -13,13 +13,8 @@
 
 #define CACHE_COUNT 1
 #define SECTOR_SIZE (512 * CACHE_COUNT)
-// #define CACHE_ENABLED 1
 
-#ifdef CACHE_ENABLED
-#define CACHE_ENTRIES (1 << 4)          ///< 16 entries
-#define CACHE_MASK (CACHE_ENTRIES - 1)  ///< mask 0x0F
-
-#endif
+#include "mmc_cache.h"
 
 #define SD_OK 0
 #define SD_ERROR -1
@@ -1746,15 +1741,8 @@ int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, char *buf, uint len) {
   // log_debug("write ====>>>>\n");
   ret = sd_write(buf, bsize, bno);
 
-#ifdef CACHE_ENABLED
-  int i;
-  u8 *p = buf;
-  for (i = 0; i < bcount; i++) {
-    int index = (bno + i) & CACHE_MASK;
-    void *cache_p = (void *)(sdhci_dev->cache_buffer + SECTOR_SIZE * index);
-    kmemmove(cache_p, &p[SECTOR_SIZE * i], SECTOR_SIZE);
-  }
-#endif
+  /* Invalidate or refresh cache tags after write (old code forgot tags). */
+  mmc_cache_after_write(sdhci_dev, bno, bcount, NULL);
 
   return ret;
 }
@@ -1769,44 +1757,39 @@ static void print_hex(u8 *addr, uint size) {
   kprintf("\n\r");
 }
 
-int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, uint len) {
-  uint ret = 0;
+static int bcm2836_hw_read(void *ctx, u32 lba, u32 nsec, void *buf) {
+  (void)ctx;
+  int r = sd_read((uint8_t *)buf, (size_t)nsec * BYTE_PER_SECTOR, lba);
+  return r < 0 ? -1 : 0;
+}
 
+int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, uint len) {
   uint bno = sdhci_dev->offsetl / BYTE_PER_SECTOR;
   uint boffset = sdhci_dev->offsetl % BYTE_PER_SECTOR;
-  uint bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
-  uint bsize = bcount * BYTE_PER_SECTOR;
 
-  // static uint dbg;
-  // if (dbg < 12 || (dbg & 0x3FF) == 0) {
-  //   log_debug("bcm2836 sdhci_read offset=%x bno=%d boff=%d len=%d\n",
-  //             sdhci_dev->offsetl, bno, boffset, len);
-  // }
-  // dbg++;
-
-  if (bsize > sdhci_dev->read_buf_size) {
-    kfree(sdhci_dev->read_buf);
-    sdhci_dev->read_buf = kmalloc(bsize, DEVICE_TYPE);
-    sdhci_dev->read_buf_size = bsize;
+  if (mmc_cache_read(sdhci_dev, bno, boffset, len, buf, bcm2836_hw_read,
+                     sdhci_dev) >= 0) {
+    return len;
   }
 
-#ifdef CACHE_ENABLED
-  if (bcount == CACHE_COUNT) {
-    int index = bno & CACHE_MASK;
-    char *cache_p = (sdhci_dev->cache_buffer + SECTOR_SIZE * index);
-    if (sdhci_dev->cached_blocks[index] != bno) {
-      ret = sd_read(cache_p, bsize, bno);
-      sdhci_dev->cached_blocks[index] = bno;
+  /* Cache unavailable: original bounce-buffer path */
+  {
+    uint bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
+    uint bsize = bcount * BYTE_PER_SECTOR;
+    uint ret;
+
+    if (bsize > sdhci_dev->read_buf_size) {
+      kfree(sdhci_dev->read_buf);
+      sdhci_dev->read_buf = kmalloc(bsize, DEVICE_TYPE);
+      sdhci_dev->read_buf_size = bsize;
     }
-    kmemmove(buf, cache_p + boffset, len);
-    return ret;
+    ret = sd_read(sdhci_dev->read_buf, bsize, bno);
+    if (ret < 0) {
+      return ret;
+    }
+    kmemmove(buf, sdhci_dev->read_buf + boffset, len);
+    return len;
   }
-#endif
-
-  ret = sd_read(sdhci_dev->read_buf, bsize, bno);
-  kmemmove(buf, sdhci_dev->read_buf + boffset, len);
-
-  return ret;
 }
 
 void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
@@ -1816,13 +1799,7 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   page_map(BCM2835_ST_BASE & ~0xfff, BCM2835_ST_BASE & ~0xfff, PAGE_DEV);
   sdhci_dev_prob(sdhci_dev);
 
-#ifdef CACHE_ENABLED
-  sdhci_dev->cached_blocks = kmalloc(CACHE_ENTRIES, KERNEL_TYPE);
-  sdhci_dev->cache_buffer = kmalloc(SECTOR_SIZE * CACHE_ENTRIES, KERNEL_TYPE);
-  int i;
-  for (i = 0; i < CACHE_ENTRIES; i++) {
-    sdhci_dev->cached_blocks[i] = 0xFFFFFFFF;
+  if (mmc_cache_init(sdhci_dev) < 0) {
+    log_error("bcm2836 mmc cache init failed, running uncached\n");
   }
-  kmemset(sdhci_dev->cache_buffer, 0, SECTOR_SIZE * CACHE_ENTRIES);
-#endif
 }
