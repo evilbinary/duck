@@ -924,7 +924,9 @@ void page_map_kernel(void* page, u64 flag_x, u64 flag_rw) {
 
 void mm_parse_map(void* kernel_page_dir) {
   kprintf("map mem block start\n");
-  map_mem_block(kernel_page_dir, PAGE_SIZE * 10000, PAGE_RW_NC);
+  /* Map enough that GUI/JPEG kmalloc does not immediately sit on the frontier
+   * (page_map L2 alloc → nested ya_sbrk). Still extend on demand past this. */
+  map_mem_block(kernel_page_dir, PAGE_SIZE * 20000, PAGE_RW_NC);
 
   int size = PAGE_SIZE * 200;
   kprintf("map mem range %x %x\n", 0, size);
