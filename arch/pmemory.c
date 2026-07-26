@@ -125,44 +125,8 @@ void* ya_sbrk(size_t size) {
   }
   kassert(found > 0);
   kassert(addr != NULL);
-
-  /*
-   * Boot only maps ~40MB of each free block. Carving past last_map_addr needs
-   * more PTEs. page_map_on may kmalloc an L2 table → nested ya_sbrk.
-   * Never return an unmapped VA: always cover [addr, addr+size) even when nested.
-   * Only the optional headroom loop is gated to avoid extend storms.
-   */
-  if (mmt.last_map_addr > 0) {
-    uintptr_t need = (uintptr_t)addr + size;
-    if (need > mmt.last_map_addr) {
-      static int extending_headroom;
-      while (mmt.last_map_addr < need) {
-        page_map(mmt.last_map_addr, mmt.last_map_addr,
-                 PAGE_P | PAGE_USR | PAGE_RWX);
-        page_map_current(mmt.last_map_addr, mmt.last_map_addr,
-                         PAGE_P | PAGE_USR | PAGE_RWX);
-        mmt.last_map_addr += PAGE_SIZE;
-      }
-      if (!extending_headroom) {
-        uintptr_t map_to = (need + PAGE_SIZE * 256 + (PAGE_SIZE - 1)) &
-                           ~(PAGE_SIZE - 1);
-        extending_headroom = 1;
-        mmt.extend_phy_count++;
-        if ((mmt.extend_phy_count & 0x3f) == 1) {
-          kprintf("extend kernel phy map to %lx (from %lx count %d)\n", map_to,
-                  mmt.last_map_addr, mmt.extend_phy_count);
-        }
-        while (mmt.last_map_addr < map_to) {
-          page_map(mmt.last_map_addr, mmt.last_map_addr,
-                   PAGE_P | PAGE_USR | PAGE_RWX);
-          page_map_current(mmt.last_map_addr, mmt.last_map_addr,
-                           PAGE_P | PAGE_USR | PAGE_RWX);
-          mmt.last_map_addr += PAGE_SIZE;
-        }
-        extending_headroom = 0;
-      }
-    }
-  }
+  /* Mapping is done once at boot (map_mem_block). No runtime PTE extend —
+   * page_map/tlb flood here made LCD/compositing crawl. */
   return addr;
 }
 
@@ -881,14 +845,21 @@ u32 mm_get_block_size(void* addr) {
 }
 #endif
 
-void map_mem_block(void* page, vaddr_t size, u64 flags) {
+void map_mem_block(void* page, vaddr_t max_size, u64 flags) {
   mem_block_t* p = mmt.blocks;
   for (; p != NULL; p = p->next) {
     vaddr_t address = p->origin_addr;
+    /* Map this block only — never past origin into a hole/device. */
+    vaddr_t size = p->origin_size + sizeof(mem_block_t);
+    if (max_size != 0 && size > max_size) {
+      size = max_size;
+    }
+    size = (size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
     page_map_range(page, address, address, size, flags);
-    kprintf("map mem block addr range %lx - %lx\n", p->origin_addr,
-            p->origin_addr + size);
-    mmt.last_map_addr = address + size;
+    kprintf("map mem block addr range %lx - %lx\n", address, address + size);
+    if (address + size > mmt.last_map_addr) {
+      mmt.last_map_addr = address + size;
+    }
   }
 }
 
@@ -924,9 +895,11 @@ void page_map_kernel(void* page, u64 flag_x, u64 flag_rw) {
 
 void mm_parse_map(void* kernel_page_dir) {
   kprintf("map mem block start\n");
-  /* Map enough that GUI/JPEG kmalloc does not immediately sit on the frontier
-   * (page_map L2 alloc → nested ya_sbrk). Still extend on demand past this. */
-  map_mem_block(kernel_page_dir, PAGE_SIZE * 20000, PAGE_RW_NC);
+  /* Full free RAM once at boot. Must match valloc/user attrs (PAGE_RWX):
+   * same PA in kernel identity + user AS with different TEX/C/B is UNPREDICTABLE
+   * on ARMv7 and corrupts musl mallocng (a_crash/UNDEF during realloc).
+   * Do not use PAGE_RW_NC here — NC heap also kills LCD compose speed. */
+  map_mem_block(kernel_page_dir, 0, PAGE_P | PAGE_USR | PAGE_RWX);
 
   int size = PAGE_SIZE * 200;
   kprintf("map mem range %x %x\n", 0, size);
