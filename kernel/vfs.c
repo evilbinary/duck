@@ -7,9 +7,41 @@
 #include "vfs.h"
 
 #include "fd.h"
+#include "preempt.h"
+#include "thread.h"
 
 /* User mappings on ARM32 YiYiYa start around 0x70000000 (stack/heap/exec). */
 #define VFS_USER_PTR_MIN 0x70000000U
+
+/* 全局 VFS 锁：防 FatFs/目录树重入。可重入；持锁期间 preempt_disable。 */
+static lock_t vfs_biglock;
+static thread_t* vfs_lock_owner;
+static int vfs_lock_depth;
+
+static void vfs_lock(void) {
+  thread_t* cur = thread_current();
+  /* 含 early-init（cur==NULL）同上下文重入 */
+  if (vfs_lock_depth > 0 && vfs_lock_owner == cur) {
+    vfs_lock_depth++;
+    return;
+  }
+  preempt_disable();
+  lock_acquire(&vfs_biglock);
+  vfs_lock_owner = cur;
+  vfs_lock_depth = 1;
+}
+
+static void vfs_unlock(void) {
+  if (vfs_lock_depth > 1) {
+    vfs_lock_depth--;
+    return;
+  }
+  vfs_lock_depth = 0;
+  vfs_lock_owner = NULL;
+  lock_release(&vfs_biglock);
+  preempt_enable();
+  cond_resched();
+}
 
 /* 只拒绝空/低地址/用户态指针。禁止用「四字节皆可打印」判断：
  * 内核堆指针如 0x415d6f64（'d','o',']','A'）会被误杀，导致
@@ -46,10 +78,9 @@ size_t vioctl(vnode_t *node, u32 cmd, void *args) {
   }
   if (node->op->ioctl != NULL) {
     u32 ret = 0;
-    // va_list args;
-    // va_start(args, cmd);
+    vfs_lock();
     ret = node->op->ioctl(node, cmd, args);
-    // va_end(args);
+    vfs_unlock();
     return ret;
   } else {
     log_warn("vioctl ioctl is null node=%s cmd=%x args=%x\n",
@@ -60,7 +91,11 @@ size_t vioctl(vnode_t *node, u32 cmd, void *args) {
 
 u32 vread(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
   if (node->op->read != NULL) {
-    return node->op->read(node, offset, size, buffer);
+    u32 ret;
+    vfs_lock();
+    ret = node->op->read(node, offset, size, buffer);
+    vfs_unlock();
+    return ret;
   } else {
     log_error("node %s read is null\n", node->name);
     return 0;
@@ -69,7 +104,11 @@ u32 vread(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
 
 u32 vwrite(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
   if (node->op->write != NULL) {
-    return node->op->write(node, offset, size, buffer);
+    u32 ret;
+    vfs_lock();
+    ret = node->op->write(node, offset, size, buffer);
+    vfs_unlock();
+    return ret;
   } else {
     log_error("node %s write is null\n", node->name);
     return 0;
@@ -78,7 +117,11 @@ u32 vwrite(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
 
 u32 vopen(vnode_t *node, u32 mode) {
   if (node->op->open != NULL) {
-    return node->op->open(node, mode);
+    u32 ret;
+    vfs_lock();
+    ret = node->op->open(node, mode);
+    vfs_unlock();
+    return ret;
   } else {
     log_error("node %s open is null \n", node->name);
     return -1;
@@ -93,12 +136,22 @@ u32 vclose(vnode_t *node) {
     log_error("node %s close is null\n", node->name != NULL ? node->name : "<null>");
     return (u32)-1;
   }
-  return node->op->close(node);
+  {
+    u32 ret;
+    vfs_lock();
+    ret = node->op->close(node);
+    vfs_unlock();
+    return ret;
+  }
 }
 u32 vreaddir(vnode_t *node, vdirent_t *dirent, u32 *offset, u32 count) {
   if (node->op->readdir != NULL) {
     if ((node->flags & V_DIRECTORY) == V_DIRECTORY) {
-      return node->op->readdir(node, dirent, offset, count);
+      u32 ret;
+      vfs_lock();
+      ret = node->op->readdir(node, dirent, offset, count);
+      vfs_unlock();
+      return ret;
     } else {
       log_error("node readdir is not dir\n");
     }
@@ -110,7 +163,11 @@ u32 vreaddir(vnode_t *node, vdirent_t *dirent, u32 *offset, u32 count) {
 vnode_t *vfinddir(vnode_t *node, char *name) {
   if (node->op->finddir != NULL != NULL) {
     if ((node->flags & V_DIRECTORY) == V_DIRECTORY) {
-      return node->op->finddir(node, name);
+      vnode_t *ret;
+      vfs_lock();
+      ret = node->op->finddir(node, name);
+      vfs_unlock();
+      return ret;
     } else {
       log_error("node finddir is not dir\n");
     }
@@ -128,7 +185,13 @@ vnode_t *vfind(vnode_t *node, char *name) {
     if (node->op->find == &vfs_find) {
       return NULL;
     }
-    return node->op->find(node, name);
+    {
+      vnode_t *ret;
+      vfs_lock();
+      ret = node->op->find(node, name);
+      vfs_unlock();
+      return ret;
+    }
   } else {
     log_error("node find is null\n");
     return 0;
@@ -137,7 +200,9 @@ vnode_t *vfind(vnode_t *node, char *name) {
 
 void vmount(vnode_t *root, u8 *path, vnode_t *node) {
   if (root->op->mount != NULL) {
-    return node->op->mount(root, path, node);
+    vfs_lock();
+    node->op->mount(root, path, node);
+    vfs_unlock();
   } else {
     log_error("node mount is null\n");
     return;
@@ -169,19 +234,23 @@ void vfs_add_child(vnode_t *parent, vnode_t *child) {
     log_error("vfs_add_child bad parent=%x child=%x\n", parent, child);
     return;
   }
+  vfs_lock();
   if ((parent->child_number + 1) > parent->child_size) {
     vfs_exten_child(parent);
   }
   if (parent->child == NULL) {
     log_error("child alloc error\n");
+    vfs_unlock();
     return;
   }
   child->parent = parent;
   parent->child[parent->child_number++] = child;
+  vfs_unlock();
 }
 
 void vfs_remove_child(vnode_t *parent, vnode_t *child) {
   vnode_t *find_one = NULL;
+  vfs_lock();
   for (int i = 0; i < parent->child_number; i++) {
     vnode_t *n = parent->child[i];
     if (n == NULL) continue;
@@ -193,6 +262,8 @@ void vfs_remove_child(vnode_t *parent, vnode_t *child) {
       break;
     }
   }
+  (void)find_one;
+  vfs_unlock();
 }
 
 vnode_t *vfs_find_child(vnode_t *parent, char *name) {
@@ -235,6 +306,10 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
   char buf[MAX_PATH_BUFFER];
   char *start;
   char *s = buf;
+  vnode_t *parent;
+  vnode_t *node;
+
+  vfs_lock();
 
   if (root == NULL) {
     root = root_node;
@@ -242,9 +317,11 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
   u32 path_len = kstrlen(path);
   // 处理根路径 "/" 或空路径
   if (path_len == 0 || (path_len == 1 && path[0] == '/')) {
+    vfs_unlock();
     return root;
   }
   if (path_len == 1 && kstrcmp(root->name, path) == 0) {
+    vfs_unlock();
     return root;
   }
   if (path_len >= MAX_PATH_BUFFER) {
@@ -254,13 +331,14 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
   kstrcpy(s, path);
   token = kstrtok(s, split);
 
-  vnode_t *parent = root;
-  vnode_t *node = parent;  // 默认返回当前目录
+  parent = root;
+  node = parent;  // 默认返回当前目录
   if (token == NULL) {
     // 空路径，返回 root
     if (path_len >= MAX_PATH_BUFFER) {
       kfree(start);
     }
+    vfs_unlock();
     return root;
   }
   while (token != NULL) {
@@ -313,6 +391,7 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
   if (node == NULL) {
     log_error("cannot found file %s\n", path);
   }
+  vfs_unlock();
   return node;
 }
 
@@ -331,49 +410,62 @@ void vfs_mount(vnode_t *root, u8 *path, vnode_t *node) {
   if (root == NULL) {
     root = root_node;
   }
-  vnode_t *parent = vfs_find(root, path);
-  if (parent != NULL) {
-    vfs_add_child(parent, node);
-  } else {
-    log_error("mount on %s error\n", path);
+  vfs_lock();
+  {
+    vnode_t *parent = vfs_find(root, path);
+    if (parent != NULL) {
+      vfs_add_child(parent, node);
+    } else {
+      log_error("mount on %s error\n", path);
+    }
   }
+  vfs_unlock();
 }
 
 u32 vfs_readdir(vnode_t *node, vdirent_t *dirent, u32 *offset, u32 count) {
+  u32 nbytes;
+
   if (node == NULL || dirent == NULL || offset == NULL || count == 0) {
     return 0;
   }
 
+  vfs_lock();
+
   // Backed directories delegate to the underlying filesystem implementation.
   if (node->super != NULL && node->super->op != NULL &&
       node->super->op->readdir != NULL) {
-    return node->super->op->readdir(node, dirent, offset, count);
+    nbytes = node->super->op->readdir(node, dirent, offset, count);
+    vfs_unlock();
+    return nbytes;
   }
 
   // Pure VFS directories (/, /dev, mount points) enumerate mounted children.
-  u32 start = *offset;
-  u32 read_count = 0;
-  u32 nbytes = 0;
+  {
+    u32 start = *offset;
+    u32 read_count = 0;
+    nbytes = 0;
 
-  for (u32 i = start; i < node->child_number && read_count < count; i++) {
-    vnode_t *child = node->child[i];
-    if (child == NULL || child->name == NULL) {
-      continue;
+    for (u32 i = start; i < node->child_number && read_count < count; i++) {
+      vnode_t *child = node->child[i];
+      if (child == NULL || child->name == NULL) {
+        continue;
+      }
+
+      dirent->ino = i + 1;
+      dirent->offset = i + 1;
+      dirent->length = sizeof(vdirent_t);
+      dirent->type = child->flags & 0xff;
+      kmemset(dirent->name, 0, sizeof(dirent->name));
+      kstrcpy(dirent->name, child->name);
+
+      dirent++;
+      read_count++;
+      nbytes += sizeof(vdirent_t);
+      *offset = i + 1;
     }
-
-    dirent->ino = i + 1;
-    dirent->offset = i + 1;
-    dirent->length = sizeof(vdirent_t);
-    dirent->type = child->flags & 0xff;
-    kmemset(dirent->name, 0, sizeof(dirent->name));
-    kstrcpy(dirent->name, child->name);
-
-    dirent++;
-    read_count++;
-    nbytes += sizeof(vdirent_t);
-    *offset = i + 1;
   }
 
+  vfs_unlock();
   return nbytes;
 }
 
@@ -390,6 +482,7 @@ u32 vfs_open(vnode_t *node, u32 mode) {
   if (node == NULL) {
     return (u32)-1;
   }
+  vfs_lock();
   if (node->super != NULL && node->super->op != NULL &&
       node->super->op->open != NULL) {
     ret = (int)node->super->op->open(node, mode);
@@ -397,6 +490,7 @@ u32 vfs_open(vnode_t *node, u32 mode) {
              node->op->open != &vfs_open) {
     ret = (int)node->op->open(node, mode);
   }
+  vfs_unlock();
   return (u32)(ret < 0 ? -1 : ret);
 }
 
@@ -588,19 +682,30 @@ int vfs_normalize_path(char *result, const char *path) {
 
 // 从指定节点开始查找路径（支持相对路径和 ..）
 vnode_t *vfs_find_relative(vnode_t *root, vnode_t *pwd, const char *path) {
+  vnode_t *current;
+  char buf[512];
+  char *token;
+  const char *split = "/";
+
   if (path == NULL) {
     return NULL;
   }
+
+  vfs_lock();
+
   if (!vfs_node_is_valid(root)) {
     root = root_node;
   }
   if (!vfs_node_is_valid(root)) {
+    vfs_unlock();
     return NULL;
   }
 
   // 绝对路径从根目录开始
   if (path[0] == '/') {
-    return vfs_find(root, (u8 *)path);
+    current = vfs_find(root, (u8 *)path);
+    vfs_unlock();
+    return current;
   }
 
   // 相对路径从当前目录开始
@@ -609,46 +714,41 @@ vnode_t *vfs_find_relative(vnode_t *root, vnode_t *pwd, const char *path) {
     pwd = root;
   }
 
-  // 简化处理：直接从当前目录开始遍历
-  char buf[512];
   kstrcpy(buf, path);
-  
-  vnode_t *current = pwd;
-  char *token;
-  const char *split = "/";
+  current = pwd;
   token = kstrtok(buf, split);
-  
+
   while (token != NULL) {
     log_debug("vfs_find_relative: token='%s' len=%d\n", token, kstrlen(token));
     if (!vfs_node_is_valid(current)) {
       log_error("vfs_find_relative bad current=%x\n", current);
+      vfs_unlock();
       return NULL;
     }
     if (kstrcmp(token, "..") == 0) {
-      log_debug("vfs_find_relative: found .., current=%x parent=%x root=%x\n", current, current->parent, root);
-      // 返回上一级
+      log_debug("vfs_find_relative: found .., current=%x parent=%x root=%x\n",
+                current, current->parent, root);
       if (vfs_node_is_valid(current->parent)) {
         current = current->parent;
         log_debug("vfs_find_relative: move to parent %x\n", current);
       } else {
-        // 已经是根目录或 parent 为空，保持不变
         log_debug("vfs_find_relative: at root or no parent, keeping current\n");
       }
     } else if (kstrcmp(token, ".") == 0) {
-      // 保持当前目录
       log_debug("vfs_find_relative: found ., keeping current\n");
     } else {
+      vnode_t *found;
       log_debug("vfs_find_relative: searching for '%s' in %x\n", token, current);
-      // 查找子节点
-      vnode_t *found = vfs_find_child(current, token);
+      found = vfs_find_child(current, token);
       if (found == NULL) {
-        // 尝试从底层文件系统查找
-      vnode_t *op_node = vfs_node_is_valid(current->super) ? current->super : current;
+        vnode_t *op_node =
+            vfs_node_is_valid(current->super) ? current->super : current;
         found = vfind(op_node, token);
         if (found != NULL) {
           vfs_add_child(current, found);
         } else {
           log_error("vfs_find_relative: cannot find %s\n", token);
+          vfs_unlock();
           return NULL;
         }
       }
@@ -656,11 +756,15 @@ vnode_t *vfs_find_relative(vnode_t *root, vnode_t *pwd, const char *path) {
     }
     token = kstrtok(NULL, split);
   }
-  
+
+  vfs_unlock();
   return current;
 }
 
 int vfs_init() {
+  lock_init(&vfs_biglock);
+  vfs_lock_owner = NULL;
+  vfs_lock_depth = 0;
   root_node = vfs_create_node("/", V_DIRECTORY);
   return 1;
 }

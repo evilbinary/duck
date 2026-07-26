@@ -61,7 +61,8 @@ void svc_handler() {
   /* 异常入口关 IRQ；长 syscall（FS/GUI）期间需开中断，否则 ticks/输入假死 */
   cpu_sti();
   interrupt_process(interrupt_default_handler);
-  interrupt_exit();
+  /* 使用返回的 ic，支持 syscall 出口抢占 */
+  interrupt_exit_ret();
 }
 
 INTERRUPT_SERVICE

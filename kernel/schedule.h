@@ -9,7 +9,14 @@
 #include "arch/arch.h"
 #include "thread.h"
 
+void schedule_init(void);
+u32 schedule_get_ticks(void);
+void schedule(interrupt_context_t* ic);
+void schedule_switch(void);
+void schedule_sleep(u32 nsec);
+void* do_schedule(interrupt_context_t* ic);
 
-void schedule_init();
+/* 在已判定可调度时执行切换，返回应恢复的 ic */
+interrupt_context_t* schedule_reschedule(interrupt_context_t* ic);
 
 #endif

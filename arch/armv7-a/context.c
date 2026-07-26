@@ -195,14 +195,22 @@ void context_switch_page(context_t* context, u32 page_table) {
 
 }
 
-/* CPSR.M：USR=0x10 SYS=0x1f 可抢占；SVC/IRQ 嵌套只记账 */
+/* 仅禁止在 IRQ/FIQ 硬中断栈上切换；内核态策略见 preempt_may_switch */
 int context_irq_preemptible(interrupt_context_t* ic) {
   if (ic == NULL) {
     return 0;
   }
   u32 mode = ic->psr & 0x1fu;
-  if (mode == 0x13u /* SVC */ || mode == 0x12u /* IRQ */) {
+  if (mode == 0x12u /* IRQ */ || mode == 0x11u /* FIQ */) {
     return 0;
   }
   return 1;
+}
+
+int context_in_kernel(interrupt_context_t* ic) {
+  if (ic == NULL) {
+    return 1;
+  }
+  /* 仅 SVC=正在 syscall。SYS/内核线程必须仍可被时钟切换，否则 init 饿死。 */
+  return (ic->psr & 0x1fu) == 0x13u;
 }

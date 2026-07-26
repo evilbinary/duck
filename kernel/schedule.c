@@ -5,6 +5,8 @@
  ********************************************************************/
 #include "schedule.h"
 
+#include "preempt.h"
+
 u32 timer_ticks[MAX_CPU] = {0};
 lock_t schedule_lock;
 
@@ -34,16 +36,14 @@ thread_t* schedule_next(int cpu) {
   thread_t* current = thread_current();
   thread_t* v = thread_head();
   thread_t* next = NULL;
-  
-  // find first runnable thread
+
   for (; v != NULL; v = v->next) {
     if (v->state == THREAD_RUNNING && v->cpu_id == cpu && v != current) {
       next = v;
       break;
     }
   }
-  
-  // if no other runnable thread, return current if it's runnable
+
   if (next == NULL) {
     if (current != NULL && current->state == THREAD_RUNNING &&
         current->cpu_id == cpu) {
@@ -51,8 +51,7 @@ thread_t* schedule_next(int cpu) {
     }
     return NULL;
   }
-  
-  // find thread with lowest counter (highest priority)
+
   for (v = thread_head(); v != NULL; v = v->next) {
     if (v->state != THREAD_RUNNING || v->cpu_id != cpu || v == current) {
       continue;
@@ -65,23 +64,57 @@ thread_t* schedule_next(int cpu) {
   return next;
 }
 
+interrupt_context_t* schedule_reschedule(interrupt_context_t* ic) {
+  int cpu = cpu_get_id();
+  thread_t* current_thread = thread_current();
+  thread_t* next_thread;
+
+  if (current_thread == NULL || ic == NULL) {
+    return ic;
+  }
+
+  next_thread = schedule_next(cpu);
+  if (next_thread == NULL) {
+    preempt_clear_need_resched();
+    return ic;
+  }
+
+  if (next_thread == current_thread) {
+    next_thread->counter++;
+    preempt_clear_need_resched();
+    return ic;
+  }
+
+  next_thread->counter++;
+  preempt_clear_need_resched();
+  {
+    interrupt_context_t* next_ic =
+        context_switch(ic, current_thread->ctx, next_thread->ctx);
+    thread_set_current(next_thread);
+#ifdef VM_ENABLE
+    context_switch_page(next_thread->ctx, next_thread->vm->upage);
+#endif
+    return next_ic;
+  }
+}
+
 void schedule(interrupt_context_t* ic) {
   thread_t* current_thread = thread_current();
   int cpu = cpu_get_id();
   schedule_state(cpu);
   thread_t* next_thread = schedule_next(cpu);
-  
-  // if no next thread or same as current, don't switch
+
   if (next_thread == NULL || next_thread == current_thread) {
     return;
   }
-  
+
   interrupt_context_t* next_ic =
       context_switch(ic, current_thread->ctx, next_thread->ctx);
   thread_set_current(next_thread);
 #ifdef VM_ENABLE
   context_switch_page(next_thread->ctx, next_thread->vm->upage);
 #endif
+  (void)next_ic;
 }
 
 void schedule_switch() {
@@ -90,13 +123,12 @@ void schedule_switch() {
   int cpu = cpu_get_id();
   schedule_state(cpu);
   thread_t* next_thread = schedule_next(cpu);
-  
-  // if no next thread or same as current, just exit
+
   if (next_thread == NULL || next_thread == current_thread) {
     interrupt_exit_context(ic);
     return;
   }
-  
+
   thread_set_current(next_thread);
 
   interrupt_context_t* next_ic =
@@ -114,11 +146,8 @@ void schedule_sleep(u32 nsec) {
     return;
   }
   u32 tick = nsec / SCHEDULE_FREQUENCY;
-  // kprintf("%d schedule_sleep nsec=%d tick=%d\n", current->id, nsec,tick);
   thread_sleep(current, tick);
-  // thread_dumps();
 
-  // this will fail on qemu memory
   if (current->ctx != NULL && current->ctx->ic != NULL) {
     // schedule(current->ctx->ic);
   }
@@ -133,53 +162,47 @@ void* do_schedule(interrupt_context_t* ic) {
     return ic;
   }
 
-  /* arch：嵌套在 SVC 等内核态时只记账，禁止 context_switch */
-  if (!context_irq_preemptible(ic)) {
-    schedule_state(cpu);
-    current_thread->ticks++;
-    timer_ticks[cpu]++;
-    timer_end();
-    return ic;
-  }
-
-  int count = schedule_state(cpu);
-
-  thread_t* next_thread = schedule_next(cpu);
-  if (next_thread == NULL) {
-    log_debug("schedule error next\n");
-    thread_t* v = thread_head();
-    for (; v != NULL; v = v->next) {
-      kprintf("TS tid=%d state=%d sleep=%d counter=%d cpu=%d name=%s\n",
-              v->id, v->state, v->sleep_counter, v->counter, v->cpu_id,
-              v->name != NULL ? v->name : "null");
-    }
-    timer_end();
-    return ic;
-  }
-  
-  // if same thread, just update stats and return
-  if (next_thread == current_thread) {
-    next_thread->counter++;
-    next_thread->ticks++;
-    timer_ticks[cpu]++;
-    timer_end();
-    return ic;
-  }
-
-  next_thread->counter++;
-  next_thread->ticks++;
+  schedule_state(cpu);
+  current_thread->ticks++;
   timer_ticks[cpu]++;
-  interrupt_context_t* next_ic =
-      context_switch(ic, current_thread->ctx, next_thread->ctx);
-  thread_set_current(next_thread);
-#ifdef VM_ENABLE
-  context_switch_page(next_thread->ctx, next_thread->vm->upage);
-#endif
-  timer_end();
-  return next_ic;
+
+  if (!preempt_may_switch(ic)) {
+    preempt_set_need_resched();
+    timer_end();
+    return ic;
+  }
+
+  {
+    thread_t* next_thread = schedule_next(cpu);
+    if (next_thread == NULL) {
+      log_debug("schedule error next\n");
+      thread_t* v = thread_head();
+      for (; v != NULL; v = v->next) {
+        kprintf("TS tid=%d state=%d sleep=%d counter=%d cpu=%d name=%s\n",
+                v->id, v->state, v->sleep_counter, v->counter, v->cpu_id,
+                v->name != NULL ? v->name : "null");
+      }
+      timer_end();
+      return ic;
+    }
+
+    if (next_thread == current_thread) {
+      next_thread->counter++;
+      preempt_clear_need_resched();
+      timer_end();
+      return ic;
+    }
+
+    {
+      interrupt_context_t* next_ic = schedule_reschedule(ic);
+      timer_end();
+      return next_ic;
+    }
+  }
 }
 
 void schedule_init() {
+  preempt_init();
   if (cpu_get_id() == 0) {
     exception_regist(EX_TIMER, do_schedule);
   }

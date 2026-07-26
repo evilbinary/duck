@@ -16,16 +16,14 @@ void* do_syscall(interrupt_context_t* ic) {
   int no = context_fn(ic);
   if (no >= 0 && no < SYSCALL_NUMBER && syscall_handler_fn != NULL) {
     syscall_handler_fn(no, ic);
-    return context_ret(ic);
   } else if (syscall_faild_handler_fn != NULL) {
     int ret = syscall_faild_handler_fn(no, ic);
-    if (ret >= 0) {
-      return context_ret(ic);
-    }
+    (void)ret;
   } else {
     log_warn("syscall did not found %d\n", context_fn(ic));
   }
-  return NULL;
+  /* 必须返回 ic：SVC 出口用 interrupt_exit_ret，r0 为恢复栈帧 */
+  return ic;
 }
 
 void sys_fn_regist_faild(void* fn) {

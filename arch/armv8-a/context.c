@@ -183,6 +183,12 @@ void context_switch_page(context_t* context, u64 page_table) {
 
 int context_irq_preemptible(interrupt_context_t* ic) {
   (void)ic;
-  /* AArch64 异常模型不同；当前未在 sync 路径开中断嵌套调度 */
+  /* AArch64：暂无硬中断嵌套切换细节，允许走策略层 */
   return 1;
+}
+
+int context_in_kernel(interrupt_context_t* ic) {
+  (void)ic;
+  /* 未知则当作用户打断，保持与旧行为接近（NONE 下仍可切） */
+  return 0;
 }

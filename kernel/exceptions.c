@@ -5,12 +5,16 @@
  ********************************************************************/
 #include "exceptions.h"
 
+#include "preempt.h"
+
 interrupt_handler_t *exception_handlers[EXCEPTION_NUMBER];
 void exception_regist(u32 vec, interrupt_handler_t handler) {
   exception_handlers[vec] = handler;
 }
 
 void *exception_process(interrupt_context_t *ic) {
+  u32 was_syscall = 0;
+
   if (ic->no == EX_OTHER) {
     int cpu = cpu_get_id();
     log_debug("exception cpu %d no %d\n", cpu, ic->no);
@@ -21,6 +25,7 @@ void *exception_process(interrupt_context_t *ic) {
     }
   } else if (ic->no == EX_SYS_CALL) {
     thread_t *current = thread_current();
+    was_syscall = 1;
     if (current != NULL) {
       current->ctx->ic = ic;
       kmemcpy(current->ctx->ksp, ic, sizeof(interrupt_context_t));
@@ -33,11 +38,15 @@ void *exception_process(interrupt_context_t *ic) {
     interrupt_handler_t handler = exception_handlers[ic->no];
     if (handler != NULL) {
       void *ret = handler(ic);
-      if (ret != NULL) {
-        return ret;
-      } else {
-        return ic;
+      if (ret == NULL) {
+        ret = ic;
       }
+      /* 所有模式：syscall 回用户前检查 need_resched。
+       * do_syscall 已改为返回 ic；仍强制用当前帧以防旧 handler。 */
+      if (was_syscall) {
+        ret = preempt_on_return_user(ic);
+      }
+      return ret;
     }
   } else {
     int cpu = cpu_get_id();

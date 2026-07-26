@@ -188,8 +188,15 @@ int context_irq_preemptible(interrupt_context_t* ic) {
     return 0;
   }
   u32 mode = ic->psr & 0x1fu;
-  if (mode == 0x13u || mode == 0x12u) {
+  if (mode == 0x12u || mode == 0x11u) {
     return 0;
   }
   return 1;
+}
+
+int context_in_kernel(interrupt_context_t* ic) {
+  if (ic == NULL) {
+    return 1;
+  }
+  return (ic->psr & 0x1fu) == 0x13u;
 }

@@ -145,6 +145,11 @@
 
 #define SCHEDULE_FREQUENCY 1000
 
+/* 抢占模型默认 NONE：行为接近旧内核；可改为 PREEMPT_VOLUNTARY / PREEMPT_FULL */
+#ifndef PREEMPT_MODEL_DEFAULT
+#define PREEMPT_MODEL_DEFAULT 0 /* PREEMPT_NONE */
+#endif
+
 //是否打印加载ELF信息
 // #define LOAD_ELF_DEBUG
 

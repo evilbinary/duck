@@ -44,3 +44,8 @@ int context_irq_preemptible(interrupt_context_t* ic) {
   (void)ic;
   return 1;
 }
+
+int context_in_kernel(interrupt_context_t* ic) {
+  (void)ic;
+  return 0;
+}

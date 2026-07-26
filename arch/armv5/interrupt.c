@@ -69,7 +69,7 @@ void svc_handler() {
   interrupt_entering_code(EX_SYS_CALL, 0, 0);
   cpu_sti();
   interrupt_process(interrupt_default_handler);
-  interrupt_exit();
+  interrupt_exit_ret();
 }
 
 INTERRUPT_SERVICE

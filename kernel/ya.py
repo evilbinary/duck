@@ -15,6 +15,7 @@ add_files(
     'kernel.c',
     'thread.c',
     'schedule.c',
+    'preempt.c',
     'syscall.c',
     'exceptions.c',
     'memory.c',
