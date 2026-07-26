@@ -520,14 +520,12 @@ void xwin_blit(xwindow_t* win, i32 x, i32 y, const u32* data, u32 w, u32 h) {
     i32 src_y0 = dy0 - y;
     u32 copy_w = (u32)(dx1 - dx0);
 
+    /* 按行 memcpy。libgui fill/put_pixel 已带 0xFF alpha；逐像素 OR 在 480x320 ≈1fps */
     for (i32 dy = dy0; dy < dy1; dy++) {
         const u32* src =
             data + (u32)(src_y0 + (dy - dy0)) * w + (u32)src_x0;
         u32* dst = win->framebuffer + (u32)dy * win->width + (u32)dx0;
-        for (u32 i = 0; i < copy_w; i++) {
-            /* DE ARGB：alpha=0 会当全透明 */
-            dst[i] = src[i] | 0xFF000000u;
-        }
+        kmemcpy(dst, src, copy_w * sizeof(u32));
     }
 }
 

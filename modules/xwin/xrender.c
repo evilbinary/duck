@@ -73,6 +73,53 @@ void xwin_render(xdisplay_t* disp) {
         skip_count++;
         return;
     }
+
+    /* DIRECT 全屏：只合成该窗 → LCD，跳过根窗 + flip memcpy */
+    xwindow_t* direct_win = NULL;
+    if (disp->vga->frambuffer != NULL &&
+        disp->back_buffer == (u32*)disp->vga->frambuffer) {
+        for (u32 i = 0; i < disp->window_count; i++) {
+            xwindow_t* win = disp->windows[i];
+            if (win != NULL && win->visible && win->damaged &&
+                (win->flags & XWIN_FLAG_DIRECT) &&
+                win->width == disp->vga->width &&
+                win->height == disp->vga->height && win->abs_x == 0 &&
+                win->abs_y == 0) {
+                direct_win = win;
+                break;
+            }
+        }
+    }
+    if (direct_win != NULL) {
+        t0 = schedule_get_ticks();
+        /* 已绑 LCD 时 blit 已写屏；src==dst 勿再自拷 */
+        if (direct_win->framebuffer != (u32*)disp->vga->frambuffer) {
+            xwin_composite_window(disp, direct_win);
+        }
+        t1 = schedule_get_ticks();
+        t_composite += (t1 - t0);
+
+        t0 = schedule_get_ticks();
+        xwin_flip_buffer(disp);
+        t1 = schedule_get_ticks();
+        t_flip += (t1 - t0);
+
+        for (u32 i = 0; i < disp->window_count; i++) {
+            if (disp->windows[i] != NULL) {
+                disp->windows[i]->damaged = 0;
+            }
+        }
+        disp->frame_count++;
+        frame_count++;
+        if (frame_count >= 60) {
+            log_info("Render: direct-lcd composite=%d flip=%d (skipped=%d)\n",
+                     t_composite, t_flip, skip_count);
+            t_clear = t_composite = t_cursor = t_flip = 0;
+            frame_count = 0;
+            skip_count = 0;
+        }
+        return;
+    }
     
     // 清空后备缓冲 - 只有在没有全屏根窗口时才需要
     // 根窗口会覆盖整个屏幕，所以可以跳过清空
@@ -222,9 +269,13 @@ void xwin_composite(xdisplay_t* disp) {
 void xwin_composite_window(xdisplay_t* disp, xwindow_t* win) {
     if (disp == NULL || win == NULL || win->framebuffer == NULL) return;
     if (!win->visible) return;
-    
+
     u32* dst = disp->back_buffer;
     u32* src = win->framebuffer;
+    if (dst == NULL || src == dst) {
+        win->damaged = 0;
+        return;
+    }
     
     u32 screen_w = disp->vga->width;
     u32 screen_h = disp->vga->height;

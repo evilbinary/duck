@@ -237,13 +237,10 @@ static void fb_t113_cfg_gpios(int gpio, int pin, int n, int cfg, int pull,
 }
 
 void t113_flush_screen(vga_device_t *vga, u32 index) {
+  (void)vga;
   (void)index;
-  t113_s3_lcd_t *lcd = vga != NULL ? (t113_s3_lcd_t *)vga->priv : NULL;
-  /* 每帧敲门铃：部分 DE 配置要 dbuff 才继续扫新内容 */
-  if (lcd != NULL && lcd->de != 0) {
-    t113_de_set_address(lcd, lcd->vram[1]);
-    t113_de_enable(lcd, 1);
-  }
+  /* 地址/dbuff 已在 init 配好。每帧重写会逼 DE 重同步，体感接近 1fps。
+   * FB 是 PAGE_RW_NC：dsb 保证 CPU 写对 DRAM 可见即可。 */
   dsb();
 }
 

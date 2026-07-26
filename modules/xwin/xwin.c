@@ -252,13 +252,27 @@ xwindow_t* xwin_create_window(xdisplay_t* disp,
     log_debug("xwin: created window %d (%dx%d at %d,%d)\n", 
               win->id, width, height, x, y);
 
-    /* 当前进程强制 LCD=PAGE_RW_NC（按 tid，避免 PA early-out 留下 WB） */
+    /* 当前进程强制 LCD=PAGE_RW_NC */
     disp->fb_mapped_tid = 0;
     xwin_map_framebuffer(disp);
 
-    /* 保持离屏 WB back_buffer；flip 再 memcpy 到 NC LCD（避免直绑 LCD 偶发黑屏） */
-    (void)flags;
-    
+    /* DIRECT 全屏：窗口缓冲直接绑 LCD。blit 一次写屏，render 跳过合成。
+     * 勿对 LCD 做 remap_cached(WB)，否则脏 cache 会冲掉 DRAM → 黑屏。 */
+    if ((flags & XWIN_FLAG_DIRECT) && disp->vga != NULL &&
+        disp->vga->frambuffer != NULL && width == disp->vga->width &&
+        height == disp->vga->height) {
+        u32* fb = (u32*)disp->vga->frambuffer;
+        if (win->framebuffer != NULL && win->framebuffer != fb) {
+            kfree(win->framebuffer);
+        }
+        win->framebuffer = fb;
+        if (disp->back_buffer != NULL && disp->back_buffer != fb) {
+            kfree(disp->back_buffer);
+        }
+        disp->back_buffer = fb;
+        log_info("xwin: DIRECT %dx%d bind LCD (zero-copy)\n", width, height);
+    }
+
     return win;
 }
 
@@ -313,13 +327,16 @@ void xwin_destroy_window(xdisplay_t* disp, xwindow_t* win) {
         disp->focused_window = disp->root_window;
     }
     
-    // 释放资源
-    if (win->framebuffer != NULL) {
+    u32 win_id = win->id;
+    /* LCD 是显示设备缓冲，不是 kmalloc 出来的 */
+    if (win->framebuffer != NULL &&
+        (disp->vga == NULL ||
+         win->framebuffer != (u32*)disp->vga->frambuffer)) {
         kfree(win->framebuffer);
     }
     kfree(win);
-    
-    log_debug("xwin: destroyed window %d\n", win->id);
+
+    log_debug("xwin: destroyed window %d\n", win_id);
 }
 
 xwindow_t* xwin_find_window(xdisplay_t* disp, u32 id) {
