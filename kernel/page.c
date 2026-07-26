@@ -19,8 +19,26 @@ void page_error_exit() {
 void* page_fault_handle(interrupt_context_t *ic) {
   vaddr_t fault_addr = (vaddr_t)cpu_get_fault();
   thread_t *current = thread_current();
+  static vaddr_t last_fault_addr;
+  static u32 last_fault_storm;
+
   if (current != NULL) {
     current->faults++;
+    if (fault_addr == last_fault_addr) {
+      last_fault_storm++;
+    } else {
+      last_fault_addr = fault_addr;
+      last_fault_storm = 1;
+    }
+    if (last_fault_storm > 64) {
+      log_error("%s page fault storm at %lx\n", current->name, fault_addr);
+      last_fault_storm = 0;
+      thread_exit(current, -1);
+      exception_process_error(current, ic, (void *)&page_error_exit);
+      schedule(ic);
+      return ic;
+    }
+
     int mode = context_get_mode(current->ctx);
 #ifdef DEBUG
     log_debug("page fault at %lx\n", fault_addr);
@@ -46,8 +64,11 @@ void* page_fault_handle(interrupt_context_t *ic) {
 #ifdef DEBUG
         log_debug("page lookup kernel found phy: %lx\n", phy);
 #endif
-        page_map_on((u64*)current->vm->upage, fault_addr, (u64)phy,
-                    PAGE_P | PAGE_USR | PAGE_RWX);
+        /* MMIO/外设常在 EXEC_ADDR 以下（如 raspi EMMC 0x3f3xxxxx），按设备页映射 */
+        u32 attr = (fault_addr < (vaddr_t)EXEC_ADDR)
+                       ? PAGE_DEV
+                       : (PAGE_P | PAGE_USR | PAGE_RWX);
+        page_map_on((u64*)current->vm->upage, fault_addr, (u64)phy, attr);
       } else {
         if (current->fault_count < 1) {
           thread_exit(current, -1);
@@ -88,7 +109,6 @@ void* page_fault_handle(interrupt_context_t *ic) {
         if (area->flags == MEMORY_STACK) {
           extend_stack((void*)fault_addr, PAGE_SIZE);
         } else {
-          //log_debug("page fault valloc addr:%lx flags:%d\n", fault_addr, area->flags);
           void* vret = valloc((void*)fault_addr, PAGE_SIZE);
           if (vret == NULL) {
             log_error("page fault valloc failed addr:%lx\n", fault_addr);

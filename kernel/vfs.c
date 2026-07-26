@@ -11,21 +11,12 @@
 /* User mappings on ARM32 YiYiYa start around 0x70000000 (stack/heap/exec). */
 #define VFS_USER_PTR_MIN 0x70000000U
 
-static int vfs_ptr_looks_like_ascii(u32 v) {
-  u8 b0 = (u8)v;
-  u8 b1 = (u8)(v >> 8);
-  u8 b2 = (u8)(v >> 16);
-  u8 b3 = (u8)(v >> 24);
-  return (b0 >= 0x20 && b0 <= 0x7e && b1 >= 0x20 && b1 <= 0x7e && b2 >= 0x20 &&
-          b2 <= 0x7e && b3 >= 0x20 && b3 <= 0x7e);
-}
-
+/* 只拒绝空/低地址/用户态指针。禁止用「四字节皆可打印」判断：
+ * 内核堆指针如 0x415d6f64（'d','o',']','A'）会被误杀，导致
+ * vfs_add_child bad child / open game2048.json 失败。 */
 static int vfs_ptr_is_plausible(const void* p) {
   u32 v = (u32)(uintptr_t)p;
   if (p == NULL || v < PAGE_SIZE) {
-    return 0;
-  }
-  if (vfs_ptr_looks_like_ascii(v)) {
     return 0;
   }
   if (v >= VFS_USER_PTR_MIN) {
@@ -329,10 +320,8 @@ int vfs_node_is_valid(vnode_t *node) {
   if (!vfs_ptr_is_plausible(node)) {
     return 0;
   }
-  if (!vfs_ptr_is_plausible(node->name)) {
-    return 0;
-  }
-  if (!vfs_ptr_is_plausible(node->op)) {
+  /* name/op 只查非空；勿对指针值做 ascii 启发式（同 vfs_ptr_is_plausible） */
+  if (node->name == NULL || node->op == NULL) {
     return 0;
   }
   return 1;
