@@ -519,12 +519,16 @@ int sys_brk(u32 end) {
     return vm->alloc_addr;
   }
   int size = (int)((u32)end - (u32)vm->alloc_addr);
+  if (size > 0) {
+    if (sys_mmap_child_overlaps(vm->child, (u32)vm->alloc_addr, (u32)size)) {
+      log_error("brk: end %x overlaps mmap, keep %x\n", end, vm->alloc_addr);
+      return vm->alloc_addr;
+    }
+  }
   if (size < 0) {
     log_debug("brk shrink %x by %d\n", end, -size);
     vfree((void*)end, (size_t)(-size));
   }
-  // Lazy allocation: physical pages are demand-paged on first access.
-  // Eager valloc here drains kmalloc_alignment too fast for large brk jumps.
   int addr = end;
   vm->alloc_size += size;
   vm->alloc_addr = end;

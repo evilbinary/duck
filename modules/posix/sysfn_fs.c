@@ -251,6 +251,10 @@ static int sys_buf_in_kernel(const void* buf, size_t size) {
   if (current == NULL || current->vm == NULL || buf == NULL || size == 0) {
     return 0;
   }
+  /* 用户地址空间（EXEC_ADDR 起）不算内核缓冲，避免与 kpage 段映射重叠时误判 */
+  if ((u32)(uintptr_t)buf >= (u32)EXEC_ADDR) {
+    return 0;
+  }
   u32 start = (u32)buf & ~(PAGE_SIZE - 1);
   u32 end = ((u32)buf + size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
   for (u32 va = start; va < end; va += PAGE_SIZE) {
@@ -821,26 +825,45 @@ int sys_readv(int fd, iovec_t* vector, int count) {
   int n;
   int i;
   int num = 0;
-  int total = 0;
-  int pos = 0;
-  // kprintf("sys_readv====>%d %x %d\n",fd,vector,count);
+  if (count <= 0 || vector == NULL) {
+    return -1;
+  }
+
+  /* 与 writev 一致：用户态 iovec 先拷到内核再读 */
+  iovec_t* kvec = NULL;
+  if ((u32)vector >= PAGE_SIZE &&
+      !sys_buf_in_kernel(vector, sizeof(iovec_t) * (u32)count)) {
+    kvec = (iovec_t*)kmalloc(sizeof(iovec_t) * (u32)count, KERNEL_TYPE);
+    if (kvec == NULL) {
+      return -1;
+    }
+    if (sys_copy_from_user(kvec, vector, sizeof(iovec_t) * (u32)count) < 0) {
+      kfree(kvec);
+      return -1;
+    }
+    vector = kvec;
+  }
 
   for (i = 0; i < count; i++) {
-    // kprintf("sys_read=>i=%d %d %x
-    // %d\n",i,fd,vector[pos].iov_base,vector[pos].iov_len);
-    int len = vector[pos].iov_len;
-    n = sys_read(fd, vector[pos].iov_base, len);
-    // kprintf("read %d ret =%d\n",i,n);
+    if (vector[i].iov_base == NULL || vector[i].iov_len <= 0) {
+      continue;
+    }
+    n = sys_read(fd, vector[i].iov_base, vector[i].iov_len);
     if (n > 0) {
       num += n;
       ret = num;
-      total += vector[pos].iov_len;
-    } else if (n <= 0) {
+      if ((size_t)n < vector[i].iov_len) {
+        break;
+      }
+    } else {
+      if (ret < 0) {
+        ret = n;
+      }
       break;
     }
-    if (num >= total) {
-      pos++;
-    }
+  }
+  if (kvec != NULL) {
+    kfree(kvec);
   }
   return ret;
 }
