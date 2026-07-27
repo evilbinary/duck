@@ -14,7 +14,12 @@
 queue_pool_t* kernel_pool;
 queue_pool_t* user_pool;
 
-/* 页分配锁：与 vfs_biglock 同款 rt_mutex，争用可睡眠/PI，可重入 */
+/*
+ * 方案 A：锁在 kernel，pmemory 保持无锁算法。
+ * 所有碰 mmt/freelist 的入口经此锁：phy_alloc / phy_alloc_aligment /
+ * vm_free* / valloc / vfree；建 L2 经 kmalloc_alignment → 同一把锁。
+ * rt_mutex 可重入：kmalloc → ya_sbrk → page_map → kmalloc_alignment OK。
+ */
 static rt_mutex_t memory_lock;
 memory_t memory_summary;
 
@@ -47,7 +52,9 @@ void check_addr(void* addr) {
 void* phy_alloc(size_t size) {
   if (size == 0) return NULL;
   void* addr = NULL;
+  rt_mutex_lock(&memory_lock);
   addr = mm_alloc(size);
+  rt_mutex_unlock(&memory_lock);
   check_addr(addr);
   memory_static(size, MEMORY_TYPE_USE);
   return addr;
@@ -56,7 +63,9 @@ void* phy_alloc(size_t size) {
 void* phy_alloc_aligment(size_t size, int alignment) {
   if (size == 0) return NULL;
   void* addr = NULL;
+  rt_mutex_lock(&memory_lock);
   addr = mm_alloc_zero_align(size, alignment);
+  rt_mutex_unlock(&memory_lock);
   check_addr(addr);
   memory_static(size, MEMORY_TYPE_USE);
   return addr;
@@ -119,10 +128,14 @@ void* vm_alloc_alignment(size_t size, int alignment) {
 void vm_free(void* ptr) {
   void* addr = kpage_v2p(ptr, 0);
   kassert(addr != NULL);
-  size_t size = mm_get_size(addr);
+  size_t size = 0;
+  rt_mutex_lock(&memory_lock);
+  size = mm_get_size(addr);
   if (size > 0) {
     mm_free(addr);
-  } else {
+  }
+  rt_mutex_unlock(&memory_lock);
+  if (size == 0) {
     log_error("mfree error %x\n", ptr);
   }
   memory_static(size, MEMORY_TYPE_FREE);
@@ -134,8 +147,11 @@ void vm_free_alignment(void* ptr) {
     log_error("vm free aligment error %x\n", ptr);
     return;
   }
-  size_t size = mm_get_align_size(addr);
+  size_t size;
+  rt_mutex_lock(&memory_lock);
+  size = mm_get_align_size(addr);
   mm_free_align(addr);
+  rt_mutex_unlock(&memory_lock);
   memory_static(size, MEMORY_TYPE_FREE);
 }
 
@@ -355,6 +371,7 @@ void* valloc(void* addr, size_t size) {
     }
     kmemset(phy_addr, 0, PAGE_SIZE);
     memory_static(PAGE_SIZE, MEMORY_TYPE_USE);
+    /* L2 分配走 kmalloc_alignment，与 memory_lock 同一把（可重入） */
     if (current != NULL) {
       page_map_on(current->vm->upage, vaddr, phy_addr,
                   PAGE_P | PAGE_USR | PAGE_RWX);
@@ -381,11 +398,11 @@ void vfree(void* addr, size_t size) {
     log_debug("vfree vaddr:%x paddr:%x\n", vaddr, phy);
     #endif
     if (phy != NULL) {
+      page_unmap_on(current->vm->upage, vaddr);
       rt_mutex_lock(&memory_lock);
       mm_free_page(phy);
       rt_mutex_unlock(&memory_lock);
       memory_static(PAGE_SIZE, MEMORY_TYPE_FREE);
-      page_unmap_on(current->vm->upage, vaddr);
     }
     vaddr += PAGE_SIZE;
   }

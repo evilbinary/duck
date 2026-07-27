@@ -17,8 +17,8 @@ extern void dccmvac(unsigned long mva);
 extern void* page_kernel_dir(void);
 
 u32* page_create(u32 level) {
-  u32* page_dir_ptr_tab =
-      mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, PAGE_SIZE * 4);
+  u32* page_dir_ptr_tab = kmalloc_alignment(
+      sizeof(u32) * PAGE_DIR_NUMBER, PAGE_SIZE * 4, KERNEL_TYPE);
   return page_dir_ptr_tab;
 }
 
@@ -45,7 +45,8 @@ void page_copy(u32* old_page, u32* new_page) {
         new_l1[l1_index] = kpage[l1_index];
         continue;
       }
-      page_dir_t* new_l2 = mm_alloc_zero_align(256 * sizeof(u32), 0x1000);
+      page_dir_t* new_l2 =
+          kmalloc_alignment(256 * sizeof(u32), 0x1000, KERNEL_TYPE);
       if (new_l2 == NULL) {
         kprintf("page_copy: alloc L2 failed at l1=%d\n", l1_index);
         return;
@@ -79,7 +80,7 @@ void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
   u32 l2_index = virtualaddr >> 12 & 0xFF;
   u32* l2 = ((u32)l1[l1_index]) & 0xFFFFFC00;
   if (l2 == NULL) {
-    l2 = mm_alloc_zero_align(256 * sizeof(u32), 0x1000);
+    l2 = kmalloc_alignment(256 * sizeof(u32), 0x1000, KERNEL_TYPE);
     l1[l1_index] = (((u32)l2) & 0xFFFFFC00) | L1_DESC;
     dccmvac((unsigned long)&l1[l1_index]);
   }
