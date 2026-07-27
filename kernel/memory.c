@@ -6,6 +6,7 @@
 #include "memory.h"
 
 #include "algorithm/queue_pool.h"
+#include "rt_mutex.h"
 #include "thread.h"
 
 // #define DEBUG 1
@@ -13,10 +14,12 @@
 queue_pool_t* kernel_pool;
 queue_pool_t* user_pool;
 
-lock_t memory_lock;
+/* 页分配锁：与 vfs_biglock 同款 rt_mutex，争用可睡眠/PI，可重入 */
+static rt_mutex_t memory_lock;
 memory_t memory_summary;
 
 void memory_init() {
+  rt_mutex_init(&memory_lock);
   memory_summary.total = mm_get_total();
   memory_summary.free = mm_get_free();
   memory_summary.kernel_used = 0;
@@ -343,7 +346,9 @@ void* valloc(void* addr, size_t size) {
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
 
   for (u32 i = 0; i < pages; i++) {
+    rt_mutex_lock(&memory_lock);
     void* phy_addr = mm_alloc_page();
+    rt_mutex_unlock(&memory_lock);
     if (phy_addr == NULL) {
       log_error("valloc: mm_alloc_page failed vaddr=%lx\n", vaddr);
       return NULL;
@@ -376,7 +381,9 @@ void vfree(void* addr, size_t size) {
     log_debug("vfree vaddr:%x paddr:%x\n", vaddr, phy);
     #endif
     if (phy != NULL) {
+      rt_mutex_lock(&memory_lock);
       mm_free_page(phy);
+      rt_mutex_unlock(&memory_lock);
       memory_static(PAGE_SIZE, MEMORY_TYPE_FREE);
       page_unmap_on(current->vm->upage, vaddr);
     }
