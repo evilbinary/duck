@@ -321,6 +321,10 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
   vmcopy->vma = vmemory_area_clone(vmthread->vma, 1);
   vmcopy->kpage = page_kernel_dir();
   vmcopy->upage = page_clone((u64*)vmthread->upage, 3);
+  if (vmcopy->upage == NULL) {
+    log_error("vm clone: page_clone failed\n");
+    return;
+  }
   vmcopy->ref = 1;
 
   // 栈拷贝并映射

@@ -230,6 +230,10 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
 
   // init vm include stack heap exec
   vmemory_clone(copy->vm, thread->vm, flags);
+  if (copy->vm->upage == NULL) {
+    log_error("thread copy: vm upage null after clone\n");
+    return NULL;
+  }
 #endif
 
   // Always give the child its own fd table; optionally share fd_t objects.

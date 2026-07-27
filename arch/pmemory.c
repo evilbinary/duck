@@ -125,8 +125,31 @@ void* ya_sbrk(size_t size) {
   }
   kassert(found > 0);
   kassert(addr != NULL);
-  /* Mapping is done once at boot (map_mem_block). No runtime PTE extend —
-   * page_map/tlb flood here made LCD/compositing crawl. */
+
+  /*
+   * Boot only maps a capped window per free block. Past that, map the carved
+   * pages only (not a frontier walk across holes). Keeps page_clone cheap so
+   * fork/exec under load (infones then gui) does not stall allocating 100+ L2s.
+   */
+  if (mmt.last_map_addr > 0) {
+    uintptr_t need = (uintptr_t)addr + size;
+    if (need > mmt.last_map_addr) {
+      uintptr_t start = (uintptr_t)addr & ~(PAGE_SIZE - 1);
+      uintptr_t end = (need + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+      mmt.extend_phy_count++;
+      if ((mmt.extend_phy_count & 0x3f) == 1) {
+        kprintf("extend kernel phy map %lx-%lx (count %d)\n", start, end,
+                mmt.extend_phy_count);
+      }
+      for (uintptr_t va = start; va < end; va += PAGE_SIZE) {
+        page_map(va, va, PAGE_P | PAGE_USR | PAGE_RWX);
+        page_map_current(va, va, PAGE_P | PAGE_USR | PAGE_RWX);
+      }
+      if (end > mmt.last_map_addr) {
+        mmt.last_map_addr = end;
+      }
+    }
+  }
   return addr;
 }
 
@@ -895,11 +918,10 @@ void page_map_kernel(void* page, u64 flag_x, u64 flag_rw) {
 
 void mm_parse_map(void* kernel_page_dir) {
   kprintf("map mem block start\n");
-  /* Full free RAM once at boot. Must match valloc/user attrs (PAGE_RWX):
-   * same PA in kernel identity + user AS with different TEX/C/B is UNPREDICTABLE
-   * on ARMv7 and corrupts musl mallocng (a_crash/UNDEF during realloc).
-   * Do not use PAGE_RW_NC here — NC heap also kills LCD compose speed. */
-  map_mem_block(kernel_page_dir, 0, PAGE_P | PAGE_USR | PAGE_RWX);
+  /* Cap ~80MB/block. Full 128MB identity PTEs make every fork page_clone
+   * allocate 100+ L2 tables — hangs when starting gui while infones runs.
+   * PAGE_RWX matches valloc/user attrs (ARMv7 same-PA attr rule). */
+  map_mem_block(kernel_page_dir, PAGE_SIZE * 20000, PAGE_P | PAGE_USR | PAGE_RWX);
 
   int size = PAGE_SIZE * 200;
   kprintf("map mem range %x %x\n", 0, size);

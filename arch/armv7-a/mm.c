@@ -7,12 +7,14 @@
 #include "arch/display.h"
 #include "arch/pmemory.h"
 #include "cpu.h"
+#include "kernel/memory.h"
 
 #define PAGE_DIR_NUMBER 4096
 
 extern boot_info_t* boot_info;
 extern memory_manager_t mmt;
 extern void dccmvac(unsigned long mva);
+extern void* page_kernel_dir(void);
 
 u32* page_create(u32 level) {
   u32* page_dir_ptr_tab =
@@ -28,11 +30,26 @@ void page_copy(u32* old_page, u32* new_page) {
   }
   u32* l1 = old_page;
   u32* new_l1 = new_page;
+  u32* kpage = (u32*)page_kernel_dir();
   // kprintf("page clone %x to %x\n",old_page,new_page);
   for (int l1_index = 0; l1_index < 4096; l1_index++) {
     u32* l2 = ((u32)l1[l1_index]) & 0xFFFFFC00;
     if (l2 != NULL) {
+      u32 va_base = (u32)l1_index << 20;
+      /*
+       * Share kernel/identity L2 below EXEC_ADDR. Deep-copying ~100MB of
+       * DRAM identity on every fork (infones then gui) allocates 100+ L2
+       * tables and stalls the system under load.
+       */
+      if (kpage != NULL && va_base < (u32)EXEC_ADDR && kpage[l1_index] != 0) {
+        new_l1[l1_index] = kpage[l1_index];
+        continue;
+      }
       page_dir_t* new_l2 = mm_alloc_zero_align(256 * sizeof(u32), 0x1000);
+      if (new_l2 == NULL) {
+        kprintf("page_copy: alloc L2 failed at l1=%d\n", l1_index);
+        return;
+      }
       new_l1[l1_index] = (((u32)new_l2) & 0xFFFFFC00) | L1_DESC;
       // kprintf("%d %x\n", l1_index, (u32)l2>>10 );
       for (int l2_index = 0; l2_index < 256; l2_index++) {
@@ -48,6 +65,10 @@ void page_copy(u32* old_page, u32* new_page) {
 
 u32* page_clone(u32* old_page_dir, u32 level) {
   u32* page_dir_ptr_tab = page_create(level);
+  if (page_dir_ptr_tab == NULL) {
+    kprintf("page_clone: page_create failed\n");
+    return NULL;
+  }
   page_copy(old_page_dir, page_dir_ptr_tab);
   return page_dir_ptr_tab;
 }
@@ -86,12 +107,12 @@ void page_unmap_on(page_dir_t* page, u32 virtualaddr) {
   }
 }
 
-void* page_v2p(void* page, void* vaddr) {
+void* page_v2p(u64* page, void* vaddr) {
   if (page == NULL) {
     kprintf("page v2p page is null\n");
   }
   void* phyaddr = NULL;
-  u32* l1 = page;
+  u32* l1 = (u32*)page;
   u32 l1_index = (u32)vaddr >> 20;
   u32 l2_index = (u32)vaddr >> 12 & 0xFF;
   u32 offset = (u32)vaddr & 0x0FFF;
