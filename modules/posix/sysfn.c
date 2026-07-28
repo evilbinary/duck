@@ -552,6 +552,13 @@ int sys_brk(u32 end) {
       log_error("brk: end %x overlaps mmap, keep %x\n", end, vm->alloc_addr);
       return vm->alloc_addr;
     }
+    /* Allocate physical pages for the expanded heap region so that musl
+     * mallocng (and any brk-based allocator) can safely write metadata
+     * and payloads without hitting unmapped pages. */
+    if (valloc((void*)vm->alloc_addr, (size_t)size) == NULL) {
+      log_error("brk: valloc failed for %x size %d\n", vm->alloc_addr, size);
+      return vm->alloc_addr;
+    }
   }
   if (size < 0) {
     log_debug("brk shrink %x by %d\n", end, -size);

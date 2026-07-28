@@ -369,6 +369,8 @@ void* valloc(void* addr, size_t size) {
       log_error("valloc: mm_alloc_page failed vaddr=%lx\n", vaddr);
       return NULL;
     }
+    /* First zero through the kernel identity mapping so the physical page
+     * is clean even before we install the user mapping. */
     kmemset(phy_addr, 0, PAGE_SIZE);
     memory_static(PAGE_SIZE, MEMORY_TYPE_USE);
     /* L2 分配走 kmalloc_alignment，与 memory_lock 同一把（可重入） */
@@ -378,6 +380,19 @@ void* valloc(void* addr, size_t size) {
     } else {
       page_map(vaddr, phy_addr, PAGE_P | PAGE_USR | PAGE_RWX);
     }
+
+    /* Zero the page *again* through the user virtual address after mapping.
+     * This guarantees the D-cache is filled with zeros for the user-side VA
+     * translation, eliminating any possibility that the user reads stale
+     * data from a previous occupant of the same physical page.
+     *
+     * On Cortex-A7 the D-cache is PIPT, so in theory kmemset(VA=PA)
+     * already placed zeros in the right cache lines.  However, on real
+     * T113-S3 hardware we still observe p[-4] != 0 in mallocng's enframe.
+     * Re-zeroing through the user VA is the safest way to ensure the user
+     * will read back zeros — whatever the root cause of the discrepancy
+     * (speculative fills, cache maintenance subtlety, or TLB race). */
+    kmemset((void*)vaddr, 0, PAGE_SIZE);
     vaddr += PAGE_SIZE;
   }
   return addr;
@@ -398,6 +413,25 @@ void vfree(void* addr, size_t size) {
     log_debug("vfree vaddr:%x paddr:%x\n", vaddr, phy);
     #endif
     if (phy != NULL) {
+#if defined(ARM) || defined(ARMV7_A) || defined(ARMV7) || defined(ARMV5) || \
+    defined(__arm__)
+      /* Clean + invalidate D-cache for both the user VA and the PA before
+       * unmapping, so that stale cache lines do not corrupt the page when
+       * it is later reallocated by valloc to a different VA. */
+      {
+        extern void dccmvac(unsigned long mva);
+        unsigned long va;
+        for (va = (unsigned long)vaddr;
+             va < (unsigned long)vaddr + PAGE_SIZE; va += 32) {
+          dccmvac(va);
+        }
+        for (va = (unsigned long)phy;
+             va < (unsigned long)phy + PAGE_SIZE; va += 32) {
+          dccmvac(va);
+        }
+      }
+      dmb();
+#endif
       page_unmap_on(current->vm->upage, vaddr);
       rt_mutex_lock(&memory_lock);
       mm_free_page(phy);
