@@ -11,6 +11,9 @@
 #include "rt_mutex.h"
 #include "thread.h"
 
+#define log_debug 
+
+
 /* User mappings on ARM32 YiYiYa start around 0x70000000 (stack/heap/exec). */
 #define VFS_USER_PTR_MIN 0x70000000U
 
