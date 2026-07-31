@@ -1250,6 +1250,7 @@ int sys_fn_faild_handler(int no, interrupt_context_t* ic) {
                              (long)context_arg5(ic));
     return 0;
   }
+  context_ret(ic) = -ENOSYS;
   log_debug("sys fn faild %x\n", call_id);
   return -1;
 }
@@ -1282,6 +1283,7 @@ void sys_fn_call_handler(int no, interrupt_context_t* ic) {
     }
     // kprintf(" ret=%x\n",context_ret(ic));
   } else {
+    context_ret(ic) = -ENOSYS;
     log_warn("syscall %d not found handler\n", context_fn(ic));
   }
 }
@@ -1324,6 +1326,7 @@ void sys_fn_init() {
   syscall_table[SYS_DUP] = &sys_dup;
   syscall_table[SYS_DUP2] = &sys_dup2;
   syscall_table[SYS_READDIR] = &sys_readdir;
+  syscall_table[SYS_NEWSELECT] = &sys_select;
   syscall_table[SYS_BRK] = &sys_brk;
 
   syscall_table[SYS_READV] = &sys_readv;
