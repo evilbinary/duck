@@ -628,6 +628,120 @@ int sys_close(u32 fd) {
   return fd_close(f);
 }
 
+#define SYS_FD_SETSIZE 1024
+#define SYS_FD_SET_WORDS (SYS_FD_SETSIZE / (sizeof(unsigned long) * 8))
+
+static int sys_fd_set_copy_in(unsigned long* kset, const void* user) {
+  if (user == NULL) {
+    return 0;
+  }
+  return sys_copy_from_user(kset, user, SYS_FD_SET_WORDS * sizeof(unsigned long));
+}
+
+static int sys_fd_set_copy_out(void* user, const unsigned long* kset) {
+  if (user == NULL) {
+    return 0;
+  }
+  return sys_copy_to_user(user, kset, SYS_FD_SET_WORDS * sizeof(unsigned long));
+}
+
+static int sys_fd_set_poll(unsigned long* rset, unsigned long* wset,
+                           unsigned long* eset, int nfds, int* ready) {
+  thread_t* current = thread_current();
+  int bits = sizeof(unsigned long) * 8;
+  int fd;
+  *ready = 0;
+  for (fd = 0; fd < nfds; fd++) {
+    unsigned long mask = 1UL << (fd % bits);
+    int word = fd / bits;
+    int present = thread_find_fd_id(current, fd) != NULL;
+    if (rset != NULL && (rset[word] & mask)) {
+      if (present) {
+        (*ready)++;
+      } else {
+        rset[word] &= ~mask;
+      }
+    }
+    if (wset != NULL && (wset[word] & mask)) {
+      if (present) {
+        (*ready)++;
+      } else {
+        wset[word] &= ~mask;
+      }
+    }
+    if (eset != NULL && (eset[word] & mask)) {
+      if (present) {
+        (*ready)++;
+      } else {
+        eset[word] &= ~mask;
+      }
+    }
+  }
+  return 0;
+}
+
+static void sys_fd_set_sleep(struct timeval* timeout) {
+  if (timeout != NULL) {
+    schedule_sleep(SECOND_TO_TICK(timeout->tv_sec) +
+                   (timeout->tv_usec / (1000000 / SCHEDULE_FREQUENCY)));
+  } else {
+    schedule_sleep(SECOND_TO_TICK(0) + (1000000 / SCHEDULE_FREQUENCY));
+  }
+}
+
+int sys_select(int nfds, unsigned long* readfds, unsigned long* writefds,
+               unsigned long* exceptfds, struct timeval* timeout) {
+  thread_t* current = thread_current();
+  if (current == NULL) {
+    return -1;
+  }
+  if (nfds < 0 || nfds > SYS_FD_SETSIZE) {
+    nfds = SYS_FD_SETSIZE;
+  }
+
+  struct timeval tv;
+  if (timeout != NULL) {
+    if (sys_copy_from_user(&tv, timeout, sizeof(tv)) < 0) {
+      log_error("sys_select bad timeout tid %d\n", current->id);
+      return -1;
+    }
+    timeout = &tv;
+  }
+
+  if (nfds <= 0 || (readfds == NULL && writefds == NULL && exceptfds == NULL)) {
+    /* no fds: select() acts as a sleep (miniaudio/sdl use it this way) */
+    sys_fd_set_sleep(timeout);
+    return 0;
+  }
+
+  unsigned long rset[SYS_FD_SET_WORDS];
+  unsigned long wset[SYS_FD_SET_WORDS];
+  unsigned long eset[SYS_FD_SET_WORDS];
+
+  if (sys_fd_set_copy_in(rset, readfds) < 0 ||
+      sys_fd_set_copy_in(wset, writefds) < 0 ||
+      sys_fd_set_copy_in(eset, exceptfds) < 0) {
+    log_error("sys_select copy in faild tid %d\n", current->id);
+    return -1;
+  }
+
+  int ready = 0;
+  sys_fd_set_poll(readfds ? rset : NULL, writefds ? wset : NULL,
+                  exceptfds ? eset : NULL, nfds, &ready);
+
+  if (ready > 0) {
+    if (sys_fd_set_copy_out(readfds, rset) < 0 ||
+        sys_fd_set_copy_out(writefds, wset) < 0 ||
+        sys_fd_set_copy_out(exceptfds, eset) < 0) {
+      return -1;
+    }
+    return ready;
+  }
+
+  sys_fd_set_sleep(timeout);
+  return 0;
+}
+
 size_t sys_write(u32 fd, void* buf, size_t nbytes) {
   thread_t* current = thread_current();
   // if (current != NULL && current->id > 1 && fd <= STDERR) {

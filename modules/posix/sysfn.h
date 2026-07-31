@@ -346,6 +346,8 @@ u64 sys_readlink_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5);
 int sys_close(u32 fd);
 size_t sys_write(u32 fd, void* buf, size_t nbytes);
 size_t sys_read(u32 fd, void* buf, size_t nbytes);
+int sys_select(int nfds, unsigned long* readfds, unsigned long* writefds,
+               unsigned long* exceptfds, struct timeval* timeout);
 size_t sys_yeild();
 
 int sys_print(char* s);
