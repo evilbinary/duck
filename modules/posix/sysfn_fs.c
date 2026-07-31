@@ -46,15 +46,9 @@ static int sys_user_path_pointer_valid(const char* user) {
   if (v < PAGE_SIZE) {
     return 0;
   }
-  /* Reject pointers that look like pathname text (e.g. 0x6e6f632f == "/con"). */
-  u8 b0 = (u8)v;
-  u8 b1 = (u8)(v >> 8);
-  u8 b2 = (u8)(v >> 16);
-  u8 b3 = (u8)(v >> 24);
-  if (b0 >= 0x20 && b0 <= 0x7e && b1 >= 0x20 && b1 <= 0x7e && b2 >= 0x20 &&
-      b2 <= 0x7e && b3 >= 0x20 && b3 <= 0x7e) {
-    return 0;
-  }
+  /* 不能按指针本身的字节内容判断(堆地址的低字节可能是可打印 ASCII,
+   * 如 0x76216230 == '0b!v'),真实校验由 sys_copy_user_string 逐页
+   * 检查用户空间映射完成。 */
   return 1;
 }
 
