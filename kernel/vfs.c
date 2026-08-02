@@ -30,6 +30,10 @@ int vfs_locked_by(thread_t* t) {
   return t != NULL && vfs_biglock.owner == t;
 }
 
+/* 异常上下文（fault 回溯）使用：锁被任何线程持有都不能等待
+ * （单核下持锁线程可能已被抢占且异常上下文不调度），直接放弃 */
+int vfs_locked_any(void) { return vfs_biglock.owner != NULL; }
+
 /* vfs 根节点初始化后才算就绪；vfs_init 之前（如内核早期 fault）调用
  * vfs 会撞上未初始化的 vfs_biglock（BSS 未清零），需提前判断 */
 extern vnode_t* root_node;

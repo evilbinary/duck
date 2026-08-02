@@ -23,6 +23,17 @@ queue_pool_t* user_pool;
 static rt_mutex_t memory_lock;
 memory_t memory_summary;
 
+/* 异常上下文（fault 回溯中，fault_count>0）且 memory_lock 被其他线程
+ * 持有时，kmalloc 不能等待（持锁线程可能已被抢占，异常处理不调度，
+ * 等待即死锁）：返回失败让调用方放弃，而非自旋 */
+static int memory_locked_other(void) {
+  thread_t* cur = thread_current();
+  if (cur == NULL || cur->fault_count == 0) {
+    return 0;
+  }
+  return memory_lock.owner != NULL && memory_lock.owner != cur;
+}
+
 void memory_init() {
   rt_mutex_init(&memory_lock);
   memory_summary.total = mm_get_total();
@@ -51,6 +62,9 @@ void check_addr(void* addr) {
 
 void* phy_alloc(size_t size) {
   if (size == 0) return NULL;
+  if (memory_locked_other()) {
+    return NULL;
+  }
   void* addr = NULL;
   rt_mutex_lock(&memory_lock);
   addr = mm_alloc(size);
@@ -62,6 +76,9 @@ void* phy_alloc(size_t size) {
 
 void* phy_alloc_aligment(size_t size, int alignment) {
   if (size == 0) return NULL;
+  if (memory_locked_other()) {
+    return NULL;
+  }
   void* addr = NULL;
   rt_mutex_lock(&memory_lock);
   addr = mm_alloc_zero_align(size, alignment);
@@ -126,6 +143,9 @@ void* vm_alloc_alignment(size_t size, int alignment) {
 }
 
 void vm_free(void* ptr) {
+  if (ptr == NULL || memory_locked_other()) {
+    return;
+  }
   void* addr = kpage_v2p(ptr, 0);
   kassert(addr != NULL);
   size_t size = 0;
@@ -333,6 +353,45 @@ void memory_static(u32 size, int type) {
 }
 
 // #define DEBUG
+
+/** 通用栈扩增：确保栈在 sp 向低位还有 >= need 字节已映射。
+ *  不足则提前向低分配并映射页、下移 MEMA vma->vaddr。
+ *  供 fault 符号化等深调用链进入前调用，避免固定小栈溢出。
+ *  返回 0 成功（余量已足够或已扩）; -1 不可扩/失败。 */
+int memory_stack_ensure(vmemory_t* vm, u32 sp, u32 need) {
+  vmemory_area_t* m;
+  u32 base, grow, target, a;
+
+  if (vm == NULL || vm->vma == NULL) {
+    return -1;
+  }
+  m = vmemory_area_find_flag(vm->vma, MEMORY_STACK);
+  if (m == NULL) {
+    return -1;
+  }
+  base = (u32)m->vaddr;
+  if (sp < base || sp > (u32)m->vend) {
+    return -1; /* 当前 sp 不在栈 vma 内：非可扩的用户栈则不处理 */
+  }
+  if (sp - base >= need) {
+    return 0;
+  }
+  if (memory_locked_other()) {
+    return -1;
+  }
+  grow = need - (sp - base);
+  target = (base - grow) & ~(PAGE_SIZE - 1);
+  for (a = target; a < base; a += PAGE_SIZE) {
+    void* phy = mm_alloc_page();
+    if (phy == NULL) {
+      return -1;
+    }
+    kmemset(phy, 0, PAGE_SIZE);
+    page_map_on(vm->upage, a, phy, PAGE_P | PAGE_USR | PAGE_RWX);
+  }
+  m->vaddr = (void*)target;
+  return 0;
+}
 
 void* extend_stack(void* addr, size_t size) {
   thread_t* current = thread_current();
