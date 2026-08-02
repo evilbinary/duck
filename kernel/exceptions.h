@@ -7,9 +7,13 @@
 #define EXCEPTIONS_H
 
 #include "arch/arch.h"
-#include "thread.h"
+
+typedef struct thread thread_t;
+typedef void (*fault_hook_fn)(thread_t* t, interrupt_context_t* ic,
+                              u64 fault_addr);
 
 void exception_init();
+void fault_hook_regist(fault_hook_fn fn);
 
 
 #endif

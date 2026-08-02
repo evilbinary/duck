@@ -24,6 +24,10 @@ static void vfs_lock(void) { rt_mutex_lock(&vfs_biglock); }
 
 static void vfs_unlock(void) { rt_mutex_unlock(&vfs_biglock); }
 
+/* 供 fault 回溯等异常路径使用：若当前线程正持有 VFS 锁，则避免在
+ * 异常上下文中再次进入 vfs（否则可能自死锁），直接放弃文件符号化。 */
+int vfs_locked_by(thread_t* t) { return vfs_biglock.owner == t; }
+
 /* 只拒绝空/低地址/用户态指针。禁止用「四字节皆可打印」判断：
  * 内核堆指针如 0x415d6f64（'d','o',']','A'）会被误杀，导致
  * vfs_add_child bad child / open game2048.json 失败。 */

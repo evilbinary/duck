@@ -136,6 +136,7 @@ vmemory_area_t* vmemory_area_destroy(vmemory_area_t* area);
 vmemory_area_t* vmemory_area_alloc(vmemory_area_t* areas, void* addr, vaddr_t size);
 vmemory_area_t* vmemory_area_find(vmemory_area_t* areas, void* addr,
                                   vaddr_t size);
+vmemory_area_t* vmemory_area_find_flag(vmemory_area_t* areas, u32 flags);
 void vmemory_area_add(vmemory_area_t* areas, vmemory_area_t* area);
 void vmemory_area_free(vmemory_area_t* area);
 void memory_static(u32 size, int type);
