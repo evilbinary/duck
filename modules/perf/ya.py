@@ -4,7 +4,7 @@
 # * 作者: evilbinary on 01/01/20
 # * 邮箱: rootdebug@163.com
 # ********************************************************************
-target("mod-debug")
+target("mod-perf")
 set_kind("static")
 
 add_deps(
@@ -13,6 +13,5 @@ add_deps(
 
 
 add_files(
-    'trace.c',
-    'ytrace.c',
+    'perf.c',
 )

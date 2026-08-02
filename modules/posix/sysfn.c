@@ -21,6 +21,9 @@ static void* syscall_table[SYSCALL_NUMBER];
 extern vnode_t* root_node;
 extern long xwin_syscall_handler(u32 num, long a1, long a2, long a3, long a4,
                                  long a5, long a6);
+#ifdef PERF_MODULE
+extern void perf_init_syscall(void** syscall_table);
+#endif
 
 static int sys_mmap_pages_mapped(thread_t* current, void* addr, size_t length) {
   if (current == NULL || current->vm == NULL || addr == NULL || length == 0) {
@@ -1437,4 +1440,7 @@ void sys_fn_init() {
 
   // Initialize network syscalls
   sys_fn_net_init((void**)syscall_table);
+#ifdef PERF_MODULE
+  perf_init_syscall((void**)syscall_table);
+#endif
 }

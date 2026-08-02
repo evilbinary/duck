@@ -114,6 +114,9 @@ enum {
   SYS_THREAD_DUMP = 516,
   SYS_THREAD_ADDR = 517,
   SYS_THREAD_MAP = 518,
+  SYS_PERF_START = 519,
+  SYS_PERF_STOP = 520,
+  SYS_PERF_READ = 521,
 };
 
 #elif defined(ARM64) || defined(__aarch64__)
@@ -234,6 +237,9 @@ enum {
   SYS_THREAD_DUMP = 516,
   SYS_THREAD_ADDR = 517,
   SYS_THREAD_MAP = 518,
+  SYS_PERF_START = 519,
+  SYS_PERF_STOP = 520,
+  SYS_PERF_READ = 521,
 };
 
 #elif defined(X86)
@@ -345,6 +351,9 @@ enum {
   SYS_THREAD_DUMP = 516,
   SYS_THREAD_ADDR = 517,
   SYS_THREAD_MAP = 518,
+  SYS_PERF_START = 519,
+  SYS_PERF_STOP = 520,
+  SYS_PERF_READ = 521,
 };
 
 #else
@@ -452,6 +461,9 @@ enum {
   SYS_THREAD_DUMP = 516,
   SYS_THREAD_ADDR = 517,
   SYS_THREAD_MAP = 518,
+  SYS_PERF_START = 519,
+  SYS_PERF_STOP = 520,
+  SYS_PERF_READ = 521,
 };
 #endif
 

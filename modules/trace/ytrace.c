@@ -160,5 +160,5 @@ int ytrace_init(void) {
 
 void ytrace_exit(void) { kprintf("ytrace exit\n"); }
 
-module_t ytrace_module = {
-    .name = "ytrace", .init = ytrace_init, .exit = ytrace_exit};
+module_t trace_module = {
+    .name = "trace", .init = ytrace_init, .exit = ytrace_exit};
