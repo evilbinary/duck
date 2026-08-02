@@ -12,7 +12,7 @@
 #define PERF_FREQ_DEFAULT 1000
 
 typedef struct perf_sample {
-  int tid;
+  int tid;  /* 本内核 pid==tid（fork 时 copy->pid=thread->id），无需单独 pid */
   u32 pc;
   u32 count;
   u8 mode; /* 0=kernel 3=user（与 backtrace bt_sym_lookup 一致） */
