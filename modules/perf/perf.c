@@ -14,6 +14,8 @@ extern interrupt_handler_t* exception_handlers[];
 
 static perf_stats_t perf_stats;
 static interrupt_handler_t perf_origin_timer = NULL;
+/* Duration expired in IRQ: stop sampling only; user must SYS_PERF_STOP to dump. */
+static volatile u32 perf_dump_pending;
 
 /* 函数级聚合统计（dump 时填充） */
 #define PERF_FUNC_MAX 256
@@ -118,7 +120,10 @@ static void* perf_tick(interrupt_context_t* ic) {
   if (perf_stats.on) {
     if (perf_stats.duration > 0 &&
         schedule_get_ticks() - perf_stats.start_ticks >= perf_stats.duration) {
-      perf_stop();
+      /* Never dump from IRQ: AP IRQ stacks are tiny; vfs/sym lookup blows them. */
+      perf_stats.on = 0;
+      perf_stats.stop_ticks = schedule_get_ticks();
+      perf_dump_pending = 1;
     } else {
       perf_stats.div_count++;
       if (perf_stats.div_count >= perf_stats.div) {
@@ -162,6 +167,7 @@ void perf_start(u32 freq_hz, u32 duration_ticks) {
     perf_target_name[sizeof(perf_target_name) - 1] = 0;
   }
   perf_stats.start_ticks = schedule_get_ticks();
+  perf_dump_pending = 0;
   perf_stats.on = 1;
   log_info("perf start freq %d hz duration %d ticks tid %d\n", freq_hz,
            duration_ticks, perf_target_tid);
@@ -410,16 +416,21 @@ static void perf_dump_tids(void) {
 }
 
 void perf_stop(void) {
-  if (!perf_stats.on) {
+  u32 was_on = perf_stats.on;
+  u32 pending = perf_dump_pending;
+
+  perf_stats.on = 0;
+  perf_dump_pending = 0;
+  if (!was_on && !pending) {
     return;
   }
-  perf_stats.on = 0;
-  perf_stats.stop_ticks = schedule_get_ticks();
+  if (was_on) {
+    perf_stats.stop_ticks = schedule_get_ticks();
+  }
   log_info("perf stop total %d entries %d missed %d\n", perf_stats.total,
            perf_stats.count, perf_stats.missed);
   perf_dump_top(2);
-  /* 默认输出所有进程(线程)概览，再输出当前 tid 的函数统计（1% 阈值，
-   * 全量符号化太慢，只对达标条目解析符号） */
+  /* Dump from syscall/thread context only (IRQ only sets perf_dump_pending). */
   perf_dump_tids();
   perf_dump_funcs(perf_target_tid, 1);
 }
