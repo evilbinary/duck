@@ -42,12 +42,17 @@ static void perf_record(int tid, u32 pc) {
 
 static void* perf_tick(interrupt_context_t* ic) {
   if (perf_stats.on) {
-    perf_stats.div_count++;
-    if (perf_stats.div_count >= perf_stats.div) {
-      perf_stats.div_count = 0;
-      thread_t* cur = thread_current();
-      if (cur != NULL && cur->id >= 0) {
-        perf_record(cur->id, ic->pc);
+    if (perf_stats.duration > 0 &&
+        schedule_get_ticks() - perf_stats.start_ticks >= perf_stats.duration) {
+      perf_stop();
+    } else {
+      perf_stats.div_count++;
+      if (perf_stats.div_count >= perf_stats.div) {
+        perf_stats.div_count = 0;
+        thread_t* cur = thread_current();
+        if (cur != NULL && cur->id >= 0) {
+          perf_record(cur->id, ic->pc);
+        }
       }
     }
   }
@@ -57,7 +62,7 @@ static void* perf_tick(interrupt_context_t* ic) {
   return ic;
 }
 
-void perf_start(u32 freq_hz) {
+void perf_start(u32 freq_hz, u32 duration_ticks) {
   if (freq_hz == 0 || freq_hz > PERF_FREQ_DEFAULT) {
     freq_hz = PERF_FREQ_DEFAULT;
   }
@@ -69,13 +74,15 @@ void perf_start(u32 freq_hz) {
   perf_stats.total = 0;
   perf_stats.missed = 0;
   perf_stats.count = 0;
+  perf_stats.duration = duration_ticks;
   if (perf_stats.samples != NULL) {
     kmemset(perf_stats.samples, 0,
             PERF_SAMPLES_MAX * sizeof(perf_sample_t));
   }
   perf_stats.start_ticks = schedule_get_ticks();
   perf_stats.on = 1;
-  log_info("perf start freq %d hz\n", freq_hz);
+  log_info("perf start freq %d hz duration %d ticks\n", freq_hz,
+           duration_ticks);
 }
 
 static void perf_dump_top(u32 threshold_pct) {
@@ -128,9 +135,9 @@ u32 perf_read(void* buf, u32 size) {
   return copy;
 }
 
-static u32 sys_perf_start(u32 freq_hz, u32 arg2, u32 arg3, u32 arg4, u32 arg5,
-                          u32 arg6, u32 arg7) {
-  perf_start(freq_hz);
+static u32 sys_perf_start(u32 freq_hz, u32 duration_ticks, u32 arg3, u32 arg4,
+                          u32 arg5, u32 arg6, u32 arg7) {
+  perf_start(freq_hz, duration_ticks);
   return 0;
 }
 
