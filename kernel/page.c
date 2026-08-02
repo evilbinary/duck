@@ -49,10 +49,16 @@ void* page_fault_handle(interrupt_context_t *ic) {
     vmemory_area_t *area = NULL;
     vmemory_area_t *heap = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
     if (heap != NULL && heap->child != NULL) {
-      area = vmemory_area_find(heap->child, (void*)fault_addr, 0);
+      /* size=1 => exact containment: a fault at addr == child->vend must NOT
+       * match (the upper bound is inclusive). Previously size=0 matched the
+       * top child at the heap's end and the on-demand valloc below mapped a
+       * page that no VMA owns. */
+      area = vmemory_area_find(heap->child, (void*)fault_addr, 1);
     }
     if (area == NULL) {
-      area = vmemory_area_find(current->vm->vma, (void*)fault_addr, 0);
+      /* Same exact-containment rule: size=1 so a fault at addr == vend does
+       * not match the enclosing VMA (upper bound is inclusive in the find). */
+      area = vmemory_area_find(current->vm->vma, (void*)fault_addr, 1);
     }
     if (area == NULL) {
       void *phy = page_v2p((u64*)current->vm->kpage, (void*)fault_addr);
@@ -79,8 +85,26 @@ void* page_fault_handle(interrupt_context_t *ic) {
         page_map_on((u64*)current->vm->upage, fault_addr, (u64)phy, attr);
       } else {
         if (current->fault_count < 1) {
-          thread_exit(current, -1);
           log_error("%s memory fault at %lx\n", current->name, fault_addr);
+          void* pte_page = (void*)((u32)fault_addr & ~(PAGE_SIZE - 1));
+          void* pte_prev = (void*)((u32)pte_page - PAGE_SIZE);
+          log_error("pte %x -> %x\n", pte_page,
+                    page_v2p((u64*)current->vm->upage, pte_page));
+          log_error("pte %x -> %x\n", pte_prev,
+                    page_v2p((u64*)current->vm->upage, pte_prev));
+          thread_exit(current, -1);
+          if (current->vm != NULL && current->vm->vma != NULL) {
+            for (vmemory_area_t* a = current->vm->vma; a != NULL;
+                 a = a->next) {
+              log_error("vma %x-%x flags=%d alloc=%x size=%d child=%p\n",
+                        a->vaddr, a->vend, a->flags, a->alloc_addr,
+                        a->alloc_size, (void*)a->child);
+              for (vmemory_area_t* c = a->child; c != NULL; c = c->next) {
+                log_error("  mmap child %x-%x flags=%d\n", c->vaddr, c->vend,
+                          c->flags);
+              }
+            }
+          }
           context_dump_fault(ic, fault_addr);
           thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
           current->fault_count++;
