@@ -97,6 +97,7 @@ vnode_t *vfs_find_relative(vnode_t *root, vnode_t *pwd, const char *path);
 int vfs_node_is_valid(vnode_t *node);
 typedef struct thread thread_t;
 int vfs_locked_by(thread_t *t);
+int vfs_ready(void);
 int vfs_normalize_path(char *result, const char *path);
 void vfs_mount(vnode_t *root, u8 *path, vnode_t *node);
 void vfs_add_child(vnode_t *parent, vnode_t *child);

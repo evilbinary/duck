@@ -105,10 +105,10 @@ void* page_fault_handle(interrupt_context_t *ic) {
               }
             }
           }
-          context_dump_fault(ic, fault_addr);
-          thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
           current->fault_count++;
           exception_process_error(current, ic, (void *)&page_error_exit);
+          context_dump_fault(ic, fault_addr);
+          thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
           schedule(ic);
         } else if (current->fault_count == 3) {
           log_error("%s memory fault at %lx too many\n", current->name,

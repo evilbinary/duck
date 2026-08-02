@@ -18,7 +18,7 @@
 #define BT_KERNEL_ELF_PATH "/kernel.elf"
 
 #ifndef BT_KERNEL_CACHE
-#define BT_KERNEL_CACHE (64 * 1024)
+#define BT_KERNEL_CACHE (72 * 1024)
 #endif
 #ifndef BT_APP_CACHE
 #define BT_APP_CACHE (32 * 1024)
@@ -312,7 +312,7 @@ void bt_sym_lookup(thread_t* t, u32 addr, int mode, char* out,
   }
   if (mode == 3) {
     const char* path = t != NULL ? t->name : NULL;
-    if (path == NULL || path[0] == 0) {
+    if (path == NULL || !bt_name_valid(t, path)) {
       return;
     }
     if (bt_app_elf.node == NULL || bt_app_elf.path != path) {
@@ -338,10 +338,7 @@ void bt_sym_lookup(thread_t* t, u32 addr, int mode, char* out,
     }
   } else {
     if (bt_kernel_elf.node == NULL) {
-      bt_kernel_elf.node = vfs_find(NULL, (u8*)BT_KERNEL_ELF_PATH);
-      if (bt_kernel_elf.node == NULL) {
-        return;
-      }
+      return;
     }
     bt_sym_t best;
     kmemset(&best, 0, sizeof(best));
@@ -349,4 +346,23 @@ void bt_sym_lookup(thread_t* t, u32 addr, int mode, char* out,
       bt_format(&bt_kernel_elf, &best, addr, out, out_size);
     }
   }
+}
+
+/* 模块 init（正常上下文）时预加载 /kernel.elf：fault 处理在异常上下文，
+ * 不能再走 vfs_find/块设备读，符号查找只依赖这块预载缓存 */
+int bt_kernel_preload(void) {
+  if (!vfs_ready()) {
+    return -1;
+  }
+  if (bt_kernel_elf.node == NULL) {
+    bt_kernel_elf.node = vfs_find(NULL, (u8*)BT_KERNEL_ELF_PATH);
+    if (bt_kernel_elf.node == NULL) {
+      return -1;
+    }
+  }
+  bt_sym_t best;
+  if (bt_elf_parse(&bt_kernel_elf) != 0) {
+    return -1;
+  }
+  return 0;
 }
