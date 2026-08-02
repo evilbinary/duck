@@ -3,11 +3,12 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
-/* 懒加载 ELF 符号化器：
- * - 内核地址：fault 时读 /kernel.elf，首次解析后 symtab/strtab 缓存
- *   在静态缓冲区，之后内核 fault 变纯内存解析（懒 kallsyms）
+/* 实时 ELF 符号化器：
+ * - 内核地址：fault 时读 /kernel.elf（走 vfs/fatfs，与用户态同路径），
+ *   首次解析后 symtab/strtab 缓存在静态缓冲区，之后内核 fault 变纯内存解析
  * - 用户地址：fault 时按线程名(ELF 路径)读应用文件，同一 dump 内复用
  * - 全程无 kmalloc，仅静态缓冲；VFS 锁被当前线程持有则放弃符号化
+ * - bt_dump 在异常上下文临时切换到专用大栈执行，容纳 vfs/fatfs 深调用链
  */
 #include "backtrace.h"
 
@@ -307,8 +308,8 @@ void bt_sym_lookup(thread_t* t, u32 addr, int mode, char* out,
     return;
   }
   out[0] = 0;
-  if (vfs_locked_by(t)) {
-    return; /* 当前线程持 VFS 锁，异常路径禁止再入文件系统 */
+  if (vfs_locked_by(t) || vfs_locked_any()) {
+    return; /* 异常上下文禁止等待 VFS 锁（含其他线程持有），放弃符号化 */
   }
   if (mode == 3) {
     const char* path = t != NULL ? t->name : NULL;
@@ -337,8 +338,14 @@ void bt_sym_lookup(thread_t* t, u32 addr, int mode, char* out,
       bt_format(&bt_app_elf, &best, addr, out, out_size);
     }
   } else {
-    if (bt_kernel_elf.node == NULL) {
+    if (!vfs_ready()) {
       return;
+    }
+    if (bt_kernel_elf.node == NULL) {
+      bt_kernel_elf.node = vfs_find(NULL, (u8*)BT_KERNEL_ELF_PATH);
+      if (bt_kernel_elf.node == NULL) {
+        return;
+      }
     }
     bt_sym_t best;
     kmemset(&best, 0, sizeof(best));
@@ -346,23 +353,4 @@ void bt_sym_lookup(thread_t* t, u32 addr, int mode, char* out,
       bt_format(&bt_kernel_elf, &best, addr, out, out_size);
     }
   }
-}
-
-/* 模块 init（正常上下文）时预加载 /kernel.elf：fault 处理在异常上下文，
- * 不能再走 vfs_find/块设备读，符号查找只依赖这块预载缓存 */
-int bt_kernel_preload(void) {
-  if (!vfs_ready()) {
-    return -1;
-  }
-  if (bt_kernel_elf.node == NULL) {
-    bt_kernel_elf.node = vfs_find(NULL, (u8*)BT_KERNEL_ELF_PATH);
-    if (bt_kernel_elf.node == NULL) {
-      return -1;
-    }
-  }
-  bt_sym_t best;
-  if (bt_elf_parse(&bt_kernel_elf) != 0) {
-    return -1;
-  }
-  return 0;
 }

@@ -20,13 +20,10 @@ typedef struct bt_frame {
 int bt_unwind(thread_t* t, interrupt_context_t* ic, bt_frame_t* frames,
               int max);
 
-// 符号化单个地址：内核地址查 /kernel.elf(懒加载缓存)，用户地址查应用 ELF
+// 符号化单个地址：内核地址实时查 /kernel.elf(懒加载缓存)，用户地址查应用 ELF
 void bt_sym_lookup(thread_t* t, u32 addr, int mode, char* out, u32 out_size);
 
-// 模块 init 时预加载内核符号缓存（异常上下文只查缓存，不再碰 vfs）
-int bt_kernel_preload(void);
-
-// 完整 dump：回溯 + 符号化 + 打印
+// 完整 dump：回溯 + 符号化 + 打印（自动切换专用大栈执行）
 void bt_dump(thread_t* t, interrupt_context_t* ic, u64 fault_addr);
 
 // name 指针有效性（vma 命中）检查，避免异常上下文打印垃圾指针再次 fault
