@@ -8,11 +8,7 @@
 
 static u32 bt_dumping = 0;
 
-static inline u32 bt_get_sp(void) {
-  u32 sp;
-  __asm__ volatile("mov %0, sp" : "=r"(sp));
-  return sp;
-}
+static inline u32 bt_get_sp(void) { return cpu_get_sp(); }
 
 /* 符号化预留栈预算：符号化深链至少需要这么多栈 */
 #define BT_RUN_STACK_SIZE (64 * 1024)
@@ -88,9 +84,27 @@ void bt_dump(thread_t* t, interrupt_context_t* ic, u64 fault_addr) {
     return;
   }
   u32 saved = cur;
-  __asm__ volatile("mov sp, %0" ::"r"(hi));
+  cpu_set_sp(hi);
   bt_dump_inner(t, ic, fault_addr);
-  __asm__ volatile("mov sp, %0" ::"r"(saved));
+  cpu_set_sp(saved);
+}
+
+static void bt_run_inner(void (*fn)(void*), void* arg) { fn(arg); }
+
+/* 复用符号化专用大栈执行 fn：perf dump 等场景符号化要读 vfs/fatfs，
+ * 在 4KB 中断/内核栈上会溢出，这里切到大栈跑完再还原 */
+void bt_run_on_dump_stack(void (*fn)(void*), void* arg) {
+  u32 cur = bt_get_sp();
+  u32 lo = (u32)bt_run_stack;
+  u32 hi = lo + (u32)BT_RUN_STACK_SIZE;
+  if (cur >= lo && cur <= hi) {
+    bt_run_inner(fn, arg);
+    return;
+  }
+  u32 saved = cur;
+  cpu_set_sp(hi);
+  bt_run_inner(fn, arg);
+  cpu_set_sp(saved);
 }
 
 int backtrace_init(void) {

@@ -66,12 +66,6 @@ u32 read_fp() {
   return val;
 }
 
-u32 cpu_get_sp() {
-  void* sp;
-  asm volatile("mov %0, sp;" : "=r"(sp));
-  return sp;
-}
-
 void cpu_set_vector(u32 addr) {
   asm volatile("wsr %0,vecbase" ::"r"(addr));
   asm volatile("rsync\n");
