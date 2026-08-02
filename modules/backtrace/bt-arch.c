@@ -38,6 +38,24 @@ static int bt_get_bounds(thread_t* t, int mode, u32* lo, u32* hi) {
   return 0;
 }
 
+/* 内核态 fp 合法性：线程栈(ksp) 或内核栈 vma 均可——fault 时异常帧
+ * 可能落在 0x90000000 内核栈区（与 ksp 分离） */
+static int bt_in_kernel_stack(thread_t* t, u32 fp) {
+  context_t* ctx = t != NULL ? t->ctx : NULL;
+  if (ctx != NULL && ctx->ksp_start != NULL && ctx->ksp_end != NULL) {
+    if (fp >= (u32)ctx->ksp_start && fp <= (u32)ctx->ksp_end) {
+      return 1;
+    }
+  }
+  if (t != NULL && t->vm != NULL && t->vm->vma != NULL) {
+    vmemory_area_t* a = vmemory_area_find_flag(t->vm->vma, MEMORY_STACK);
+    if (a != NULL && fp >= (u32)a->vaddr && fp <= (u32)a->vend) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 static int bt_walk(thread_t* t, int mode, u32 fp, u32 pc, bt_frame_t* frames,
                    int max) {
   u32 lo, hi;
@@ -49,15 +67,23 @@ static int bt_walk(thread_t* t, int mode, u32 fp, u32 pc, bt_frame_t* frames,
   frames[n].mode = mode;
   n++;
   while (n < max) {
-    if (fp < lo || fp > hi || (fp & 0x3) != 0) {
-      break;
+    if (mode == 3) {
+      if (fp < lo || fp > hi || (fp & 0x3) != 0) {
+        break;
+      }
+    } else {
+      if (!bt_in_kernel_stack(t, fp) || (fp & 0x3) != 0) {
+        break;
+      }
     }
     u32 prev, ret;
 #if defined(ARMV5) || defined(ARMV7) || defined(ARMV7_A)
     /* ARM EABI (-mapcs-frame): push {fp, ip, lr, pc}, fp = old_sp - 4,
      * 栈上 [fp]=old pc [fp-4]=old lr [fp-8]=old ip [fp-12]=old fp */
-    if (fp - 12 < lo) {
-      break;
+    if (mode == 3) {
+      if (fp - 12 < lo) {
+        break;
+      }
     }
     prev = ((u32*)fp)[-3];
     ret = ((u32*)fp)[-1];
@@ -65,7 +91,7 @@ static int bt_walk(thread_t* t, int mode, u32 fp, u32 pc, bt_frame_t* frames,
     prev = ((u32*)fp)[0];
     ret = ((u32*)fp)[1];
 #endif
-    if (prev <= fp || prev > hi) {
+    if (prev <= fp) {
       break;
     }
     frames[n].addr = ret;

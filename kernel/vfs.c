@@ -26,7 +26,14 @@ static void vfs_unlock(void) { rt_mutex_unlock(&vfs_biglock); }
 
 /* 供 fault 回溯等异常路径使用：若当前线程正持有 VFS 锁，则避免在
  * 异常上下文中再次进入 vfs（否则可能自死锁），直接放弃文件符号化。 */
-int vfs_locked_by(thread_t* t) { return vfs_biglock.owner == t; }
+int vfs_locked_by(thread_t* t) {
+  return t != NULL && vfs_biglock.owner == t;
+}
+
+/* vfs 根节点初始化后才算就绪；vfs_init 之前（如内核早期 fault）调用
+ * vfs 会撞上未初始化的 vfs_biglock（BSS 未清零），需提前判断 */
+extern vnode_t* root_node;
+int vfs_ready(void) { return root_node != NULL; }
 
 /* 只拒绝空/低地址/用户态指针。禁止用「四字节皆可打印」判断：
  * 内核堆指针如 0x415d6f64（'d','o',']','A'）会被误杀，导致
@@ -298,6 +305,10 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
 
   if (root == NULL) {
     root = root_node;
+  }
+  if (root == NULL) {
+    vfs_unlock();
+    return NULL;
   }
   u32 path_len = kstrlen(path);
   // 处理根路径 "/" 或空路径
