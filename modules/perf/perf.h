@@ -21,6 +21,7 @@ typedef struct perf_stats {
   volatile u32 on;
   u32 div;
   u32 div_count;
+  u32 duration;
   u32 total;
   u32 missed;
   u32 count;
@@ -29,7 +30,7 @@ typedef struct perf_stats {
   perf_sample_t* samples;
 } perf_stats_t;
 
-void perf_start(u32 freq_hz);
+void perf_start(u32 freq_hz, u32 duration_ticks);
 void perf_stop(void);
 u32 perf_read(void* buf, u32 size);
 void perf_init_syscall(void** syscall_table);
