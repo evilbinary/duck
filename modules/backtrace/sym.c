@@ -44,6 +44,7 @@ typedef struct bt_elf {
   const char* path;
   vnode_t* node;
   int parsed;
+  int missing; /* 该文件已确认不存在：避免重复 VFS 查找刷错误日志 */
   int elf_class;
   u32 ent_size;
   u32 sym_off;
@@ -316,9 +317,11 @@ void bt_sym_lookup(thread_t* t, u32 addr, int mode, char* out,
     if (path == NULL || !bt_name_valid(t, path)) {
       return;
     }
-    if (bt_app_elf.node == NULL || bt_app_elf.path != path) {
+    if (bt_app_elf.path != path) {
+      /* 新文件：重置状态并查找；同一文件已确认缺失则直接放弃 */
       bt_app_elf.path = path;
       bt_app_elf.parsed = 0;
+      bt_app_elf.missing = 0;
       bt_app_elf.cache = bt_app_buf;
       bt_app_elf.cache_cap = sizeof(bt_app_buf);
       bt_app_elf.node = NULL;
@@ -329,8 +332,11 @@ void bt_sym_lookup(thread_t* t, u32 addr, int mode, char* out,
         bt_app_elf.node = vfs_find(NULL, (u8*)path);
       }
       if (bt_app_elf.node == NULL) {
+        bt_app_elf.missing = 1;
         return;
       }
+    } else if (bt_app_elf.missing) {
+      return;
     }
     bt_sym_t best;
     kmemset(&best, 0, sizeof(best));
@@ -341,9 +347,13 @@ void bt_sym_lookup(thread_t* t, u32 addr, int mode, char* out,
     if (!vfs_ready()) {
       return;
     }
+    if (bt_kernel_elf.missing) {
+      return;
+    }
     if (bt_kernel_elf.node == NULL) {
       bt_kernel_elf.node = vfs_find(NULL, (u8*)BT_KERNEL_ELF_PATH);
       if (bt_kernel_elf.node == NULL) {
+        bt_kernel_elf.missing = 1;
         return;
       }
     }

@@ -15,6 +15,7 @@ typedef struct perf_sample {
   int tid;
   u32 pc;
   u32 count;
+  u8 mode; /* 0=kernel 3=user（与 backtrace bt_sym_lookup 一致） */
 } perf_sample_t;
 
 typedef struct perf_stats {

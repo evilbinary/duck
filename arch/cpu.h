@@ -65,4 +65,41 @@ void cpu_wait(void);
 
 int cpu_tas(volatile int* addr, int newval);
 
+/* 通用 SP 读写：perf/backtrace 切换大栈用，覆盖所有架构 */
+static inline u32 cpu_get_sp(void) {
+#if defined(X86)
+  u32 sp;
+  __asm__ volatile("mov %%esp, %0" : "=r"(sp));
+  return sp;
+#elif defined(RISCV)
+  u32 sp;
+  __asm__ volatile("mv %0, sp" : "=r"(sp));
+  return sp;
+#elif defined(LX6)
+  u32 sp;
+  __asm__ volatile("mov %0, sp;" : "=r"(sp));
+  return sp;
+#elif defined(ARM) || defined(ARM64)
+  u32 sp;
+  __asm__ volatile("mov %0, sp" : "=r"(sp));
+  return sp;
+#else /* GENERAL / DUMMY */
+  return 0;
+#endif
+}
+
+static inline void cpu_set_sp(u32 sp) {
+#if defined(X86)
+  __asm__ volatile("mov %0, %%esp" ::"r"(sp));
+#elif defined(RISCV)
+  __asm__ volatile("mv sp, %0" ::"r"(sp));
+#elif defined(LX6)
+  __asm__ volatile("mov sp, %0;" ::"r"(sp));
+#elif defined(ARM) || defined(ARM64)
+  __asm__ volatile("mov sp, %0" ::"r"(sp));
+#else
+  (void)sp;
+#endif
+}
+
 #endif

@@ -97,12 +97,6 @@ static inline void cpu_disable_paging_pae(void) {
 
 static inline __attribute__((always_inline)) void cpu_hlt(void) { asm("hlt"); }
 
-static inline ulong cpu_get_sp(void) {
-  ulong result;
-  asm volatile("mov %%esp, %%eax" : "=a"(result));
-  return result;
-}
-
 static inline ulong cpu_get_bp(void) {
   ulong result;
   asm volatile("mov %%ebp, %%eax" : "=a"(result));

@@ -23,6 +23,9 @@ int bt_unwind(thread_t* t, interrupt_context_t* ic, bt_frame_t* frames,
 // 符号化单个地址：内核地址实时查 /kernel.elf(懒加载缓存)，用户地址查应用 ELF
 void bt_sym_lookup(thread_t* t, u32 addr, int mode, char* out, u32 out_size);
 
+// 在符号化专用大栈上执行 fn（容纳 vfs/fatfs 深调用链），供 perf 等模块复用
+void bt_run_on_dump_stack(void (*fn)(void*), void* arg);
+
 // 完整 dump：回溯 + 符号化 + 打印（自动切换专用大栈执行）
 void bt_dump(thread_t* t, interrupt_context_t* ic, u64 fault_addr);
 
