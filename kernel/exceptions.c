@@ -6,8 +6,13 @@
 #include "exceptions.h"
 
 #include "preempt.h"
+#include "thread.h"
 
 interrupt_handler_t *exception_handlers[EXCEPTION_NUMBER];
+fault_hook_fn fault_hook = NULL;
+
+void fault_hook_regist(fault_hook_fn fn) { fault_hook = fn; }
+
 void exception_regist(u32 vec, interrupt_handler_t handler) {
   exception_handlers[vec] = handler;
 }
@@ -57,6 +62,9 @@ void *exception_process(interrupt_context_t *ic) {
 
 void exception_process_error(thread_t *current, interrupt_context_t *ic,
                              void *entry) {
+  if (fault_hook != NULL) {
+    fault_hook(current, ic, (u64)cpu_get_fault());
+  }
   thread_exit(current, -1);
 
   kprintf("--dump interrupt context--\n");
