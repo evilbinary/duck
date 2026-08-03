@@ -1315,6 +1315,13 @@ void sys_fn_call_handler(int no, interrupt_context_t* ic) {
   }
 }
 
+void* sys_fn_get(int no) {
+  if (no < 0 || no >= SYSCALL_NUMBER) {
+    return NULL;
+  }
+  return syscall_table[no];
+}
+
 void sys_fn_init() {
   sys_fn_regist_faild(sys_fn_faild_handler);
   sys_fn_regist_handler(sys_fn_call_handler);

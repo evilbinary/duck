@@ -5,6 +5,12 @@
  ********************************************************************/
 #include "trace.h"
 
+#include "../posix/sysfn.h"
+
+#ifdef BACKTRACE_MODULE
+#include "../backtrace/backtrace.h"
+#endif
+
 static void* syscall_hook_table[SYSCALL_NUMBER] = {0};
 void** syscall_origin_table = NULL;
 ytrace_t* ytrace = NULL;
@@ -18,13 +24,47 @@ voperator_t trace_operator = {.ioctl = device_ioctl,
                               .mount = vfs_mount,
                               .readdir = vfs_readdir};
 
-static void print_trace(ytrace_t* t) {
+#ifdef BACKTRACE_MODULE
+/* Resolve syscall handler address to kernel symbol name (needs /kernel.elf). */
+static void ytrace_sys_sym(int no, char* out, u32 out_size) {
+  void* fn;
+  if (out_size == 0) {
+    return;
+  }
+  out[0] = 0;
+  fn = sys_fn_get(no);
+  if (fn == NULL) {
+    return;
+  }
+  bt_sym_lookup(thread_current(), (u32)(uintptr_t)fn, 0, out, out_size);
+}
+
+static void print_trace_syms(void* arg) {
+  ytrace_t* t = (ytrace_t*)arg;
+  char sym[BT_SYM_NAME_MAX];
   for (int i = 0; i < SYSCALL_NUMBER; i++) {
     if (t->counts[i] > 0) {
-      kprintf("sys no %4d count %4d times %10d avg %10d\n",i, t->counts[i], t->times[i],
+      ytrace_sys_sym(i, sym, sizeof(sym));
+      kprintf("sys no %4d %-28s count %4d times %10d avg %10d\n", i,
+              sym[0] != 0 ? sym : "?", t->counts[i], t->times[i],
               t->times[i] / t->counts[i]);
     }
   }
+}
+#endif
+
+static void print_trace(ytrace_t* t) {
+#ifdef BACKTRACE_MODULE
+  /* 符号化走 VFS/fatfs，切到 backtrace 专用大栈 */
+  bt_run_on_dump_stack(print_trace_syms, t);
+#else
+  for (int i = 0; i < SYSCALL_NUMBER; i++) {
+    if (t->counts[i] > 0) {
+      kprintf("sys no %4d count %4d times %10d avg %10d\n", i, t->counts[i],
+              t->times[i], t->times[i] / t->counts[i]);
+    }
+  }
+#endif
 }
 
 static size_t read(device_t* dev, void* buf, size_t len) {
@@ -49,10 +89,10 @@ u32 ytrace_hook_call(int no, interrupt_context_t* ic) {
   int count = ytrace->cmd[1];
   int print = ytrace->cmd[2];
 
-  if (current->id == id || id<=-1) {
+  if (current->id == id || id <= -1) {
     u32 ticks = cpu_cyclecount();
 
-    int ret=ytrace->origin_call(no, ic);
+    int ret = ytrace->origin_call(no, ic);
     u32 ticks_end = cpu_cyclecount();
 
     u32 diff = ticks_end - ticks;
@@ -63,11 +103,23 @@ u32 ytrace_hook_call(int no, interrupt_context_t* ic) {
     ytrace->total_count++;
 
     if (print == 1) {
+#ifdef BACKTRACE_MODULE
+      char sym[BT_SYM_NAME_MAX];
+      ytrace_sys_sym(no, sym, sizeof(sym));
 #ifdef ARMV7_A
-      kprintf("sys %3d args: %8x %8x %8x %8x %8x ret=%8x times:%10d\n", no, ic->r0, ic->r1, ic->r2,
-              ic->r3, ic->r4,ret,diff);
+      kprintf("sys %3d %-24s args: %8x %8x %8x %8x %8x ret=%8x times:%10d\n",
+              no, sym[0] != 0 ? sym : "?", ic->r0, ic->r1, ic->r2, ic->r3,
+              ic->r4, ret, diff);
+#else
+      kprintf("sys %d %s\n", no, sym[0] != 0 ? sym : "?");
+#endif
+#else
+#ifdef ARMV7_A
+      kprintf("sys %3d args: %8x %8x %8x %8x %8x ret=%8x times:%10d\n", no,
+              ic->r0, ic->r1, ic->r2, ic->r3, ic->r4, ret, diff);
 #else
       kprintf("sys %d \n", no);
+#endif
 #endif
     }
 
@@ -89,7 +141,7 @@ void ytrace_hook_init(ytrace_t* t, int* buf) {
   // buf ==> 0 tid 1 count
   if (t->status == 1) {
     ytrace_hook_end(t);
-  }  
+  }
   log_debug("start ytrace for tid %d count %d print %d\n", buf[0], buf[1],
             buf[2]);
   // hook syscall
@@ -98,13 +150,13 @@ void ytrace_hook_init(ytrace_t* t, int* buf) {
 
   sys_fn_regist_handler(&ytrace_hook_call);
 
-  cpu_pmu_enable(1,0x8000000f);
+  cpu_pmu_enable(1, 0x8000000f);
   t->status = 1;
 }
 
 void ytrace_hook_end(ytrace_t* t) {
   sys_fn_regist_handler(t->origin_call);
-  cpu_pmu_enable(0,0x8000000f);
+  cpu_pmu_enable(0, 0x8000000f);
 
   print_trace(t);
   t->status = 0;
@@ -151,9 +203,9 @@ int ytrace_init(void) {
 
   vfs_mount(NULL, "/dev", trace);
 
-  int version=cpu_pmu_version();
+  int version = cpu_pmu_version();
 
-  log_debug("pmu version %d\n",version);
+  log_debug("pmu version %d\n", version);
 
   return 0;
 }
