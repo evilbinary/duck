@@ -449,6 +449,8 @@ int sys_shutdown(int sockfd, int how);
 
 void sys_fn_init();
 void sys_fn_net_init(void** syscall_table);
+/* Syscall number → handler (NULL if unset / out of range). */
+void* sys_fn_get(int no);
 
 
 #endif
