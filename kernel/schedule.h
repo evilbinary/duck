@@ -11,6 +11,7 @@
 
 void schedule_init(void);
 u32 schedule_get_ticks(void);
+u32 schedule_get_ticks_cpu(int cpu);
 void schedule(interrupt_context_t* ic);
 void schedule_switch(void);
 void schedule_sleep(u32 nsec);
