@@ -1225,14 +1225,38 @@ int sys_sched_setscheduler(pid_t pid, int policy,
 }
 
 pid_t sys_waitpid(pid_t pid, int* wstatus, int options) {
-  log_debug("sys_waitpid %d %x %d not impl\n", pid, wstatus, options);
-  if (wstatus != NULL) {
-    *wstatus = 0;
+  thread_t* current = thread_current();
+  if (current == NULL) {
+    return -1;
   }
-  if (pid > 0) {
-    return pid;
+#ifndef WNOHANG
+#define WNOHANG 1
+#endif
+
+  for (;;) {
+    thread_t* child = thread_find_zombie_child((int)current->id, (int)pid);
+    if (child != NULL) {
+      pid_t ret = (pid_t)child->id;
+      if (wstatus != NULL) {
+        *wstatus = (int)child->code;
+      }
+      /* Detach from parent so the same zombie is not returned forever
+       * (shell reap_zombies would spin and freeze input). */
+      child->pid = (u32)-1;
+      return ret;
+    }
+    if (!thread_child_exists((int)current->id, (int)pid)) {
+      return -1; /* ECHILD */
+    }
+    if (options & WNOHANG) {
+      return 0;
+    }
+    /* Block until thread_exit wakes us; do_schedule will run the child. */
+    current->state = THREAD_WAITING;
+    while (current->state == THREAD_WAITING) {
+      cpu_wait();
+    }
   }
-  return -1;
 }
 
 pid_t sys_wait4(pid_t pid, int* wstatus, int options, struct rusage* rusage) {

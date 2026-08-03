@@ -914,3 +914,36 @@ thread_t* thread_find_id(int id) {
   }
   return NULL;
 }
+
+thread_t* thread_find_zombie_child(int parent_tid, int pid) {
+  for (int i = 0; i < MAX_CPU; i++) {
+    for (thread_t* p = schedulable_head_thread[i]; p != NULL; p = p->next) {
+      if ((int)p->pid != parent_tid) {
+        continue;
+      }
+      if (p->state != THREAD_STOPPED) {
+        continue;
+      }
+      if (pid > 0 && (int)p->id != pid) {
+        continue;
+      }
+      return p;
+    }
+  }
+  return NULL;
+}
+
+int thread_child_exists(int parent_tid, int pid) {
+  for (int i = 0; i < MAX_CPU; i++) {
+    for (thread_t* p = schedulable_head_thread[i]; p != NULL; p = p->next) {
+      if ((int)p->pid != parent_tid) {
+        continue;
+      }
+      if (pid > 0 && (int)p->id != pid) {
+        continue;
+      }
+      return 1;
+    }
+  }
+  return 0;
+}
