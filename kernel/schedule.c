@@ -162,21 +162,22 @@ static int schedule_runnable_on_cpu(int cpu) {
   return count;
 }
 
-void schedule_sleep(u32 nsec) {
+void schedule_sleep(u32 ticks) {
   thread_t* current = thread_current();
   if (current == NULL || current->state != THREAD_RUNNING) {
     return;
   }
-  u32 tick = nsec / SCHEDULE_FREQUENCY;
+  /* Argument is already timer ticks (see SECOND_TO_TICK / NANOSECOND_TO_TICK).
+   * Do not divide by SCHEDULE_FREQUENCY again — that made 500ms → 1ms and
+   * left init polling serial at ~1kHz (high cpu%). */
+  u32 tick = ticks;
   if (tick == 0) {
     tick = 1;
   }
 
   /*
-   * KERNEL/SYS-mode threads (kernel, monitor) must not use THREAD_SLEEP:
-   * leaving RUNNING + context_switch on raspi2 zeros SYS SP → fault at 0x1 →
-   * thread_exit → ps "stopped". Same for sole-runnable idle CPUs.
-   * Park with WFI until this CPU's timer_ticks advance.
+   * KERNEL/SYS-mode threads must not use THREAD_SLEEP (raspi2 AP SP fault).
+   * Sole-runnable CPUs: same — park with WFI until local ticks elapse.
    */
   {
     int cpu = cpu_get_id();
@@ -208,21 +209,25 @@ void* do_schedule(interrupt_context_t* ic) {
   }
 
   schedule_state(cpu);
-  current_thread->ticks++;
   timer_ticks[cpu]++;
-
-  if (!preempt_may_switch(ic)) {
-    preempt_set_need_resched();
-    timer_end();
-    return ic;
+  /* Only RUNNING burns "busy" time. SLEEP/WAITING still current during
+   * nanosleep/wait in SVC would otherwise steal all ticks from children. */
+  if (current_thread->state == THREAD_RUNNING) {
+    current_thread->ticks++;
   }
 
   {
+    int blocked = (current_thread->state == THREAD_SLEEP ||
+                   current_thread->state == THREAD_WAITING);
+    if (!blocked && !preempt_may_switch(ic)) {
+      preempt_set_need_resched();
+      timer_end();
+      return ic;
+    }
+
     thread_t* next_thread = schedule_next(cpu);
     if (next_thread == NULL) {
-      /* Sleeping/waiting on an otherwise-idle CPU is normal (AP monitor). */
-      if (current_thread->state != THREAD_SLEEP &&
-          current_thread->state != THREAD_WAITING) {
+      if (!blocked) {
         log_debug("schedule error next\n");
         thread_t* v = thread_head();
         for (; v != NULL; v = v->next) {

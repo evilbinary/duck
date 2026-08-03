@@ -131,6 +131,9 @@ thread_t* thread_head();
 void thread_run_all();
 void thread_reset_stack3(thread_t* thread, u32* stack3);
 thread_t* thread_find_id(int id);
+/* parent_tid: child's pid field; pid>0 exact child, pid<0 any child */
+thread_t* thread_find_zombie_child(int parent_tid, int pid);
+int thread_child_exists(int parent_tid, int pid);
 
 void thread_fill_fd(thread_t* thread);
 u64 thread_user_tp();
