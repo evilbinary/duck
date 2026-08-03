@@ -851,21 +851,21 @@ void thread_dumps() {
     for (thread_t* p = schedulable_head_thread[i]; p != NULL; p = p->next) {
       u32 pct = 0;
       u32 tot;
-      u32 busy_tot;
       int is_idle =
           (p->name != NULL && kstrcmp((char*)p->name, "idle") == 0);
       if (p->state <= THREAD_SLEEP) {
         str = state_str[p->state];
       }
       tot = (p->cpu_id < MAX_CPU) ? cpu_total[p->cpu_id] : 0;
-      /* idle: usage 0%（空闲已反映在顶部 cpu N:X%）；其它按占 busy 时间比例 */
-      if (!is_idle && tot > 0 && p->cpu_id < MAX_CPU) {
-        busy_tot = tot - idle_ticks[p->cpu_id];
-        if (busy_tot > 0) {
-          pct = (p->ticks * 100) / busy_tot;
-          if (pct > 100) {
-            pct = 100;
-          }
+      /*
+       * cpu% = 占本核墙钟时间（含 idle）。
+       * 若按 busy 占比，空闲 shell 每次醒来都会接近 100%，误显示成 init 90%。
+       * stopped / idle 显示 0%（占用见顶部 cpu N:X%）。
+       */
+      if (p->state != THREAD_STOPPED && !is_idle && tot > 0) {
+        pct = (p->ticks * 100) / tot;
+        if (pct > 100) {
+          pct = 100;
         }
       }
       kprintf("%-4d ", p->id);
