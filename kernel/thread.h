@@ -27,6 +27,10 @@ typedef struct exec_params exec_params_t;
 #define LEVEL_KERNEL_SHARE 1
 #define LEVEL_USER 3
 
+/* schedule_next: smaller priority runs first; idle must be lowest. */
+#define THREAD_PRIORITY_DEFAULT 1
+#define THREAD_PRIORITY_IDLE 100
+
 
 #define FS_CLONE 1 << 1
 #define VM_CLONE_ALL 1 << 2

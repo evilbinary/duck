@@ -15,15 +15,24 @@ u32 schedule_get_ticks() {
   return timer_ticks[cpu];
 }
 
+u32 schedule_get_ticks_cpu(int cpu) {
+  if (cpu < 0 || cpu >= MAX_CPU) {
+    return 0;
+  }
+  return timer_ticks[cpu];
+}
+
 int schedule_state(int cpu) {
   int count = 0;
   thread_t* v = thread_head();
   for (; v != NULL; v = v->next) {
     if (v->state == THREAD_SLEEP) {
-      u32 ticks = timer_ticks[cpu];
-      v->sleep_counter--;
-      if (v->sleep_counter <= 0) {
-        thread_wake(v);
+      /* Only the thread's CPU advances its sleep; otherwise SMP wakes Nx faster. */
+      if (v->cpu_id == cpu) {
+        v->sleep_counter--;
+        if (v->sleep_counter <= 0) {
+          thread_wake(v);
+        }
       }
     } else if (v->state == THREAD_RUNNING) {
       count++;
@@ -142,16 +151,50 @@ void schedule_switch() {
   interrupt_exit_context(next_ic);
 }
 
+static int schedule_runnable_on_cpu(int cpu) {
+  int count = 0;
+  thread_t* v = thread_head();
+  for (; v != NULL; v = v->next) {
+    if (v->state == THREAD_RUNNING && v->cpu_id == cpu) {
+      count++;
+    }
+  }
+  return count;
+}
+
 void schedule_sleep(u32 nsec) {
   thread_t* current = thread_current();
   if (current == NULL || current->state != THREAD_RUNNING) {
     return;
   }
   u32 tick = nsec / SCHEDULE_FREQUENCY;
-  thread_sleep(current, tick);
+  if (tick == 0) {
+    tick = 1;
+  }
 
-  if (current->ctx != NULL && current->ctx->ic != NULL) {
-    // schedule(current->ctx->ic);
+  /*
+   * KERNEL/SYS-mode threads (kernel, monitor) must not use THREAD_SLEEP:
+   * leaving RUNNING + context_switch on raspi2 zeros SYS SP → fault at 0x1 →
+   * thread_exit → ps "stopped". Same for sole-runnable idle CPUs.
+   * Park with WFI until this CPU's timer_ticks advance.
+   */
+  {
+    int cpu = cpu_get_id();
+    int kernel_thread =
+        (current->level == LEVEL_KERNEL ||
+         current->level == LEVEL_KERNEL_SHARE);
+    if (kernel_thread || schedule_runnable_on_cpu(cpu) <= 1) {
+      u32 start = timer_ticks[cpu];
+      while (timer_ticks[cpu] - start < tick) {
+        cpu_wait();
+      }
+      return;
+    }
+  }
+
+  thread_sleep(current, tick);
+  while (current->state == THREAD_SLEEP) {
+    cpu_wait();
   }
 }
 
@@ -177,8 +220,9 @@ void* do_schedule(interrupt_context_t* ic) {
   {
     thread_t* next_thread = schedule_next(cpu);
     if (next_thread == NULL) {
-      /* RT park：当前 WAITING 且暂无其它可跑线程，等下一拍 */
-      if (current_thread->state != THREAD_WAITING) {
+      /* Sleeping/waiting on an otherwise-idle CPU is normal (AP monitor). */
+      if (current_thread->state != THREAD_SLEEP &&
+          current_thread->state != THREAD_WAITING) {
         log_debug("schedule error next\n");
         thread_t* v = thread_head();
         for (; v != NULL; v = v->next) {

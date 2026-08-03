@@ -57,7 +57,8 @@ void *exception_process(interrupt_context_t *ic) {
     int cpu = cpu_get_id();
     log_debug("exception hanlder not found on cpu %d no %d\n", cpu, ic->no);
   }
-  return NULL;
+  /* Never NULL: irq_handler uses interrupt_exit_ret() → mov sp,r0. */
+  return ic;
 }
 
 void exception_process_error(thread_t *current, interrupt_context_t *ic,
@@ -124,9 +125,7 @@ void exception_on_undef(interrupt_context_t *ic) {
   exception_process_error(current, ic, (void *)&exception_error_exit);
 }
 
-void exception_on_none(interrupt_context_t *ic) {
-  
-}
+void* exception_on_none(interrupt_context_t *ic) { return ic; }
 
 void exception_init() {
   interrupt_regist_service(exception_process);

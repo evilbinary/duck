@@ -7,6 +7,7 @@
 
 #include "fd.h"
 #include "loader.h"
+#include "schedule.h"
 #include "syscall.h"
 
 thread_t* current_threads[MAX_CPU] = {0};
@@ -810,17 +811,62 @@ void thread_dumps() {
   char* state_str[7] = {"create",   "running", "runnable", "stopped",
                         "waitting", "sleep",   "unkown"};
   char* str = "unkown";
+  u32 idle_ticks[MAX_CPU];
+  u32 cpu_total[MAX_CPU];
+  int i;
 
-  int ticks = schedule_get_ticks();
-  log_debug("kernel ticks: %d\n", ticks);
+  for (i = 0; i < MAX_CPU; i++) {
+    idle_ticks[i] = 0;
+    cpu_total[i] = schedule_get_ticks_cpu(i);
+  }
+  for (i = 0; i < MAX_CPU; i++) {
+    for (thread_t* p = schedulable_head_thread[i]; p != NULL; p = p->next) {
+      if (p->name != NULL && kstrcmp((char*)p->name, "idle") == 0) {
+        int c = (int)p->cpu_id;
+        if (c >= 0 && c < MAX_CPU) {
+          idle_ticks[c] += p->ticks;
+        }
+      }
+    }
+  }
+
+  kprintf("cpu");
+  for (i = 0; i < MAX_CPU; i++) {
+    u32 busy = 0;
+    if (cpu_total[i] > 0) {
+      u32 idle = idle_ticks[i];
+      if (idle > cpu_total[i]) {
+        idle = cpu_total[i];
+      }
+      busy = 100 - (idle * 100) / cpu_total[i];
+    }
+    kprintf(" %d:%d%%", i, busy);
+  }
+  kprintf("\n");
 
   kprintf(
-      "id   pid  name                 state     cpu  count  "
+      "id   pid  name                 state     cpu  cpu%%  count  "
       "  vm   pm   nstack  file  sleep  level  faults ticks\n");
-  for (int i = 0; i < MAX_CPU; i++) {
+  for (i = 0; i < MAX_CPU; i++) {
     for (thread_t* p = schedulable_head_thread[i]; p != NULL; p = p->next) {
+      u32 pct = 0;
+      u32 tot;
+      u32 busy_tot;
+      int is_idle =
+          (p->name != NULL && kstrcmp((char*)p->name, "idle") == 0);
       if (p->state <= THREAD_SLEEP) {
         str = state_str[p->state];
+      }
+      tot = (p->cpu_id < MAX_CPU) ? cpu_total[p->cpu_id] : 0;
+      /* idle: usage 0%（空闲已反映在顶部 cpu N:X%）；其它按占 busy 时间比例 */
+      if (!is_idle && tot > 0 && p->cpu_id < MAX_CPU) {
+        busy_tot = tot - idle_ticks[p->cpu_id];
+        if (busy_tot > 0) {
+          pct = (p->ticks * 100) / busy_tot;
+          if (pct > 100) {
+            pct = 100;
+          }
+        }
       }
       kprintf("%-4d ", p->id);
       kprintf("%-4d ", p->pid);
@@ -828,15 +874,15 @@ void thread_dumps() {
       if (p->name != NULL) {
         kprintf("%-20s ", p->name);
       } else {
-        kprintf("   ");
+        kprintf("%-20s ", "");
       }
-      kprintf("%-8s %4d %6d %4dk %4dk %4dk %6d %6d %6d  %4d %6d\n", str, p->cpu_id,
-              p->counter,
+      kprintf("%-8s %4d %4d%% %6d %4dk %4dk %4dk %6d %6d %6d  %4d %6d\n", str,
+              p->cpu_id, pct, p->counter,
               p->vm != NULL && p->vm->vma != NULL
                   ? p->vm->vma->alloc_size / 1024
                   : 0,
               p->mem / 1024, p->ctx->usp_size / 1024, p->fd_number,
-              p->sleep_counter, p->level,p->faults,p->ticks);
+              p->sleep_counter, p->level, p->faults, p->ticks);
     }
   }
 }
