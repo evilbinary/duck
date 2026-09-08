@@ -7,9 +7,40 @@
 
 #include "preempt.h"
 #include "thread.h"
+#include "schedule.h"
 
 interrupt_handler_t *exception_handlers[EXCEPTION_NUMBER];
 fault_hook_fn fault_hook = NULL;
+
+/* pid0/kernel-level threads (init, idle) must never be reaped through the
+ * user-process error path: exception_error_exit() issues an exit syscall that
+ * faults again and takes the whole system down. Park the thread and resched. */
+static int exception_is_system_thread(thread_t *t) {
+  if (t == NULL) return 1;
+  return t->pid == 0 || t->level == LEVEL_KERNEL ||
+         t->level == LEVEL_KERNEL_SHARE;
+}
+
+static u32 exception_system_logged = 0;
+
+static void *exception_park_system_thread(interrupt_context_t *ic) {
+  thread_t *cur = thread_current();
+  if (!exception_system_logged) {
+    exception_system_logged = 1;
+    log_error(
+        "sys-thread exc parked no=%d cur=%p id=%d ctx=%p lvl=%d icpc=%x "
+        "sp=%x lr=%x\n",
+        ic->no, (void *)cur, cur != NULL ? cur->id : -1,
+        (void *)(cur != NULL ? cur->ctx : NULL),
+        cur != NULL ? cur->level : -1, (u32)ic->pc, (u32)ic->sp, (u32)ic->lr);
+  }
+  if (cur != NULL) {
+    cur->state = THREAD_STOPPED;
+    cur->faults++;
+  }
+  schedule(ic);
+  return ic;
+}
 
 void fault_hook_regist(fault_hook_fn fn) { fault_hook = fn; }
 
@@ -101,6 +132,10 @@ void exception_on_permission(interrupt_context_t *ic) {
     log_debug("tid:%d %s cpu:%d\n", current->id, current->name,
               current->cpu_id);
   }
+  if (exception_is_system_thread(current)) {
+    exception_park_system_thread(ic);
+    return;
+  }
   exception_process_error(current, ic, (void *)&exception_error_exit);
   // context_dump_interrupt(ic);
   // thread_dump(current);
@@ -112,6 +147,10 @@ void exception_on_other(interrupt_context_t *ic) {
   thread_t *current = thread_current();
   log_debug("exception other on cpu %d no %d code %x\n", cpu, ic->no, ic->code);
   exception_info(ic);
+  if (exception_is_system_thread(current)) {
+    exception_park_system_thread(ic);
+    return;
+  }
   exception_process_error(current, ic, (void *)&exception_error_exit);
 }
 
@@ -120,6 +159,10 @@ void exception_on_undef(interrupt_context_t *ic) {
   thread_t *current = thread_current();
   log_debug("exception undef on cpu %d no %d code %x\n", cpu, ic->no, ic->code);
   exception_info(ic);
+  if (exception_is_system_thread(current)) {
+    exception_park_system_thread(ic);
+    return;
+  }
   kprintf("--dump thread--\n");
   thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
   exception_process_error(current, ic, (void *)&exception_error_exit);
