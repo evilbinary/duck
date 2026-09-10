@@ -58,6 +58,10 @@ typedef u32 (*sys_call_fn)(u32 arg1, u32 arg2, u32 arg3, u32 arg4, u32 arg5,
 void cpu_cache_flush_range(unsigned long start, unsigned long stop);
 void cache_inv_range(unsigned long start, unsigned long stop);
 
+/* 通用层可用的 CPU 接口：通用代码必须通过这里的声明调用，
+ * 不得内联 mrc/msr 等专有指令（armv8-a/general/x86 的 cpu.h 同样有）。 */
+u32 cpu_get_id(void);
+
 #define syscall0(syscall_num)    \
   ({                             \
     int ret;                     \

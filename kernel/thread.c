@@ -109,6 +109,12 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
   // context init
   context_t* ctx = kmalloc(sizeof(context_t), KERNEL_TYPE);
   thread->ctx = ctx;
+  /* 必须清零：ctx->ic 只在 context_switch() 里赋值，若这里留未初始化值，
+   * schedule_switch() 会把它当栈指针用（interrupt_exit_context → ldr sp, ic），
+   * 于是 SVC bank sp 变成垃圾，该线程下一次 SVC 会在 svc_handler 第一条指令
+   * （stmdb sp,{r0-r12,sp,lr}^）炸掉，dfar = sp - 0x3C。
+   * thread_copy() 里是清过的，这里漏了。 */
+  kmemset(ctx, 0, sizeof(context_t));
   ctx->tid = thread->id;
 
   void* ksp = kmalloc(kstack_size, KERNEL_TYPE);

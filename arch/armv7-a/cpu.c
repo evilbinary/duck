@@ -397,9 +397,14 @@ int cpu_get_number() { return boot_info->tss_number; }
 
 u32 cpu_get_id() {
   int cpu = 0;
-#if MP_ENABLE
+  /* 必须【无条件】读 MPIDR：本文件只用于 armv7-a，MPIDR 一定存在（单核 SoC 也
+   * 返回合法值，&0xf 即为 0）。绝不能把它挂在 MP_ENABLE 下 —— 引导代码
+   * boot/arm/boot-armv7-a.s 的 _start 会按 MPIDR 把【任何非 0 核】送进
+   * apu_entry → start_apu_kernel() 进内核；此时若这里恒返回 0，那个核就会
+   * "以为自己是 CPU0"：共用 current_threads[0]、同一份 ctx->ksp 与内核栈，
+   * 甚至把 kernel_init() 的 cpu==0 分支再跑一遍（实测 t113-s3：
+   * platform.h 里 MP_ENABLE 被注释掉，从核重复初始化整个内核，把 shell 线程踩死）。 */
   __asm__ volatile("mrc p15, #0, %0, c0, c0, #5\n" : "=r"(cpu));
-#endif
   return cpu & 0xf;
 }
 
