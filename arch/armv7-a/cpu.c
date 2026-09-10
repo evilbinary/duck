@@ -7,6 +7,8 @@
 
 #include "context.h"
 #include "gic2.h"
+#include "kernel/memory.h" /* kmalloc/kfree/KERNEL_TYPE */
+#include "kernel/string.h" /* kmemcpy/kmemset */
 
 extern boot_info_t* boot_info;
 u32 cpus_id[MAX_CPU];
@@ -26,6 +28,120 @@ int cpu_pmu_version() {
   // asm volatile("MRC p15, 0, %0, c9, c0, 0" : "=r"(pmu_id));
   // PMU 版本信息
   return (pmu_id >> 4) & 0xF;
+}
+
+/* ================= 内存带宽 / 缓存属性自测 =================
+ * 用 PMU 周期计数器（与主频无关，输出 bytes/cycle）测：
+ *   1) 4KB / 64KB / 512KB 内核内存拷贝速度；
+ *   2) 64KB 读、写分离速度；
+ *   3) SCTLR 与目标页的真实页描述符（判断是否真的走 cache）。
+ *
+ * 判读要点：
+ *   - 曲线应"越小越快"（4KB ≥ 64KB ≥ 512KB）。若反过来，说明属性/缓存异常；
+ *   - 描述符低 12 位里 bit3(C)/bit2(B) 必须为 1 才是可缓存；
+ *     flags=0 时描述符 = L2_DESC = 0x432 = TEX=000,C=0,B=0 = Strongly-ordered；
+ *   - 参考（t113@~1GHz）：可缓存时 4KB ≈ 0.22 B/cyc；
+ *     Strongly-ordered 时仅 0.004 B/cyc。 */
+static inline void pmu_cyc_init(void) {
+  u32 v;
+  asm volatile("mrc p15,0,%0,c9,c12,0" : "=r"(v)); /* PMCR */
+  v |= (1u << 0);                                  /* E  = 使能 */
+  v &= ~(1u << 3);                                 /* D  = 0(不分频) */
+  v |= (1u << 1);                                  /* P  = 复位事件计数 */
+  v |= (1u << 2);                                  /* C  = 复位周期计数 */
+  asm volatile("mcr p15,0,%0,c9,c12,0" : : "r"(v));
+  asm volatile("mcr p15,0,%0,c9,c12,1" : : "r"(1u << 31)); /* 使能 CCNT */
+}
+
+static inline u32 pmu_cyc(void) {
+  u32 v;
+  asm volatile("mrc p15,0,%0,c9,c13,0" : "=r"(v)); /* PMCCNTR */
+  return v;
+}
+
+/* 拷贝 size 字节 iters 次；返回 bytes/cycle×100，周期数回填 out_cyc */
+static u32 mem_copy_bpc(u32 size, int iters, u32* out_cyc) {
+  u8* a = (u8*)kmalloc(size, KERNEL_TYPE);
+  u8* b = (u8*)kmalloc(size, KERNEL_TYPE);
+  if (a == NULL || b == NULL) {
+    return 0;
+  }
+  kmemset(a, 0x5a, size);
+  kmemset(b, 0, size);
+  pmu_cyc_init();
+  u32 c0 = pmu_cyc();
+  for (int i = 0; i < iters; i++) {
+    kmemcpy(b, a, size);
+  }
+  u32 cyc = pmu_cyc() - c0;
+  if (cyc == 0) {
+    cyc = 1;
+  }
+  kfree(a);
+  kfree(b);
+  if (out_cyc != NULL) {
+    *out_cyc = cyc;
+  }
+  return (u32)(((u64)size * (u64)iters * 100u) / (u64)cyc);
+}
+
+void cpu_mem_bw_test(void) {
+  u32 cyc = 0, bpc;
+  kprintf("==== MEMBW test (PMU cycles) ====\n");
+  bpc = mem_copy_bpc(4 * 1024, 4000, &cyc);
+  kprintf("MEMBW 4KB  : %u.%02u B/cyc  cyc=%u\n", bpc / 100, bpc % 100, cyc);
+  bpc = mem_copy_bpc(64 * 1024, 400, &cyc);
+  kprintf("MEMBW 64KB : %u.%02u B/cyc  cyc=%u\n", bpc / 100, bpc % 100, cyc);
+  bpc = mem_copy_bpc(512 * 1024, 40, &cyc);
+  kprintf("MEMBW 512KB: %u.%02u B/cyc  cyc=%u\n", bpc / 100, bpc % 100, cyc);
+
+  /* 读/写分离 + 实机 SCTLR/描述符 */
+  {
+    u32* q = (u32*)kmalloc(64 * 1024, KERNEL_TYPE);
+    if (q == NULL) {
+      return;
+    }
+    volatile u32 sum = 0;
+    u32 n = 64 * 1024 / 4;
+    for (u32 i = 0; i < n; i++) {
+      q[i] = i;
+    }
+    pmu_cyc_init();
+    u32 c0 = pmu_cyc();
+    for (int r = 0; r < 100; r++) {
+      for (u32 i = 0; i < n; i++) {
+        sum += q[i];
+      }
+    }
+    u32 cr = pmu_cyc() - c0;
+    c0 = pmu_cyc();
+    for (int r = 0; r < 100; r++) {
+      for (u32 i = 0; i < n; i++) {
+        q[i] = i ^ (u32)r;
+      }
+    }
+    u32 cw = pmu_cyc() - c0;
+    kprintf("MEMRW 64KB x100: READ cyc=%u  WRITE cyc=%u  bytes=%u  sum=%u\n", cr, cw,
+            6553600u, (u32)sum);
+
+    u32 sctlr, ttbcr, ttbr0 = 0, ttbr1 = 0, l1e = 0, l2e = 0, va = (u32)q;
+    asm volatile("mrc p15,0,%0,c1,c0,0" : "=r"(sctlr));
+    asm volatile("mrc p15,0,%0,c2,c0,2" : "=r"(ttbcr));
+    asm volatile("mrc p15,0,%0,c2,c0,0" : "=r"(ttbr0));
+    asm volatile("mrc p15,0,%0,c2,c0,1" : "=r"(ttbr1));
+    {
+      u32 base = ((ttbcr & 7u) == 0u || va < 0x80000000u) ? ttbr0 : ttbr1;
+      u32* l1 = (u32*)(base & 0xFFFFC000u);
+      l1e = l1[va >> 20];
+      if ((l1e & 3u) == 1u) {
+        l2e = ((u32*)(l1e & 0xFFFFFC00u))[(va >> 12) & 0xFFu];
+      }
+    }
+    kprintf("MEMATTR va=%x sctlr=%x M=%u C=%u I=%u ttbcr=%x l1e=%x l2e=%x\n", va, sctlr,
+            sctlr & 1u, (sctlr >> 2) & 1u, (sctlr >> 12) & 1u, ttbcr, l1e, l2e);
+    kfree(q);
+  }
+  kprintf("==== MEMBW test end ====\n");
 }
 
 void cpu_pmu_enable(int enable, u32 timer) {

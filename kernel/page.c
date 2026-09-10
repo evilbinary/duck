@@ -71,14 +71,17 @@ void* page_fault_handle(interrupt_context_t *ic) {
         log_debug("page lookup kernel found phy: %lx\n", phy);
 #endif
         /* MMIO/外设常在 EXEC_ADDR 以下 → PAGE_DEV。
-         * 高位 FB 别名（T113: 0xfb→0xfe）→ PAGE_RW_NC，与 gpu 映射一致。 */
+         * 高位 FB 别名（T113: 0xfb→0xfe）→ 可缓存 PAGE_RW（与 xwin/gpu 的映射
+         * 保持【一致】！同一物理页多映射属性不一致在 ARM 上行为未定义）。
+         * 原因：NC 映射下每个像素写直落 DRAM，t113 实测 blit ≈126ms/帧；
+         * 改可缓存后由 xwin_flip_buffer() 每帧 clean 一次再让 DE 扫。 */
         u32 attr;
         u32 paddr = (u32)(uintptr_t)phy;
         if (fault_addr < (vaddr_t)EXEC_ADDR) {
           attr = PAGE_DEV;
         } else if (paddr >= 0xF0000000u ||
                    (u32)(uintptr_t)fault_addr >= 0xF0000000u) {
-          attr = PAGE_RW_NC;
+          attr = PAGE_RW;
         } else {
           attr = PAGE_P | PAGE_USR | PAGE_RWX;
         }

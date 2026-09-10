@@ -62,6 +62,13 @@ void cache_inv_range(unsigned long start, unsigned long stop);
  * 不得内联 mrc/msr 等专有指令（armv8-a/general/x86 的 cpu.h 同样有）。 */
 u32 cpu_get_id(void);
 
+/* 内存带宽/缓存属性自测：用 PMU 周期计数测 4KB/64KB/512KB 拷贝速度、
+ * 读/写分离速度，并打印 SCTLR 与目标页的真实页描述符（判断是否真走 cache）。
+ * 只做诊断、不参与正常流程；需要时在任意内核路径调用一次即可，例如：
+ *   cpu_mem_bw_test();
+ * 判读：小拷贝应比大拷贝快；描述符低 12 位的 C/B（bit3/bit2）为 1 才是可缓存。 */
+void cpu_mem_bw_test(void);
+
 #define syscall0(syscall_num)    \
   ({                             \
     int ret;                     \

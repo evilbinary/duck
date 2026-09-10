@@ -373,7 +373,10 @@ int t113_lcd_init(vga_device_t *vga) {
   u32 addr = vga->frambuffer;
   u32 paddr = vga->pframbuffer;
   for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    page_map(addr, paddr, PAGE_RW_NC);
+    /* 【性能】与 xwin 的映射保持一致：可缓存(Write-Back)。
+   * 同一物理页的多个映射属性必须一致，否则 ARM 上行为未定义。
+   * 配套：xwin_flip_buffer() 每帧 clean 一次后再让 DE 扫。 */
+  page_map(addr, paddr, PAGE_RW);
     addr += 0x1000;
     paddr += 0x1000;
   }
