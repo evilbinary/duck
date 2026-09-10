@@ -112,6 +112,8 @@ void sound_play(sound_device_t* dev, void* buf, size_t len) {
 #endif
 
     kprintf("dma trans start sound buf %x buf %x len %d\n", dev->sound_buf, buf,len);
+    /* 同上：首次武装 DMA 前也要保证 sound_buf 已在主存中 */
+    cpu_cache_flush_range(dev->sound_buf, (u32)dev->sound_buf + len);
     dma_trans(0, dev->sound_buf, CODEC_BASE + 0x0020, len);
     kprintf("dma trans start1\n");
     dev->is_play = 1;
@@ -475,6 +477,11 @@ void dma_audio_handler(void* data) {
 
   buffer_read(dev->buffer, dev->sound_buf, dev->play_size);
 
+  /* 【cache 一致性，必需】sound_buf 是 kmalloc 得到的（现在是可缓存内存）：
+   * 上一步 buffer_read 是 CPU 写入，紧接着 DMA 直接从 DRAM 读它 ⇒ 必须先刷到
+   * PoC，否则控制器播到的是还留在 cache 里的旧数据 —— 实测就是"完全没有声音"。
+   * （注意：原来 sound_play() 里刷的是应用传入的 buf，而 DMA 并不读那个缓冲。） */
+  cpu_cache_flush_range(dev->sound_buf, (u32)dev->sound_buf + dev->play_size);
   // log_info("dma_audio_handler %x play size %d\n", dev->sound_buf,
   // dev->play_size);
   dma_trans(0, dev->sound_buf, CODEC_BASE + 0x0020, dev->play_size);
