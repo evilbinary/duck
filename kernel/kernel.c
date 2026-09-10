@@ -7,8 +7,17 @@
 #include "kernel.h"
 #include "page.h"
 
+#include "config.h"
+
 void kernel_init() {
   int cpu = cpu_get_id();
+#ifndef MP_ENABLE
+  if (cpu != 0) {
+    for (;;) {
+      cpu_wait();
+    }
+  }
+#endif
   if (cpu == 0) {
     log_init();
     log_info("kernel init\n");
