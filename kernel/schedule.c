@@ -175,28 +175,22 @@ void schedule_sleep(u32 ticks) {
     tick = 1;
   }
 
-  /*
-   * KERNEL/SYS-mode threads must not use THREAD_SLEEP (raspi2 AP SP fault).
-   * Sole-runnable CPUs: same — park with WFI until local ticks elapse.
-   */
-  {
-    int cpu = cpu_get_id();
-    int kernel_thread =
-        (current->level == LEVEL_KERNEL ||
-         current->level == LEVEL_KERNEL_SHARE);
-    if (kernel_thread || schedule_runnable_on_cpu(cpu) <= 1) {
-      u32 start = timer_ticks[cpu];
-      while (timer_ticks[cpu] - start < tick) {
-        cpu_wait();
-      }
-      return;
-    }
-  }
-
+  /* 【KISS 修法】只把线程置成 SLEEP 就返回 —— 绝不在内核态睡眠/让出。
+   *
+   * 为什么：本内核"运行帧"放在共享栈区、线程内核栈只放保存帧。一旦在内核态
+   * （例如 sys_select 里调用本函数）被时钟换出，该线程的内核调用链就留在共享栈
+   * 上；下一个线程在同一片区域跑内核代码就会把它覆盖 ⇒ 线程恢复后一读自己栈上
+   * 的局部变量就是别人的数据 ⇒ 立刻崩。
+   * 实测：t113-s3 必崩（单核，挂起后必定轮到别的线程用同一片栈）；QEMU 有 4 核、
+   * 一个核上常只有 1 个可运行线程，被换出后往往又是它自己回来 ⇒ 侥幸不崩。
+   *
+   * 这也正是 t113-s3-lcd1（QEMU 与 t113-s3 都好的那支）的行为：thread_sleep()
+   * 之后直接返回，真正的换出在那里是被注释掉的。线程很快回到用户态，只会在
+   * 【用户态边界】被换出，因而安全 —— 等待交给调用者在用户态轮询。
+   *
+   * 注意：若将来要真正的阻塞式 select，必须先做"每线程内核栈 + 入口/出口成对
+   * 切栈"的结构改造，不能只在切换点/这里打补丁（已实测过两种打补丁都失败）。 */
   thread_sleep(current, tick);
-  while (current->state == THREAD_SLEEP) {
-    cpu_wait();
-  }
 }
 
 void* do_schedule(interrupt_context_t* ic) {
@@ -219,7 +213,18 @@ void* do_schedule(interrupt_context_t* ic) {
   {
     int blocked = (current_thread->state == THREAD_SLEEP ||
                    current_thread->state == THREAD_WAITING);
-    if (!blocked && !preempt_may_switch(ic)) {
+    /* 【KISS 修法】去掉这里的 `!blocked &&`：睡眠/等待中的线程同样必须遵守
+     * "内核态（SVC=正在 syscall）不得换出"这条不变量。
+     *
+     * 保留 !blocked 的后果（t113-s3-lcd 分支实测）：sleep 在 syscall 里被时钟
+     * 换出 ⇒ 内核调用链留在共享栈上，被下一个线程覆盖 ⇒ 恢复即崩（t113 单核必
+     * 崩；QEMU 4 核常又切回自己而侥幸不崩）。
+     * 判定沿用 preempt_may_switch()：它只对 SVC(0x13) 返回 0（见 context_in_kernel
+     * 的注释），SYS/内核线程仍可被时钟切换，不会饿死 init。
+     * 配套：schedule_sleep() 已改为只置 SLEEP 就返回（不在内核态等），于是睡眠
+     * 线程会很快回到用户态，在用户态边界再被换出 —— 与 t113-s3-lcd1（两支都好）
+     * 的行为一致。 */
+    if (!preempt_may_switch(ic)) {
       preempt_set_need_resched();
       timer_end();
       return ic;
