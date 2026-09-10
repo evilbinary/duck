@@ -674,6 +674,12 @@
        return 0;
      }
    }
+   /* 【cache 一致性】SD 控制器把数据写进 DRAM 是绕过 CPU cache 的：
+    * 目标缓冲（read_buf / cache_buffer 都在内核堆里）现在是可缓存的，
+    * 必须丢弃旧 cache 行，否则 CPU 读到的是脏数据 —— FatFs 会解析出错扇区
+    * 并陷入死循环（实测表现为启动后无输出/卡死）。 */
+   cache_inv_range((unsigned long)buf,
+                   (unsigned long)buf + (unsigned long)blkcnt * blksz);
    return blkcnt * blksz;
  }
  
