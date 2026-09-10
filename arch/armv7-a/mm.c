@@ -75,6 +75,21 @@ u32* page_clone(u32* old_page_dir, u32 level) {
 }
 
 void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
+  /* 守卫：DRAM 绝不该以 flags=0 映射（flags=0 ⇒ 描述符 = L2_DESC = 0x432 ⇒
+   * TEX=000,C=0,B=0 = Strongly-ordered ⇒ 该页完全不进 cache）。
+   * 实机 t113 曾因缺 page_map_on 原型（u64 flags 落到 r3）导致整机 7fps；
+   * 该根因已在 pmemory.h/mm.h 修正（补声明），这里只留一个默认关闭的守卫：
+   * 需要复查时定义 MMAP_ATTR_DEBUG 即可打印肇事调用者（addr2line 定位）。 */
+#ifdef MMAP_ATTR_DEBUG
+  if (flags == 0 && physaddr >= 0x40000000u && physaddr < 0x80000000u) {
+    static u32 dbg_nc;
+    if (dbg_nc < 8u) {
+      dbg_nc++;
+      log_error("MAP_NC_RAM va=%x pa=%x lr=%x\n", virtualaddr, physaddr,
+                (u32)__builtin_return_address(0));
+    }
+  }
+#endif
   // kprintf("map page %x vaddr:%x paddr:%x\n",l1,virtualaddr,physaddr);
   u32 l1_index = virtualaddr >> 20;
   u32 l2_index = virtualaddr >> 12 & 0xFF;
