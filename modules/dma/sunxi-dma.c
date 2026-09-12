@@ -20,6 +20,31 @@ static dma_source_t dma_channel_source[SUNXI_DMA_MAX];
 
 dma_desc_t *dma_channel_desc = NULL;
 
+/* DMA 描述符必须落在 DRAM 物理区间（内核 identity 映射区）内才允许对其做
+ * 按 MVA 的 cache 维护：地址非法时直接跳过，避免在中断里触发数据异常。 */
+static inline int is_dma_desc_addr(const void* p) {
+  u32 a = (u32)(unsigned long)p;
+  return (p != NULL) && (a >= 0x40000000u) && (a < 0x80000000u);
+}
+
+/* 【只对内存做 cache 维护】按 MVA 的 cache 维护一旦落在**未映射/设备地址**上就会
+ * 触发数据异常；DMA 路径常在中断里执行，异常会来不及 EOI，把低优先级中断（定时器）
+ * 永久屏蔽 —— 实测现象：播放音频后 app_fps=0、日志时间戳冻结。
+ * 典型踩坑：音频 DMA 的目的地址是 CODEC 寄存器 `CODEC_BASE+0x20`（设备地址！），
+ * 对它按 32B 步进失效，走出已映射的 codec 页后第一个地址 0x02031000 就炸。
+ * 约定：0x0000_0000~0x3FFF_FFFF 为 MMIO/设备区（GIC/CCU/CODEC/DMA/定时器…），
+ * 一律不做 cache 维护；DMA 缓冲只可能是 DRAM identity(0x4000_0000~) 或用户 VA。 */
+static inline int dma_buf_cacheable(const void* p, size_t len) {
+  u32 a = (u32)(unsigned long)p;
+  if (p == NULL || len == 0) {
+    return 0;
+  }
+  if (a < 0x40000000u) {
+    return 0;
+  }
+  return 1;
+}
+
 void *dma_handler(interrupt_context_t *ic) {
   int irq = gic_irqwho();
 
@@ -35,8 +60,12 @@ void *dma_handler(interrupt_context_t *ic) {
       log_debug("dma pedding %d\n", i);
 
       /* 【cache 一致性】描述符是 CPU 与 DMA 共享的内存：DMA 硬件写它时绕过 CPU
-       * cache，回调里若读 desc 状态（或重新投喂）必须先失效，否则读到旧值。 */
-      if (dma_channel_source[i].desc != NULL) {
+       * cache，回调里若读 desc 状态（或重新投喂）必须先失效，否则读到旧值。
+       * 【必须校验地址】按 MVA 的 cache 维护对"未映射地址"会触发数据异常；本函数
+       * 在中断里执行，一旦异常就来不及 EOI，会把更高/同级中断堵死（实测：音频
+       * 播放时定时器被永久屏蔽 ⇒ app_fps=0、时间戳冻结）。DMA 描述符必定在 DRAM
+       * 物理区间内，故只在该区间内才做维护。 */
+      if (is_dma_desc_addr(dma_channel_source[i].desc)) {
         cpu_invalidate_dcache_range((unsigned long)dma_channel_source[i].desc,
                         (unsigned long)dma_channel_source[i].desc +
                             sizeof(dma_desc_t));
@@ -51,7 +80,8 @@ void *dma_handler(interrupt_context_t *ic) {
     pending = (DMA_PKG_END_INT << ((i - 8) * 4));
     if (dma_reg->irq_pending1 & pending) {
       dma_reg->irq_pending1 = pending;
-      if (dma_channel_source[i].desc != NULL) {
+      /* 校验见上：非法/未映射地址不得做 cache 维护 */
+      if (is_dma_desc_addr(dma_channel_source[i].desc)) {
         cpu_invalidate_dcache_range((unsigned long)dma_channel_source[i].desc,
                         (unsigned long)dma_channel_source[i].desc +
                             sizeof(dma_desc_t));
@@ -308,7 +338,9 @@ int dma_start(u32 hdma, u32 saddr, u32 daddr, u32 bytes) {
   desc->dest_addr = daddr;
   desc->byte_count = bytes;
 
-  cpu_flush_dcache_range(desc, (u32)desc + sizeof(dma_desc_t));
+  if (is_dma_desc_addr(desc)) {
+    cpu_flush_dcache_range(desc, (u32)desc + sizeof(dma_desc_t));
+  }
   /* start dma */
   dmb();
   channel->desc_addr = (u32)desc;
@@ -491,7 +523,11 @@ u32 dma_trans(u32 channel, void *src, void *dst, size_t len) {
 
   dma_source_t *dma_source = (dma_source_t *)hdma;
 
-  cpu_flush_dcache_range(src, (u32)src + len);
+  /* 源缓冲是内存才刷；若它是设备地址（某些驱动会拿寄存器当"源"）则跳过，
+   * 避免按 MVA 的维护落在设备区触发数据异常。 */
+  if (dma_buf_cacheable(src, len)) {
+    cpu_flush_dcache_range(src, (u32)src + len);
+  }
 
   dma_start(hdma, (u32)src, (u32)dst, len);
 
@@ -511,8 +547,10 @@ u32 dma_trans(u32 channel, void *src, void *dst, size_t len) {
   sunxi_dma_release(hdma);
 
   /* 【cache 一致性】DMA 写目标缓冲同样绕过 CPU cache ⇒ 完成后必须失效，
-   * 否则 CPU 读到的是 cache 里的旧内容（src 侧已在启动前 clean）。 */
-  if (dst != NULL && len > 0) {
+   * 否则 CPU 读到的是 cache 里的旧内容（src 侧已在启动前 clean）。
+   * 【只在目标是内存时才做】音频/寄存器类的目的地址是设备区（如 CODEC_BASE+0x20），
+   * 对设备地址做按 MVA 的失效会数据异常（详见 dma_buf_cacheable 注释）。 */
+  if (dma_buf_cacheable(dst, len)) {
     cpu_invalidate_dcache_range((unsigned long)dst, (unsigned long)dst + (unsigned long)len);
   }
 

@@ -23,6 +23,87 @@ queue_pool_t* user_pool;
 static rt_mutex_t memory_lock;
 memory_t memory_summary;
 
+/* ---- 内核堆分配画像（临时诊断）-------------------------------------------
+ * 用途：定位"跑应用后内核堆被持续吃光"（日志里 `extend kernel phy map` 一路增长）
+ * 与"user used 降到 0"（释放记账与真实回收不一致）。
+ * 按 (返回地址0, 返回地址1, 大小) 统计 KERNEL/DEVICE 类型 kmalloc 的次数与字节数，
+ * 并统计 ya_free 三条"静默丢弃"分支的触发次数，每 2048 次分配打印一次；
+ * 用 arm-none-eabi-addr2line 反查 ra0/ra1 即可得到调用点。
+ * 默认关闭：定位完把 MM_ALLOC_PROFILE 改回 0。
+ * 开销：只计数、不分配、不加锁；打印走 kprintf（静态缓冲，不递归进分配器）。 */
+#define MM_ALLOC_PROFILE 0
+#if MM_ALLOC_PROFILE
+#define MM_PROF_SLOTS 48
+typedef struct {
+  void* ra0;
+  void* ra1;
+  u32 size;
+  u32 cnt;
+  u32 bytes;
+} mm_prof_ent_t;
+static mm_prof_ent_t mm_prof[MM_PROF_SLOTS];
+static u32 mm_prof_total;
+static u32 mm_prof_free_total;
+static u32 mm_prof_free_cnt;
+
+void mm_alloc_profile_note(u32 size, void* ra0, void* ra1) {
+  int i;
+  for (i = 0; i < MM_PROF_SLOTS; i++) {
+    if (mm_prof[i].ra0 == ra0 && mm_prof[i].size == size) {
+      mm_prof[i].cnt++;
+      mm_prof[i].bytes += size;
+      goto dump;
+    }
+  }
+  for (i = 0; i < MM_PROF_SLOTS; i++) {
+    if (mm_prof[i].cnt == 0) {
+      mm_prof[i].ra0 = ra0;
+      mm_prof[i].ra1 = ra1;
+      mm_prof[i].size = size;
+      mm_prof[i].cnt = 1;
+      mm_prof[i].bytes = size;
+      goto dump;
+    }
+  }
+dump:
+  mm_prof_total++;
+  if ((mm_prof_total & 0x7ff) == 0) {
+    extern u32 ya_free_bad_magic, ya_free_bad_state, ya_free_bad_end;
+    extern void ya_heap_stats(u32*, u32*, u32*, u32*, u32*);
+    u32 hf = 0, hb = 0, hm = 0, hc = 0, hl = 0;
+    ya_heap_stats(&hf, &hb, &hm, &hc, &hl);
+    kprintf("MMPROF total=%u free=%u(%uk) yafree_drop[m=%u s=%u e=%u]\n",
+            mm_prof_total, mm_prof_free_cnt, mm_prof_free_total / 1024,
+            ya_free_bad_magic, ya_free_bad_state, ya_free_bad_end);
+    kprintf("HEAP freelist=%uk blocks=%u max=%u allocs=%u lastmap=%x\n",
+            hf / 1024, hb, hm, hc, hl);
+    for (i = 0; i < MM_PROF_SLOTS; i++) {
+      if (mm_prof[i].cnt) {
+        kprintf("  ra0=%x ra1=%x size=%u cnt=%u bytes=%u\n",
+                (u32)mm_prof[i].ra0, (u32)mm_prof[i].ra1, mm_prof[i].size,
+                mm_prof[i].cnt, mm_prof[i].bytes);
+      }
+    }
+  }
+}
+
+void mm_free_profile_note(u32 size) {
+  mm_prof_free_total += size;
+  mm_prof_free_cnt++;
+}
+#define MM_ALLOC_NOTE(sz)                                      \
+  mm_alloc_profile_note((u32)(sz), __builtin_return_address(0), \
+                        __builtin_return_address(1))
+#define MM_FREE_NOTE(sz) mm_free_profile_note((u32)(sz))
+#else
+#define MM_ALLOC_NOTE(sz) \
+  do {                    \
+  } while (0)
+#define MM_FREE_NOTE(sz) \
+  do {                   \
+  } while (0)
+#endif /* MM_ALLOC_PROFILE */
+
 /* 异常上下文（fault 回溯中，fault_count>0）且 memory_lock 被其他线程
  * 持有时，kmalloc 不能等待（持锁线程可能已被抢占，异常处理不调度，
  * 等待即死锁）：返回失败让调用方放弃，而非自旋 */
@@ -153,6 +234,7 @@ void vm_free(void* ptr) {
   size = mm_get_size(addr);
   if (size > 0) {
     mm_free(addr);
+    MM_FREE_NOTE(size);
   }
   rt_mutex_unlock(&memory_lock);
   if (size == 0) {
@@ -254,6 +336,7 @@ void* kmalloc(size_t size, u32 flag) {
 #endif
   if (flag & KERNEL_TYPE || flag & DEVICE_TYPE) {
     addr = phy_alloc(size);
+    MM_ALLOC_NOTE(size);
   } else {
 #ifdef VM_ENABLE
     addr = vm_alloc(size);
@@ -274,6 +357,7 @@ void* kmalloc_alignment(size_t size, int alignment, u32 flag) {
 #endif
   if (flag & KERNEL_TYPE || flag & DEVICE_TYPE) {
     addr = phy_alloc_aligment(size, alignment);
+    MM_ALLOC_NOTE(size);
   } else {
 #ifdef VM_ENABLE
     addr = vm_alloc_alignment(size, alignment);

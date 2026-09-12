@@ -152,8 +152,22 @@ void timer_end() {
   gic_irqack(irq);
 }
 
+/* 最近一次从 GICC_IAR 取到的原始 INTID（1023 = spurious）。
+ * 供 interrupt_ack_pending() 在"中断处理中再异常/提前返回"时补 EOI。 */
+static u32 interrupt_last_irq = 1023u;
+
+/* 【健壮性·IRQ 兜底】把当前 active 的中断补一次 EOI。
+ * GIC 规范：EOIR 写入与当前最高优先级 active 中断不匹配时被忽略，所以
+ * "正常路径已经 ack 过"的情况下重复调用是安全的。 */
+void interrupt_ack_pending(void) {
+  if (interrupt_last_irq != 1023u) {
+    gic_irqack(interrupt_last_irq);
+  }
+}
+
 u32 interrupt_get_source(u32 no) {
   u32 irq = gic_irqwho();
+  interrupt_last_irq = irq;
   no = EX_TIMER;
 
   if (irq == IRQ_TIMER0) {
@@ -171,7 +185,10 @@ u32 interrupt_get_source(u32 no) {
     no = EX_I2C;
     kprintf("irq gpio %d\n", irq);
   } else {
+    /* 【健壮性】未知中断必须 EOI：否则它永久 active，把定时器等低优先级
+     * 中断全部屏蔽（现象：app_fps=0、时间戳冻结）。 */
     kprintf("irq else %d\n", irq);
+    gic_irqack(irq);
   }
 
   return no;

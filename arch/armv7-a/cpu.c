@@ -382,8 +382,16 @@ static inline void __v7_cache_flush_range(uint32_t start, uint32_t stop,
                                           uint32_t line) {
   uint32_t mva;
 
+  /* 空/反向区间直接忽略：避免把"垃圾长度"当成 3GB 的循环，一路对未映射
+   * 地址做按 MVA 的维护 ⇒ 数据异常（在中断里会堵死 EOI）。 */
+  if (stop <= start) {
+    return;
+  }
   start &= ~(line - 1);
   if (stop & (line - 1)) stop = (stop + line) & ~(line - 1);
+  if (stop <= start) {
+    return;
+  }
   for (mva = start; mva < stop; mva = mva + line) {
     __asm__ __volatile__("mcr p15, 0, %0, c7, c14, 1" : : "r"(mva));
   }
@@ -408,8 +416,15 @@ static inline void __v7_cache_inv_range(uint32_t start, uint32_t stop,
                                         uint32_t line) {
   uint32_t mva;
 
+  /* 空/反向区间直接忽略（也覆盖 stop 向上取整后回绕成 0 的情形）。 */
+  if (stop <= start) {
+    return;
+  }
   start &= ~(line - 1);
   if (stop & (line - 1)) stop = (stop + line) & ~(line - 1);
+  if (stop <= start) {
+    return;
+  }
   for (mva = start; mva < stop; mva = mva + line) {
     __asm__ __volatile__("mcr p15, 0, %0, c7, c6, 1" : : "r"(mva));
   }

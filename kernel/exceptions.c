@@ -42,6 +42,12 @@ static void *exception_park_system_thread(interrupt_context_t *ic) {
   return ic;
 }
 
+/* 【健壮性·IRQ 兜底】平台可选实现：把当前 active 的中断补一次 EOI。
+ * 默认空实现（其它平台零影响），t113-s3 提供强实现。
+ * 目的：任何"中断处理没走到 EOI 就出了异常/提前返回"的情况，都不会让该中断
+ * 一直 active，从而把更低优先级的中断（定时器）永久屏蔽。 */
+__attribute__((weak)) void interrupt_ack_pending(void) {}
+
 void fault_hook_regist(fault_hook_fn fn) { fault_hook = fn; }
 
 void exception_regist(u32 vec, interrupt_handler_t handler) {
@@ -50,6 +56,7 @@ void exception_regist(u32 vec, interrupt_handler_t handler) {
 
 void *exception_process(interrupt_context_t *ic) {
   u32 was_syscall = 0;
+  u32 was_irq = 0;
 
   if (ic->no == EX_OTHER) {
     int cpu = cpu_get_id();
@@ -69,6 +76,20 @@ void *exception_process(interrupt_context_t *ic) {
   } else if (ic->no == EX_IRQ) {
     u32 source = interrupt_get_source(ic->no);
     ic->no = source;
+    was_irq = 1;
+  }
+  /* 【健壮性】异常发生在中断处理内部（保存的 CPSR 是 IRQ/FIQ 模式）时，说明某个
+   * 中断还没被 EOI 就出了异常。不补 EOI 的话它会一直 active，把更低优先级的中断
+   * （定时器）永久屏蔽 —— 实测现象：跑应用（音频/SD 中断活跃）后 app_fps=0、
+   * 日志时间戳冻结、CPU 满速空转。 */
+  {
+    u32 mode = ic->psr & 0x1fu;
+    if ((mode == 0x12u || mode == 0x11u) && ic->no != EX_IRQ) {
+      log_error(
+          "exception inside IRQ handler no=%d pc=%x psr=%x -> ack pending\n",
+          ic->no, (u32)ic->pc, (u32)ic->psr);
+      interrupt_ack_pending();
+    }
   }
   if (exception_handlers[ic->no] != 0) {
     interrupt_handler_t handler = exception_handlers[ic->no];
@@ -81,6 +102,12 @@ void *exception_process(interrupt_context_t *ic) {
        * do_syscall 已改为返回 ic；仍强制用当前帧以防旧 handler。 */
       if (was_syscall) {
         ret = preempt_on_return_user(ic);
+      }
+      /* IRQ 路径统一补一次 EOI：正常时重复 EOI 会被 GIC 忽略（与当前 active 不
+       * 匹配的写无效）；handler 提前返回/忘了 ack 时，这一句就是"别把定时器
+       * 饿死"的保险。 */
+      if (was_irq) {
+        interrupt_ack_pending();
       }
       return ret;
     }
