@@ -6,6 +6,8 @@
 #include "cpu.h"
 
 #include "context.h"
+#include "kernel/memory.h" /* kmalloc/kfree/KERNEL_TYPE */
+#include "kernel/string.h" /* kmemset */
 
 extern boot_info_t* boot_info;
 u32 cpus_id[MAX_CPU];
@@ -51,9 +53,15 @@ void cpu_invalid_tlb() {
 }
 
 void cp15_invalidate_icache(void) {
+  /* 【只失效 I-cache】ARM926 上 c7,c5,0 = 仅失效整个 I-cache。
+   * 之前用的 c7,c7,0 会把 D-cache 一起失效 —— D-cache 关闭时无所谓，
+   * 但一旦开启 D-cache，栈/堆的脏行会被直接丢弃 ⇒ 数据损坏。
+   * 这里与 armv7 / armv7-a / armv8-a 的实现（c7,c5,0 / ic iallu）保持一致。
+   * 需要在 D-cache 关闭状态下整片失效 I+D 的场景（如开 D-cache 前），
+   * 请在调用点显式写 c7,c7,0。 */
   asm volatile(
       "mov r0, #0\n"
-      "mcr p15, 0, r0, c7, c7, 0\n"  // Invalidate ICache and DCache
+      "mcr p15, 0, r0, c7, c5, 0\n"  // Invalidate ICache only
       :
       :
       : "r0", "memory");
@@ -282,14 +290,54 @@ void cpu_enable_page() {
   kprintf("cpu_enable_page1\n");
 
   u32 reg;
+
+  /* 【开 D-cache 之前先整片失效 I+D】此刻 C=0，CPU 写不进 cache，失效不会
+   * 丢脏数据，只会丢掉 bootloader(u-boot/fel) 可能残留在 cache 里的行。
+   * 必须在写 SCTLR 之前做：一旦 C=1，任何整体失效都可能丢内核脏行。 */
+  asm volatile("mov r0, #0\n"
+               "mcr p15, 0, r0, c7, c7, 0\n"
+               :
+               :
+               : "r0", "memory");
+  dsb();
+
   // read mmu
   asm("mrc p15, 0, %0, c1, c0, 0" : "=r"(reg) : : "cc");  // SCTLR
   reg |= 0x1;                                             // M enable mmu
   // reg |= 1 << 1;  // Alignment check enable.
-  // NOTE: keep D-cache/write-buffer disabled on ARMv5 for correctness
-  // until full page-table cache maintenance is implemented.
-  reg &= ~(1 << 2);  // Data Cache disable.
+
+  /* D-cache / write buffer：
+   *   - 页表属性已经是 WB（armv5/mm.h 的 PAGE_KERNEL/PAGE_KMEM/PAGE_USER/
+   *     PAGE_FB = L2_ATTR_WB），此前只是被 SCTLR.C=0 全局禁掉；
+   *   - armv5/mm.c 的 page_create / page_copy / page_map_on 都对本架构做了
+   *     dccmvac clean（页表对 MMU 遍历器可见），具备开 D-cache 的条件。
+   * 出问题（数据/外设异常）时可把 ARMV5_DCACHE 置 0，快速回退到"仅 I-cache"。 */
+#ifndef ARMV5_DCACHE
+/* 【暂时关闭】ARM926 的 D-cache 是 VIVT：同一物理页在「恒等映射 PA」与
+ * 「用户 VA」下是两个不同的 cache tag。内核里存在多处这样的双写/双读
+ * （典型：valloc / memory_stack_ensure 先用恒等映射把新页清零，紧接着内核又
+ * 走用户 VA 往同一页写内容），VIVT 下会留下互不知情的两份行，用户进程的
+ * 代码/数据因此被随机破坏。实测三种落点：
+ *   PREF ABORT 到 0x1000 / UNDEF 跳到 0x81c / /bin/ls 在 0x304ffbc8 data fault。
+ *
+ * 【为什么不把 flush 补在 kernel/memory.c】那是全架构通用文件，而 VIVT 别名
+ * 是 ARMv5 独有语义：写在那里既放错层次、也会给 PIPT 的架构（armv7-a 等）
+ * 带无谓开销。而且 memory_stack_ensure 的调用方（backtrace 模块）可能拿的是
+ * 别的线程的 vm，那种情况下用户 VA 在当前页表里没映射，连"改走 VA 清零"
+ * 都不成立 —— 说明这个别名问题只能在 arch 内部消化，不该外溢到通用层。
+ *
+ * 已落的 arch 层修复：arch/armv5/mm.c 的 page_map_on / page_unmap_on 补上了
+ * tlbimva（armv7-a 一直有，armv5 移植时漏了）。D-cache 的别名问题待单独做
+ * 一轮 armv5 内部设计后再打开：编译期加 -DARMV5_DCACHE=1 即可恢复。 */
+#define ARMV5_DCACHE 0
+#endif
+#if ARMV5_DCACHE
+  reg |= 1 << 2;   // Data cache enable.
+  reg |= 1 << 3;   // Write buffer enable.
+#else
+  reg &= ~(1 << 2);  // Data cache disable.
   reg &= ~(1 << 3);  // Write buffer disable.
+#endif
 
   reg |= 1 << 8;  // System protection bit.
   reg |= 1 << 9;  // ROM protection bit.
@@ -300,14 +348,95 @@ void cpu_enable_page() {
 
   // reg |= 1 << 13;  // vic low 0  vic hight 1
   asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");  // SCTLR
+  dsb();
+  isb();
 
   kprintf("cpu_enable_page2\n");
 
-  // Ensure I-cache clean state.
+  // 只失效 I-cache（cp15_invalidate_icache 现在是 c7,c5,0）：
+  // 开 D-cache 后绝不能再整片失效 I+D，否则丢栈/堆脏行。
   cp15_invalidate_icache();
   cpu_invalid_tlb();
 
+  /* 【缓存状态回读】把刚写进 SCTLR 的位读回来，确认真的生效：
+   * ARMv5/ARM926 上开启后应为 M=1 C=1 W=1 I=1（ARMV5_DCACHE=0 时 C/W 为 0）。
+   * 若期望值不符，说明 SCTLR 写未生效或被人改动。 */
+  {
+    u32 sctlr, ctr;
+    asm volatile("mrc p15, 0, %0, c1, c0, 0" : "=r"(sctlr) : : "cc");
+    asm volatile("mrc p15, 0, %0, c0, c0, 1" : "=r"(ctr));
+    kprintf("SCTLR=%x M=%d C(dcache)=%d W=%d I(icache)=%d Z=%d B=%d TRE=%d\n",
+            sctlr, sctlr & 1u, (sctlr >> 2) & 1u, (sctlr >> 3) & 1u,
+            (sctlr >> 12) & 1u, (sctlr >> 11) & 1u, (sctlr >> 7) & 1u,
+            (sctlr >> 28) & 1u);
+    kprintf("CTR=%x\n", ctr);
+  }
+
   kprintf("cpu_enable_page3\n");
+}
+
+/* ================= 缓存效果自测（ARMv5，诊断用） =================
+ * ARM926EJ-S 没有 PMU（cpu_cyclecount 恒 0），只能用调度 tick 计时
+ * （SCHEDULE_FREQUENCY=1000 ⇒ 1 tick = 1ms）。
+ * 读 4KB（可常驻 D-cache）与 256KB（远超 D-cache）各一遍，比较 KB/s：
+ *   - D-cache 关闭（C=0）时两者应接近 —— 都是直接打 DRAM；
+ *   - 打开 D-cache 后 4KB 应明显快于 256KB，这两个数就是"是否真走
+ *     cache"的判据（与 armv7-a 的 cpu_mem_bw_test 同理）。
+ * 由 kernel.c 在 -DMM_DEBUG_PROBE=1 时调用。 */
+#ifndef SCHEDULE_FREQUENCY
+#define SCHEDULE_FREQUENCY 1000 /* 1 tick = 1ms */
+#endif
+extern u32 schedule_get_ticks(void);
+
+static u32 cache_read_probe(u32 size, u32 iters, u32* out_ms) {
+  u32* buf = (u32*)kmalloc(size, KERNEL_TYPE);
+  volatile u32 sum = 0;
+  u32 n, i, k, t0, dt, kb;
+
+  if (buf == NULL) {
+    *out_ms = 0;
+    return 0;
+  }
+  n = size / 4;
+  for (i = 0; i < n; i++) buf[i] = i;
+  cpu_flush_dcache_range((unsigned long)buf, (unsigned long)buf + size);
+
+  t0 = schedule_get_ticks();
+  for (k = 0; k < iters; k++) {
+    for (i = 0; i < n; i++) sum += buf[i];
+  }
+  dt = schedule_get_ticks() - t0;
+  if (dt == 0) dt = 1;
+  kb = (size / 1024) * iters; /* 总读 KB */
+  kfree(buf);
+  *out_ms = dt;
+  (void)sum;
+  /* kb*1000/dt 在 4KBx2000 / 256KBx32 下都远小于 2^32，不用 64 位除法 */
+  return (kb * SCHEDULE_FREQUENCY) / dt;
+}
+
+void cpu_cache_selftest(void) {
+  u32 sctlr, ms, small, big;
+
+  asm volatile("mrc p15, 0, %0, c1, c0, 0" : "=r"(sctlr) : : "cc");
+
+  kprintf("==== CACHE selftest (ARMv5/ARM926) ====\n");
+  kprintf("SCTLR=%x M=%d C(dcache)=%d W=%d I(icache)=%d\n", sctlr, sctlr & 1u,
+          (sctlr >> 2) & 1u, (sctlr >> 3) & 1u, (sctlr >> 12) & 1u);
+
+  small = cache_read_probe(4 * 1024, 2000, &ms);
+  kprintf("READ 4KB   x2000: %d KB/s (%d ms)  [4KB fits D-cache]\n", small, ms);
+  big = cache_read_probe(256 * 1024, 32, &ms);
+  kprintf("READ 256KB x32  : %d KB/s (%d ms)  [256KB >> D-cache]\n", big, ms);
+
+  if (sctlr & (1u << 2)) {
+    kprintf("CACHE selftest: D-cache=ON -> 4KB should be much faster\n");
+  } else {
+    kprintf("CACHE selftest: D-cache=OFF(C=0) -> both ~equal(DRAM bound); "
+            "I-cache=%d\n",
+            (sctlr >> 12) & 1u);
+  }
+  kprintf("==== CACHE selftest end ====\n");
 }
 
 void cpu_init(int cpu) {

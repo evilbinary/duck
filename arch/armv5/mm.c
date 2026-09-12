@@ -90,6 +90,13 @@ void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
   l2[l2_index] = ((physaddr >> 12) << 12) | L2_DESC | flags;
   dccmvac((unsigned long)&l2[l2_index]);
   dmb();
+  /* 【必须作废该 VA 的 TLB 项】否则旧表项会继续指向旧的物理页 —— 该页可能
+   * 已被 vfree 回收、被内核堆复用，进程就会跑到错的物理页上取指/取数。
+   * 实测症状：连续第二次 exec 时 PREF ABORT（跳去未映射的 0x1000）。
+   * armv7-a 的同名函数一直有这三行，armv5 是移植时漏掉了。 */
+  tlbimva(virtualaddr);
+  dsb();
+  isb();
 }
 
 void page_unmap_on(page_dir_t* page, u32 virtualaddr) {
@@ -102,6 +109,11 @@ void page_unmap_on(page_dir_t* page, u32 virtualaddr) {
     l2[l2_index] = 0;
     dccmvac((unsigned long)&l2[l2_index]);
     dmb();
+    /* 解映射同样要作废 TLB 项（理由见 page_map_on）：否则 vfree 之后
+     * 这个 VA 还在用旧翻译，页被复用时会串到别人的数据/代码。 */
+    tlbimva(virtualaddr);
+    dsb();
+    isb();
   }
 }
 
