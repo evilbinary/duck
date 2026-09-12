@@ -27,6 +27,12 @@ __attribute__((weak)) void cpu_invalidate_dcache_range(unsigned long start,
 
 __attribute__((weak)) void cpu_invalidate_icache(void) {}
 
+/* 【统一 TLS 接口的默认实现（弱符号）】
+ * 只有 ARMv6K/ARMv7+ 才有 TPIDRURO；armv5(ARM926EJ-S)、ARMv7-M(cortex-m4)、
+ * x86、riscv 都没有该寄存器，空实现即可（线程指针由 current->user_tp /
+ * sys_thread_self() 维护）。armv7-a 在 cpu.c 里给出强实现覆盖本定义。 */
+__attribute__((weak)) void cpu_set_tls(void* tp) { (void)tp; }
+
 void context_inherit_live(context_t* child, interrupt_context_t* live) {
   if (child == NULL || live == NULL) {
     return;

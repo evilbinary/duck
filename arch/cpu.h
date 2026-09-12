@@ -66,6 +66,19 @@ void cpu_flush_dcache_range(unsigned long start, unsigned long stop);
 void cpu_invalidate_dcache_range(unsigned long start, unsigned long stop);
 void cpu_invalidate_icache(void);
 
+/* ---- 统一的 TLS / 线程指针接口（跨架构） ---------------------------------
+ * 把"写硬件线程指针寄存器"这件架构私事从共享代码里拿掉：共享代码只调
+ * cpu_set_tls()，各架构在自己的 cpu.c 里给强实现，没有该寄存器的架构用
+ * arch.c 的弱符号空实现兜底（同上面三个 cache 接口）。
+ *   * ARMv6K / ARMv7+ ：写 TPIDRURO(c13,c0,3)；
+ *   * ARMv5(ARM926EJ-S) / ARMv7-M(cortex-m4) / x86 / riscv ：无此 CP15
+ *     寄存器 → 空实现，线程指针由 current->user_tp + sys_thread_self()
+ *     维护（ARMv5 上执行那条 mcr 会直接 UNDEF，实测踩过这个坑）。
+ * 注意：内核当前不在上下文切换时保存/恢复该寄存器，本仓库 musl 的
+ * __get_tp() 也已改用 __syscall(SYS_THREAD_SELF)；该接口主要用于兼容
+ * 仍按硬件 TP 取 TLS 的用户态。 */
+void cpu_set_tls(void* tp);
+
 typedef uint32_t phys_address_t;
 typedef uint32_t virtual_address_t;
 

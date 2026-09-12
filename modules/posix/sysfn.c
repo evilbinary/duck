@@ -879,9 +879,9 @@ int sys_set_thread_area(void* set) {
     log_debug("sys_set_thread_area tid=%d tp=%x\n", current->id, set);
   }
   current->user_tp = set;
-#if defined(__arm__)
-  asm volatile("mcr p15, 0, %0, c13, c0, 3" : : "r"(set) : "memory");
-#endif
+  /* 硬件线程指针（ARM 上是 TPIDRURO）交给架构层设置：ARMv5 没有该寄存器，
+   * 由 cpu_set_tls() 的弱实现（arch.c）兜底为空。详见 arch/cpu.h。 */
+  cpu_set_tls(set);
   return 0;
 }
 

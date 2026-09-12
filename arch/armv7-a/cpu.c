@@ -457,6 +457,12 @@ void cpu_invalidate_dcache_range(unsigned long start, unsigned long stop) {
 
 void cpu_invalidate_icache(void) { cp15_invalidate_icache(); }
 
+/* ---- 统一 TLS 接口（armv7-a 强实现） -------------------------------------
+ * TPIDRURO 自 ARMv6K 起存在，armv7-a 一定有，可以安全写。 */
+void cpu_set_tls(void* tp) {
+  asm volatile("mcr p15, 0, %0, c13, c0, 3" : : "r"(tp) : "memory");
+}
+
 void cpu_enable_page() {
   cpu_enable_smp_mode();
   // cache_inv_range(0, ~0);
