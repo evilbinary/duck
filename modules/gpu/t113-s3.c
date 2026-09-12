@@ -247,7 +247,7 @@ void t113_flush_screen(vga_device_t *vga, u32 index) {
   //     t113_de_set_address(lcd, (void *)(uintptr_t)pa);
   //   }
   // }
-  /* FB 是 PAGE_RW_NC：dsb 保证 CPU 写对 DRAM 可见即可。 */
+  /* FB 是 PAGE_FB（可缓存）：写完后 clean 一次，让 DE 从 DRAM 读到新像素。 */
   dsb();
 }
 
@@ -374,25 +374,25 @@ int t113_lcd_init(vga_device_t *vga) {
   u32 paddr = vga->pframbuffer;
   for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
     /* 【性能】与 xwin 的映射保持一致：可缓存(Write-Back)。
-   * 同一物理页的多个映射属性必须一致，否则 ARM 上行为未定义。
-   * 配套：xwin_flip_buffer() 每帧 clean 一次后再让 DE 扫。 */
-  page_map(addr, paddr, PAGE_RW);
+     * 同一物理页的多个映射属性必须一致，否则 ARM 上行为未定义。
+     * 配套：xwin_flip_buffer() 每帧 clean 一次后再让 DE 扫。 */
+    page_map(addr, paddr, PAGE_FB);
     addr += 0x1000;
     paddr += 0x1000;
   }
 
   // map tcon 4k
-  page_map(T113_TCON_BASE, T113_TCON_BASE, 0);
+  page_map(T113_TCON_BASE, T113_TCON_BASE, PAGE_DEV);
 
   // map ccu 1k
-  page_map(T113_CCU_BASE, T113_CCU_BASE, 0);
+  page_map(T113_CCU_BASE, T113_CCU_BASE, PAGE_DEV);
 
   // map de 2m
-  page_map(T113_DE_BASE, T113_DE_BASE, 0);
+  page_map(T113_DE_BASE, T113_DE_BASE, PAGE_DEV);
 
   addr = T113_DE_BASE + T113_DE_MUX_GLB;
   for (int i = 0; i < 1024 * 1024 * 2 * 2 / PAGE_SIZE; i++) {
-    page_map(addr, addr, 0);
+    page_map(addr, addr, PAGE_DEV);
     addr += 0x1000;
   }
 

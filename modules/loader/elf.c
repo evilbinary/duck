@@ -11,9 +11,9 @@
 #include "loader.h"
 #include "posix/sysfn.h"
 
-#if defined(ARM) && !defined(ARM64) && !defined(__aarch64__)
-extern void cp15_invalidate_icache(void);
-#endif
+/* cache 维护一律走 duck/arch/cpu.h 的统一接口
+ * （cpu_flush_dcache_range / cpu_invalidate_icache …）。加载器里不再出现
+ * cp15_* / mcr p15 这类架构私有细节，各架构在 cpu.c 内提供实现。 */
 
 
 // #define LOAD_ELF_DEBUG 1
@@ -45,28 +45,11 @@ static void elf32_user_cache_sync(void* user_addr, u32 size) {
   if (user_addr == NULL || size == 0) {
     return;
   }
-#if defined(ARM64) || defined(__aarch64__)
-  uintptr_t start = (uintptr_t)user_addr & ~63UL;
-  uintptr_t end =
-      ((uintptr_t)user_addr + size + 63UL) & ~63UL;
-  for (uintptr_t va = start; va < end; va += 64) {
-    asm volatile("dc civac, %0" : : "r"(va) : "memory");
-  }
-  asm volatile("dsb ish" ::: "memory");
-  asm volatile("isb" ::: "memory");
-#elif defined(ARM) || defined(ARMV7_A) || defined(ARMV7) || defined(ARMV5) || \
-    defined(__arm__)
-  u32 start = (u32)(uintptr_t)user_addr & ~31U;
-  u32 end = ((u32)(uintptr_t)user_addr + size + 31U) & ~31U;
-  for (u32 va = start; va < end; va += 32) {
-    asm volatile("mcr p15, 0, %0, c7, c14, 1" : : "r"(va) : "memory");
-  }
-  asm volatile("dsb sy" ::: "memory");
-  asm volatile("isb sy" ::: "memory");
-#else
-  (void)user_addr;
-  (void)size;
-#endif
+  /* 把内核刚写入用户内存的代码/数据 clean 到 PoC（并失效对应行）。
+   * 统一接口：ARM 系实现为 clean&invalidate by MVA 且按 cache line 向外取整；
+   * 无该需求的架构由弱符号空实现兜底。 */
+  cpu_flush_dcache_range((unsigned long)(uintptr_t)user_addr,
+                         (unsigned long)(uintptr_t)user_addr + (unsigned long)size);
 }
 
 static void* elf32_user_ptr(thread_t* current, void* user_addr, u32 size) {
@@ -604,6 +587,14 @@ static void elf32_enter_user(thread_t* current, const elf32_image_info_t* image,
     elf32_user_cache_sync((void*)(uintptr_t)layout->sp,
                           layout->stack_top - layout->sp);
   }
+
+  /* 【进入用户态前必做】失效 I-cache：
+   * 1) 代码段写入时的 clean 已由 elf32_user_cache_sync 逐段完成；
+   * 2) 但 I-cache 里可能仍留着"同一虚拟地址上一次装载"的旧指令 —— I/D cache
+   *    不保证一致，而 context_switch_page 的 I-cache 失效只在【页表切换】时发生，
+   *    复用同一页表（或同一 VA 被重新装载）时就永远不会失效 ⇒ 取指执行旧代码；
+   * 3) 故在最终进入用户态前无条件失效一次 I-cache（统一接口，跨架构可用）。 */
+  cpu_invalidate_icache();
 
   thread_reset_user_context(current, (void*)(uintptr_t)image->entry,
                             (void*)(uintptr_t)layout->sp);

@@ -387,7 +387,7 @@ int memory_stack_ensure(vmemory_t* vm, u32 sp, u32 need) {
       return -1;
     }
     kmemset(phy, 0, PAGE_SIZE);
-    page_map_on(vm->upage, a, phy, PAGE_P | PAGE_USR | PAGE_RWX);
+    page_map_on(vm->upage, a, phy, PAGE_USER);
   }
   m->vaddr = (void*)target;
   return 0;
@@ -435,9 +435,9 @@ void* valloc(void* addr, size_t size) {
     /* L2 分配走 kmalloc_alignment，与 memory_lock 同一把（可重入） */
     if (current != NULL) {
       page_map_on(current->vm->upage, vaddr, phy_addr,
-                  PAGE_P | PAGE_USR | PAGE_RWX);
+                  PAGE_USER);
     } else {
-      page_map(vaddr, phy_addr, PAGE_P | PAGE_USR | PAGE_RWX);
+      page_map(vaddr, phy_addr, PAGE_USER);
     }
 
     /* Zero the page *again* through the user virtual address after mapping.
@@ -472,25 +472,13 @@ void vfree(void* addr, size_t size) {
     log_debug("vfree vaddr:%x paddr:%x\n", vaddr, phy);
     #endif
     if (phy != NULL) {
-#if defined(ARM) || defined(ARMV7_A) || defined(ARMV7) || defined(ARMV5) || \
-    defined(__arm__)
-      /* Clean + invalidate D-cache for both the user VA and the PA before
-       * unmapping, so that stale cache lines do not corrupt the page when
-       * it is later reallocated by valloc to a different VA. */
-      {
-        extern void dccmvac(unsigned long mva);
-        unsigned long va;
-        for (va = (unsigned long)vaddr;
-             va < (unsigned long)vaddr + PAGE_SIZE; va += 32) {
-          dccmvac(va);
-        }
-        for (va = (unsigned long)phy;
-             va < (unsigned long)phy + PAGE_SIZE; va += 32) {
-          dccmvac(va);
-        }
-      }
-      dmb();
-#endif
+      /* 解映射前把该页（用户 VA 侧与物理 PA 侧）clean+invalidate，
+       * 避免残留的脏/旧 cache 行在页被重新 valloc 给别的 VA 后串数据。
+       * 统一走跨架构接口（ARM 系内部按 cache line 向外取整）。 */
+      cpu_flush_dcache_range((unsigned long)vaddr,
+                             (unsigned long)vaddr + PAGE_SIZE);
+      cpu_flush_dcache_range((unsigned long)phy,
+                             (unsigned long)phy + PAGE_SIZE);
       page_unmap_on(current->vm->upage, vaddr);
       rt_mutex_lock(&memory_lock);
       mm_free_page(phy);

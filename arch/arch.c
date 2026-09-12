@@ -9,6 +9,24 @@
 
 boot_info_t* boot_info = NULL;
 
+/* 【统一 cache 接口的默认实现（弱符号）】
+ * 供"不需要 cache 维护 / 硬件自动保持一致"的架构兜底（x86、riscv、lx6、
+ * dummy、general）。armv7-a / armv7 / armv5 / armv8-a 在各自 cpu.c 里给出
+ * 强实现，链接时自动覆盖弱定义。 */
+__attribute__((weak)) void cpu_flush_dcache_range(unsigned long start,
+                                                  unsigned long stop) {
+  (void)start;
+  (void)stop;
+}
+
+__attribute__((weak)) void cpu_invalidate_dcache_range(unsigned long start,
+                                                       unsigned long stop) {
+  (void)start;
+  (void)stop;
+}
+
+__attribute__((weak)) void cpu_invalidate_icache(void) {}
+
 void context_inherit_live(context_t* child, interrupt_context_t* live) {
   if (child == NULL || live == NULL) {
     return;

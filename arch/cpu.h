@@ -47,6 +47,25 @@
 #endif
 
 
+/* ---- 统一的 cache 维护接口（跨架构） --------------------------------------
+ * 共享代码（加载器 / 块设备 / DMA / 显示）只调用下面三个名字，不允许再出现
+ * cp15_*、cache_inv_range、mcr p15 这类架构私有细节。各架构在自己的 cpu.c 里
+ * 给出强实现；无该需求或硬件自动一致的架构由 arch.c 的弱符号空实现兜底。
+ *
+ * 语义约定（关键：先分清"谁写、谁读"）：
+ *   cpu_flush_dcache_range(s, e)      clean + invalidate。CPU 写的数据 → 让硬件/DRAM 看到。
+ *                                     用于：块设备写、DMA 源缓冲、帧缓冲交给显示控制器前。
+ *   cpu_invalidate_dcache_range(s, e) 仅 invalidate。硬件写的数据 → 让 CPU 重新读。
+ *                                     用于：DMA 目标缓冲、控制器回填的描述符。
+ *                                     ⚠ 前提：该范围内不得有 CPU 脏数据，否则会被直接丢弃。
+ *   cpu_invalidate_icache()           失效 I-cache，让取指看到最新指令。
+ *                                     用于：装载/生成代码之后、进入用户态之前。
+ *
+ * 范围由实现负责按 cache line 向外取整，调用方不必自己对齐。 */
+void cpu_flush_dcache_range(unsigned long start, unsigned long stop);
+void cpu_invalidate_dcache_range(unsigned long start, unsigned long stop);
+void cpu_invalidate_icache(void);
+
 typedef uint32_t phys_address_t;
 typedef uint32_t virtual_address_t;
 

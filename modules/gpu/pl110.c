@@ -54,9 +54,9 @@ int pl110_lcd_init(vga_device_t *vga) {
   lcd->bits_per_pixel = 18;
   lcd->bytes_per_pixel = 4;
 
-  page_map(VERSATILEPB_OSC1, VERSATILEPB_OSC1, 0);
+  page_map(VERSATILEPB_OSC1, VERSATILEPB_OSC1, PAGE_DEV);
 
-  page_map(VERSATILEPB_PL110_LCD_BASE, VERSATILEPB_PL110_LCD_BASE, 0);
+  page_map(VERSATILEPB_PL110_LCD_BASE, VERSATILEPB_PL110_LCD_BASE, PAGE_DEV);
 
   if (lcd->width == 640 && lcd->height == 480) {
     *(volatile u32 *)(VERSATILEPB_OSC1) = 0x2C77;
@@ -87,7 +87,7 @@ int pl110_lcd_init(vga_device_t *vga) {
   log_debug("map fb start %x %x\n", addr, paddr);
 
   for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    page_map(addr, paddr, PAGE_RW_NC);
+    page_map(addr, paddr, PAGE_FB);
     addr += PAGE_SIZE;
     paddr += PAGE_SIZE;
   }

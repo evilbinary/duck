@@ -34,7 +34,7 @@ int i2c_init_device(device_t *dev) {
   sunxi_i2c_set_base(i2c_base);
 
   // map io twi
-  page_map(TWI0_BASE, TWI0_BASE, 0);
+  page_map(TWI0_BASE, TWI0_BASE, PAGE_DEV);
 
   // De-assert twi
   u32 reg = io_read32(V3S_CCU_BASE + CCU_BUS_SOFT_RST4);

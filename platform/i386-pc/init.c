@@ -63,7 +63,7 @@ void platform_end(){
  }
 
  void platform_map(){
-  page_map(PORT_COM1, PORT_COM1, 0);
+  page_map(PORT_COM1, PORT_COM1, PAGE_DEV);
 }
 
 

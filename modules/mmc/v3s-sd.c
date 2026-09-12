@@ -340,7 +340,7 @@ int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
 
 void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   // sd mmc0
-  page_map(SD0, SD0, L2_NCNB);
+  page_map(SD0, SD0, PAGE_DEV);
 
   sd_init();
   int ret = sd_card_detect();

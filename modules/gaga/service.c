@@ -99,7 +99,7 @@ void service_map_client_api(client_t* src, client_t* des) {
   }
   des->apis = sys_mmap2(NULL, PAGE_SIZE, 0, MAP_ANON, 0, 0);
   page_map_on(current->vm->upage, des->apis, addr,
-              PAGE_P | PAGE_USR | PAGE_RWX);
+              PAGE_USER);
   log_debug("mmap addr %x to %x api_size %d\n", src->apis, des->apis,
             des->api_size);
 }

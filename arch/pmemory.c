@@ -142,8 +142,8 @@ void* ya_sbrk(size_t size) {
                 mmt.extend_phy_count);
       }
       for (uintptr_t va = start; va < end; va += PAGE_SIZE) {
-        page_map(va, va, PAGE_P | PAGE_USR | PAGE_RWX);
-        page_map_current(va, va, PAGE_P | PAGE_USR | PAGE_RWX);
+        page_map(va, va, PAGE_KMEM);
+        page_map_current(va, va, PAGE_KMEM);
       }
       if (end > mmt.last_map_addr) {
         mmt.last_map_addr = end;
@@ -920,14 +920,14 @@ void mm_parse_map(void* kernel_page_dir) {
   kprintf("map mem block start\n");
   /* Cap ~80MB/block. Full 128MB identity PTEs make every fork page_clone
    * allocate 100+ L2 tables — hangs when starting gui while infones runs.
-   * PAGE_RWX matches valloc/user attrs (ARMv7 same-PA attr rule). */
-  map_mem_block(kernel_page_dir, PAGE_SIZE * 20000, PAGE_P | PAGE_USR | PAGE_RWX);
+   * PAGE_KERNEL 与 valloc/user 的属性一致（ARMv7 同物理页属性必须相同）。 */
+  map_mem_block(kernel_page_dir, PAGE_SIZE * 20000, PAGE_KERNEL);
 
   int size = PAGE_SIZE * 200;
   kprintf("map mem range %x %x\n", 0, size);
 
   kprintf("map mem kernel\n");
-  page_map_kernel(kernel_page_dir, PAGE_RWX, PAGE_RW);
+  page_map_kernel(kernel_page_dir, PAGE_KERNEL, PAGE_KMEM);
 
   platform_map();
 }

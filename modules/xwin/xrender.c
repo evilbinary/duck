@@ -244,14 +244,14 @@ int xwin_map_framebuffer(xdisplay_t* disp) {
 
     u32 pages = (disp->buffer_size + PAGE_SIZE - 1) / PAGE_SIZE;
     for (u32 i = 0; i < pages; i++) {
-        /* 【性能】帧缓冲用可缓存(PAGE_RW=Normal Write-Back)映射：
-         * 原来 PAGE_RW_NC 是 Normal Non-cacheable ⇒ 每个像素写都直落 DRAM，
+        /* 【性能】帧缓冲用可缓存(PAGE_FB = Normal Write-Back)映射：
+         * 曾经的 Normal Non-cacheable 映射会让每个像素写都直落 DRAM，
          * t113 实测 blit ≈126ms/帧（0.82µs/像素），占满帧时间 90%。
          * 改成可缓存后由 xwin_flip_buffer() 每帧 clean 一次（DE 不是 cache
          * 一致的主设备，必须 clean 后再扫）。
          * 注意：同一物理页的所有映射属性必须一致（驱动那份也要改）。 */
-        page_map_current(va + i * PAGE_SIZE, pa + i * PAGE_SIZE, PAGE_RW);
-        page_map(va + i * PAGE_SIZE, pa + i * PAGE_SIZE, PAGE_RW);
+        page_map_current(va + i * PAGE_SIZE, pa + i * PAGE_SIZE, PAGE_FB);
+        page_map(va + i * PAGE_SIZE, pa + i * PAGE_SIZE, PAGE_FB);
     }
 
     dsb();
@@ -283,7 +283,7 @@ void xwin_flip_buffer(xdisplay_t* disp) {
         /* 帧缓冲已改为可缓存映射：写完成后必须先 clean 回 DRAM，再让 DE 扫描。
          * DE 不是 cache 一致的主设备，漏了这一步会花屏/撕裂。
          * 一帧 600KB 的 clean ≈1ms 量级，远低于原来每像素直落 DRAM 的代价。 */
-        cpu_cache_flush_range((unsigned long)(uintptr_t)disp->vga->frambuffer,
+        cpu_flush_dcache_range((unsigned long)(uintptr_t)disp->vga->frambuffer,
                               (unsigned long)(uintptr_t)disp->vga->frambuffer +
                                   disp->buffer_size);
         dsb();

@@ -63,17 +63,18 @@ static void print_hex(u8* addr, u32 size) {
 }
 
 void sound_play(sound_device_t* dev, void* buf, size_t len) {
-  void* phys = kpage_v2p(buf, 0);
-  if (phys == NULL) {
-    kprintf("phys is null\n");
-    return;
-  }
+  /* 【关键修复】原实现用 kpage_v2p(buf, 0) 做早退判断：buf 是【用户态】地址，
+   * kpage_v2p 只认内核映射 ⇒ 返回 NULL ⇒ 整个函数直接 return ✗
+   * ⇒ 应用的 PCM 从来没进过环形缓冲（DMA 只能反复播 sound_buf 里的旧数据/
+   * 未初始化垃圾 ⇒ 听感"有声音但全是电流噪声"，把 sound_buf 清零后则"完全没声音"）。
+   * 而且这个 phys 在函数里根本没被使用（DMA 走的是 dev->sound_buf），
+   * 所以直接去掉这个早退，让数据真正进入环形缓冲。 */
   u32 val = 0;
 
   // val = io_read32(CODEC_BASE + 0x0024);
   // kprintf("tx count %d len=%d\n",val,len);
 
-  cpu_cache_flush_range(buf, (u32)buf + len);
+  cpu_flush_dcache_range(buf, (u32)buf + len);
 #ifdef TRANS_CPU
   u32* dac_txdata = CODEC_BASE + 0x0020;
 
@@ -113,7 +114,7 @@ void sound_play(sound_device_t* dev, void* buf, size_t len) {
 
     kprintf("dma trans start sound buf %x buf %x len %d\n", dev->sound_buf, buf,len);
     /* 同上：首次武装 DMA 前也要保证 sound_buf 已在主存中 */
-    cpu_cache_flush_range(dev->sound_buf, (u32)dev->sound_buf + len);
+    cpu_flush_dcache_range(dev->sound_buf, (u32)dev->sound_buf + len);
     dma_trans(0, dev->sound_buf, CODEC_BASE + 0x0020, len);
     kprintf("dma trans start1\n");
     dev->is_play = 1;
@@ -475,23 +476,32 @@ void dma_audio_handler(void* data) {
     return 0;
   }
 
+  /* 【D·消除"重播旧 PCM"】先清零、再填充。
+   * buffer_read() 在环形缓冲里数据不足时只会填满前面一部分，尾部仍是【上一段的
+   * PCM】✗ ⇒ 这段旧内容会被 DMA 反复重播 ⇒ 听感就是"哒哒/电流声"。
+   * 清零后尾部恒为静音，而且不依赖 buffer_read() 的返回值语义（安全）。
+   * 注意：16bit 有符号的静音值是 0。 */
+  for (u32 i = 0; i < (u32)dev->play_size; i++) {
+    ((u8*)dev->sound_buf)[i] = 0;
+  }
   buffer_read(dev->buffer, dev->sound_buf, dev->play_size);
 
-  /* 【cache 一致性，必需】sound_buf 是 kmalloc 得到的（现在是可缓存内存）：
-   * 上一步 buffer_read 是 CPU 写入，紧接着 DMA 直接从 DRAM 读它 ⇒ 必须先刷到
+  /* 【cache 一致性·让声音出现的关键那一条】sound_buf 是 kmalloc 得到的（现在是
+   * 可缓存内存）：上一步是 CPU 写入，紧接着 DMA 直接从 DRAM 读它 ⇒ 必须先刷到
    * PoC，否则控制器播到的是还留在 cache 里的旧数据 —— 实测就是"完全没有声音"。
-   * （注意：原来 sound_play() 里刷的是应用传入的 buf，而 DMA 并不读那个缓冲。） */
-  cpu_cache_flush_range(dev->sound_buf, (u32)dev->sound_buf + dev->play_size);
+   * （原来 sound_play() 里刷的是应用传入的 buf，而 DMA 并不读那个缓冲。） */
+  cpu_flush_dcache_range(dev->sound_buf, (u32)dev->sound_buf + dev->play_size);
   // log_info("dma_audio_handler %x play size %d\n", dev->sound_buf,
   // dev->play_size);
   dma_trans(0, dev->sound_buf, CODEC_BASE + 0x0020, dev->play_size);
+
   // log_info("dma_audio_handler end %x\n", dev->sound_buf);
 }
 
 void codec_init() {
   log_info("codec init %x\n", CODEC_BASE);
   u32 val;
-  page_map(CODEC_BASE, CODEC_BASE, 0);
+  page_map(CODEC_BASE, CODEC_BASE, PAGE_DEV);
   // 1. config
   audio_ccu();
   // 2.  Configure the sample rate and data transfer format, then open the DAC.

@@ -36,8 +36,8 @@ void sunxi_spi_init(int spi) {
   log_debug("sunxi_spi_init %d\n", spi);
 
   // map io spi0
-  page_map(spio_base[spi], spio_base[spi], 0);
-  page_map(spio_base[spi] + 0x1000, spio_base[spi] + 0x1000, 0);
+  page_map(spio_base[spi], spio_base[spi], PAGE_DEV);
+  page_map(spio_base[spi] + 0x1000, spio_base[spi] + 0x1000, PAGE_DEV);
 
   if (spi == 0) {
   } else if (spi == 1) {

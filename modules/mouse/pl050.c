@@ -179,7 +179,7 @@ int mouse_init(void) {
   exception_regist(EX_MOUSE, mouse_handler);
 
   // mouse init
-  page_map(MOUSE_BASE, MOUSE_BASE, 0);
+  page_map(MOUSE_BASE, MOUSE_BASE, PAGE_DEV);
 
   uint8_t data;
   uint32_t divisor = 1000;

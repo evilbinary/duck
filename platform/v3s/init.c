@@ -206,26 +206,25 @@ void platform_init() {
 void platform_end() {}
 
 void platform_map() {
-  page_map(MMIO_BASE, MMIO_BASE, 0);
-  page_map(UART0_DR, UART0_DR, L2_NCNB);
-  page_map(CORE0_TIMER_IRQCNTL, CORE0_TIMER_IRQCNTL, L2_NCNB);
-  page_map(0x01c0f000, 0x01c0f000,
-           0);  // fix v3s_transfer_command 2 failed 4294967295
+  page_map(MMIO_BASE, MMIO_BASE, PAGE_DEV);
+  page_map(UART0_DR, UART0_DR, PAGE_DEV);
+  page_map(CORE0_TIMER_IRQCNTL, CORE0_TIMER_IRQCNTL, PAGE_DEV);
+  page_map(0x01c0f000, 0x01c0f000, PAGE_DEV);  // fix v3s_transfer_command 2 failed 4294967295
 
   // ccu -pio timer
-  page_map(0x01C20000, 0x01C20000, L2_NCNB);
+  page_map(0x01C20000, 0x01C20000, PAGE_DEV);
   // uart
-  page_map(0x01C28000, 0x01C28000, L2_NCNB);
+  page_map(0x01C28000, 0x01C28000, PAGE_DEV);
   // timer
-  page_map(0x01C20C00, 0x01C20C00, L2_NCNB);
+  page_map(0x01C20C00, 0x01C20C00, PAGE_DEV);
   // gic
-  page_map(0x01C81000, 0x01C81000, L2_NCNB);
-  page_map(0x01C82000, 0x01C82000, L2_NCNB);
+  page_map(0x01C81000, 0x01C81000, PAGE_DEV);
+  page_map(0x01C82000, 0x01C82000, PAGE_DEV);
 
   // spi0
-  page_map(0x01C68000, 0x01C68000, L2_NCNB);
+  page_map(0x01C68000, 0x01C68000, PAGE_DEV);
   // dma
-  page_map(0x01C02000, 0x01C02000, L2_NCNB);
+  page_map(0x01C02000, 0x01C02000, PAGE_DEV);
 
   // test_cpu_speed();
 }

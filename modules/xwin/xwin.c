@@ -12,7 +12,7 @@
  
  #define MAX_WINDOWS 64
  
- /* kmalloc 池默认 PAGE_RW_NC；画图缓冲改为 WB。
+ /* 画图缓冲统一用可缓存 PAGE_FB（须与 gpu 侧映射同属性）。
   * SVC 用 TTBR0=upage，须同时改内核页表与当前进程页表。 */
  static void xwin_remap_cached(void* buf, u32 size) {
    u32 start;
@@ -34,9 +34,9 @@
    for (v = start; v < end; v += PAGE_SIZE) {
      void* phy = page_v2p((u64*)kpd, (void*)(uintptr_t)v);
      u32 paddr = phy != NULL ? ((u32)(uintptr_t)phy & ~(PAGE_SIZE - 1)) : v;
-     page_map(v, paddr, PAGE_RW);
+     page_map(v, paddr, PAGE_FB);
      if (cur != NULL && cur->vm != NULL && cur->vm->upage != NULL) {
-       page_map_current(v, paddr, PAGE_RW);
+       page_map_current(v, paddr, PAGE_FB);
      }
    }
  }

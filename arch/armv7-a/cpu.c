@@ -87,6 +87,12 @@ static u32 mem_copy_bpc(u32 size, int iters, u32* out_cyc) {
 
 void cpu_mem_bw_test(void) {
   u32 cyc = 0, bpc;
+#if !MM_DEBUG_PROBE
+  /* 诊断默认关闭：以下带宽/属性探针只在 -DMM_DEBUG_PROBE=1 时执行。 */
+  (void)cyc;
+  (void)bpc;
+  return;
+#else
   kprintf("==== MEMBW test (PMU cycles) ====\n");
   bpc = mem_copy_bpc(4 * 1024, 4000, &cyc);
   kprintf("MEMBW 4KB  : %u.%02u B/cyc  cyc=%u\n", bpc / 100, bpc % 100, cyc);
@@ -142,6 +148,7 @@ void cpu_mem_bw_test(void) {
     kfree(q);
   }
   kprintf("==== MEMBW test end ====\n");
+#endif /* MM_DEBUG_PROBE */
 }
 
 void cpu_pmu_enable(int enable, u32 timer) {
@@ -421,6 +428,19 @@ void cache_inv_range(unsigned long start, unsigned long stop) {
   __v7_cache_inv_range(start, stop, line);
   dsb();
 }
+
+/* ---- 统一 cache 接口（armv7-a 强实现） -----------------------------------
+ * 对外只暴露这三个名字；cpu_cache_flush_range / cache_inv_range /
+ * cp15_invalidate_icache 保留为内部实现细节（勿在共享代码里直接调用）。 */
+void cpu_flush_dcache_range(unsigned long start, unsigned long stop) {
+  cpu_cache_flush_range(start, stop); /* clean & invalidate（含按行向外取整） */
+}
+
+void cpu_invalidate_dcache_range(unsigned long start, unsigned long stop) {
+  cache_inv_range(start, stop); /* 仅失效：调用方须保证范围内无 CPU 脏数据 */
+}
+
+void cpu_invalidate_icache(void) { cp15_invalidate_icache(); }
 
 void cpu_enable_page() {
   cpu_enable_smp_mode();

@@ -101,7 +101,7 @@ int keyboard_init(void) {
   exception_regist(EX_KEYBOARD, keyboard_handler);
 
   // keyboard init
-  page_map(VERSATILEPB_PL050_KBD, VERSATILEPB_PL050_KBD, 0);
+  page_map(VERSATILEPB_PL050_KBD, VERSATILEPB_PL050_KBD, PAGE_DEV);
 
   *(volatile u32*)(VERSATILEPB_PL050_KBD + KCNTL) = 0x14;
   *(volatile u32*)(VERSATILEPB_PL050_KBD + KCLK) = 8;

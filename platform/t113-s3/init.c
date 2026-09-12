@@ -55,34 +55,37 @@ void platform_init() {
 }
 
 void platform_map() {
+  /* 全部设备寄存器一律 PAGE_DEV（Shareable Device，不可缓存）。
+   * 旧写法传 0 ⇒ 描述符只剩 L2_DESC 基值 = TEX=000,C=0,B=0 = Strongly-ordered，
+   * 属"没声明"而非"有意为之"；这里显式声明用途。 */
   // uart
-  page_map(UART0_BASE, UART0_BASE, 0);
+  page_map(UART0_BASE, UART0_BASE, PAGE_DEV);
 
   // map gic
-  page_map(0x03020000, 0x03020000, 0);
-  page_map(0x03021000, 0x03021000, 0);
-  page_map(0x03022000, 0x03022000, 0);
-  page_map(0x03023000, 0x03023000, 0);
+  page_map(0x03020000, 0x03020000, PAGE_DEV);
+  page_map(0x03021000, 0x03021000, PAGE_DEV);
+  page_map(0x03022000, 0x03022000, PAGE_DEV);
+  page_map(0x03023000, 0x03023000, PAGE_DEV);
 
   // timer
-  page_map(TIMER_BASE, TIMER_BASE, 0);
+  page_map(TIMER_BASE, TIMER_BASE, PAGE_DEV);
 
   // ccu
-  page_map(CCU_BASE, CCU_BASE, 0);
+  page_map(CCU_BASE, CCU_BASE, PAGE_DEV);
 
   // mmc
-  page_map(MMC_BASE, MMC_BASE, 0);
+  page_map(MMC_BASE, MMC_BASE, PAGE_DEV);
 
   // gpio
-  page_map(GPIO_BASE, GPIO_BASE, 0);
+  page_map(GPIO_BASE, GPIO_BASE, PAGE_DEV);
 
-  page_map(CODEC_BASE, CODEC_BASE, 0);
+  page_map(CODEC_BASE, CODEC_BASE, PAGE_DEV);
 
-  page_map(DMA_BASE, DMA_BASE, 0);
+  page_map(DMA_BASE, DMA_BASE, PAGE_DEV);
 
-  page_map(RTC_BASE, RTC_BASE, 0);
+  page_map(RTC_BASE, RTC_BASE, PAGE_DEV);
 
-  page_map(TWI0_BASE, TWI0_BASE, 0);
+  page_map(TWI0_BASE, TWI0_BASE, PAGE_DEV);
 
 }
 

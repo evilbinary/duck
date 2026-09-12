@@ -33,19 +33,19 @@ void platform_map() {
   // map base
   kprintf("platform map\n");
 
-  page_map(GPIO_BASE, GPIO_BASE, 0);
-  page_map(UART0_BASE, UART0_BASE, 0);
-  page_map(UART1_BASE, UART1_BASE, 0);
+  page_map(GPIO_BASE, GPIO_BASE, PAGE_DEV);
+  page_map(UART0_BASE, UART0_BASE, PAGE_DEV);
+  page_map(UART1_BASE, UART1_BASE, PAGE_DEV);
 
   // timer
-  page_map(TIMER_BASE, TIMER_BASE, 0);
+  page_map(TIMER_BASE, TIMER_BASE, PAGE_DEV);
 
   // ccu
-  page_map(CCU_BASE, CCU_BASE, 0);
+  page_map(CCU_BASE, CCU_BASE, PAGE_DEV);
 
-  page_map(VIC_BASE_ADDR, VIC_BASE_ADDR, PAGE_DEV | PAGE_RWX);
-  page_map(VIC_BASE, VIC_BASE, 0);
-  page_map(SD_BASE, SD_BASE, 0);
+  page_map(VIC_BASE_ADDR, VIC_BASE_ADDR, PAGE_DEV);
+  page_map(VIC_BASE, VIC_BASE, PAGE_DEV);
+  page_map(SD_BASE, SD_BASE, PAGE_DEV);
 
   kprintf("platform map end\n");
 }

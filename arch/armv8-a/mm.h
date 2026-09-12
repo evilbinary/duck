@@ -3,8 +3,8 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  ********************************************************************/
-#ifndef ARM_MM_H
-#define ARM_MM_H
+#ifndef ARM_V8A_MM_H
+#define ARM_V8A_MM_H
 
 #include "libs/include/types.h"
 
@@ -48,22 +48,39 @@
 #define PTE_SHIFT         12
 #define PTRS_PER_TABLE    512
 
-// Standard Page Types (Compatibility with armv7-a)
-#define PAGE_P            PTE_VALID
-#define PAGE_R            0
+/* ---- 用途名（与其他架构语义一致，取值沿用改造前，保证零行为变更） --------
+ * 用途名       缓存属性                       适用对象
+ * PAGE_DEV     Device (SH_OUTER)              设备 MMIO
+ * PAGE_KERNEL  Normal WB (SH_INNER)           内核代码/映像/只读数据
+ * PAGE_KMEM    Normal WB                      内核堆
+ * PAGE_USER    Normal WB                      用户内存
+ * PAGE_FB      Normal WB                      帧缓冲及其别名
+ * PAGE_SHARED  Normal Non-cacheable            CPU 与硬件共享缓冲
+ * ------------------------------------------------------------------------- */
+#define PAGE_P PTE_VALID
+#define PAGE_R 0
 
 // To bypass the implicit PXN (Privileged Execute Never) rule where EL1 cannot execute 
 // EL0-writable pages, we map ALL pages as EL1-only (PTE_AP_EL1_RW).
 // We then run user threads in EL1t mode so they can access these pages.
-#define PAGE_RW           (PTE_AP_EL1_RW | PTE_SH_INNER | PTE_ATTR_NORMAL)
-#define PAGE_RX           (PTE_AP_EL1_RW | PTE_SH_INNER | PTE_ATTR_NORMAL)
-#define PAGE_RWX          (PTE_AP_EL1_RW | PTE_SH_INNER | PTE_ATTR_NORMAL)
+#define ARM_V8A_ATTR_NORMAL \
+  (PTE_AP_EL1_RW | PTE_SH_INNER | PTE_ATTR_NORMAL)
+#define ARM_V8A_ATTR_NC (PTE_AP_EL1_RW | PTE_SH_INNER | PTE_ATTR_NC)
+#define ARM_V8A_ATTR_DEV \
+  (PTE_AP_EL1_RW | PTE_SH_OUTER | PTE_ATTR_DEVICE | PTE_PXN | PTE_UXN)
 
-#define PAGE_RW_NC        (PTE_AP_EL1_RW | PTE_SH_INNER | PTE_ATTR_NC)
+#define PAGE_DEV ARM_V8A_ATTR_DEV        /* 设备 MMIO          */
+#define PAGE_KERNEL ARM_V8A_ATTR_NORMAL  /* 内核代码/映像      */
+#define PAGE_KMEM ARM_V8A_ATTR_NORMAL    /* 内核堆             */
+#define PAGE_USER ARM_V8A_ATTR_NORMAL    /* 用户内存           */
+#define PAGE_FB ARM_V8A_ATTR_NORMAL      /* 帧缓冲及其别名     */
+#define PAGE_SHARED ARM_V8A_ATTR_NC      /* CPU 与硬件共享缓冲 */
 
-#define PAGE_SYS          (PTE_AP_EL1_RW | PTE_SH_INNER | PTE_ATTR_NORMAL)
-#define PAGE_USR          (PTE_AP_EL1_RW | PTE_SH_INNER | PTE_ATTR_NORMAL)
-#define PAGE_DEV          (PTE_AP_EL1_RW | PTE_SH_OUTER | PTE_ATTR_DEVICE | PTE_PXN | PTE_UXN)
+/* ---- 权限层：与用途名正交，按需 OR；默认不启用（零行为变更） -------------
+ * 基值的 AP 字段为 PTE_AP_EL1_RW(0<<6)=0，故 PAGE_RO 可纯 OR 生效；
+ * PAGE_XN 同理（PXN/UXN 位基值为 0）。 */
+#define PAGE_RO PTE_AP_EL1_RO      /* EL1 只读（可纯 OR） */
+#define PAGE_XN (PTE_PXN | PTE_UXN) /* 不可执行（可纯 OR） */
 
 // TCR_EL1 Definitions
 #define TCR_T0SZ(x)       ((64UL - (x)) & 0x3F)

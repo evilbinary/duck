@@ -34,6 +34,13 @@ void *dma_handler(interrupt_context_t *ic) {
       dma_reg->irq_pending0 = pending;
       log_debug("dma pedding %d\n", i);
 
+      /* 【cache 一致性】描述符是 CPU 与 DMA 共享的内存：DMA 硬件写它时绕过 CPU
+       * cache，回调里若读 desc 状态（或重新投喂）必须先失效，否则读到旧值。 */
+      if (dma_channel_source[i].desc != NULL) {
+        cpu_invalidate_dcache_range((unsigned long)dma_channel_source[i].desc,
+                        (unsigned long)dma_channel_source[i].desc +
+                            sizeof(dma_desc_t));
+      }
       if (dma_channel_source[i].dma_func.m_func != NULL) {
         dma_channel_source[i].dma_func.m_func(
             dma_channel_source[i].dma_func.m_data);
@@ -44,6 +51,11 @@ void *dma_handler(interrupt_context_t *ic) {
     pending = (DMA_PKG_END_INT << ((i - 8) * 4));
     if (dma_reg->irq_pending1 & pending) {
       dma_reg->irq_pending1 = pending;
+      if (dma_channel_source[i].desc != NULL) {
+        cpu_invalidate_dcache_range((unsigned long)dma_channel_source[i].desc,
+                        (unsigned long)dma_channel_source[i].desc +
+                            sizeof(dma_desc_t));
+      }
       if (dma_channel_source[i].dma_func.m_func != NULL) {
         dma_channel_source[i].dma_func.m_func(
             dma_channel_source[i].dma_func.m_data);
@@ -63,7 +75,7 @@ void dma_init_all(void) {
   if (dma_init_ok > 0) return;
 
   log_debug("dma init\n");
-  page_map(DMA_BASE, DMA_BASE, 0);
+  page_map(DMA_BASE, DMA_BASE, PAGE_DEV);
 
 #ifdef T113_S3
   log_debug("ccu base %x\n", ccu);
@@ -296,7 +308,7 @@ int dma_start(u32 hdma, u32 saddr, u32 daddr, u32 bytes) {
   desc->dest_addr = daddr;
   desc->byte_count = bytes;
 
-  cpu_cache_flush_range(desc, (u32)desc + sizeof(dma_desc_t));
+  cpu_flush_dcache_range(desc, (u32)desc + sizeof(dma_desc_t));
   /* start dma */
   dmb();
   channel->desc_addr = (u32)desc;
@@ -346,8 +358,9 @@ int dma_test() {
   u32 *src_addr = (u32 *)0x40100000;  // kmalloc(len, DEVICE_TYPE);  //
   u32 *dst_addr = (u32 *)0x40200000;  // kmalloc(len, DEVICE_TYPE);  //
 
-  page_map(src_addr, src_addr, 0);
-  page_map(dst_addr, dst_addr, 0);
+  /* DMA 测试缓冲：CPU 与 DMA 硬件共享 ⇒ CPU 与硬件共享缓冲（非缓存）。 */
+  page_map(src_addr, src_addr, PAGE_SHARED);
+  page_map(dst_addr, dst_addr, PAGE_SHARED);
 
   dma_set_t dma_set;
   u32 hdma, st = 0;
@@ -478,7 +491,7 @@ u32 dma_trans(u32 channel, void *src, void *dst, size_t len) {
 
   dma_source_t *dma_source = (dma_source_t *)hdma;
 
-  cpu_cache_flush_range(src, (u32)src + len);
+  cpu_flush_dcache_range(src, (u32)src + len);
 
   dma_start(hdma, (u32)src, (u32)dst, len);
 
@@ -496,6 +509,12 @@ u32 dma_trans(u32 channel, void *src, void *dst, size_t len) {
   }
   // sunxi_dma_stop(hdma);
   sunxi_dma_release(hdma);
+
+  /* 【cache 一致性】DMA 写目标缓冲同样绕过 CPU cache ⇒ 完成后必须失效，
+   * 否则 CPU 读到的是 cache 里的旧内容（src 侧已在启动前 clean）。 */
+  if (dst != NULL && len > 0) {
+    cpu_invalidate_dcache_range((unsigned long)dst, (unsigned long)dst + (unsigned long)len);
+  }
 
   return 1;
 }

@@ -128,6 +128,13 @@ void use_user_page();
 void* page_v2p(u64* page_dir_ptr_tab, void* vaddr);
 void* kpage_v2p(void* addr, int size);
 
+/* vmemory 映射（定义在 vma.c）：原型必须对调用方可见（thread.c / sysfn.c /
+ * loader），否则走隐式声明会让参数寄存器错位、属性丢失。 */
+void vmemory_map(void* page_dir, vaddr_t virt_addr, vaddr_t phy_addr,
+                 vaddr_t size);
+void vmemory_map_type(void* page_dir, vaddr_t virt_addr, vaddr_t phy_addr,
+                      vaddr_t size, u32 type);
+
 void memory_init();
 
 vmemory_area_t* vmemory_area_create(void* addr, vaddr_t size, u8 flags);

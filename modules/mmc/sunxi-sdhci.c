@@ -674,12 +674,15 @@
        return 0;
      }
    }
-   /* 【cache 一致性】SD 控制器把数据写进 DRAM 是绕过 CPU cache 的：
-    * 目标缓冲（read_buf / cache_buffer 都在内核堆里）现在是可缓存的，
-    * 必须丢弃旧 cache 行，否则 CPU 读到的是脏数据 —— FatFs 会解析出错扇区
-    * 并陷入死循环（实测表现为启动后无输出/卡死）。 */
-   cache_inv_range((unsigned long)buf,
-                   (unsigned long)buf + (unsigned long)blkcnt * blksz);
+   /* 【cache 一致性·此处不需要维护】本驱动是 **PIO**：见 read_bytes()/write_bytes()
+    * —— CPU 用 io_read32() 从 FIFO 读出后直接 store 进 buf，数据全程走 CPU 的
+    * load/store，与 CPU cache 天然一致，无需 clean/invalidate。
+    *
+    * ⚠ 反向警告（实测踩过）：曾在这里加 cache_inv_range()，那是**不回写就丢弃**
+    * cache 行；范围按 32B 行向外取整还会波及紧邻的分配器元数据 ⇒ 堆元数据丢失、
+    * kmalloc 分配异常、后续 thread_create 静默失败（现象：启动日志停在
+    * while(module_ready<=0) 空转、串口再无输出）。
+    * 结论：凡是"CPU 自己写、CPU 自己读"的缓冲一律不要 invalidate。 */
    return blkcnt * blksz;
  }
  
@@ -702,6 +705,10 @@
    dat.flag = MMC_DATA_WRITE;
    dat.blksz = pdat->write_bl_len;
    dat.blkcnt = blkcnt;
+   /* 【cache 一致性·此处不需要维护】同 mmc_read_blocks：本驱动 PIO，write_bytes()
+    * 用 CPU load 读 buf、再写 FIFO，全程 CPU 访问 ⇒ 无需 clean。
+    * （若将来改成真正的 DMA：必须在此加 clean 到 PoC，且范围按 32B cache line
+    * 向外取整。） */
    if (!sdhci_sunxi_transfer(hci, &cmd, &dat)) return 0;
    if (!pdat->isspi) {
      do {

@@ -254,6 +254,17 @@ void cache_inv_range(unsigned long start, unsigned long stop) {
   dsb();
 }
 
+/* ---- 统一 cache 接口（armv5 强实现） ------------------------------------- */
+void cpu_flush_dcache_range(unsigned long start, unsigned long stop) {
+  cpu_cache_flush_range(start, stop);
+}
+
+void cpu_invalidate_dcache_range(unsigned long start, unsigned long stop) {
+  cache_inv_range(start, stop);
+}
+
+void cpu_invalidate_icache(void) { cp15_invalidate_icache(); }
+
 void cache_flush_range(unsigned long start, unsigned long stop) {
   u32 cache;
   u32 line;

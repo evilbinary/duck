@@ -40,14 +40,14 @@ void platform_map() {
 
   page_map(GPIO_BASE, GPIO_BASE, PAGE_DEV);
   page_map(UART0, UART0, PAGE_DEV);
-  page_map(VIC_BASE_ADDR, VIC_BASE_ADDR, PAGE_DEV | PAGE_RWX);
+  page_map(VIC_BASE_ADDR, VIC_BASE_ADDR, PAGE_DEV);
   page_map(TIMER2_BASE, TIMER2_BASE, PAGE_DEV);
   page_map(TIMER0_BASE, TIMER0_BASE, PAGE_DEV);
   page_map(TIMER3_BASE, TIMER3_BASE, PAGE_DEV);
 
   page_map(PIC_BASE, PIC_BASE, PAGE_DEV);
   page_map(SD_BASE, SD_BASE, PAGE_DEV);
-  page_map(SIC_BASE, SIC_BASE, 0);
+  page_map(SIC_BASE, SIC_BASE, PAGE_DEV);
 
   kprintf("platform map end\n");
 }

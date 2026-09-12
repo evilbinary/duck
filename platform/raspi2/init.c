@@ -3,7 +3,9 @@
 #include "libs/include/types.h"
 
 extern boot_info_t* boot_info;
-extern void dccmvac(unsigned long mva);
+
+/* AP 启动前把共享变量 clean 到 PoC：统一走 arch/cpu.h 的跨架构接口
+ * （cpu_flush_dcache_range），平台代码里不再直接写 cp15 / mcr p15。 */
 
 static void dcimvac(unsigned long mva) {
   asm volatile("mcr p15, 0, %0, c7, c6, 1" : : "r"(mva) : "memory");
@@ -83,9 +85,10 @@ void platform_end() {
 }
 
 void platform_map(){
-  page_map(MMIO_BASE, MMIO_BASE, 0);
-  page_map(UART0_DR, UART0_DR, 0);
-  page_map(CORE0_TIMER_IRQCNTL & ~0xfff, CORE0_TIMER_IRQCNTL & ~0xfff, 0);
+  page_map(MMIO_BASE, MMIO_BASE, PAGE_DEV);
+  page_map(UART0_DR, UART0_DR, PAGE_DEV);
+  page_map(CORE0_TIMER_IRQCNTL & ~0xfff, CORE0_TIMER_IRQCNTL & ~0xfff,
+           PAGE_DEV);
 }
 
 int interrupt_get_source(u32 no) {
@@ -146,10 +149,13 @@ void lcpu_send_start(u32 cpu, u32 entry) {
   dsb();
 
   ap_release[cpu] = 1;
-  dccmvac((unsigned long)&ap_release[cpu]);
+  cpu_flush_dcache_range((unsigned long)&ap_release[cpu],
+                         (unsigned long)&ap_release[cpu] + sizeof(ap_release[cpu]));
   if (boot_info != NULL) {
-    dccmvac((unsigned long)&boot_info->kernel_entry);
-    dccmvac((unsigned long)boot_info);
+    cpu_flush_dcache_range((unsigned long)&boot_info->kernel_entry,
+                           (unsigned long)&boot_info->kernel_entry + 4);
+    cpu_flush_dcache_range((unsigned long)boot_info,
+                           (unsigned long)boot_info + sizeof(boot_info_t));
   }
   dmb();
   dsb();

@@ -20,6 +20,12 @@ void kernel_init() {
 #endif
   if (cpu == 0) {
     log_init();
+    /* 【版本戳·无条件一行】确认"烧的是哪一次编译"，并打印本架构内核内存实际
+     * 解析到的属性值：armv7-a 期望 0xc（TEX=000,C=1,B=1 = WB 可缓存）；
+     * 若为 0x4c（旧 Reserved 编码）或 0x0（Strongly-ordered）说明固件是旧包。
+     * 页属性/带宽诊断探针见 -DMM_DEBUG_PROBE=1。 */
+    kprintf("BUILD_TAG %s %s attrs=%x\n", __DATE__, __TIME__,
+            (u32)PAGE_KERNEL);
     log_info("kernel init\n");
     log_info("log init\n");
     log_info("exception init\n");

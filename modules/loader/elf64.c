@@ -11,6 +11,8 @@
 #define PROT_WRITE 2
 #define PROT_EXEC 4
 
+/* cache 维护统一走 duck/arch/cpu.h 的跨架构接口，见 elf.c 同名说明。 */
+
 // #define LOAD_ELF_DEBUG 1
 
 #ifdef LOAD_ELF_DEBUG
@@ -47,18 +49,9 @@ static void elf64_user_cache_sync(void* user_addr, u64 size) {
   if (user_addr == NULL || size == 0) {
     return;
   }
-#if defined(ARM64) || defined(__aarch64__)
-  uintptr_t start = (uintptr_t)user_addr & ~63UL;
-  uintptr_t end = ((uintptr_t)user_addr + size + 63UL) & ~63UL;
-  for (uintptr_t va = start; va < end; va += 64) {
-    asm volatile("dc civac, %0" : : "r"(va) : "memory");
-  }
-  asm volatile("dsb ish" ::: "memory");
-  asm volatile("isb" ::: "memory");
-#else
-  (void)user_addr;
-  (void)size;
-#endif
+  /* 与 elf32 一致：走统一接口 clean 到 PoC（ARM 系含按 cache line 向外取整）。 */
+  cpu_flush_dcache_range((unsigned long)(uintptr_t)user_addr,
+                         (unsigned long)(uintptr_t)user_addr + (unsigned long)size);
 }
 
 static void* elf64_user_ptr(thread_t* current, void* user_addr, u64 size) {
@@ -555,6 +548,9 @@ static void elf64_enter_user(thread_t* current, u64 entry,
     elf64_user_cache_sync((void*)(uintptr_t)layout->sp,
                           layout->stack_top - layout->sp);
   }
+
+  /* 进入用户态前无条件失效 I-cache（理由见 elf32_enter_user）。 */
+  cpu_invalidate_icache();
 
   thread_reset_user_context(current, (void*)(uintptr_t)entry,
                             (void*)(uintptr_t)layout->sp);

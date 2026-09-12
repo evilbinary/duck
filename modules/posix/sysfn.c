@@ -1176,14 +1176,15 @@ int sys_thread_map(int tid, u32 virt_addr, u32 phy_addr, u32 size, u32 attr) {
   log_debug("sys thread %s map %x %x %d\n", current->name, virt_addr, phy_addr,
             size);
 
+  /* 用户态传入的 attr 语义映射（1=设备，2=系统/内核，3/其它=用户）。
+   * 旧实现用三个已废弃的属性名，现统一改为用途名 PAGE_DEV / PAGE_KERNEL /
+   * PAGE_USER。 */
   if (attr == 1) {
     attr = PAGE_DEV;
   } else if (attr == 2) {
-    attr = PAGE_SYS;
-  } else if (attr == 3) {
-    attr = PAGE_USR;
+    attr = PAGE_KERNEL;
   } else {
-    attr = PAGE_USR;
+    attr = PAGE_USER;
   }
 
   int ret = 0;

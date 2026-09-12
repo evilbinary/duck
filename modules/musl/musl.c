@@ -46,7 +46,7 @@ int musl_init(void) {
   // }
 
   // u32 addr = __a_barrier_kuser & ~0xfff;
-  // page_map(addr, addr, PAGE_RWX);
+  // page_map(addr, addr, PAGE_USER);
 
   // *((u32 *)__a_ver) = 2;
   // *((u32 *)__a_barrier_kuser) = &musl_barrier_kuser;

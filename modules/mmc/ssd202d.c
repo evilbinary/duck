@@ -80,7 +80,7 @@ int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
 void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   log_info("sdhci ssd202d dev init\n");
   // sd mmc0
-  page_map(A_FCIE1_0_BANK, A_FCIE1_0_BANK, L2_NCNB);
+  page_map(A_FCIE1_0_BANK, A_FCIE1_0_BANK, PAGE_DEV);
 
   u32 addr = GET_CARD_BANK(0, 0);  // 0x1f282000
   log_debug("addr =>%x\n", addr);

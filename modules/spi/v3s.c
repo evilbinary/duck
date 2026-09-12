@@ -22,7 +22,7 @@ static sunxi_spi_t* spio_base[] = {
 void sunxi_spi_init(int spi) {
   if (spi == 0) {
     // map io spi0
-    page_map(SPI0_BASE, SPI0_BASE, 0);
+    page_map(SPI0_BASE, SPI0_BASE, PAGE_DEV);
 
     // gpio set miso pc0 SPI_MISO
     gpio_config(GPIO_C, 0, 3);  // 011: SPI0_MISO

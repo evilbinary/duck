@@ -124,7 +124,7 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
   pdat->cdcfg = 0;
 
   // sd mmc0
-  page_map(0x01c0f000, 0x01c0f000, 0);
+  page_map(0x01c0f000, 0x01c0f000, PAGE_DEV);
 
   sdhci_sunxi_probe(sdhci_dev);
 

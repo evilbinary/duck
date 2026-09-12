@@ -208,6 +208,17 @@ void cache_inv_range(unsigned long start, unsigned long stop)
 
 
 
+/* ---- 统一 cache 接口（armv7 强实现） ------------------------------------- */
+void cpu_flush_dcache_range(unsigned long start, unsigned long stop) {
+  cpu_cache_flush_range(start, stop);
+}
+
+void cpu_invalidate_dcache_range(unsigned long start, unsigned long stop) {
+  cache_inv_range(start, stop);
+}
+
+void cpu_invalidate_icache(void) { cp15_invalidate_icache(); }
+
 void mmu_inv_tlb(void)
 {
 	__asm__ __volatile__("mcr p15, 0, %0, c8, c7, 0" : : "r" (0));

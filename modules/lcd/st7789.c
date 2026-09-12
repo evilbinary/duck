@@ -546,7 +546,7 @@ int lcd_init_mode(vga_device_t* vga, int mode) {
   u32 addr = vga->frambuffer;
   u32 paddr = vga->pframbuffer;
   for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    page_map(addr, paddr, PAGE_USR);
+    page_map(addr, paddr, PAGE_FB);
     addr += 0x1000;
     paddr += 0x1000;
   }

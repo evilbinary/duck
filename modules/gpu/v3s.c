@@ -222,14 +222,14 @@ int v3s_lcd_init(vga_device_t *vga) {
   lcd->timing.clk_active = 1;
 
   // map tcon 4k
-  page_map(V3S_TCON_BASE, V3S_TCON_BASE, 0);
+  page_map(V3S_TCON_BASE, V3S_TCON_BASE, PAGE_DEV);
   // map ccu 1k
-  page_map(V3S_CCU_BASE, V3S_CCU_BASE, 0);
+  page_map(V3S_CCU_BASE, V3S_CCU_BASE, PAGE_DEV);
 
   // map de 2m
   u32 addr = V3S_DE_BASE;
   for (int i = 0; i < 1024 * 1024 * 2 / PAGE_SIZE; i++) {
-    page_map(addr, addr, 0);
+    page_map(addr, addr, PAGE_DEV);
     addr += 0x1000;
   }
 
@@ -238,7 +238,7 @@ int v3s_lcd_init(vga_device_t *vga) {
   addr = vga->frambuffer;
   u32 paddr = vga->pframbuffer;
   for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    page_map(addr, paddr, PAGE_RW_NC);
+    page_map(addr, paddr, PAGE_FB);
     addr += 0x1000;
     paddr += 0x1000;
   }

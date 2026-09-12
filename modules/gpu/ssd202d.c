@@ -60,7 +60,7 @@ int ssd202_lcd_init(vga_device_t *vga) {
   addr = vga->frambuffer;
 
   for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    page_map(addr, paddr, PAGE_USR);
+    page_map(addr, paddr, PAGE_FB);
     addr += 0x1000;
     paddr += 0x1000;
   }
@@ -69,7 +69,7 @@ int ssd202_lcd_init(vga_device_t *vga) {
 #endif
 
   for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    page_map(addr, paddr, PAGE_RW_NC);
+    page_map(addr, paddr, PAGE_FB);
     addr += 0x1000;
     paddr += 0x1000;
   }

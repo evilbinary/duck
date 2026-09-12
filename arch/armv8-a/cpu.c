@@ -55,6 +55,25 @@ void cp15_invalidate_icache(void) {
   );
 }
 
+/* ---- 统一 cache 接口（armv8-a 强实现） ----------------------------------- */
+void cpu_invalidate_icache(void) { cp15_invalidate_icache(); }
+
+void cpu_flush_dcache_range(unsigned long start, unsigned long stop) {
+  start &= ~63UL;
+  for (unsigned long va = start; va < stop; va += 64) {
+    asm volatile("dc civac, %0" : : "r"(va) : "memory");
+  }
+  asm volatile("dsb ish" ::: "memory");
+}
+
+void cpu_invalidate_dcache_range(unsigned long start, unsigned long stop) {
+  start &= ~63UL;
+  for (unsigned long va = start; va < stop; va += 64) {
+    asm volatile("dc ivac, %0" : : "r"(va) : "memory");
+  }
+  asm volatile("dsb ish" ::: "memory");
+}
+
 // Invalidate TLB
 void cpu_invalid_tlb(void) {
   asm volatile(

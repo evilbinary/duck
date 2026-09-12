@@ -79,8 +79,8 @@ void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
    * TEX=000,C=0,B=0 = Strongly-ordered ⇒ 该页完全不进 cache）。
    * 实机 t113 曾因缺 page_map_on 原型（u64 flags 落到 r3）导致整机 7fps；
    * 该根因已在 pmemory.h/mm.h 修正（补声明），这里只留一个默认关闭的守卫：
-   * 需要复查时定义 MMAP_ATTR_DEBUG 即可打印肇事调用者（addr2line 定位）。 */
-#ifdef MMAP_ATTR_DEBUG
+   * 需要复查时构建加 -DMM_DEBUG_PROBE=1 即可打印肇事调用者（addr2line 定位）。 */
+#if MM_DEBUG_PROBE
   if (flags == 0 && physaddr >= 0x40000000u && physaddr < 0x80000000u) {
     static u32 dbg_nc;
     if (dbg_nc < 8u) {
@@ -90,6 +90,13 @@ void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
     }
   }
 #endif
+  /* 【属性决策唯一化】这里**不再**按虚拟地址区间二次改写属性。
+   * 历史包袱：曾经为了"内核区非缓存保稳、用户区可缓存提性能"，在本函数里按 VA
+   * 强行改写 flags。那样会让同一物理页在不同映射路径拿到不同属性（ARM 上属未
+   * 定义行为），而且"属性决策"分散在两处、无法审计。
+   * 现在属性只由调用点的用途名决定（PAGE_DEV / PAGE_KERNEL / PAGE_KMEM /
+   * PAGE_USER / PAGE_FB / PAGE_SHARED），本函数只负责把 flags 原样拼进描述符。 */
+  (void)virtualaddr;
   // kprintf("map page %x vaddr:%x paddr:%x\n",l1,virtualaddr,physaddr);
   u32 l1_index = virtualaddr >> 20;
   u32 l2_index = virtualaddr >> 12 & 0xFF;
