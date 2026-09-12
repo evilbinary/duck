@@ -14,8 +14,15 @@
 #define log_debug 
 
 
-/* User mappings on ARM32 YiYiYa start around 0x70000000 (stack/heap/exec). */
-#define VFS_USER_PTR_MIN 0x70000000U
+/* 用户态映射窗口（见 kernel/memory.h）：
+ *   ARM32: EXEC_ADDR=0x60000000 / STACK_ADDR=0x70000000 / HEAP_ADDR=0x70100000，
+ *   堆顶约 0x76600000。内核 DRAM/堆却从 0x80000000 起（f1c200s/v3s/h3 的
+ *   DRAM base = 0x80000000），落在用户窗口「之上」。
+ * 因此判定用户指针必须是「落在窗口内」，不能用单边阈值：否则内核堆指针
+ * （如 root=0x8005b5d4、新节点=0x800c1064）会被误杀，连带
+ * vfs_add_child / vfs_node_is_valid / 整个 /dev 挂载树全部失败。 */
+#define VFS_USER_PTR_MIN ((u32)EXEC_ADDR)
+#define VFS_USER_PTR_MAX 0x80000000U
 
 /* 全局 VFS 锁：rt_mutex，持锁不长期禁抢占（RT/FULL 可切走持锁线程） */
 static rt_mutex_t vfs_biglock;
@@ -47,7 +54,7 @@ static int vfs_ptr_is_plausible(const void* p) {
   if (p == NULL || v < PAGE_SIZE) {
     return 0;
   }
-  if (v >= VFS_USER_PTR_MIN) {
+  if (v >= VFS_USER_PTR_MIN && v < VFS_USER_PTR_MAX) {
     return 0;
   }
   return 1;
