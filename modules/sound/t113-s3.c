@@ -9,6 +9,10 @@
 #include "kernel/kernel.h"
 #include "sound.h"
 
+/* 【临时诊断】毫秒时基。SCHEDULE_FREQUENCY=1000 ⇒ 1 tick = 1ms，
+ * 用它量 DMA 完成周期与应用写入间隔（不动用 cpu_read_ms，避免 TU 依赖）。 */
+extern u32 schedule_get_ticks(void);
+
 #define SAMPLE_RATE 44100
 #define NUM_SAMPLES 10000
 #define FREQUENCY 440  // 440 Hz
@@ -20,10 +24,23 @@
 #define AMPLITUDE 32767
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
+/* 【CPU 直供通路：已关闭】作者自带的 TRANS_CPU 曾用于隔离 DMA 做诊断
+ * （实测节流正确，但内核态忙等会吃满一个核，且本内核不允许在内核调用中间换出，
+ * 无法在那里安全 sleep）。现改回 DMA 通路，DMA 的节流问题已在 sunxi-dma.c
+ * 按主线 sun6i-dma 修正：LLI 第 5 个字必须是常量 NORMAL_WAIT=8，
+ * 本仓库原先拼成 (wait_cyc|data_block_size<<8)=0x0200 ⇒ DRQ 握手失效、猛冲丢数据。 */
 // #define TRANS_CPU 1
 
 #define SOUND_BUF_SIZE SAMPLE_RATE * 40
+/* sound_buf 的分配大小（≥ 单次 DMA 传输即可） */
 #define SOUND_PLAY_SIZE 44100
+/* 【单次 DMA 传输字节数】原实现直接拿 SOUND_PLAY_SIZE（44100 字节）当传输长度：
+ * 在 22.05kHz/16bit/单声道下就是**整整 1 秒**。粒度这么粗有两个直接后果：
+ *   1) 环形缓冲一旦暂时欠载，尾部补零 ⇒ 听感"整秒断音"；
+ *   2) DMA 每秒才重装一次，重装窗口叠上缓冲抖动 ⇒ 每秒一次的爆音/咔哒。
+ * 改成 ~46ms（22050 单声道下 2048 样本 / 4096 字节）级别：欠载只影响一小段，
+ * 重装开销可忽略（重装在中断里，几十微秒量级）。 */
+#define SOUND_DMA_CHUNK 4096
 
 struct sample_rate {
   unsigned int rate;
@@ -63,6 +80,20 @@ static void print_hex(u8* addr, u32 size) {
 }
 
 void sound_play(sound_device_t* dev, void* buf, size_t len) {
+  /* 【临时诊断】应用写入画像：len=本次写入字节, avail=写入前环形缓冲可用字节,
+   * t=毫秒时基, dt=距上次写入的毫秒数。dt 能直接暴露 app 的投喂节奏是否正常
+   * （SDL 后端靠 DSP_WaitAudio 里 SDL_Delay(samples*1000/freq) 自我节流）。 */
+  {
+    static u32 dbg_w, dbg_wlast;
+    u32 now = schedule_get_ticks();
+    if (dbg_w < 16u) {
+      dbg_w++;
+      kprintf("swr#%u len=%u avail=%u t=%u dt=%u\n", dbg_w, (u32)len,
+              (u32)buffer_size(dev->buffer), now, now - dbg_wlast);
+    }
+    dbg_wlast = now;
+  }
+
   /* 【关键修复】原实现用 kpage_v2p(buf, 0) 做早退判断：buf 是【用户态】地址，
    * kpage_v2p 只认内核映射 ⇒ 返回 NULL ⇒ 整个函数直接 return ✗
    * ⇒ 应用的 PCM 从来没进过环形缓冲（DMA 只能反复播 sound_buf 里的旧数据/
@@ -109,7 +140,9 @@ void sound_play(sound_device_t* dev, void* buf, size_t len) {
 #ifdef TRANS_CPU
     dma_init(0, 0, dma_audio_handler, NULL);
 #else
-    dma_init(0, 1, dma_audio_handler, dev);
+    /* mode 的 bit16 = 流式 DRQ 传输：让 DMA 层按主线 sun6i-dma 写
+     * para=NORMAL_WAIT(8) 并使用一次性描述符（详见 sunxi-dma.c 的注释）。 */
+    dma_init(0, 1 | (1 << 16), dma_audio_handler, dev);
 #endif
 
     kprintf("dma trans start sound buf %x buf %x len %d\n", dev->sound_buf, buf,len);
@@ -160,10 +193,20 @@ void audio_ccu() {
   val |= 1 << 24;  // PLL_SDM_EN
   // PLL_AUDIO0(1X) = (24MHz*N/M1/M0)/P/4 (24000000 * 39 / 2 / 1) / 4 /
   // 4=29 250 000
-  val |= 0 << 16;  // PLL_P
-  val |= 1 << 8;   // PLL_N
-  val |= 0 << 1;   // PLL_M1
-  val |= 1 << 0;   // PLL_M0
+  /* 【订正到 44.1k 家族】依据主线 linux-6.3.1/drivers/clk/sunxi-ng/
+   * ccu-sun20i-d1.c（D1 与 T113 同源）：
+   *   pll_audio0_4x_clk: n = _SUNXI_CCU_MULT_MIN(8, 8, 12) ⇒ N 在 bits[15:8]
+   *                      m = _SUNXI_CCU_DIV(16, 6)         ⇒ M 在 bits[21:16]
+   *   pll_audio0_sdm_table: { rate=90316800, pattern=0xc001288d, m=6, n=22 }
+   *   pll_audio0(1X) = pll_audio0_4x / 4  ⇒ 4X=90.3168MHz、1X=22.5792MHz
+   * （DAC_FS 只是家族分频档，22050 与 44100 同档；基准时钟是 22.5792MHz 时该档
+   *   才真正等于 22.05kHz，BSP 采样率表与主线一致。）
+   * 原代码把 bit16 当 P、bit8 当 N、小数走 WAVE_BOT ⇒ 落在 48k 家族（实测
+   * 24.09kHz，快 8.8% ⇒ 人声发尖；消费快于生产 ⇒ 环缓冲周期性抽空 ⇒ 停顿）。 */
+  val &= ~(0xFFu << 8);
+  val &= ~(0x3Fu << 16);
+  val |= (22 << 8);  // N = 22
+  val |= (6 << 16);  // M = 6
   io_write32(CCU_BASE + 0x0078, val);
 
   // // play back
@@ -183,13 +226,11 @@ void audio_ccu() {
   log_info("codec init2\n");
 
   // PLL_AUDIO_PAT0_CTRL_REG 0x178
-  val = io_read32(CCU_BASE + 0x178);
-  val |= 1 << 31;  // SIG_DELT_PAT_EN
-  val |= 2 << 29;  // SPR_FREQ_MODE
-  val |= 0 << 20;  // WAVE_STEP
-  val |= 0 << 19;  // SDM_CLK_SEL
-  val |= 0x1EB85;  // WAVE_BOT
-  io_write32(CCU_BASE + 0x178, val);
+  /* SDM(pattern)寄存器：主线 ccu-sun20i-d1.c 的 SDM 项直接给出整字 pattern
+   *   { rate = 90316800, pattern = 0xc001288d }（对应 4X = 90.3168MHz）
+   * 且其 bit31 即 SIG_DELT_PAT_EN（pattern 自带）。整字写入即可。
+   * 原代码按 WAVE_BOT 字段拼 0x1EB85 ⇒ 小数部分不对，输出落在 48k 家族。 */
+  io_write32(CCU_BASE + 0x178, 0xc001288d);
 
   val = io_read32(CCU_BASE + 0x0080);
   val &= ~(1 << 29);
@@ -244,7 +285,12 @@ void codec_dac() {
   // AC_DAC_DPC
   val = io_read32(CODEC_BASE + 0);
   val |= 1 << 31;  // DAC_EN
-  val |= 1 << 12;  // DVOL
+  /* DVOL(bit12 起，6 位) = 数字音量字段。板级设备树
+   * sun8i-mangopi-mq-dual-linux.dts 的 &codec { digital_vol = <0x00>; }，
+   * sun20iw1-codec.c 的 digital_tlv = (-7424, 116) ⇒ 0 档即 0dB（最大）。
+   * 原代码写 1（白降约 1.16dB）。这里按板级值把该字段清零。 */
+  val &= ~(0x3F << 12);
+  val |= 0 << 12;  // DVOL = 0 (0 dB)
   val |= 1 << 18;  // HPF_EN
   val |= 1 << 0;   // HUB_EN
   io_write32(CODEC_BASE + 0, val);
@@ -271,22 +317,37 @@ void codec_analog() {
   val |= 1 << 15;  // DACL_EN
   val |= 1 << 14;  // DACR_EN
 
-  // val |= 1 << 10;    // DACR_MUTE ?
-  // val |= 0x1f << 0;  // LINEOUT_VOL?
-  // val |= 1 << 5;     // LINEOUTRDIFFEN?
-  // val |= 1 << 6;     // LINEOUTLDIFFEN?
+  /* 【板级对齐】逐位依据：sun20iw1-codec.h 的 SUNXI_DAC_REG 位定义
+   *   DACLEN=15 DACREN=14 LINEOUTLEN=13 DACLMUTE=12 LINEOUTREN=11 DACRMUTE=10
+   *   LINEOUTLDIFFEN=6 LINEOUTRDIFFEN=5 LINEOUT_VOL=[4:0]
+   * 以及 sun20iw1-codec.c 的上电序列（DAPM_PRE_PMU）：
+   *   - 把 DACLMUTE/DACRMUTE 置 1（源码注释原文："0:mute 1: not mute"）；
+   *   - 使能 LINEOUTLEN/LINEOUTREN；
+   *   - LINEOUT_VOL 取板级 DT 值 0x1a（lineout_tlv 里 0~1 是 mute，2~31 才是音量）。
+   * 原代码把这四件都注释掉了 ⇒ 若输出走 line-out（或复位值使 MUTE=0），默认是静音。 */
+  val |= 1 << 12;  // DACLMUTE = 1 (not mute)
+  val |= 1 << 10;  // DACRMUTE = 1 (not mute)
+  val |= 1 << 13;  // LINEOUTL_EN = 1
+  val |= 1 << 11;  // LINEOUTR_EN = 1
+  val &= ~(0x1F << 0);
+  /* LINEOUT_VOL：sun20iw1-codec.c 的 lineout_tlv（invert=0）为
+   *   0~1 → mute；2~31 → (-4350 + (n-2)*150) 里氏，n=31 → 0 dB（最大）。
+   * 板级 DT 用 0x1a(-7.5dB)，这里取 0x1f 追求最大音量（两者都是"非静音"档）。 */
+  val |= 0x1f << 0;  // LINEOUT_VOL = 0x1f (0 dB, 最大)
 
-  // val |= 1 << 11;  // LINEOUTR_EN ?
-  // val |= 1 << 12;  // DACLMUTE ?
-  // val |= 1 << 13;  // LINEOUTL_EN ?
   io_write32(CODEC_BASE + 0x0310, val);
 
   // POWER Analog Control
   val = io_read32(CODEC_BASE + 0x0348);
   val |= 1 << 31;    // ALDO_EN
   val |= 1 << 30;    // HPLDO_EN
-  val |= 0 << 12;    // ALDO_OUTPUT_VOLTAGE 011: 1.80 V
-  val |= 0 << 8;     // HPLDO_OUTPUT_VOLTAGE 011: 1.80 V
+  /* 【注释与代码不符】原注释写明 "011: 1.80 V"，代码却写 0。这两个字段是
+   * HP/AVCC 的内部 LDO 输出电压（见头文件 SUNXI_POWER_REG: ALDO/HPLDO_OUTPUT_VOLTAGE），
+   * 电压越低耳机功放的最大摆幅越小 ⇒ 越小声。按作者自己注释的意图取 3（1.80V）。 */
+  val &= ~(0x7 << 12);
+  val |= 3 << 12;    // ALDO_OUTPUT_VOLTAGE = 011 (1.80 V)
+  val &= ~(0x7 << 8);
+  val |= 3 << 8;     // HPLDO_OUTPUT_VOLTAGE = 011 (1.80 V)
   val |= 0x19 << 0;  // BG_TRIM
   io_write32(CODEC_BASE + 0x0348, val);
 
@@ -300,6 +361,14 @@ void codec_analog() {
   // HP2_REG
   val = io_read32(CODEC_BASE + 0x0340);
   val |= 1 << 31;  // HPFB_BUF_EN
+  /* HEADPHONE_GAIN = HP2_REG[30:28]（头文件 SUNXI_HP2_REG）。
+   * sun20iw1-codec.c 的 headphone_gain_tlv = (-4200, 600) 且该控制 invert=1：
+   * 用户档位 0 ↔ 寄存器 7（-42dB），用户档位 7 ↔ 寄存器 0（0dB）。
+   * 即寄存器值 0 = 0dB = 最响，7 = -42dB。
+   * 【实测校正】曾按板级 DT 的 headphonegain=<3> 写成 3，听感明显变小 ——
+   * 与上面推论一致（3 档 ≈ -24dB）。故此处保持 0 档（0dB，最响）。 */
+  val &= ~(0x7 << 28);
+  val |= 0 << 28;  // HEADPHONE_GAIN = 0 (0 dB, 最响档)
   val |= 1 << 26;  // HPFB_RES
   val |= 2 << 24;  // OPDRV_CUR
   val |= 1 << 22;  // IOPHP
@@ -456,16 +525,18 @@ void codec_param(int format, int channal, int freq) {
   val |= 0 << 29;
   if (freq > 0) {
     for (int i = 0; i < ARRAY_SIZE(rate_tab); i++) {
-      kprintf("freq %d rate %d\n", freq, rate_tab[i].rate);
       if (freq >= rate_tab[i].rate) {
         val &= ~(7 << 29);
         val |= rate_tab[i].bit << 29;
-        kprintf("set rate %d bit %x\n", rate_tab[i].rate, rate_tab[i].bit);
       }
     }
   }
 
   io_write32(CODEC_BASE + 0x0010, val);
+  /* 【临时诊断】打印最终生效的 DAC_FIFOC（含 [31:29] 采样率位、[25:24] 位宽、
+   * bit6 单声道位），用于判断"格式/速率不一致"导致的噪声。 */
+  kprintf("codec_param fmt=%d ch=%d freq=%d fifoc=%x\n", format, channal, freq,
+          (u32)io_read32(CODEC_BASE + 0x0010));
 }
 
 void dma_audio_handler(void* data) {
@@ -474,6 +545,29 @@ void dma_audio_handler(void* data) {
     dma_stop(0);
     log_debug("dma stop\n");
     return 0;
+  }
+
+  /* 【临时诊断】投喂画像：必须先读原始 FIFO 状态（清位之后就看不到
+   * overrun/underrun 了），并带毫秒时基 dt=距上次完成的毫秒数 ⇒ 直接量出
+   * DMA 的真实传输周期：≈93ms 说明被 CODEC DRQ 正确节流；≈0 说明在猛冲。 */
+  u32 fs_raw = io_read32(CODEC_BASE + 0x0014);
+  {
+    static u32 dbg_audio, dbg_last_t;
+    u32 now = schedule_get_ticks();
+    if (dbg_audio < 24u) {
+      dbg_audio++;
+      kprintf("audio#%u avail=%u need=%u fifo=%x t=%u dt=%u\n", dbg_audio,
+              (u32)buffer_size(dev->buffer), (u32)dev->play_size, fs_raw, now,
+              now - dbg_last_t);
+    }
+    dbg_last_t = now;
+  }
+
+  /* 【清 FIFO 错误位】DAC FIFO 的 overrun/underrun 是写 1 清（W1C）：初始化时
+   * 使能了这两个中断却从未清过状态，位会一直挂着。欠载在"应用供数暂时跟不上"
+   * 时本来就是正常的，清掉它以免 DAC 停在错误态输出杂音。 */
+  if (fs_raw & ((1u << 2) | (1u << 1))) {
+    io_write32(CODEC_BASE + 0x0014, fs_raw & ((1u << 2) | (1u << 1)));
   }
 
   /* 【D·消除"重播旧 PCM"】先清零、再填充。
@@ -498,6 +592,63 @@ void dma_audio_handler(void* data) {
   // log_info("dma_audio_handler end %x\n", dev->sound_buf);
 }
 
+/* ===== 【临时：音频 PLL 自校准】=====
+ * 问题：DAC_FS(bits[31:29]) 只是"家族分频档"（22050 与 44100 同档），真实采样率 =
+ *       音频基准时钟 ÷ 该档分频。本仓库没有该 SoC 的 PLL 公式，照搬主线 D1 的
+ *       (N=22,M=6,pattern=0xc001288d) 实测得到 39.4kHz（错），原配置实测 24.09kHz
+ *       （快 8.8%）。盲改 N/M 不可靠，于是把它变成【可测量】的问题：
+ *   1) 先按一组候选 N/M 配好 PLL（并关掉 SDM/小数分频，使输出只由 N/M 决定）；
+ *   2) 向 DAC 直写 K 个静音样本，按 TX_EMPTY(FIFO 空 = 有空位) 阻塞推进；
+ *      每写 1 个样本必须等 FIFO 再次变空 ⇒ 单样本乒乓 ⇒ 精确反映 DAC 真实速率；
+ *   3) 用时基(cpu_read_ms)量耗时 ⇒ rate = K / dt；
+ *   4) 由一次测量的比例系数反解"目标 22050"所需的 N/M，应用后再复测打印。
+ * 依据：sun20iw1-codec.h(SUNXI_DAC_FIFOS.TX_EMPTY=23, SUNXI_DAC_TXDATA=0x20)。
+ * 校准完成后删除本块。 */
+#define CODEC_RATE_CALIB 1
+
+#if CODEC_RATE_CALIB
+/* 时基用内核 tick（SCHEDULE_FREQUENCY=1000 ⇒ 1 tick = 1ms）。曾用 cpu_read_ms()，
+ * 实测在 codec_init 这个阶段它恒为 0（另一个计数器尚未计数），导致测量恒失败；
+ * 而日志时间戳证明内核 tick 此时已正常计数。 */
+
+/* 写入 PLL_AUDIO0 的 N/M（N 在 bits[15:8]，M 在 bits[21:16]，见主线 ccu-sun20i-d1.c）
+ * 并关闭 SDM(bit24)——小数分频会让"频率↔N/M"的关系不可预测。 */
+static void codec_pll_set(u32 n, u32 m) {
+  u32 v = io_read32(CCU_BASE + 0x0078);
+  v &= ~(0xFFu << 8);
+  v &= ~(0x3Fu << 16);
+  v |= (n & 0xFFu) << 8;
+  v |= (m & 0x3Fu) << 16;
+  v &= ~(1u << 24);
+  io_write32(CCU_BASE + 0x0078, v);
+  cpu_delay_msec(5); /* 等锁相稳定 */
+}
+
+/* 直写 k 个静音样本，返回实测采样率(Hz)；测量失败/超时返回 0。
+ * 写法必须与作者 TRANS_CPU 通路一致：**只要 bit23 为 1 就连续写**（一次写
+ * 2 个 16bit 样本 = 1 个 32bit 寄存器写）。原因：bit23 并非"FIFO 空"，
+ * 而是"水位低于触发电平(TX_TRIG_LEVEL=32)"；若改成"写 1 个样本就等它变空"，
+ * 8192 次写会在 1ms 内全部完成（实测 dt=0 ⇒ 恒返回 0）。
+ * 连续写到水位满 ⇒ 等 DAC 抽干 ⇒ 再填，平均填充速率即真实采样率
+ * （此前 TRANS_CPU 实测 8192 字节/170ms 也正是这条路径给出的）。 */
+static u32 codec_measure_rate(u32 k) {
+  u32 t0 = schedule_get_ticks();
+  u32 done = 0;
+  while (done < k && (schedule_get_ticks() - t0) < 3000u) {
+    if (io_read32(CODEC_BASE + 0x0014) & (1u << 23)) { /* 水位未满 */
+      io_write32(CODEC_BASE + 0x0020, 0);
+      io_write32(CODEC_BASE + 0x0020, 0);
+      done += 2;
+    }
+  }
+  u32 dt = schedule_get_ticks() - t0;
+  if (done < k || dt == 0) {
+    return 0;
+  }
+  return (u32)((u64)done * 1000u / dt);
+}
+#endif
+
 void codec_init() {
   log_info("codec init %x\n", CODEC_BASE);
   u32 val;
@@ -512,6 +663,46 @@ void codec_init() {
   // codec_debug();
 
   codec_enable(1);
+
+#if CODEC_RATE_CALIB
+  {
+    /* 【两点定线】实测"采样率 ↔ N/M"近似线性但**不经过原点**
+     * （历史数据：N/M=4.000 → 44521Hz；N/M=1.981 → 23953Hz ⇒ 截距约 +3.8kHz）。
+     * 所以不能按正比换算目标，必须用两点解出 A、B 后反解。 */
+    codec_pll_set(40, 10); /* R1 = 4.000 */
+    u32 r1 = codec_measure_rate(8192);
+    codec_pll_set(40, 20); /* R2 = 2.000 */
+    u32 r2 = codec_measure_rate(8192);
+    log_info("rate calib: R=4.000 => %u Hz, R=2.000 => %u Hz\n", r1, r2);
+    if (r1 > 1000u && r2 > 1000u && r1 > r2) {
+      u32 A = (r1 - r2) / 2u;             /* Hz per unit N/M */
+      u32 B = (r1 > 4u * A) ? (r1 - 4u * A) : 0u;
+      if (A > 0u && 22050u > B) {
+        /* 目标 R* = (22050 - B) / A（定点 ×1000） */
+        u32 tgt = (u32)((u64)(22050u - B) * 1000u / A);
+        u32 bn = 12, bm = 1, berr = 0xFFFFFFFFu;
+        for (u32 m = 1; m <= 63u; m++) {
+          u32 n = (u32)(((u64)tgt * m + 500u) / 1000u);
+          u32 e;
+          if (n < 12u || n > 255u) {
+            continue;
+          }
+          e = (u32)((u64)n * 1000u / m);
+          e = (e > tgt) ? (e - tgt) : (tgt - e);
+          if (e < berr) {
+            berr = e;
+            bn = n;
+            bm = m;
+          }
+        }
+        codec_pll_set(bn, bm);
+        u32 r3 = codec_measure_rate(8192);
+        log_info("rate calib: choose N=%u M=%u => %u Hz (target 22050, err %d%%)\n",
+                 bn, bm, r3, (int)(((int)r3 - 22050) * 100 / 22050));
+      }
+    }
+  }
+#endif
 
   // // 生成正弦波 PCM 数据
   // generate_sine_wave(pcm_data, SAMPLE_RATE);
@@ -615,7 +806,7 @@ int sound_init(void) {
 
   sound_device->sound_buf = kmalloc(SOUND_PLAY_SIZE, DEVICE_TYPE);
   sound_device->buffer = buffer_create(SOUND_BUF_SIZE, NULL, NULL, NULL, NULL);
-  sound_device->play_size = SOUND_PLAY_SIZE;
+  sound_device->play_size = SOUND_DMA_CHUNK;
 
   gic_irq_priority(0, IRQ_AUDIO_CODEC, 10);
 

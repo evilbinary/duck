@@ -262,6 +262,23 @@ void dma_set_mode(u32 hdma, u32 mode, dma_interrupt_handler_t fun, void *data) {
   dma_set.loop_mode = 1;
   dma_set.wait_cyc = 0;
   dma_set.data_block_size = 16 / 8;
+
+  /* 【流式 DRQ 传输：调用方通过 mode 的 bit16 声明】
+   * 主线 sun6i-dma.c（本 SoC 所用的 DMA 引擎）对 LLI 的第 5 个字只写常量：
+   *     #define NORMAL_WAIT 8
+   *     v_lli->para = NORMAL_WAIT;      // sun6i_dma_prep_* 各分支均如此
+   * 而本文件的 dma_setting() 把该字拼成
+   *     (wait_cyc & 0xff) | ((data_block_size & 0xff) << 8)
+   * 音频路径传入 wait_cyc=0 ⇒ para = 0x0200（DRQ 等待位为 0，还带了个非法的
+   * 0x02 高位）⇒ DRQ 握手失效，DMA 以总线速度把整块数据灌进 CODEC FIFO 后成片
+   * 丢弃。实测：22×4096=90KB 在 1ms 内"完成"，FIFO 欠载位常亮，听感断续+杂音。
+   * 修正：按主线写 NORMAL_WAIT=8（高位必须为 0），并改用一次性描述符 —— 音频
+   * 每次完成都会在中断里重新武装，不需要硬件自环重载。 */
+  if (mode & (1u << 16)) {
+    dma_set.loop_mode = 0;
+    dma_set.wait_cyc = 8; /* NORMAL_WAIT */
+    dma_set.data_block_size = 0;
+  }
   // channel config (from dram to audio io)
   dma_set.channel_cfg.src_drq_type = DMAC_CFG_TYPE_DRAM;  // dram
   dma_set.channel_cfg.src_addr_mode = DMAC_CFG_SRC_ADDR_TYPE_LINEAR_MODE;
