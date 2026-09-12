@@ -164,7 +164,15 @@ static int schedule_runnable_on_cpu(int cpu) {
 
 void schedule_sleep(u32 ticks) {
   thread_t* current = thread_current();
-  if (current == NULL || current->state != THREAD_RUNNING) {
+  /* 【关键修复】原先只允许 THREAD_RUNNING：
+   * 线程在 SVC（系统调用）执行期间，可能已被时钟中断标成 THREAD_RUNABLE
+   * （时间片到期/被抢占），此时它来请求睡眠就被直接丢掉 ⇒ 睡眠形同空操作。
+   * 实测症状：应用/线程在 usleep 循环里全速空转，帧率与音频生产速率完全不受控
+   * （游戏偏快 1.35 倍、音频每秒多产 17kHz ⇒ 环形缓冲反复溢出"滋滋"）。
+   * RUNABLE(2) 同样属于"可运行"，请求睡眠是合法的，必须受理；
+   * 只有确实已经睡着/等待/停止的线程才应忽略。 */
+  if (current == NULL || (current->state != THREAD_RUNNING &&
+                          current->state != THREAD_RUNABLE)) {
     return;
   }
   /* Argument is already timer ticks (see SECOND_TO_TICK / NANOSECOND_TO_TICK).

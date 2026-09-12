@@ -906,38 +906,25 @@ int sys_self(void* t) {
   return 1;
 }
 
-int sys_clock_nanosleep(int clock, int flag, struct timespec* req,
-                        struct timespec* rem) {
-  u32 ticks;
-  /* 【诊断·可删】按"长/短"分开打，避免少数长睡眠（如 500ms）把前几条打印位
-   * 占满而看不到应用的帧节流请求：
-   *   ticks >= 100（>=100ms）：多为启动/空闲轮询，只打前 4 条；
-   *   ticks <  100（如 16~17 tick = 60fps 帧节流）：应用侧请求，打前 8 条。
-   * 若"short"一行都没有 ⇒ 应用根本没发起请求（问题在应用侧时钟/逻辑）；
-   * 若"short"有但帧率不降 ⇒ 是 schedule_sleep 没真正挂起（内核侧）。 */
-  static u32 dbg_long = 0;
-  static u32 dbg_short = 0;
-
+/* 【重要·应用其实走的是这一路】musl 的 __clock_nanosleep 在本平台
+ * （SYS_clock_nanosleep(230) != SYS_clock_nanosleep_time64(407)）且 tv_sec 为
+ * 小值时，会**跳过 407 分支**、回落到 __syscall_cp(SYS_nanosleep) —— 也就是
+ * 系统调用 162，进到这里。排查睡眠相关问题时务必同时覆盖这一路
+ * （曾因只改 sys_clock_nanosleep 而得出"应用没发请求"的错误结论）。 */
+int sys_nanosleep(struct timespec* req, struct timespec* rem) {
   if (req == NULL) {
     return -1;
   }
-  ticks = (u32)(SECOND_TO_TICK(req->tv_sec) + NANOSECOND_TO_TICK(req->tv_nsec));
-  if (ticks >= 100u) {
-    if (dbg_long < 4u) {
-      dbg_long++;
-      kprintf("clock_nanosleep long: %u tick\n", ticks);
-    }
-  } else {
-    if (dbg_short < 8u) {
-      dbg_short++;
-      kprintf("clock_nanosleep short: %u tick\n", ticks);
-    }
-  }
-  schedule_sleep(ticks);
+  schedule_sleep(SECOND_TO_TICK(req->tv_sec) +
+                 NANOSECOND_TO_TICK(req->tv_nsec));
   return 0;
 }
 
-int sys_nanosleep(struct timespec* req, struct timespec* rem) {
+int sys_clock_nanosleep(int clock, int flag, struct timespec* req,
+                        struct timespec* rem) {
+  if (req == NULL) {
+    return -1;
+  }
   schedule_sleep(SECOND_TO_TICK(req->tv_sec) +
                  NANOSECOND_TO_TICK(req->tv_nsec));
   return 0;
