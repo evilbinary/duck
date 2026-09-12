@@ -79,6 +79,14 @@ void cpu_invalidate_icache(void);
  * 仍按硬件 TP 取 TLS 的用户态。 */
 void cpu_set_tls(void* tp);
 
+/* ---- 缓存效果自测（跨架构诊断接口） --------------------------------------
+ * 打印 SCTLR 里的 MMU/D-cache/WB/I-cache 位，并用可用的时基比对
+ * "小缓冲(可常驻 cache) vs 大缓冲(远超 cache)" 的读带宽，用来判断缓存
+ * 是否真的生效。armv5(ARM926) 没有 PMU，用调度 tick 计时；armv7-a 有
+ * 自己的 cpu_mem_bw_test（PMU 周期）。无实现的架构由 arch.c 弱符号兜底。
+ * 只在 -DMM_DEBUG_PROBE=1 时由 kernel.c 调用。 */
+void cpu_cache_selftest(void);
+
 typedef uint32_t phys_address_t;
 typedef uint32_t virtual_address_t;
 

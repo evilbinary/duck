@@ -46,6 +46,12 @@ void kernel_init() {
      * t113 可缓存参考值（非缓存 Strongly-ordered 时仅 ~0.004）。 */
     cpu_mem_bw_test();
 #endif
+#if MM_DEBUG_PROBE && defined(ARMV5)
+    /* ARMv5(ARM926) 缓存自测：ARM926 无 PMU，改用调度 tick 计时，比对
+     * 4KB(可常驻 D-cache) / 256KB(远超 D-cache) 的读带宽，并回读 SCTLR
+     * 的 M/C/W/I 位，用来判定 cache 是否真的开起来了。 */
+    cpu_cache_selftest();
+#endif
     log_info("vfs init\n");
     vfs_init();
     log_info("thread init\n");

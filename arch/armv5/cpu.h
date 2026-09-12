@@ -63,6 +63,11 @@ void cpu_cache_flush_range(unsigned long start, unsigned long stop);
 void cache_inv_range(unsigned long start, unsigned long stop);
 void cache_flush_range(unsigned long start, unsigned long stop);
 
+/* invalidate unified TLB entry by MVA and ASID。
+ * 改了某一页/段的翻译后必须调用（见 mm.c 的 page_map_on / page_unmap_on），
+ * 否则旧表项会继续命中，指向已被回收的物理页。 */
+void tlbimva(unsigned long mva);
+
 
 #define syscall0(syscall_num)    \
   ({                             \
