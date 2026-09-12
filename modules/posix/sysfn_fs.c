@@ -123,7 +123,12 @@ static void sys_user_dcache_sync(const void* user, size_t size) {
   for (u32 va = start; va < end; va += 32) {
     asm volatile("mcr p15, 0, %0, c7, c14, 1" : : "r"(va) : "memory");
   }
-  asm volatile("dsb sy" ::: "memory");
+  /* 【可移植性】原先是硬编码 asm volatile("dsb sy") —— 那是 ARMv7+ 指令，
+   * ARMv5(ARM926) 汇编器直接报 "selected processor does not support `dsb sy'"
+   * （而本函数外层条件是 #if defined(ARM)，含 armv5）。
+   * 改用架构自带的 dsb() 宏：armv5 展开为 mcr p15,0,r,c7,c10,4（写缓冲排空），
+   * armv7/armv8 展开为 dsb sy，各架构自动适配，无需在这里写分支。 */
+  dsb();
 }
 #else
 static void sys_user_dcache_sync(const void* user, size_t size) {

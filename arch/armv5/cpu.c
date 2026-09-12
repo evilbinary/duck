@@ -455,6 +455,27 @@ void cpu_sti() {
   asm("msr cpsr_cxsf, %[v]" : : [v] "r"(val) :);
 }
 
+/* 【ARMv5 缺失的原子/屏障帮助函数】GCC 在 ARMv5（无 ldrex/strex）下无法内联
+ * __sync_* 内建，会生成对下列帮助函数的调用；而本工具链的 libgcc 里没有它们、
+ * 且 f1c200s/v3s 的链接带 -nostdlib ⇒ 链接期报
+ *   undefined reference to `__sync_lock_test_and_set_4'
+ *   undefined reference to `__sync_synchronize'
+ * ARMv5 为单核，用"关 IRQ 临界区"即可满足语义；屏障用 CP15 写缓冲排空。 */
+int __sync_lock_test_and_set_4(volatile void* ptr, int val) {
+  unsigned int cpsr;
+  int old;
+  __asm__ __volatile__("mrs %0, cpsr" : "=r"(cpsr));
+  __asm__ __volatile__("msr cpsr_c, %0" : : "r"(cpsr | 0x80)); /* 关 IRQ */
+  old = *(volatile int*)ptr;
+  *(volatile int*)ptr = val;
+  __asm__ __volatile__("msr cpsr_c, %0" : : "r"(cpsr)); /* 还原 */
+  return old;
+}
+
+void __sync_synchronize(void) {
+  __asm__ __volatile__("mcr p15, 0, %0, c7, c10, 4" : : "r"(0) : "memory");
+}
+
 void cpu_cmpxchg(void* ptr, u32 old_value, u32 new_value) {
   // asm(".word 0xf57ff05f\n" /* dmb sy                */
   //     ".word 0xe1923f9f\n" /* ldrex r3, [r2]        */
