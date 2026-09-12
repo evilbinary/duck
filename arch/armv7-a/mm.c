@@ -19,6 +19,20 @@ extern void* page_kernel_dir(void);
 u32* page_create(u32 level) {
   u32* page_dir_ptr_tab = kmalloc_alignment(
       sizeof(u32) * PAGE_DIR_NUMBER, PAGE_SIZE * 4, KERNEL_TYPE);
+  if (page_dir_ptr_tab == NULL) {
+    return NULL;
+  }
+  /* 【页表必须对 MMU 遍历器可见】
+   * 遍历器不读 L1 D-cache，而是直接去 DRAM/L2 取描述符。内核堆现在可缓存
+   * （PAGE_KMEM = WB），若新表只存在于 cache，遍历器读到的是陈旧 DRAM（或
+   * 堆里残留的脏行）；一旦切 TTBR0 过去就会取指/翻译失败（实测 t113 表现
+   * 为"切页表那一瞬串口再无输出"）。
+   * 这里先整表清零再 clean&invalidate 到 PoC，让 DRAM 与 cache 一致；之后
+   * 逐条写入的描述符由 page_map_on 逐行 clean。 */
+  kmemset(page_dir_ptr_tab, 0, sizeof(u32) * PAGE_DIR_NUMBER);
+  cpu_flush_dcache_range((unsigned long)page_dir_ptr_tab,
+                         (unsigned long)page_dir_ptr_tab +
+                             sizeof(u32) * PAGE_DIR_NUMBER);
   return page_dir_ptr_tab;
 }
 
@@ -51,6 +65,9 @@ void page_copy(u32* old_page, u32* new_page) {
         kprintf("page_copy: alloc L2 failed at l1=%d\n", l1_index);
         return;
       }
+      /* 未写入的项必须是 0（遍历器直接读 DRAM，堆里残留的旧内容会变成
+       * "凭空映射"）。先清零，最后整表 clean 到 PoC。 */
+      kmemset(new_l2, 0, 256 * sizeof(u32));
       new_l1[l1_index] = (((u32)new_l2) & 0xFFFFFC00) | L1_DESC;
       // kprintf("%d %x\n", l1_index, (u32)l2>>10 );
       for (int l2_index = 0; l2_index < 256; l2_index++) {
@@ -60,8 +77,17 @@ void page_copy(u32* old_page, u32* new_page) {
           // kprintf("  %d %x\n", l2_index, addr);
         }
       }
+      /* 【关键】克隆出来的 L2 只写在 cache 里，必须 clean 到 PoC，
+       * 否则切到这张表时 MMU 遍历器读到的是陈旧 DRAM（详见 page_create）。 */
+      cpu_flush_dcache_range((unsigned long)new_l2,
+                             (unsigned long)new_l2 + 256 * sizeof(u32));
     }
   }
+  /* 新 L1 整表 clean：既覆盖上面写入的条目，也把共享内核项与(未写入的)
+   * 0 值一并落到 DRAM —— 页表是"整张表"给遍历器用的，不能只清写过的行。 */
+  cpu_flush_dcache_range((unsigned long)new_l1,
+                         (unsigned long)new_l1 +
+                             sizeof(u32) * PAGE_DIR_NUMBER);
 }
 
 u32* page_clone(u32* old_page_dir, u32 level) {

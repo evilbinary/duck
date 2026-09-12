@@ -611,6 +611,12 @@ thread_t* thread_find_next(thread_t* thread) {
 }
 
 void thread_run(thread_t* thread) {
+  if (thread == NULL) {
+    /* 【健壮性】线程创建失败（例如堆耗尽）时不能直接解引用 NULL —— 原实现会
+     * 静默走进异常，连日志都看不到，非常难查。 */
+    log_error("thread_run: thread is NULL (create failed?)\n");
+    return;
+  }
   if (thread->state == THREAD_CREATE) {
     thread_add(thread);
     thread->state = THREAD_RUNNING;
@@ -620,6 +626,11 @@ void thread_run(thread_t* thread) {
   } else if (thread->state == THREAD_STOPPED) {
     thread->state = THREAD_RUNNING;
   }
+#if MM_DEBUG_PROBE
+  log_error("thread_run: id=%x name=%s state=%d level=%d prio=%d\n", thread->id,
+            thread->name ? (char*)thread->name : "(null)", thread->state,
+            thread->level, thread->priority);
+#endif
 }
 
 void thread_yield() {

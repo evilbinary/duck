@@ -185,6 +185,9 @@ interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
 }
 
 void context_switch_page(context_t* context, u32 page_table) {
+  /* 【页表切换不变量】切 TTBR0 前，目标页表的所有描述符必须已 clean 到 PoC
+   * （见 armv7-a/mm.c 的 page_create/page_copy）：MMU 遍历器不读 D-cache，
+   * 只读 DRAM，未 clean 的新页表会在切换的瞬间翻译失败。 */
   write_ttbr0(page_table);
   cpu_invalid_tlb();
   cp15_invalidate_icache();

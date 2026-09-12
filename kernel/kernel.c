@@ -40,6 +40,12 @@ void kernel_init() {
     module_init();
     log_info("memory init\n");
     memory_init();
+#if MM_DEBUG_PROBE && defined(ARMV7_A)
+    /* 页属性/带宽自测（-DMM_DEBUG_PROBE=1 时启用）：MEMATTR 里 l2e 低 12 位
+     * 应为 0x43e（= 0x432 | 0xC，WB 可缓存）；MEMBW 4KB ≈ 0.22 B/cyc 为
+     * t113 可缓存参考值（非缓存 Strongly-ordered 时仅 ~0.004）。 */
+    cpu_mem_bw_test();
+#endif
     log_info("vfs init\n");
     vfs_init();
     log_info("thread init\n");
@@ -57,5 +63,8 @@ void kernel_init() {
 
 void kernel_run() {
   context_t* context = thread_current_context();
+  if (context == NULL) {
+    log_error("kernel_run: context NULL (no current thread)\n");
+  }
   context_restore(context);
 }

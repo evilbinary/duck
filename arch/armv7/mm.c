@@ -12,11 +12,28 @@
 #define PAGE_DIR_NUMBER 1024 * 1
 
 extern boot_info_t* boot_info;
+extern void dccmvac(unsigned long mva);
 static u32 page_dir[PAGE_DIR_NUMBER] __attribute__((aligned(0x100)));
+
+/* 【页表必须对 MMU 遍历器可见】遍历器不读 L1 D-cache，只读 DRAM/L2。
+ * 内核堆可缓存后，页表描述符若只留在 cache 里，切页表那一刻遍历器就会
+ * 读到陈旧 DRAM ⇒ 取指/翻译失败（t113 实测为"切页表后串口再无输出"）。
+ * 步长取 32B：按 MVA 的 cache 维护作用于"所在行"，行更宽时重复清同一行无害。 */
+static void page_table_clean(unsigned long addr, u32 bytes) {
+  for (u32 off = 0; off < bytes; off += 32) {
+    dccmvac(addr + off);
+  }
+  dmb();
+}
 
 u32* page_create(u32 level) {
   u32* page_dir_ptr_tab =
       mm_alloc_zero_align(sizeof(u32) * PAGE_DIR_NUMBER, PAGE_SIZE * 4);
+  if (page_dir_ptr_tab != NULL) {
+    /* 整表（含未写入的 0 项）clean 到 PoC，见 page_table_clean 的说明。 */
+    page_table_clean((unsigned long)page_dir_ptr_tab,
+                     sizeof(u32) * PAGE_DIR_NUMBER);
+  }
   return page_dir_ptr_tab;
 }
 void page_copy(u32* old_page, u32* new_page) {
@@ -24,6 +41,9 @@ void page_copy(u32* old_page, u32* new_page) {
   if (old_page == NULL) {
     kprintf("page clone error old page null\n");
     return;
+  }
+  if (new_page != NULL) {
+    page_table_clean((unsigned long)new_page, sizeof(u32) * PAGE_DIR_NUMBER);
   }
 }
 
@@ -41,8 +61,11 @@ void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
     l2 = mm_alloc_zero_align(0x1000, 0x1000);
     kmemset(l2, 0, 0x1000);
     l1[l1_index] = (((u32)l2) & 0xFFFFFC00) | L1_DESC;
+    dccmvac((unsigned long)&l1[l1_index]);
   }
   l2[l2_index] = ((physaddr >> 12) << 12) | L2_DESC | flags;
+  dccmvac((unsigned long)&l2[l2_index]);
+  dmb();
 }
 
 void* page_v2p(void* page, void* vaddr) {
@@ -67,6 +90,8 @@ void page_unmap_on(page_dir_t* page, u32 virtualaddr) {
   if (l2 != NULL) {
     // l1[l1_index] = 0;
     l2[l2_index] = 0;
+    dccmvac((unsigned long)&l2[l2_index]);
+    dmb();
   }
 }
 
@@ -93,6 +118,8 @@ void unpage_map_on(page_dir_t* page, u32 virtualaddr) {
   if (l2 != NULL) {
     // l1[l1_index] = 0;
     l2[l2_index] = 0;
+    dccmvac((unsigned long)&l2[l2_index]);
+    dmb();
   }
 }
 
