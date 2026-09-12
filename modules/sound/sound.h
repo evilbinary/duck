@@ -30,6 +30,13 @@ typedef struct sound_device{
     int play_size;
     int buf_pos;
     int channal;
+    /* 【音频 DMA 通道】原来 dma_init/dma_trans/dma_stop 里硬编码 0。
+     * 注意：LCD(st7789) 也用通道 0 ⇒ 两者的回调/描述符槽位
+     * （sunxi-dma.c 的 dma_channel_source[ch]）互相覆盖：谁后初始化谁生效
+     * ⇒ 音频中断可能拿到 LCD 的 data 指针、搬运被改写 ⇒ 一边刷屏一边出声时
+     * 断续/爆音。只放音频、或走 xwin DIRECT（不触发 LCD DMA）时不冲突。
+     * 想让音频与 LCD 隔离：把本字段置成 1（sound_init 里一处）。 */
+    int dma_channel;
 }sound_device_t;
 
 #endif

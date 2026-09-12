@@ -54,6 +54,10 @@ struct sample_rate rate_tab[] = {
 };
 
 
+/* 【中断守卫用】本 DMA 通道注册时传入的合法 data（声卡设备指针）。
+ * 在 sound_play 首次武装时记录，供中断里校验外来/野指针（见 dma_audio_handler）。 */
+static sound_device_t* g_sound_dev = NULL;
+
 void dma_audio_handler(void* data);
 
 static size_t read(device_t* dev, void* buf, size_t len) {
@@ -136,13 +140,15 @@ void sound_play(sound_device_t* dev, void* buf, size_t len) {
   buffer_write(dev->buffer, buf, len);
 
   if (dev->is_play == 0) {
+    /* 记录合法 data 指针，供中断守卫校验（见 dma_audio_handler 顶部） */
+    g_sound_dev = dev;
     kprintf("dma_init\n");
 #ifdef TRANS_CPU
-    dma_init(0, 0, dma_audio_handler, NULL);
+    dma_init(dev->dma_channel, 0, dma_audio_handler, NULL);
 #else
     /* mode 的 bit16 = 流式 DRQ 传输：让 DMA 层按主线 sun6i-dma 写
      * para=NORMAL_WAIT(8) 并使用一次性描述符（详见 sunxi-dma.c 的注释）。 */
-    dma_init(0, 1 | (1 << 16), dma_audio_handler, dev);
+    dma_init(dev->dma_channel, 1 | (1 << 16), dma_audio_handler, dev);
 #endif
 
     kprintf("dma trans start sound buf %x buf %x len %d\n", dev->sound_buf, buf,len);
@@ -155,7 +161,8 @@ void sound_play(sound_device_t* dev, void* buf, size_t len) {
     buffer_read(dev->buffer, dev->sound_buf, dev->play_size);
     cpu_flush_dcache_range(dev->sound_buf,
                            (u32)dev->sound_buf + dev->play_size);
-    dma_trans(0, dev->sound_buf, CODEC_BASE + 0x0020, dev->play_size);
+    dma_trans(dev->dma_channel, dev->sound_buf, CODEC_BASE + 0x0020,
+              dev->play_size);
     kprintf("dma trans start1\n");
     dev->is_play = 1;
   }
@@ -556,8 +563,20 @@ void codec_param(int format, int channal, int freq) {
 
 void dma_audio_handler(void* data) {
   sound_device_t* dev = data;
+  /* 【中断守卫·3 行】DMA 是共享中断，回调与参数槽（sunxi-dma.c 的
+   * dma_channel_source[].dma_func/m_data）由各模块共用；实测会偶发以非法指针
+   * 调用本函数（反汇编定位到下面读 dev->play_size 处 ⇒ "exception inside IRQ
+   * handler no=2 ... ack pending"）。中断里的数据异常来不及 EOI，会堵塞后续
+   * 中断 ⇒ 表现为音频偶发杂音/卡顿，严重时整个系统冻结（本仓库 sunxi-dma.c
+   * 顶部记录过同类事故）。本仓库既有约定：0x0000_0000~0x3FFF_FFFF 为 MMIO，
+   * 内核堆/DRAM 均在 0x4000_0000 以上 ⇒ 低于该界的指针一律非法；同时要求必须
+   * 等于 sound_play 记录的那个合法设备指针，这样别的通道误用时也不会走进来。 */
+  if (dev == NULL || (u32)(unsigned long)dev < 0x40000000u ||
+      dev != g_sound_dev) {
+    return;
+  }
   if (dev->play_size <= 0) {
-    dma_stop(0);
+    dma_stop(dev->dma_channel);
     log_debug("dma stop\n");
     return 0;
   }
@@ -602,7 +621,8 @@ void dma_audio_handler(void* data) {
   cpu_flush_dcache_range(dev->sound_buf, (u32)dev->sound_buf + dev->play_size);
   // log_info("dma_audio_handler %x play size %d\n", dev->sound_buf,
   // dev->play_size);
-  dma_trans(0, dev->sound_buf, CODEC_BASE + 0x0020, dev->play_size);
+  dma_trans(dev->dma_channel, dev->sound_buf, CODEC_BASE + 0x0020,
+            dev->play_size);
 
   // log_info("dma_audio_handler end %x\n", dev->sound_buf);
 }
@@ -904,6 +924,10 @@ int sound_init(void) {
   sound_device->sound_buf = kmalloc(SOUND_PLAY_SIZE, DEVICE_TYPE);
   sound_device->buffer = buffer_create(SOUND_BUF_SIZE, NULL, NULL, NULL, NULL);
   sound_device->play_size = SOUND_DMA_CHUNK;
+  /* 音频 DMA 通道（说明见 sound.h 的 sound_device_t.dma_channel）：
+   * 0 = 原来的行为（LCD 也用 0 ⇒ 一边刷屏一边出声时可能互相覆盖）；
+   * 置 1 即可让音频与 LCD 隔离（走 xwin DIRECT 时无影响）。 */
+  sound_device->dma_channel = 0;
 
   gic_irq_priority(0, IRQ_AUDIO_CODEC, 10);
 
