@@ -146,9 +146,16 @@ void sound_play(sound_device_t* dev, void* buf, size_t len) {
 #endif
 
     kprintf("dma trans start sound buf %x buf %x len %d\n", dev->sound_buf, buf,len);
-    /* 同上：首次武装 DMA 前也要保证 sound_buf 已在主存中 */
-    cpu_flush_dcache_range(dev->sound_buf, (u32)dev->sound_buf + len);
-    dma_trans(0, dev->sound_buf, CODEC_BASE + 0x0020, len);
+    /* 【修复·开局噪声】原实现首次武装直接把 sound_buf 当源，但该缓冲区此时还
+     * 没从环形缓冲里取过数据（它只是 DMA 的搬运缓冲）⇒ 开头那一段播的是它里面
+     * 未初始化的旧内容 ⇒ 听感上就是"一开始一阵杂音"。
+     * 首次武装与中断里的做法保持一致：先清零、再从环形缓冲取 play_size 字节，
+     * 最后刷 cache 到 PoC 再发货。 */
+    kmemset(dev->sound_buf, 0, dev->play_size);
+    buffer_read(dev->buffer, dev->sound_buf, dev->play_size);
+    cpu_flush_dcache_range(dev->sound_buf,
+                           (u32)dev->sound_buf + dev->play_size);
+    dma_trans(0, dev->sound_buf, CODEC_BASE + 0x0020, dev->play_size);
     kprintf("dma trans start1\n");
     dev->is_play = 1;
   }
@@ -424,8 +431,16 @@ void codec_enable(int enable) {
   // 1<<0 //DMA Channel Enable
 
   // AC_DAC_DAP_CTR
+  /* 【板级对齐】sun20iw1-codec.h: SUNXI_DAC_DAP_CTL(0xF0)
+   *   DDAP_EN=31 / DDAP_DRC_EN=29 / DDAP_HPF_EN=28
+   * BSP 只在板级 DT 的 dachpf_cfg/dacdrc_cfg 非 0 时才开这两个子块，且关闭时会
+   * 显式把 DDAP_HPF_EN 清 0（见 sun20iw1-codec.c 的 dap 开关函数）。
+   * MangoPi MQ-Dual 的 &codec { dachpf_cfg = <0x0>; dacdrc_cfg = <0x0>; } ⇒ 该板
+   * 两个 DAP 子块都是关的。原代码无条件置 DDAP_HPF_EN=1，却又从不设置父开关
+   * DDAP_EN ⇒ 一个"父块未开、子块被使能"的滤波器挂在 DAC 信号链上：听感既是
+   * 被额外高通削薄("沙哑")，又容易表现为离散毛刺。按板级值关闭。 */
   val = io_read32(CODEC_BASE + 0x00F0);
-  val |= 1 << 28;  // DDAP_HPF_EN
+  val &= ~(1u << 28);  // DDAP_HPF_EN = 0（板级 dachpf_cfg = 0）
   io_write32(CODEC_BASE + 0x00F0, val);
 
   // AC_DAC_DAP_CTR
@@ -649,6 +664,83 @@ static u32 codec_measure_rate(u32 k) {
 }
 #endif
 
+/* ===== 【临时：链路失真自测】=====
+ * 目的：把"沙哑/毛刺来自内核链路，还是来自素材/SDL 解码"一刀切开 —— 内核直接
+ * 合成纯音播放，只要复位就能听到，不需要 SD 卡、APP、任何解码器参与。
+ * 播放：① 1kHz 满幅正弦 1.5s   ② 500Hz→8kHz 线性扫频 1.5s
+ * 写法与 DMA 通路一致：一次 32bit 写 = 2 个连续 16bit 单声道样本，按 FIFO 水位阻塞。
+ * 为免疫"L/R 半字顺序"假设，同一采样值写两次（顺序相反也不影响听感）。
+ * 判据：纯音干净 ⇒ 链路无失真（沙哑来自素材/解码）；发毛、嘶哑 ⇒ 链路失真
+ *       （下一步查增益与负载：数据手册 0.37Vrms@16Ω / THD+N −40dB 说明低阻负载+
+ *        高增益必然失真，而 0.55Vrms@10kΩ 才是干净输出）。测完删除本块。 */
+/* 已关闭：内核内直写 DAC 的自测两次都没能稳定跑通（第二次卡在 FIFO 水位判断，
+ * 会阻断启动），改用外部干净文件做同样的判定（见 app/resource/test_clean.wav）。
+ * 这里保留实现备查，编译期关掉，绝不再影响启动。 */
+#define CODEC_TONE_TEST 0
+
+#if CODEC_TONE_TEST
+static const i16 sin_tab[64] = {
+         0,   3136,   6242,   9289,  12245,  15084,  17778,  20300,
+     22627,  24736,  26607,  28221,  29564,  30622,  31385,  31845,
+     32000,  31845,  31385,  30622,  29564,  28221,  26607,  24736,
+     22627,  20300,  17778,  15084,  12245,   9289,   6242,   3136,
+         0,  -3136,  -6242,  -9289, -12245, -15084, -17778, -20300,
+    -22627, -24736, -26607, -28221, -29564, -30622, -31385, -31845,
+    -32000, -31845, -31385, -30622, -29564, -28221, -26607, -24736,
+    -22627, -20300, -17778, -15084, -12245,  -9289,  -6242,  -3136,
+};
+
+#define TONE_BLK 2205 /* 100ms @22050，15 块 = 1.5s */
+
+/* 把一整块样本喂给 DAC：只要 FIFO 有空间就连续写（与作者 TRANS_CPU 相同）。
+ * 曾写成"等一次水位只写 1 个 32bit"，结果每 ~1.4ms 才写 2 个样本 ⇒ 1.5s 的测试音
+ * 要放 23 秒（误以为挂死）。另外加了超时保护：任何情况下都不会卡住启动。 */
+static void tone_play(const i16* b, u32 n) {
+  u32 t0 = schedule_get_ticks();
+  u32 i = 0;
+  while (i < n && (schedule_get_ticks() - t0) < 8000u) {
+    if (io_read32(CODEC_BASE + 0x0014) & (1u << 23)) { /* 有空间 */
+      i16 s1 = b[i];
+      i16 s2 = (i + 1 < n) ? b[i + 1] : 0;
+      io_write32(CODEC_BASE + 0x0020,
+                 ((u32)(u16)s1) | (((u32)(u16)s2) << 16));
+      i += 2;
+    }
+  }
+}
+
+static void codec_tone_selftest(void) {
+  static i16 blk[TONE_BLK];
+  u32 ph = 0;
+
+  /* ① 1kHz 满幅正弦 1.5s（相位跨块连续 ⇒ 无接缝） */
+  log_info("tone test: 1kHz sine 1.5s\n");
+  {
+    u32 inc = (u32)((u64)1000u * 4294967296ull / 22050ull);
+    for (u32 r = 0; r < 15u; r++) {
+      for (u32 i = 0; i < TONE_BLK; i++) {
+        blk[i] = sin_tab[(ph >> 26) & 63];
+        ph += inc;
+      }
+      tone_play(blk, TONE_BLK);
+    }
+  }
+
+  /* ② 阶梯扫频 500Hz→8kHz 1.5s（每块换一次频率，相位仍连续 ⇒ 无咔哒） */
+  log_info("tone test: sweep 500Hz..8kHz 1.5s\n");
+  for (u32 r = 0; r < 15u; r++) {
+    u32 f = 500u + (7500u * r) / 14u;
+    u32 inc = (u32)((u64)f * 4294967296ull / 22050ull);
+    for (u32 i = 0; i < TONE_BLK; i++) {
+      blk[i] = sin_tab[(ph >> 26) & 63];
+      ph += inc;
+    }
+    tone_play(blk, TONE_BLK);
+  }
+  log_info("tone test: done\n");
+}
+#endif
+
 void codec_init() {
   log_info("codec init %x\n", CODEC_BASE);
   u32 val;
@@ -702,6 +794,11 @@ void codec_init() {
       }
     }
   }
+#endif
+
+#if CODEC_TONE_TEST
+  /* 纯音自测（复位后能直接听到，用于判断链路是否失真） */
+  codec_tone_selftest();
 #endif
 
   // // 生成正弦波 PCM 数据
