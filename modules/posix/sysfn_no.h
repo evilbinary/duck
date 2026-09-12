@@ -467,6 +467,26 @@ enum {
 };
 #endif
 
-
+/* 【time64 兼容号 · 所有架构都补】time64 构建的 musl 里，nanosleep()/usleep()
+ * 实际发出的系统调用是 clock_nanosleep_time64(407)，失败后才回退
+ * clock_nanosleep_time32(265)（已反汇编确认：__nanosleep_time64 调用
+ * __clock_nanosleep 内先 `movw r0,#407`，其后 `movw r0,#265`）。
+ * 原先这两个号在本文件里既无定义、内核 syscall 表里也无登记 ⇒ 取不到处理
+ * 函数、返回 ENOSYS ⇒ 应用侧所有 sleep 都成了空操作。
+ * 实测症状：infones 补上 60fps 帧节流后，节流日志能正常打印，帧率却仍然
+ * 固定 81fps —— 因为"睡"这件事根本没发生。
+ * 这些号在 32 位架构上是一致的（403..423 是统一的 time64 号段），64 位架构
+ * 不会调用、登记了也无害。放在架构分支之外用宏定义（注意：不能只写在 enum
+ * 里，那样 sysfn.c 的 #ifdef 判定不成立，登记会被编译掉），保证各架构内核
+ * 都能编译并登记。
+ * 处理函数直接复用 sys_clock_nanosleep：本内核 struct timespec 的 tv_sec 已是
+ * int64（time_t = int64_t）、tv_nsec 为 long，即 tv_sec 在偏移 0、tv_nsec 在
+ * 偏移 8，与 time64 布局一致，无需另写处理函数。 */
+#ifndef SYS_CLOCK_NANOSLEEP_TIME32
+#define SYS_CLOCK_NANOSLEEP_TIME32 265
+#endif
+#ifndef SYS_CLOCK_NANOSLEEP_TIME64
+#define SYS_CLOCK_NANOSLEEP_TIME64 407
+#endif
 
 #endif

@@ -908,12 +908,32 @@ int sys_self(void* t) {
 
 int sys_clock_nanosleep(int clock, int flag, struct timespec* req,
                         struct timespec* rem) {
-  thread_t* current = thread_current();
-  // if (current->id > 3) {
-  //   kprintf("sys_clock_nanosleep %d %d\n", req->tv_sec, req->tv_nsec);
-  // }
-  schedule_sleep(SECOND_TO_TICK(req->tv_sec) +
-                 NANOSECOND_TO_TICK(req->tv_nsec));
+  u32 ticks;
+  /* 【诊断·可删】按"长/短"分开打，避免少数长睡眠（如 500ms）把前几条打印位
+   * 占满而看不到应用的帧节流请求：
+   *   ticks >= 100（>=100ms）：多为启动/空闲轮询，只打前 4 条；
+   *   ticks <  100（如 16~17 tick = 60fps 帧节流）：应用侧请求，打前 8 条。
+   * 若"short"一行都没有 ⇒ 应用根本没发起请求（问题在应用侧时钟/逻辑）；
+   * 若"short"有但帧率不降 ⇒ 是 schedule_sleep 没真正挂起（内核侧）。 */
+  static u32 dbg_long = 0;
+  static u32 dbg_short = 0;
+
+  if (req == NULL) {
+    return -1;
+  }
+  ticks = (u32)(SECOND_TO_TICK(req->tv_sec) + NANOSECOND_TO_TICK(req->tv_nsec));
+  if (ticks >= 100u) {
+    if (dbg_long < 4u) {
+      dbg_long++;
+      kprintf("clock_nanosleep long: %u tick\n", ticks);
+    }
+  } else {
+    if (dbg_short < 8u) {
+      dbg_short++;
+      kprintf("clock_nanosleep short: %u tick\n", ticks);
+    }
+  }
+  schedule_sleep(ticks);
   return 0;
 }
 
@@ -1037,6 +1057,26 @@ u32 sys_time(time_t* t) {
   return ret;
 }
 
+/* 【time64 布局写入辅助】内核 struct timespec 是 { int64 tv_sec; long tv_nsec; }
+ * —— tv_nsec 只有 4 字节（偏移 8，其后 4 字节是填充）。但 musl 的 clock_gettime
+ * 按 time64 布局读取 tv_nsec 的【8 字节】，高 4 字节若没写就是调用者栈上的旧数据
+ * ⇒ 应用拿到的时间值是乱数。反汇编已证实旧写法只发 4 字节存储：
+ *   `strd r2,[r1]`（tv_sec 8 字节）+ `str r2,[r3,#8]`（tv_nsec 只有 4 字节）。
+ * 这里显式按 16 字节 time64 布局写满。
+ * 注意：不能直接改 struct timespec 本身——struct stat 内嵌了它
+ * （st_atim/st_mtim/st_ctim），改布局会破坏 stat 的应用可见 ABI。 */
+struct timespec64_layout {
+  long long tv_sec;
+  long long tv_nsec;
+};
+
+static inline void sys_time64_write(struct timespec* ts, long long sec,
+                                    long long nsec) {
+  struct timespec64_layout* t = (struct timespec64_layout*)ts;
+  t->tv_sec = sec;
+  t->tv_nsec = nsec;
+}
+
 int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
   if (ts == NULL) {
     return -1;
@@ -1046,24 +1086,30 @@ int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
     /* 单调时钟必须用累计 tick，不能 ticks%1000（会回绕导致 GetTicks 倒退、
      * SDL_Delay/sys_sleep 算出超长睡眠 → 黑屏）。 */
     u64 ticks = schedule_get_ticks();
-    ts->tv_sec = (time_t)(ticks / SCHEDULE_FREQUENCY);
-    ts->tv_nsec =
-        (long)((ticks % SCHEDULE_FREQUENCY) * (1000000000u / SCHEDULE_FREQUENCY));
+    /* 【必须按 time64 布局写满 16 字节】见上面 sys_time64_write 的说明：
+     * 旧写法只写 4 字节 tv_nsec ⇒ 高 4 字节是栈上垃圾 ⇒ 应用侧的
+     * clock_gettime 返回值变成乱数。实测后果：infones 的帧节流用它判断
+     * "是否到了下一帧时刻"，比较永远不成立 ⇒ 从不调用 nanosleep ⇒
+     * 帧率怎么都降不下来（固定 81fps）。 */
+    sys_time64_write(ts, (long long)(ticks / SCHEDULE_FREQUENCY),
+                     (long long)((ticks % SCHEDULE_FREQUENCY) *
+                                 (1000000000u / SCHEDULE_FREQUENCY)));
     return 0;
   }
   if (clockid == CLOCK_REALTIME || clockid == CLOCK_REALTIME_COARSE) {
     time_t seconds;
     sys_time(&seconds);
     u64 ticks = schedule_get_ticks();
-    ts->tv_sec = seconds;
-    ts->tv_nsec =
-        (long)((ticks % SCHEDULE_FREQUENCY) * (1000000000u / SCHEDULE_FREQUENCY));
+    sys_time64_write(ts, (long long)seconds,
+                     (long long)((ticks % SCHEDULE_FREQUENCY) *
+                                 (1000000000u / SCHEDULE_FREQUENCY)));
     return 0;
   }
   if (clockid == CLOCK_THREAD_CPUTIME_ID ||
       clockid == CLOCK_PROCESS_CPUTIME_ID) {
-    ts->tv_sec = 0;
-    ts->tv_nsec = 0;
+    /* 同样必须写满 time64 的 16 字节（旧写法只写 4 字节 tv_nsec ⇒ 高 4 字节
+     * 是调用者栈上的旧数据）。 */
+    sys_time64_write(ts, 0, 0);
     return 0;
   }
   log_warn("clock not support %d\n", clockid);
@@ -1417,6 +1463,19 @@ void sys_fn_init() {
 
   syscall_table[SYS_CLOCK_NANOSLEEP] = &sys_clock_nanosleep;
   syscall_table[SYS_NANOSLEEP] = &sys_nanosleep;
+  /* 【musl 真正用的号】time64 构建的 musl 里，nanosleep()/usleep() 发的是
+   * clock_nanosleep_time64(407)，失败回退 clock_nanosleep_time32(265)；
+   * 原先只登记了旧的 230 ⇒ 这两个号取不到处理函数、返回 ENOSYS ⇒
+   * 应用侧 sleep 全部变成空操作（实测：infones 的帧节流日志打印正常，
+   * 帧率却仍固定 81fps）。处理函数可直接复用：本内核 struct timespec
+   * 的 tv_sec 为 int64、tv_nsec 为 long，偏移(0/8)与 time64 布局一致。
+   * 用 #ifdef 保护，便于其他未定义这两个号的架构段继续编译。 */
+#ifdef SYS_CLOCK_NANOSLEEP_TIME32
+  syscall_table[SYS_CLOCK_NANOSLEEP_TIME32] = &sys_clock_nanosleep;
+#endif
+#ifdef SYS_CLOCK_NANOSLEEP_TIME64
+  syscall_table[SYS_CLOCK_NANOSLEEP_TIME64] = &sys_clock_nanosleep;
+#endif
 
   syscall_table[SYS_MREMAP] = &sys_mremap;
   syscall_table[SYS_STATX] = &sys_statx;
