@@ -101,6 +101,17 @@ static size_t read(device_t* dev, void* buf, size_t len) {
   u16 gpio1 = pcal_read(PCAL6416A_INPUT1);
   u16 data = gpio0 & 0xff | gpio1 << 8;
 
+  /* 【诊断·可删】只在按键位图发生变化时打印原始值，用于核对 pins[] 掩码与实际
+   * 硬件是否一致（若一直不打印，说明扩展器根本没看到按下 ⇒ 掩码/接线/地址问题；
+   * 若打印了但应用无反应 ⇒ 问题在 read() 返回值/事件投递那一段）。 */
+  {
+    static u16 dbg_last_data = 0xffff;
+    if (data != dbg_last_data) {
+      dbg_last_data = data;
+      kprintf("keypad raw=%x (down bits = %x)\n", (u32)data, (u32)(~data & 0xffff));
+    }
+  }
+
   //kprintf("data =%x\n",data);
 
   char* keys = (char*)buf;
@@ -118,13 +129,21 @@ static size_t read(device_t* dev, void* buf, size_t len) {
       log_warn("key buffer is full\n");
     }
 
+    /* 【修复·只在状态变化时上报】原来按键按住期间每轮询一次就压入一个"按下"事件
+     * ⇒ 队列被重复事件灌满（还触发 key buffer is full），应用也会一直看到按下、
+     * 松手之后还在持续。改为只在"松开→按下"的边沿上报一次。 */
     if (val == 0) {
-      pins[i].status = 1;  // down
-      scan_code = pins[i].key;
-      keys++;
-      key_cnt++;
+      /* 注意 pins[] 的初值是 -1（不是 0）⇒ 必须用 "!= 1" 判断"非按下→按下"，
+       * 用 "== 0" 会把第一次按下（-1）判掉、此后永远不发事件（实测症状：
+       * keypad raw 有变化，但应用侧 joypad press 一行都没有）。 */
+      if (pins[i].status != 1) {
+        pins[i].status = 1;  // down
+        scan_code = pins[i].key;
+        keys++;
+        key_cnt++;
 
-      scan_code_buffer[scan_code_index++] = scan_code;
+        scan_code_buffer[scan_code_index++] = scan_code;
+      }
 
       // kprintf("press key down %d %d\n",i,scan_code);
 
@@ -141,8 +160,13 @@ static size_t read(device_t* dev, void* buf, size_t len) {
   }
 
   if (scan_code_index > 0) {
-    kstrncpy(buf, &scan_code_buffer[scan_code_index - 1], 1);
-    for (int i = 0; i < scan_code_index; i++) {
+    /* 【修复·事件顺序】原来取的是 scan_code_buffer[scan_code_index-1]（【最新】
+     * 那个）却把队首丢掉 ⇒ 消费者拿到的是乱序/重复的按下与松开 ⇒ 应用侧刚置上的
+     * keyPad 位可能立刻被一个"松开"清掉 ⇒ 游戏只看到一帧的按下（够触发音效，
+     * 不足以进入关卡）。改为标准的【先进先出】：取最旧的一个、整体前移。
+     * 同时返回 1（本次确实只写出 1 字节），避免调用方按返回值以为有多个字节。 */
+    kstrncpy(buf, &scan_code_buffer[0], 1);
+    for (int i = 0; i + 1 < scan_code_index; i++) {
       scan_code_buffer[i] = scan_code_buffer[i + 1];
     }
     scan_code_index--;
@@ -152,7 +176,17 @@ static size_t read(device_t* dev, void* buf, size_t len) {
   // kprintf("pres key_cnt %d scan_code_index %d\n",scan_code_index,key_cnt);
 
 
-  return key_cnt > 0 ? key_cnt : 0;
+  /* 返回真实写出的字节数（最多 1 字节）。原来返回 key_cnt（可能是 2、3…），
+   * 调用方 event_read_joystick() 会按返回值当作有效字节数 ⇒ 语义不符。 */
+  if (ret > 0) {
+    /* 【诊断·可删】出队侧：应用到底拿到了哪个字节（0x80 位=松开） */
+    static u32 dbg_evt;
+    if (dbg_evt < 24u) {
+      dbg_evt++;
+      kprintf("keypad evt=%x q=%u\n", (u32)(*(u8*)buf), scan_code_index);
+    }
+  }
+  return ret;
 }
 
 int pcal_write(u8 cmd, u16 data) {
