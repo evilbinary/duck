@@ -6,6 +6,7 @@
 #include "mm.h"
 #include "cpu.h"
 #include "arch/pmemory.h"
+#include "kernel/memory.h"
 #include "libs/include/kernel/common.h"
 
 extern boot_info_t* boot_info;
@@ -108,6 +109,49 @@ u64* page_clone(u64* old_pgd, u32 level) {
   u64* new_pgd = page_create(level);
   if (new_pgd) page_copy(old_pgd, new_pgd);
   return new_pgd;
+}
+
+/* 【归还整棵用户页表】AArch64：3 级表（pgd→pmd→pte），每级 512 项 u64，
+ * 4KB 粒度。有效描述符 bits[1:0]=0b11（表/页），块描述符 0b01 跳过（只漏不踩）。
+ * 用户区从 EXEC_ADDR 起：pgd[0]（VA 0-1GB）含内核恒等映射与 MMIO，绝不释放。
+ * 表由 page_create()→mm_alloc_zero_align(PAGE_SIZE,PAGE_SIZE) 分配，
+ * 用 kfree_alignment 归还（内核堆恒等映射，配对正确）。
+ * 【严禁】用 32 位语义（u32*、1MB section、0xFFFFF000）解析 64 位页表：
+ * 索引/掩码全错，会把堆内存当页表项，垃圾指针进 mm_page_free_list，
+ * 被 page_create 清零后物理擦掉 .text（raspi3 实测内核崩死）。 */
+void page_destroy(u64* upage) {
+  if (upage == NULL) {
+    return;
+  }
+  u32 start = (u32)(EXEC_ADDR >> PGD_SHIFT); /* 1GB/项，跳过内核所在的 pgd[0] */
+  for (u32 i = start; i < PTRS_PER_TABLE; i++) {
+    u64 e1 = upage[i];
+    if ((e1 & 3) != 3) {
+      continue; /* 无效或块描述符 */
+    }
+    u64* pmd = (u64*)(e1 & PTE_ADDR_MASK);
+    for (u32 j = 0; j < PTRS_PER_TABLE; j++) {
+      u64 e2 = pmd[j];
+      if ((e2 & 3) != 3) {
+        continue;
+      }
+      u64* pte = (u64*)(e2 & PTE_ADDR_MASK);
+      for (u32 k = 0; k < PTRS_PER_TABLE; k++) {
+        u64 e3 = pte[k];
+        if ((e3 & 3) != 3) {
+          continue;
+        }
+        void* pg = (void*)(e3 & PTE_ADDR_MASK);
+        pte[k] = 0;
+        mm_free_page(pg);
+      }
+      pmd[j] = 0;
+      kfree_alignment(pte);
+    }
+    upage[i] = 0;
+    kfree_alignment(pmd);
+  }
+  kfree_alignment(upage);
 }
 
 void mm_page_enable(u64 page_dir) {

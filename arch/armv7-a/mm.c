@@ -156,6 +156,38 @@ void page_unmap_on(page_dir_t* page, u32 virtualaddr) {
   }
 }
 
+/* 【归还整棵用户页表】32 位短描述符格式：L1 4096 项（1MB/项），L2 256 项
+ * （4KB 小页）。只扫用户 VA 区间 [EXEC_ADDR, 0x80000000)：内核区
+ * （0x82000000+）的页表是共享的，绝不能释放。
+ * L2 走 kmalloc_alignment(KERNEL_TYPE)（VM 路径），用 kfree_alignment
+ * 配对释放；L1（page_create 分配）同样 kfree_alignment。
+ * 注意：进来的 upage 必须是本进程私有的（共享内核页目录由调用方跳过）。 */
+void page_destroy(u32* upage) {
+  if (upage == NULL) {
+    return;
+  }
+  u32 start = (u32)EXEC_ADDR >> 20;
+  u32 end = 0x80000000u >> 20;
+  for (u32 i = start; i < end; i++) {
+    u32 e = upage[i];
+    if ((e & 1) == 0) {
+      continue; /* 该 1MB 区间没有 L2 表 */
+    }
+    u32* l2 = (u32*)(e & 0xFFFFFC00u);
+    for (u32 j = 0; j < 256; j++) {
+      if ((l2[j] & 3) != 0) {
+        void* pg = (void*)(l2[j] & 0xFFFFF000u);
+        l2[j] = 0;
+        mm_free_page(pg);
+      }
+    }
+    /* L2 表本身也归还：上面已把 256 项清空，表私有且已无用 */
+    upage[i] = 0;
+    kfree_alignment(l2);
+  }
+  kfree_alignment(upage);
+}
+
 void* page_v2p(u64* page, void* vaddr) {
   if (page == NULL) {
     kprintf("page v2p page is null\n");

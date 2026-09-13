@@ -46,6 +46,9 @@ void* page_create(u32 level) {
 
     return NULL;
 }
+/* TODO(page_destroy): dummy 架构桩 */
+void page_destroy(u32* upage) { (void)upage; }
+
 
 void unpage_map_on(page_dir_t* page, u32 virtualaddr) {
   

@@ -337,34 +337,12 @@ void vmemory_destroy(vmemory_t* vm) {
       /* 共享内核页目录（LEVEL_KERNEL_SHARE）：不属于本线程，绝不释放 */
       return;
     }
-    u32* l1 = (u32*)vm->upage;
-    u32 start = (u32)EXEC_ADDR >> 20;
-    u32 end = 0x80000000u >> 20;
-    for (u32 i = start; i < end; i++) {
-      u32 e = l1[i];
-      if ((e & 1) == 0) {
-        continue; /* 该 1MB 区间没有 L2 表 */
-      }
-      u32* l2 = (u32*)(e & 0xFFFFFC00u);
-      for (u32 j = 0; j < 256; j++) {
-        if ((l2[j] & 3) != 0) {
-          void* pg = (void*)(l2[j] & 0xFFFFF000u);
-          l2[j] = 0;
-          mm_free_page(pg);
-        }
-      }
-      /* 【L2 表本身也归还】上面已把该表 256 项清空，表私有且已无用。
-       * 用 kfree_alignment 而不是 mm_free_align：armv7-a 的 L2 走
-       * kmalloc_alignment(KERNEL_TYPE)（VM 路径），必须用它配对的释放；
-       * armv5 虽是 mm_alloc_zero_align 直配，但 kfree_alignment 经
-       * kpage_v2p + mm_free_align 同样配对（内核堆恒等映射）。 */
-      l1[i] = 0;
-      kfree_alignment(l2);
-    }
-    /* 【L1 表本身归还】置 NULL 防止 vm 悬挂后还被误用 */
-    u32* old_l1 = vm->upage;
+    /* 页表遍历归还（用户物理页 + 各级表本身）是架构相关逻辑
+     * （表级数/项宽/掩码/共享内核区判定都不同），统一由各 arch 的
+     * mm.c 实现 page_destroy()。此处只负责私有线程页表的释放时机。
+     * 置 NULL 防止 vm 悬挂后还被误用。 */
+    page_destroy(vm->upage);
     vm->upage = NULL;
-    kfree_alignment((void*)old_l1);
   }
 #endif
 }

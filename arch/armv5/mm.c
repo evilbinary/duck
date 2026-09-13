@@ -7,6 +7,7 @@
 #include "arch/display.h"
 #include "arch/pmemory.h"
 #include "cpu.h"
+#include "kernel/memory.h"
 
 #define PAGE_DIR_NUMBER 4096
 
@@ -117,12 +118,40 @@ void page_unmap_on(page_dir_t* page, u32 virtualaddr) {
   }
 }
 
-void* page_v2p(void* page, void* vaddr) {
+/* 【归还整棵用户页表】32 位短描述符格式（同 armv7-a，见其 mm.c 的
+ * page_destroy 注释）。armv5 的 L1/L2 均为 mm_alloc_zero_align 直配，
+ * kfree_alignment 经 kpage_v2p + mm_free_align 同样配对（内核堆恒等映射）。 */
+void page_destroy(u32* upage) {
+  if (upage == NULL) {
+    return;
+  }
+  u32 start = (u32)EXEC_ADDR >> 20;
+  u32 end = 0x80000000u >> 20;
+  for (u32 i = start; i < end; i++) {
+    u32 e = upage[i];
+    if ((e & 1) == 0) {
+      continue; /* 该 1MB 区间没有 L2 表 */
+    }
+    u32* l2 = (u32*)(e & 0xFFFFFC00u);
+    for (u32 j = 0; j < 256; j++) {
+      if ((l2[j] & 3) != 0) {
+        void* pg = (void*)(l2[j] & 0xFFFFF000u);
+        l2[j] = 0;
+        mm_free_page(pg);
+      }
+    }
+    upage[i] = 0;
+    kfree_alignment(l2);
+  }
+  kfree_alignment(upage);
+}
+
+void* page_v2p(u64* page, void* vaddr) {
   if (page == NULL) {
     kprintf("page v2p page is null\n");
   }
   void* phyaddr = NULL;
-  u32* l1 = page;
+  u32* l1 = (u32*)page;
   u32 l1_index = (u32)vaddr >> 20;
   u32 l2_index = (u32)vaddr >> 12 & 0xFF;
   u32 offset = (u32)vaddr & 0x0FFF;

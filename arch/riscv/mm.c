@@ -21,6 +21,11 @@ u32* page_create(u32 level) {
   return page_dir_ptr_tab;
 }
 
+/* TODO(page_destroy): 本架构尚未实现用户页表归还（暂不释放，等同
+ * 705d987 之前的泄漏行为）。实现时参照 armv8-a/armv7-a 的 page_destroy。 */
+void page_destroy(u32* upage) { (void)upage; }
+
+
 void page_copy(u32* old_page, u32* new_page) {}
 
 u32* page_clone(u32* old_page_dir, u32 level) {

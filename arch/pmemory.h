@@ -127,8 +127,14 @@ typedef struct memory_manager {
 
 #if defined(ARM64)
 u64* page_create(u32 level);
+/* 归还整棵用户页表：用户物理页回页分配器，各级表本身回内核堆。
+ * 架构相关（表级数/项宽/掩码不同），由各 arch 的 mm.c 实现。
+ * 只处理用户区（>= EXEC_ADDR）；内核共享区绝不能释放。 */
+void page_destroy(u64* upage);
 #else
 u32* page_create(u32 level);
+/* 同上，32 位页表版本（armv5/armv7/armv7-a 等） */
+void page_destroy(u32* upage);
 #endif
 
 #ifdef MALLOC_TRACE

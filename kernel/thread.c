@@ -563,6 +563,9 @@ void thread_destroy(thread_t* thread) {
 }
 
 void thread_recycle(thread_t* thread) {
+  /* TEMP DEBUG: 确认回收链何时被填充 */
+  kprintf("[recycle] thread id=%d name=%s state=%d\n", thread->id,
+          thread->name ? thread->name : "?", thread->state);
   thread_remove(thread);
   // add into cycle thread
   if (recycle_head_thread == NULL) {
@@ -595,6 +598,10 @@ void thread_stop(thread_t* thread) {
  * 要漏 16KB L1 + n×1KB L2）。
  * 还不做的：fd 条目、内核区（0x82000000+）私有 L2 副本 —— 体量小，留待下一轮。 */
 void thread_recycle_process(void) {
+  /* TEMP DEBUG: 确认回收处理是否在启动期运行 */
+  if (recycle_head_thread != NULL) {
+    kprintf("[recycle-proc] list non-empty head=%p\n", recycle_head_thread);
+  }
   thread_t* cur = thread_current();
   thread_t* v = recycle_head_thread;
   thread_t* prev = NULL;
