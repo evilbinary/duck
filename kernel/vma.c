@@ -316,8 +316,14 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
  * 线程共用且引用计数不完整，这里不动它（避免释放仍被使用的页）。
  * 注意：不能用 vfree() —— 它只在"当前地址空间"里有效，而被回收线程的页表
  * 并不是当前的；所以这里直接遍历它自己的页表。只扫用户 VA 区间：内核区
- * （0x82000000+）的页表是共享的，绝不能释放。页表本身（L1/L2）的释放留给
- * 下一轮（体量小得多，先回收占大头的用户页）。 */
+ * （0x82000000+）的页表是共享的，绝不能释放。
+ * 【归还页表本身】用户区扫完后，把区间内每张 L2 表（1KB/张）和 L1 表
+ * （16KB，含 16KB 对齐的头）一并 mm_free_align 归还内核堆 —— 它们都是本
+ * 进程私有的（page_clone 深拷贝 / page_map_on 按需分配），且此刻本进程
+ * 已死、页表已不被 MMU 使用（回收发生在切换到其它地址空间之后）。此前
+ * 每个死进程要漏 16KB + n×1KB 的内核堆，跑 64 次 exec 就漏 1MB+。
+ * LEVEL_KERNEL_SHARE 的 upage 就是全局共享内核页目录（== vm->kpage），
+ * 绝不能释放，直接跳过。 */
 void vmemory_destroy(vmemory_t* vm) {
   if (vm == NULL) {
     return;
@@ -327,6 +333,10 @@ void vmemory_destroy(vmemory_t* vm) {
   }
 #ifdef VM_ENABLE
   if (vm->upage != NULL) {
+    if (vm->kpage != NULL && vm->upage == vm->kpage) {
+      /* 共享内核页目录（LEVEL_KERNEL_SHARE）：不属于本线程，绝不释放 */
+      return;
+    }
     u32* l1 = (u32*)vm->upage;
     u32 start = (u32)EXEC_ADDR >> 20;
     u32 end = 0x80000000u >> 20;
@@ -343,7 +353,18 @@ void vmemory_destroy(vmemory_t* vm) {
           mm_free_page(pg);
         }
       }
+      /* 【L2 表本身也归还】上面已把该表 256 项清空，表私有且已无用。
+       * 用 kfree_alignment 而不是 mm_free_align：armv7-a 的 L2 走
+       * kmalloc_alignment(KERNEL_TYPE)（VM 路径），必须用它配对的释放；
+       * armv5 虽是 mm_alloc_zero_align 直配，但 kfree_alignment 经
+       * kpage_v2p + mm_free_align 同样配对（内核堆恒等映射）。 */
+      l1[i] = 0;
+      kfree_alignment(l2);
     }
+    /* 【L1 表本身归还】置 NULL 防止 vm 悬挂后还被误用 */
+    u32* old_l1 = vm->upage;
+    vm->upage = NULL;
+    kfree_alignment((void*)old_l1);
   }
 #endif
 }

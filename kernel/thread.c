@@ -573,8 +573,10 @@ void thread_recycle(thread_t* thread) {
     recycle_tail_thread = thread;
   }
   recycle_head_thread_count++;
-  // todo free page alloc
-  // page_free(thread->vm->upage, thread->level);
+  /* 【不要在这里 free 页表】原 todo 是 page_free(thread->vm->upage, ...)，
+   * 但此刻还在死线程自己的上下文里：它的页表可能仍是 TTBR0 活跃表。
+   * 页表（L2/L1）的归还已由 thread_recycle_process → vmemory_destroy 完成
+   * （vma.c），用户页 + L2 表 + L1 表都在那儿统一释放。 */
 }
 
 void thread_stop(thread_t* thread) {
@@ -589,7 +591,9 @@ void thread_stop(thread_t* thread) {
 /* 【延迟回收】遍历 recycle 队列，释放已退出线程的地址空间与内存。
  * 只回收"不是当前线程"的：退出瞬间它可能还站在自己的内核栈上，
  * 留到下一轮（当前线程换人之后）再处理。
- * 还不做的：页表（L1/L2）本身、fd 条目 —— 体量小，留待下一轮。 */
+ * 页表（L2/L1）的归还也在 vmemory_destroy 里一并完成（每个死进程此前
+ * 要漏 16KB L1 + n×1KB L2）。
+ * 还不做的：fd 条目、内核区（0x82000000+）私有 L2 副本 —— 体量小，留待下一轮。 */
 void thread_recycle_process(void) {
   thread_t* cur = thread_current();
   thread_t* v = recycle_head_thread;
