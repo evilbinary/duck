@@ -80,7 +80,7 @@
 
 // #define MP_ENABLE 1  //多cpu
 
-#elif defined(RASPI3) || defined(ARMV8_A)
+#elif defined(RASPI3) || defined(RASPI5) || defined(ARMV8_A)
 
 #define ISR_TIMER 5
 #define ISR_KEYBOARD 0x21

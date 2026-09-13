@@ -192,6 +192,7 @@ enum {
 
   SYS_READV = 65,
   SYS_WRITEV = 66,
+  SYS_NEWSELECT = 72,  // aarch64: select is implemented as pselect6
   SYS_READLINK = 78,
   SYS_READDIR = 0x1011,  // Not available on aarch64, use getdents
 

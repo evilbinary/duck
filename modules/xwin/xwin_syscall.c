@@ -8,7 +8,8 @@
 #include "kernel/page.h"
 #include "kernel/thread.h"
 
-extern void context_switch_page(context_t* context, u32 page_table);
+/* context_switch_page 由 arch/arch.h 间接声明（各架构签名不同：
+ * armv8-a 为 u64，x86/armv7-a/armv5 为 u32），不要在此重复声明 */
 
 // ========== Syscall 编号定义 (内核端) ==========
 #define SYS_XWIN_BASE          0x5000
