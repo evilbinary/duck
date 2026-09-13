@@ -5,6 +5,7 @@
  ********************************************************************/
 #include "memory.h"
 
+#include "arch/pmemory.h"
 #include "algorithm/queue_pool.h"
 #include "rt_mutex.h"
 #include "thread.h"
@@ -223,10 +224,25 @@ void* vm_alloc_alignment(size_t size, int alignment) {
   return new_addr;
 }
 
+/* 【YA_FREE_TRACE 诊断】vm_free 层的 (ptr, ra) 环形记录：配合 pmemory.c 的
+ * ya_free bad state 回查，可看到调用 kfree 的业务代码（开关见 pmemory.h） */
+#if YA_FREE_TRACE
+#define YA_DBG_VMFREE_N 32
+/* 非 static：pmemory.c 的 ya_free bad state 回查需要 extern 引用 */
+void* ya_dbg_vmfree_ptr[YA_DBG_VMFREE_N];
+void* ya_dbg_vmfree_ra[YA_DBG_VMFREE_N];
+static int ya_dbg_vmfree_idx = 0;
+#endif
+
 void vm_free(void* ptr) {
   if (ptr == NULL || memory_locked_other()) {
     return;
   }
+#if YA_FREE_TRACE
+  ya_dbg_vmfree_ptr[ya_dbg_vmfree_idx] = ptr;
+  ya_dbg_vmfree_ra[ya_dbg_vmfree_idx] = __builtin_return_address(0);
+  ya_dbg_vmfree_idx = (ya_dbg_vmfree_idx + 1) % YA_DBG_VMFREE_N;
+#endif
   void* addr = kpage_v2p(ptr, 0);
   kassert(addr != NULL);
   size_t size = 0;
@@ -373,7 +389,21 @@ void* kmalloc_alignment(size_t size, int alignment, u32 flag) {
   return addr;
 }
 
-void kfree(void* ptr) { vm_free(ptr); }
+/* 【YA_FREE_TRACE 诊断】kfree 层 (ptr, ra) 记录：ra 即业务代码里的调用点 */
+#if YA_FREE_TRACE
+void* ya_dbg_kfree_ptr[YA_DBG_VMFREE_N];
+void* ya_dbg_kfree_ra[YA_DBG_VMFREE_N];
+static int ya_dbg_kfree_idx = 0;
+#endif
+
+void kfree(void* ptr) {
+#if YA_FREE_TRACE
+  ya_dbg_kfree_ptr[ya_dbg_kfree_idx] = ptr;
+  ya_dbg_kfree_ra[ya_dbg_kfree_idx] = __builtin_return_address(0);
+  ya_dbg_kfree_idx = (ya_dbg_kfree_idx + 1) % YA_DBG_VMFREE_N;
+#endif
+  vm_free(ptr);
+}
 
 void kfree_alignment(void* ptr) {
   void* addr = kpage_v2p(ptr, 0);

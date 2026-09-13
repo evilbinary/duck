@@ -625,7 +625,15 @@ void thread_recycle_process(void) {
         v->ctx = NULL;
       }
       if (v->vfs != NULL) {
-        kfree(v->vfs);
+        /* 【vfs 是浅拷贝共享的】thread_copy 里 copy->vfs = thread->vfs 且
+         * users++。这里必须按引用计数释放：>1 时只减计数，最后一个使用者
+         * 才 kfree。否则第二个退出者会对同一 vfs 二次释放 —— 实测 raspi2
+         * 上表现为 ya_free bad state（早前 init 直接崩死在 ya_free）。 */
+        if (v->vfs->users > 1) {
+          v->vfs->users--;
+        } else {
+          kfree(v->vfs);
+        }
         v->vfs = NULL;
       }
       if (v->fds != NULL) {
