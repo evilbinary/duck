@@ -107,6 +107,9 @@ static int ya_block_magic_valid(block_t* block) {
   return block->magic == MAGIC_USED || block->magic == MAGIC_FREE;
 }
 
+void ya_heap_stats(u32* free_bytes, u32* free_blocks, u32* max_free_block,
+                   u32* alloc_count, u32* last_map);
+
 void* ya_sbrk(size_t size) {
   mem_block_t* current = mmt.blocks;
   kassert(current != NULL);
@@ -114,7 +117,11 @@ void* ya_sbrk(size_t size) {
   int found = 0;
   while (current) {
     if (current->type == MEM_FREE) {
-      if (size <= (current->size - 4096)) {
+      /* 【下溢防护】current->size 是 size_t（无符号）：块剩余不足 4096 时，
+       * `current->size - 4096` 会下溢成 0xFFFFFFxx，条件恒为真 —— 于是从一个
+       * 只剩几十字节的块里划走 size 字节，current->size 也跟着下溢成巨大值，
+       * 此后该块会不断发出与其它分配重叠的内存。必须先确认剩余充足再做减法。 */
+      if (current->size > 4096 && size <= (current->size - 4096)) {
         addr = (void*)current->addr;
         current->addr += size;
         current->size -= size;
@@ -123,15 +130,28 @@ void* ya_sbrk(size_t size) {
         }
         found = 1;
         break;
-      } else {
-        if (current->next == NULL) {
-          kassert(size <= current->size);
-        }
       }
     }
     current = current->next;
   }
-  kassert(found > 0);
+
+  if (!found) {
+    /* 所有原始块都放不下：内核堆耗尽（或请求异常巨大）。断言前先把堆画像
+     * 打出来 —— 判据见 ya_heap_stats() 的注释：
+     *   free_total 大而 max_free_block 小 ⇒ 碎片化（ya_free 的 merge 未实现）
+     *   free_total 本身就小                ⇒ 泄漏（free 被静默丢弃/节点丢失） */
+    u32 fbytes = 0, fblocks = 0, fmax = 0, acount = 0, lmap = 0;
+    ya_heap_stats(&fbytes, &fblocks, &fmax, &acount, &lmap);
+    log_error(
+        "ya_sbrk oom need=%d | free=%dK free_blocks=%d max_free=%dK "
+        "alloc_count=%d last_map=%x\n",
+        size, fbytes / 1024, fblocks, fmax / 1024, acount, lmap);
+    for (mem_block_t* b = mmt.blocks; b != NULL; b = b->next) {
+      log_error("  raw block %x type=%d size=%d addr=%x\n", b, b->type, b->size,
+                b->addr);
+    }
+    kassert(found > 0);
+  }
   kassert(addr != NULL);
 
   /*
@@ -214,10 +234,39 @@ void* ya_alloc(size_t size) {
   }
   size = ALIGN(size, align_to);
   block_t* block;
-  if (mmt.g_block_list == NULL) {
-    block = ya_new_block(size);
-  } else {
-    block = ya_find_free_block(size);
+  /* 【不要用 g_block_list == NULL 当"走新块"的判据】ya_free 会把释放的块从
+   * g_block_list 摘到 g_block_free；当所有块都空闲时 g_block_list 恰好为 NULL，
+   * 此时本该复用空闲链，却会从原始堆重新 carve 一块新内存 —— 白吃内存。
+   * 统一交给 ya_find_free_block：找不到合适块时它自己会 fallback 到
+   * ya_new_block（见其函数尾），语义不变但不再白吃内存。 */
+  block = ya_find_free_block(size);
+  /* 【复用时必须先把块从空闲链上摘掉】ya_find_free_block 只检查 free 标志、
+   * 不摘链。若不管它，这个块之后被 ya_free 时，block->prev/next 还指着空闲链、
+   * 却会被当成"已用链"的邻居去拆 → 空闲链被拆断、节点被永久孤立（既不在已用
+   * 链，从 head 也不可达），累计起来就是"跑久了内核堆被吃光"。
+   * 空闲链的 prev 由 ya_free 维护（见其尾部说明），这里仍从头扫一遍找前驱。 */
+  if (block->free == BLOCK_FREE) {
+    block_t* prev_free = NULL;
+    block_t* cur = mmt.g_block_free;
+    while (cur != NULL && cur != block) {
+      prev_free = cur;
+      cur = cur->next;
+    }
+    if (cur == block) {
+      if (prev_free != NULL) {
+        prev_free->next = block->next;
+      } else {
+        mmt.g_block_free = block->next;
+      }
+      if (mmt.g_block_free_last == block) {
+        mmt.g_block_free_last = prev_free;
+      }
+      block->prev = NULL;
+      block->next = NULL;
+    } else {
+      /* 标记为 FREE 却不在空闲链上：不动链结构，只记一笔 */
+      log_error("ya_alloc block %x marked FREE but not in freelist\n", block);
+    }
   }
   block->free = BLOCK_USED;
   block->magic = MAGIC_USED;
@@ -394,16 +443,24 @@ void ya_free(void* ptr) {
     mmt.g_block_list = next;
   }
 
+  /* 【防御】head/tail 必须成对：可能出现 head 非空而 tail 为 NULL 的状态，
+   * 直接解引用 tail 就是写 NULL+offset（raspi2 上实测崩过，addr=4）。 */
+  if (mmt.g_block_free_last == NULL) {
+    mmt.g_block_free_last = mmt.g_block_free;
+  }
   if (mmt.g_block_free == NULL) {
     mmt.g_block_free = block;
     mmt.g_block_free_last = block;
+    block->prev = NULL;
   } else {
-    mmt.g_block_free_last->next = block;
     block->prev = mmt.g_block_free_last;
+    mmt.g_block_free_last->next = block;
     mmt.g_block_free_last = block;
   }
+  /* 【不要清 block->prev】原代码在这里把 prev 也置 NULL，使空闲链的
+   * tail->prev 恒为 NULL（双向链接断掉），后续按 prev 摘链不可靠。
+   * 只清 next（新尾节点）。与 ya_alloc 里"复用前先摘链"配套。 */
   block->next = NULL;
-  block->prev = NULL;
   ptr = NULL;
 
   // todo merge

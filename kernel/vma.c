@@ -277,7 +277,12 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
   vaddr_t copy_start = addr;
   u32 copied_pages = 0;
   for (; addr < end_addr; addr += PAGE_SIZE) {
-    void* copy_addr = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
+    /* 【泄漏修复】这里原来 kmalloc 一块 4KB 内核堆内存，然后直接把它当"物理
+     * 页"映射给子进程（vmemory_map 第三参语义是物理地址，本内核堆恰好恒等
+     * 映射所以能跑），并且从不归还 —— fork 每复制一页就漏 4KB（MMPROF 实测：
+     * 4KB×1805 次 / 10 次 ls ≈ 7.4MB，几轮就把内核堆吃光）。
+     * 改用页分配器：子进程退出时 vfree→mm_free_page 会把它还给页分配器。 */
+    void* copy_addr = mm_alloc_page();
     if (copy_addr == NULL) {
       log_error("tid %d vm copy %s page alloc failed at %lx\n", vm_copy->tid,
                 type_str, addr);
@@ -291,6 +296,11 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
       kmemset(copy_addr, 0, PAGE_SIZE);
       log_debug("-copy vaddr %lx zero page %lx\n", addr, copy_addr);
     }
+    /* 这页刚被 CPU 写过（恒等映射），先 clean+invalidate 让内存拿到最新内容：
+     * 子进程稍后用自己的虚拟地址读同一物理页，两份映射在 cache 里不保证是
+     * 同一条行，不同步就会读到旧数据（接口语义见 arch/cpu.h）。 */
+    cpu_flush_dcache_range((unsigned long)copy_addr,
+                           (unsigned long)copy_addr + PAGE_SIZE);
     vmemory_map(vm_copy->upage, addr, (vaddr_t)copy_addr, PAGE_SIZE);
     copied_pages++;
   }
