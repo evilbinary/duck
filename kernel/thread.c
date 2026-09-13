@@ -580,10 +580,60 @@ void thread_recycle(thread_t* thread) {
 void thread_stop(thread_t* thread) {
   if (thread == NULL) return;
   thread->state = THREAD_STOPPED;
-  // thread_recycle(thread);
-  // kprintf("recycle count %d\n", recycle_head_thread_count);
-  // schedule_next();
-  // cpu_sti();
+  /* 【移入回收队列】不能在这里直接释放：线程可能还在自己的栈上跑
+   * （thread_exit 就发生在它自己的上下文里）。真正的释放由调度器在切换到
+   * 其它线程之后调用 thread_recycle_process() 完成。 */
+  thread_recycle(thread);
+}
+
+/* 【延迟回收】遍历 recycle 队列，释放已退出线程的地址空间与内存。
+ * 只回收"不是当前线程"的：退出瞬间它可能还站在自己的内核栈上，
+ * 留到下一轮（当前线程换人之后）再处理。
+ * 还不做的：页表（L1/L2）本身、fd 条目 —— 体量小，留待下一轮。 */
+void thread_recycle_process(void) {
+  thread_t* cur = thread_current();
+  thread_t* v = recycle_head_thread;
+  thread_t* prev = NULL;
+  while (v != NULL) {
+    thread_t* next = v->next;
+    if (v != cur) {
+      if (prev == NULL) {
+        recycle_head_thread = next;
+      } else {
+        prev->next = next;
+      }
+      if (recycle_tail_thread == v) {
+        recycle_tail_thread = prev;
+      }
+      if (recycle_head_thread_count > 0) {
+        recycle_head_thread_count--;
+      }
+      if (v->vm != NULL) {
+        vmemory_destroy(v->vm);
+        kfree(v->vm);
+        v->vm = NULL;
+      }
+      if (v->ctx != NULL) {
+        if (v->ctx->ksp_start != 0) {
+          kfree((void*)(u32)v->ctx->ksp_start);
+        }
+        kfree(v->ctx);
+        v->ctx = NULL;
+      }
+      if (v->vfs != NULL) {
+        kfree(v->vfs);
+        v->vfs = NULL;
+      }
+      if (v->fds != NULL) {
+        kfree(v->fds);
+        v->fds = NULL;
+      }
+      kfree(v);
+    } else {
+      prev = v;
+    }
+    v = next;
+  }
 }
 
 thread_t* thread_head() { return schedulable_head_thread[cpu_get_id()]; }

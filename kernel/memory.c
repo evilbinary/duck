@@ -31,7 +31,7 @@ memory_t memory_summary;
  * 用 arm-none-eabi-addr2line 反查 ra0/ra1 即可得到调用点。
  * 默认关闭：定位完把 MM_ALLOC_PROFILE 改回 0。
  * 开销：只计数、不分配、不加锁；打印走 kprintf（静态缓冲，不递归进分配器）。 */
-#define MM_ALLOC_PROFILE 0
+#define MM_ALLOC_PROFILE 1 /* 【临时诊断】定位"跑应用后内核堆被吃光"的泄漏点，定位完改回 0 */
 #if MM_ALLOC_PROFILE
 #define MM_PROF_SLOTS 48
 typedef struct {
@@ -67,7 +67,7 @@ void mm_alloc_profile_note(u32 size, void* ra0, void* ra1) {
   }
 dump:
   mm_prof_total++;
-  if ((mm_prof_total & 0x7ff) == 0) {
+  if ((mm_prof_total & 0xff) == 0) { /* 诊断期加密打印：每 256 次分配出一份画像 */
     extern u32 ya_free_bad_magic, ya_free_bad_state, ya_free_bad_end;
     extern void ya_heap_stats(u32*, u32*, u32*, u32*, u32*);
     u32 hf = 0, hb = 0, hm = 0, hc = 0, hl = 0;
@@ -331,7 +331,9 @@ void* kmalloc(size_t size, u32 flag) {
   // So: for non-user threads, always allocate from physical memory.
   thread_t* current = thread_current();
   if (current == NULL || current->level != LEVEL_USER) {
-    return phy_alloc(size);
+    addr = phy_alloc(size);
+    MM_ALLOC_NOTE(size); /* ARMv5 内核态走物理分配，也要计入画像（否则漏统） */
+    return addr;
   }
 #endif
   if (flag & KERNEL_TYPE || flag & DEVICE_TYPE) {
@@ -352,7 +354,9 @@ void* kmalloc_alignment(size_t size, int alignment, u32 flag) {
 #if defined(ARM) && defined(ARMV5)
   thread_t* current = thread_current();
   if (current == NULL || current->level != LEVEL_USER) {
-    return phy_alloc_aligment(size, alignment);
+    addr = phy_alloc_aligment(size, alignment);
+    MM_ALLOC_NOTE(size);
+    return addr;
   }
 #endif
   if (flag & KERNEL_TYPE || flag & DEVICE_TYPE) {

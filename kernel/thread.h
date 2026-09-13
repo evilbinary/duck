@@ -113,6 +113,7 @@ void thread_remove(thread_t* thread);
 
 void thread_run(thread_t* thread);
 void thread_stop(thread_t* thread);
+void thread_recycle_process(void);
 void thread_exit(thread_t* thread, int code);
 
 void thread_yield();

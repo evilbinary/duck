@@ -105,6 +105,7 @@ interrupt_context_t* schedule_reschedule(interrupt_context_t* ic) {
 #ifdef VM_ENABLE
     context_switch_page(next_thread->ctx, next_thread->vm->upage);
 #endif
+    thread_recycle_process(); /* 已切到别的线程，此时回收退出的线程是安全的 */
     return next_ic;
   }
 }
@@ -125,6 +126,7 @@ void schedule(interrupt_context_t* ic) {
 #ifdef VM_ENABLE
   context_switch_page(next_thread->ctx, next_thread->vm->upage);
 #endif
+  thread_recycle_process(); /* 已切到别的线程，此时回收退出的线程是安全的 */
   (void)next_ic;
 }
 

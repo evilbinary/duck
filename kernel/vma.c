@@ -311,6 +311,43 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
 #endif
 }
 
+/* 【回收地址空间】把 vm 独占的用户物理页归还页分配器。
+ * 只处理 ref<=1（fork 出来的独占空间）；VM_SAME（pthread 共享）的 vm 被多个
+ * 线程共用且引用计数不完整，这里不动它（避免释放仍被使用的页）。
+ * 注意：不能用 vfree() —— 它只在"当前地址空间"里有效，而被回收线程的页表
+ * 并不是当前的；所以这里直接遍历它自己的页表。只扫用户 VA 区间：内核区
+ * （0x82000000+）的页表是共享的，绝不能释放。页表本身（L1/L2）的释放留给
+ * 下一轮（体量小得多，先回收占大头的用户页）。 */
+void vmemory_destroy(vmemory_t* vm) {
+  if (vm == NULL) {
+    return;
+  }
+  if (vm->ref > 1) {
+    return;
+  }
+#ifdef VM_ENABLE
+  if (vm->upage != NULL) {
+    u32* l1 = (u32*)vm->upage;
+    u32 start = (u32)EXEC_ADDR >> 20;
+    u32 end = 0x80000000u >> 20;
+    for (u32 i = start; i < end; i++) {
+      u32 e = l1[i];
+      if ((e & 1) == 0) {
+        continue; /* 该 1MB 区间没有 L2 表 */
+      }
+      u32* l2 = (u32*)(e & 0xFFFFFC00u);
+      for (u32 j = 0; j < 256; j++) {
+        if ((l2[j] & 3) != 0) {
+          void* pg = (void*)(l2[j] & 0xFFFFF000u);
+          l2[j] = 0;
+          mm_free_page(pg);
+        }
+      }
+    }
+  }
+#endif
+}
+
 void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
   log_debug("vm clone init flags=%x\n", flags);
 
