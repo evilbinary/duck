@@ -32,12 +32,27 @@ void serial_printf(char* fmt, ...) {
 static size_t read(device_t* dev, void* buf, size_t len) {
   u32 count = 0;
   int ret = 0;
-  for (int i = 0; i < len; i++) {
+  if (len == 0) {
+    return 0;
+  }
+  /* 【必须阻塞到至少读到 1 字节】串口是阻塞式字符设备：若 FIFO 空时返回 0，
+   * 用户态 libc（newlib getchar）会把 0 当 EOF 置标志，之后 getchar 直接
+   * 短路返回 EOF、不再发起 read —— 表现为 shell 提示符正常但永远无法输入
+   * （raspi3 实测）。先自旋等到第一字节，再顺带取走 FIFO 剩余数据。 */
+  while (count == 0) {
     char c = serial_read();
     if (c != 0) {
       ((char*)buf)[count++] = c;
       ret = count;
     }
+  }
+  while (count < len) {
+    char c = serial_read();
+    if (c == 0) {
+      break; /* FIFO 已空 */
+    }
+    ((char*)buf)[count++] = c;
+    ret = count;
   }
   return ret;
 }
