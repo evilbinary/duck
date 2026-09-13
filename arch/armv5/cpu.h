@@ -68,6 +68,10 @@ void cache_flush_range(unsigned long start, unsigned long stop);
  * 否则旧表项会继续命中，指向已被回收的物理页。 */
 void tlbimva(unsigned long mva);
 
+/* clean + invalidate 整片 D-cache。VIVT 上切换地址空间前必须调用
+ * （脏行按虚拟地址 tag 写回，切了页表就会写错物理页），见 context.c。 */
+void cpu_flush_dcache_all(void);
+
 
 #define syscall0(syscall_num)    \
   ({                             \

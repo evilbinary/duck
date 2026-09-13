@@ -66,6 +66,17 @@ void cpu_flush_dcache_range(unsigned long start, unsigned long stop);
 void cpu_invalidate_dcache_range(unsigned long start, unsigned long stop);
 void cpu_invalidate_icache(void);
 
+/*   cpu_zero_phy_page(p, size)        把一页【按恒等映射(物理地址)访问】的内存清零，
+ *                                     并保证清零结果不会被同一物理页的其它虚拟别名
+ *                                     分叉或事后覆盖。
+ *                                     用于：页分配之后、安装用户映射之前的清零。
+ *                                     ⚠ 前提：p 必须是当前 MMU 下可直接访问的恒等映射
+ *                                     地址（页分配器返回的物理页满足这一点）。
+ *                                     armv5(VIVT) 需要 memset 后 clean+invalidate；
+ *                                     PIPT/一致性架构（armv7-a、x86、riscv…）直接
+ *                                     memset 即可，由 arch.c 的弱符号兜底。 */
+void cpu_zero_phy_page(void* p, unsigned long size);
+
 /* ---- 统一的 TLS / 线程指针接口（跨架构） ---------------------------------
  * 把"写硬件线程指针寄存器"这件架构私事从共享代码里拿掉：共享代码只调
  * cpu_set_tls()，各架构在自己的 cpu.c 里给强实现，没有该寄存器的架构用

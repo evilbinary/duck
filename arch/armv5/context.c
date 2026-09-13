@@ -191,13 +191,24 @@ interrupt_context_t* context_switch(interrupt_context_t* ic, context_t* current,
 }
 
 void context_switch_page(context_t* context, u32 page_table) {
+  u32 old_table;
+  asm volatile("mrc p15, 0, %0, c2, c0, 0" : "=r"(old_table));
+
+  /* 【照抄 Linux proc-arm926.S: cpu_arm926_switch_mm】
+   * ARM926 是 VIVT 缓存，本内核各进程共用同一套用户 VA（EXEC 0x60000000 /
+   * STACK 0x70000000 / HEAP 0x70100000+），只是映射到不同物理页；切地址空间
+   * 若不清缓存，上一个地址空间的缓存行会被新进程当成自己的数据/指令命中
+   * （实测：shell 恢复执行时 pc 跳进自己的栈，pc=0x700ffedc）。
+   * Linux 的做法是【每次切换都】整片清缓存，且顺序关键：清缓存必须在写
+   * TTBR0 之前（脏行按 tag 写回，先切页表就会写错物理页）。与 Linux 唯一的
+   * 差别是加了 old_table != page_table 的短路：同一地址空间内的线程切换不必
+   * 付这份开销（页表相同 ⇒ 翻译相同 ⇒ 无串扰）。 */
+  if (old_table != page_table) {
+    cpu_flush_dcache_all();
+  }
+
   write_ttbr0(page_table);
   cpu_invalid_tlb();
-  // cp15_invalidate_icache();
-  // asm volatile("mcr p15, 0, %0, c8, c7, 0" : : "r"(0));
-
-  //cpu_set_page(page_dir);
-
 }
 
 int context_irq_preemptible(interrupt_context_t* ic) {

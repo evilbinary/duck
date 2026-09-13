@@ -52,6 +52,7 @@
 
 /* ---- 编码层：4 档合法编码（L2_DESC 基值已含全权限位，此处只管缓存属性） -- */
 #define L2_ATTR_WB  (L2_CB)                /* C=1 B=1  可缓存（写回）              */
+#define L2_ATTR_WT  (L2_CNB)               /* C=1 B=0  可缓存（写通，=2<<2）        */
 #define L2_ATTR_NC  (L2_TEXT_1 | L2_NCNB)  /* C=0 B=0  非缓存（bit6 在 ARMv5 为 SBZ） */
 #define L2_ATTR_DEV (L2_TEXT_0 | L2_NCB)   /* C=0 B=1  Device                      */
 #define L2_ATTR_SO  0                      /* C=0 B=0  强序                        */
@@ -61,8 +62,12 @@
 #define PAGE_R 0
 
 #define PAGE_DEV     L2_ATTR_DEV  /* 设备 MMIO                     */
+/* 可缓存映射保持写回(WB)，与 Linux 对 ARM926 的用法一致
+ * （proc-arm926.S 的 __arm926_proc_info = BUFFERABLE|CACHEABLE）。
+ * 切地址空间时的整片清理由 arch/armv5/context.c + cpu.c 的
+ * test,clean,invalidate（MRC c7,c14,3）完成，见 ARMV5_DCACHE 的说明。 */
 #define PAGE_KERNEL  L2_ATTR_WB   /* 内核代码/映像/只读数据         */
-#define PAGE_KMEM    L2_ATTR_WB   /* 内核堆（ARMv5 无策略开关）     */
+#define PAGE_KMEM    L2_ATTR_WB   /* 内核堆                         */
 #define PAGE_USER    L2_ATTR_WB   /* 用户内存                       */
 #define PAGE_FB      L2_ATTR_WB   /* 帧缓冲及其别名                 */
 #define PAGE_SHARED  L2_ATTR_NC   /* CPU 与硬件共享缓冲             */

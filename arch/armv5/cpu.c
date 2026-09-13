@@ -154,6 +154,27 @@ void cpu_disable_l1_cache() {
   isb();
 }
 
+/* 【整片清 D-cache：逐字照抄 Linux proc-arm926.S 的
+ * cpu_arm926_switch_mm / arm926_flush_kern_cache_all】
+ * ARM926 没有"整片 clean"的 MCR 形式；它提供的是专有的 test,clean,invalidate
+ * 指令 —— MRC 形式、opcode_2=3，把状态写进 APSR 的 NZCV（TRM 明确：读 c7 仅对
+ * 两个 test-and-clean 操作有定义），Z 表示"没有更多脏行"，循环到清完为止。
+ * 之后失效 I-cache、排空写缓冲。这就是 Linux 在 ARM926 上每次 switch_mm 都做
+ * 的事，顺序一致：清缓存 → 失效 I → drain WB → 写 TTBR0 → 失效 TLB（见
+ * context.c）。此前试 MCR c7,c14,0 之所以 UNDEF，是形式和 opcode 都不对。 */
+void cpu_flush_dcache_all(void) {
+  asm volatile(
+      "mov r0, #0                             \n"
+      "1:  mrc p15, 0, APSR_nzcv, c7, c14, 3  \n" /* test,clean,invalidate DCache */
+      "    bne 1b                             \n"
+      "    mcr p15, 0, r0, c7, c5, 0          \n" /* invalidate I cache */
+      "    mcr p15, 0, r0, c7, c10, 4         \n" /* drain WB */
+      :
+      :
+      : "r0", "memory", "cc");
+  isb();
+}
+
 void cpu_set_page(u32 page_table) {
   kprintf("cpu_set_page\n");
 
@@ -283,6 +304,25 @@ void cache_flush_range(unsigned long start, unsigned long stop) {
   dsb();
 }
 
+/* 【ARMv5 专属：页清零时的别名处理】实现 arch/cpu.h 的 cpu_zero_phy_page()。
+ * ARM926 的 D-cache 是 VIVT —— 同一物理页在「恒等映射 PA」与「用户 VA」下是
+ * 两个不同的 cache tag。页分配路径的语义是：先在恒等映射下把新页清零，随后
+ * 内核再按用户 VA 往同一页写内容（加载器写 ELF / 用户栈内容）。
+ * 若这里只 memset 不做 cache 维护，D-cache 里会留下一条 tag=PA 的零值行，与
+ * 用户 VA 那一份分叉；等这条 PA 行被驱逐时会把用户页内容覆盖成 0，表现为用户
+ * 进程执行到垃圾（实测三种落点：PREF ABORT 到 0x1000、UNDEF 跳到 0x81c、
+ * /bin/ls 在 0x304ffbc8 data fault）。
+ * 因此 memset 之后立刻 clean+invalidate：让物理内存成为唯一权威副本，后面
+ * 用户 VA 侧再写就不会有第二条"影子数据"。调用方（kernel/memory.c 的
+ * valloc / memory_stack_ensure）只表达"把这一页清零"的意图，细节留在本层。 */
+void cpu_zero_phy_page(void* p, unsigned long size) {
+  if (p == NULL || size == 0) {
+    return;
+  }
+  kmemset(p, 0, size);
+  cpu_flush_dcache_range((unsigned long)p, (unsigned long)p + size);
+}
+
 void cpu_enable_page() {
   kprintf("cpu_enable_page\n");
 
@@ -307,29 +347,34 @@ void cpu_enable_page() {
   // reg |= 1 << 1;  // Alignment check enable.
 
   /* D-cache / write buffer：
-   *   - 页表属性已经是 WB（armv5/mm.h 的 PAGE_KERNEL/PAGE_KMEM/PAGE_USER/
-   *     PAGE_FB = L2_ATTR_WB），此前只是被 SCTLR.C=0 全局禁掉；
+   *   - 页表属性现在是【写通 WT】（armv5/mm.h 的 PAGE_KERNEL/PAGE_KMEM/
+   *     PAGE_USER/PAGE_FB = L2_ATTR_WT = L2_CNB，C=1 B=0）。之所以不用写回
+   *     WB：ARM926 没有"整片 D-cache 的 clean+invalidate"操作，切地址空间时
+   *     只能"只失效"，因此必须保证缓存里没有脏行 —— 详见 mm.h 的说明。
    *   - armv5/mm.c 的 page_create / page_copy / page_map_on 都对本架构做了
    *     dccmvac clean（页表对 MMU 遍历器可见），具备开 D-cache 的条件。
    * 出问题（数据/外设异常）时可把 ARMV5_DCACHE 置 0，快速回退到"仅 I-cache"。 */
 #ifndef ARMV5_DCACHE
-/* 【暂时关闭】ARM926 的 D-cache 是 VIVT：同一物理页在「恒等映射 PA」与
- * 「用户 VA」下是两个不同的 cache tag。内核里存在多处这样的双写/双读
- * （典型：valloc / memory_stack_ensure 先用恒等映射把新页清零，紧接着内核又
- * 走用户 VA 往同一页写内容），VIVT 下会留下互不知情的两份行，用户进程的
- * 代码/数据因此被随机破坏。实测三种落点：
- *   PREF ABORT 到 0x1000 / UNDEF 跳到 0x81c / /bin/ls 在 0x304ffbc8 data fault。
+/* 【开启：做法逐字照抄 Linux proc-arm926.S，不再是猜测】
  *
- * 【为什么不把 flush 补在 kernel/memory.c】那是全架构通用文件，而 VIVT 别名
- * 是 ARMv5 独有语义：写在那里既放错层次、也会给 PIPT 的架构（armv7-a 等）
- * 带无谓开销。而且 memory_stack_ensure 的调用方（backtrace 模块）可能拿的是
- * 别的线程的 vm，那种情况下用户 VA 在当前页表里没映射，连"改走 VA 清零"
- * 都不成立 —— 说明这个别名问题只能在 arch 内部消化，不该外溢到通用层。
+ * 背景：ARM926 是 VIVT 缓存，本内核各进程共用同一套用户 VA（EXEC 0x60000000 /
+ * STACK 0x70000000 / HEAP 0x70100000+），各自映射到不同物理页；切地址空间必须
+ * 整片清缓存，否则上一个地址空间的缓存行会被新进程当成自己的数据/指令命中
+ * （实测：D-cache 开着时 `ls` 一跑，shell(tid 1) 恢复执行就把栈里的值当返回
+ * 地址，pc 跳进自己的栈）。
  *
- * 已落的 arch 层修复：arch/armv5/mm.c 的 page_map_on / page_unmap_on 补上了
- * tlbimva（armv7-a 一直有，armv5 移植时漏了）。D-cache 的别名问题待单独做
- * 一轮 armv5 内部设计后再打开：编译期加 -DARMV5_DCACHE=1 即可恢复。 */
-#define ARMV5_DCACHE 0
+ * 此前三次失败的根因都已清楚：
+ *   1) 用了 MCR c7,c14,0 —— ARM926 的"整片 clean+invalidate"不是这个形式；
+ *   2) WT 的 C/B 位写反（1<<2 实为 C=0,B=1，即类设备内存）；
+ *   3) 没有对照参考实现。
+ * Linux 的 cpu_arm926_switch_mm 给出标准答案（已逐字照抄，见本文件
+ * cpu_flush_dcache_all 与 context.c）：
+ *   - WB 模式：MRC p15,0,APSR_nzcv,c7,c14,3（test,clean,invalidate）循环到
+ *     Z=1，再失效 I-cache、drain WB，然后才写 TTBR0、失效 TLB；
+ *   - 映射属性保持写回(WB)，与 Linux 一致（__arm926_proc_info 即
+ *     BUFFERABLE|CACHEABLE）。
+ * 出问题（数据/外设异常）时把这里置 0 可快速回退到"仅 I-cache"。 */
+#define ARMV5_DCACHE 1
 #endif
 #if ARMV5_DCACHE
   reg |= 1 << 2;   // Data cache enable.

@@ -470,7 +470,7 @@ int memory_stack_ensure(vmemory_t* vm, u32 sp, u32 need) {
     if (phy == NULL) {
       return -1;
     }
-    kmemset(phy, 0, PAGE_SIZE);
+    cpu_zero_phy_page(phy, PAGE_SIZE);
     page_map_on(vm->upage, a, phy, PAGE_USER);
   }
   m->vaddr = (void*)target;
@@ -514,7 +514,7 @@ void* valloc(void* addr, size_t size) {
     }
     /* First zero through the kernel identity mapping so the physical page
      * is clean even before we install the user mapping. */
-    kmemset(phy_addr, 0, PAGE_SIZE);
+    cpu_zero_phy_page(phy_addr, PAGE_SIZE);
     memory_static(PAGE_SIZE, MEMORY_TYPE_USE);
     /* L2 分配走 kmalloc_alignment，与 memory_lock 同一把（可重入） */
     if (current != NULL) {

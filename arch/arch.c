@@ -27,6 +27,16 @@ __attribute__((weak)) void cpu_invalidate_dcache_range(unsigned long start,
 
 __attribute__((weak)) void cpu_invalidate_icache(void) {}
 
+/* 【页清零的默认实现（弱符号）】
+ * PIPT / 硬件自动一致的架构直接 memset 即可：同一物理页在不同 VA 下是同一
+ * cache 行，不存在别名分叉。armv5(VIVT) 在 cpu.c 里给出强实现（memset +
+ * clean+invalidate），链接时自动覆盖本弱定义。 */
+__attribute__((weak)) void cpu_zero_phy_page(void* p, unsigned long size) {
+  if (p != NULL && size > 0) {
+    kmemset(p, 0, size);
+  }
+}
+
 /* 【统一 TLS 接口的默认实现（弱符号）】
  * 只有 ARMv6K/ARMv7+ 才有 TPIDRURO；armv5(ARM926EJ-S)、ARMv7-M(cortex-m4)、
  * x86、riscv 都没有该寄存器，空实现即可（线程指针由 current->user_tp /
