@@ -392,16 +392,6 @@ void ya_heap_stats(u32* free_bytes, u32* free_blocks, u32* max_free_block,
   if (last_map) *last_map = (u32)mmt.last_map_addr;
 }
 
-/* 【YA_FREE_TRACE 诊断】最近 32 次 free 的 (ptr, ra) 环形记录，bad state 时
- * 打印同一 ptr 的全部调用点 —— 第一次与第二次 free 的来源一目了然。
- * 开关定义见 pmemory.h。 */
-#if YA_FREE_TRACE
-#define YA_DBG_FREE_N 32
-static void* ya_dbg_free_ptr[YA_DBG_FREE_N];
-static void* ya_dbg_free_ra[YA_DBG_FREE_N];
-static int ya_dbg_free_idx = 0;
-#endif
-
 void ya_free(void* ptr) {
   if (ptr == NULL) {
     return;
@@ -422,33 +412,6 @@ void ya_free(void* ptr) {
     ya_free_bad_state++;
     log_error("ya_free bad state ptr=%x block=%x free=%x magic=%x size=%x\n", ptr,
               block, block->free, block->magic, block->size);
-#if YA_FREE_TRACE
-    /* 【诊断回查】bad state 时打印 mm_free/vm_free/kfree 三层环形记录中
-     * 同一 ptr 的全部调用点（addr2line kernel.elf 逐层定位二次释放链） */
-    for (int i = 0; i < YA_DBG_FREE_N; i++) {
-      if (ya_dbg_free_ptr[i] == ptr) {
-        log_error("  free#%d ra=%p\n", i, ya_dbg_free_ra[i]);
-      }
-    }
-    {
-      extern void* ya_dbg_vmfree_ptr[];
-      extern void* ya_dbg_vmfree_ra[];
-      for (int i = 0; i < 32; i++) {
-        if (ya_dbg_vmfree_ptr[i] == ptr) {
-          log_error("  kfree#%d ra=%p\n", i, ya_dbg_vmfree_ra[i]);
-        }
-      }
-    }
-    {
-      extern void* ya_dbg_kfree_ptr[];
-      extern void* ya_dbg_kfree_ra[];
-      for (int i = 0; i < 32; i++) {
-        if (ya_dbg_kfree_ptr[i] == ptr) {
-          log_error("  caller#%d ra=%p\n", i, ya_dbg_kfree_ra[i]);
-        }
-      }
-    }
-#endif
     return;
   }
 
@@ -627,6 +590,9 @@ size_t mm_get_align_size(void* addr) { return mmt.size(((void**)addr)[-1]); }
 
 void* mm_alloc(size_t size) {
   void* p = mmt.alloc(size);
+  if (p == 0x23e000) {
+    int i = 0;
+  }
   if (p == NULL) {
     return NULL;
   }
@@ -634,14 +600,7 @@ void* mm_alloc(size_t size) {
   return p;
 }
 
-void mm_free(void* ptr) {
-#if YA_FREE_TRACE
-  ya_dbg_free_ptr[ya_dbg_free_idx] = ptr;
-  ya_dbg_free_ra[ya_dbg_free_idx] = __builtin_return_address(0);
-  ya_dbg_free_idx = (ya_dbg_free_idx + 1) % YA_DBG_FREE_N;
-#endif
-  return mmt.free(ptr);
-}
+void mm_free(void* ptr) { return mmt.free(ptr); }
 
 void* mm_alloc_zero_align(size_t size, u32 alignment) {
   void* p1;   // original block

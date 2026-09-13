@@ -635,7 +635,9 @@ void thread_recycle_process(void) {
         /* 【vfs 是浅拷贝共享的】thread_copy 里 copy->vfs = thread->vfs 且
          * users++。这里必须按引用计数释放：>1 时只减计数，最后一个使用者
          * 才 kfree。否则第二个退出者会对同一 vfs 二次释放 —— 实测 raspi2
-         * 上表现为 ya_free bad state（早前 init 直接崩死在 ya_free）。 */
+         * 上表现为 ya_free bad state（早前 init 直接崩死在 ya_free）。
+         * 【二分结论】27e167f 整体回退会导致 raspi3 无法启动到 shell，
+         * 本段是 27e167f 中唯一的行为修改，单独恢复验证。 */
         if (v->vfs->users > 1) {
           v->vfs->users--;
         } else {

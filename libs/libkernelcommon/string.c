@@ -300,22 +300,6 @@ typedef struct block {
 
 void* kmemset(void* s, int c, size_t n) {
   if(s==NULL) return NULL;
-  /* TEMP DEBUG: 抓 .text 被擦的真凶 —— 内核镜像区 0x100000-0x1a0000
-   * （.text/.rodata/.data），堆从 0x1ad000 起。dest 落在镜像区且 size 大 = 灾难。 */
-  if ((unsigned long)s >= 0x100000UL && (unsigned long)s < 0x1A0000UL && n > 4096) {
-    kprintf("kmemset WIPE ALERT dest=%p size=%x caller=%p\n", s, n,
-            __builtin_return_address(0));
-    while (1)
-      ;
-  }
-  /* TEMP DEBUG: dest 为近 NULL 的空指针清零（缺页处理器会逐页补映射，
-   * 越过 0x100000 后静默擦 .text） */
-  if ((unsigned long)s < 0x100000UL && n > 4096) {
-    kprintf("kmemset NULL WIPE dest=%p size=%x caller=%p\n", s, n,
-            __builtin_return_address(0));
-    while (1)
-      ;
-  }
 #ifdef MALLOC_TRACE
   block_t* block = ya_block_ptr(s);
   if (block != NULL) {

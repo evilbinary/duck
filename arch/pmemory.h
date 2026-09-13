@@ -159,15 +159,6 @@ void mm_alloc_init();
 void mm_dump_phy();
 void mm_dump();
 
-/* 【诊断开关 YA_FREE_TRACE】=1 时，mm_free/vm_free/kfree 各自记录最近 32 次
- * 调用的 (ptr, ra) 环形链；当 ya_free 检出坏块（二次释放/坏状态）时逐层
- * 回查打印调用点，配合 addr2line kernel.elf 直接定位二次释放者。
- * 正常运行零输出、开销仅几次写内存；置 0 可彻底关闭（pmemory.c 与
- * memory.c 共用此开关，定义于本头文件）。 */
-#ifndef YA_FREE_TRACE
-#define YA_FREE_TRACE 1
-#endif
-
 void page_map_range(void* page, vaddr_t vaddr, vaddr_t paddr, vaddr_t size, u64 flag);
 
 #endif
