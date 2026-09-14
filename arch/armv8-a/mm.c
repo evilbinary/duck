@@ -113,9 +113,16 @@ u64* page_clone(u64* old_pgd, u32 level) {
 
 /* 【归还整棵用户页表】AArch64：3 级表（pgd→pmd→pte），每级 512 项 u64，
  * 4KB 粒度。有效描述符 bits[1:0]=0b11（表/页），块描述符 0b01 跳过（只漏不踩）。
- * 用户区从 EXEC_ADDR 起：pgd[0]（VA 0-1GB）含内核恒等映射与 MMIO，绝不释放。
  * 表由 page_create()→mm_alloc_zero_align(PAGE_SIZE,PAGE_SIZE) 分配，
  * 用 kfree_alignment 归还（内核堆恒等映射，配对正确）。
+ * 【只扫用户区 [EXEC_ADDR, 0x80000000)】上界必须与 32 位架构
+ * （armv7-a/armv5/armv7 的 page_destroy，raspi2 真机长期验证）一致：
+ * 0x80000000 之上是设备/帧缓冲别名（xwin 的 fb 别名 0xfb000000）与内核
+ * 共享映射，其物理页是 MMIO/GPU 显存、不属于页分配器 —— 一旦归还，
+ * mm_free_page 会直接往设备物理地址写空闲链指针（raspi3 实测：
+ * VA 0xfb000000→PA 0x3c100000 被归还，mm_free_page 的 str 触发翻译错误
+ * 崩溃，并把 0x3f000000 外设区也串进空闲链）。pgd[0]（VA 0-1GB）同理含
+ * 内核恒等映射与 MMIO，也不扫。
  * 【严禁】用 32 位语义（u32*、1MB section、0xFFFFF000）解析 64 位页表：
  * 索引/掩码全错，会把堆内存当页表项，垃圾指针进 mm_page_free_list，
  * 被 page_create 清零后物理擦掉 .text（raspi3 实测内核崩死）。 */
@@ -123,8 +130,9 @@ void page_destroy(u64* upage) {
   if (upage == NULL) {
     return;
   }
-  u32 start = (u32)(EXEC_ADDR >> PGD_SHIFT); /* 1GB/项，跳过内核所在的 pgd[0] */
-  for (u32 i = start; i < PTRS_PER_TABLE; i++) {
+  u32 start = (u32)(EXEC_ADDR >> PGD_SHIFT);  /* 1GB/项，用户区起点 */
+  u32 end = (u32)(0x80000000UL >> PGD_SHIFT); /* 用户区上界（排他） */
+  for (u32 i = start; i < end; i++) {
     u64 e1 = upage[i];
     if ((e1 & 3) != 3) {
       continue; /* 无效或块描述符 */

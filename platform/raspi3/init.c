@@ -65,10 +65,15 @@ static void uart_init(void) {
     io_write32(UART0_FBRD, 3);
     io_write32(UART0_LCRH, (3u << 5) | (1u << 4));  // 8N1, FIFO enable
   } else {
-    // Ensure 8-bit mode; keep existing divisors.
+    /* Ensure 8-bit mode + FIFO enable; keep existing divisors.
+     * 【必须带 FEN(bit4)】QEMU 的 PL011 模型在 FIFO 未使能时
+     * can_receive() 恒为假，主机侧发来的输入根本不会进入 RX FIFO：
+     * 实测 LCRH=0x60（无 FEN）时 FR 恒为 0x90（RXFE=1），shell 轮询
+     * read(0) 永远返回 0 ⇒ 表现为"shell 完全无法输入"。
+     * （boot 阶段写的是 0b11<<5=0x60，同样没有 FEN，所以这里必须补。） */
     u32 lcrh = io_read32(UART0_LCRH);
     lcrh &= ~(3u << 5);
-    lcrh |= (3u << 5);
+    lcrh |= (3u << 5) | (1u << 4);
     io_write32(UART0_LCRH, lcrh);
   }
 
@@ -87,7 +92,7 @@ static void uart_init(void) {
 
 void uart_send(u8 c) {
   while (io_read32(UART0_FR) & 0x20) {
-  }
+  } 
   io_write32(UART0_DR, c);
 }
 
