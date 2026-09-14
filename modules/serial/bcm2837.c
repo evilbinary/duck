@@ -6,6 +6,7 @@
 #include "dev/devfs.h"
 #include "gpio.h"
 #include "serial.h"
+#include "kernel/thread.h"
 
 void serial_write(char a) { uart_send(a); }
 
@@ -32,27 +33,23 @@ void serial_printf(char* fmt, ...) {
 static size_t read(device_t* dev, void* buf, size_t len) {
   u32 count = 0;
   int ret = 0;
+  /* 【与 raspi2 保持一致的非阻塞语义】FIFO 空时立刻返回 0，由用户态
+   * 重试（shell: getchar 返回 EOF → sleep(100) → 再 getchar；newlib
+   * 的 __srefill 不会因 EOF 短路，会重新发起 read）。
+   * 【不要在这里自旋等数据】驱动 read 是在 vread 的 vfs 全局锁里执行的，
+   * 自旋等待会让 shell 长时间持锁：其它进程（/bin/config）被挂进
+   * rt_mutex 等待链；而 rt_mutex_unlock 会把等待者状态强设为 RUNNING
+   * （对已 thread_exit 的线程就是从死状态"复活"），引发后续整套
+   * 调度/锁连锁异常，表现为输入若干字符后 shell 永久卡死。 */
   if (len == 0) {
     return 0;
   }
-  /* 【必须阻塞到至少读到 1 字节】串口是阻塞式字符设备：若 FIFO 空时返回 0，
-   * 用户态 libc（newlib getchar）会把 0 当 EOF 置标志，之后 getchar 直接
-   * 短路返回 EOF、不再发起 read —— 表现为 shell 提示符正常但永远无法输入
-   * （raspi3 实测）。先自旋等到第一字节，再顺带取走 FIFO 剩余数据。 */
-  while (count == 0) {
+  for (u32 i = 0; i < len; i++) {
     char c = serial_read();
     if (c != 0) {
       ((char*)buf)[count++] = c;
       ret = count;
     }
-  }
-  while (count < len) {
-    char c = serial_read();
-    if (c == 0) {
-      break; /* FIFO 已空 */
-    }
-    ((char*)buf)[count++] = c;
-    ret = count;
   }
   return ret;
 }

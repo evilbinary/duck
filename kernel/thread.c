@@ -523,30 +523,32 @@ void thread_add(thread_t* thread) {
 void thread_remove(thread_t* thread) {
   // lock_acquire(&thread_lock);
   int cpu_id = cpu_get_id();
-  thread_t* prev = schedulable_head_thread[cpu_id];
-  thread_t* v = prev->next;
   thread->state = THREAD_STOPPED;
   thread->counter += 1000;
 
-  if (schedulable_head_thread[cpu_id] == thread) {
-    schedulable_head_thread[cpu_id] = NULL;
-    schedulable_tail_thread[cpu_id] = NULL;
-    thread->next = NULL;
-    // lock_release(&thread_lock);
-
-    return;
-  }
-
-  for (; v; v = v->next) {
+  /* 【只摘除该节点，绝不能清空整条链】原实现：若 thread 恰好是
+   * schedulable_head_thread[cpu_id]，直接 head=tail=NULL —— 该核调度链上
+   * 的其它线程（比如 shell）全部从调度器里消失，线程再也不被调度
+   * （raspi3 实测：/bin/config 退出时恰为链表头，cpu0 的 shell 从此
+   * 无法运行，表现为"输入几个字符后系统卡死"）。 */
+  thread_t* prev = NULL;
+  thread_t* v = schedulable_head_thread[cpu_id];
+  while (v != NULL) {
     if (v == thread) {
-      prev->next = v->next;
-      v->next = NULL;
-      if (thread == schedulable_tail_thread[cpu_id]) {
-        schedulable_tail_thread[cpu_id] = prev;
+      if (prev == NULL) {
+        schedulable_head_thread[cpu_id] = v->next; /* 是头：头指向下一个 */
+      } else {
+        prev->next = v->next;
       }
-      break;
+      if (schedulable_tail_thread[cpu_id] == thread) {
+        schedulable_tail_thread[cpu_id] = prev; /* prev 可能为 NULL → 空链 */
+      }
+      v->next = NULL;
+      // lock_release(&thread_lock);
+      return;
     }
     prev = v;
+    v = v->next;
   }
   // lock_release(&thread_lock);
 }
@@ -600,7 +602,20 @@ void thread_recycle_process(void) {
   thread_t* prev = NULL;
   while (v != NULL) {
     thread_t* next = v->next;
-    if (v != cur) {
+    /* 【多核保护】v != cur 只保护了"本核"的当前线程。退出的线程要等
+     * 它自己所在核的下一次调度才真正切走，在那之前它还站在自己的内核
+     * 栈上执行。若此时别的核的 recycle_process 把它释放（栈/ctx/thread
+     * 全部 kfree），僵尸线程就在已释放的内存上继续跑，破坏新分配的内存
+     * （raspi3 实测：/bin/config 退出即回收，shell 的下一次输入卡死）。
+     * 所以必须检查所有核的 current，仍在任一核上跑的线程留到下一轮。 */
+    int still_running = 0;
+    for (int c = 0; c < MAX_CPU; c++) {
+      if (current_threads[c] == v) {
+        still_running = 1;
+        break;
+      }
+    }
+    if (!still_running) {
       if (prev == NULL) {
         recycle_head_thread = next;
       } else {

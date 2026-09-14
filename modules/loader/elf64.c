@@ -578,6 +578,32 @@ int run_elf64_thread(long* p) {
   kmemset(&interp_image, 0, sizeof(interp_image));
   kmemset(&layout, 0, sizeof(layout));
 
+#ifdef VM_ENABLE
+  /* 【exec 必须换新地址空间】fork 出来的子进程页表只是"表拷贝"（page_clone），
+   * 其用户 PTE 与父进程指向同一批物理页（只有栈/堆在 fork 时做了
+   * vmemory_copy_data 实拷贝）。exec 若复用这张表加载新程序，未被新 ELF
+   * 覆盖的继承映射就会残留；子进程退出时 page_destroy 遍历页表归还
+   * "用户物理页"，会把这些与父进程【共享】的页一并释放并清零，父进程
+   * （shell/init）内存被毁 —— raspi3 实测：/bin/config 退出后 shell 的
+   * 下一次输入永久卡死（raspi2 因 config 是 ELF32 加载失败没跑起来才没事）。
+   * 这里换成"只含内核映射"的全新页表（copy 内核页目录），用户映射交给
+   * loader 与按需缺页重建；旧表直接丢弃（绝不能 page_destroy：其中页
+   * 与父进程共享，父进程仍在使用）。 */
+  if (current->vm != NULL && current->vm->upage != NULL &&
+      current->vm->upage != (void*)page_kernel_dir()) {
+    u64* fresh = (u64*)page_clone((u64*)page_kernel_dir(), 3);
+    if (fresh == NULL) {
+      elf64_log_error("exec: fresh page table alloc failed\n");
+      return -1;
+    }
+    current->vm->upage = fresh;
+    /* 立刻把 TTBR0 也切到新表：loader 接下来会直接往用户地址写 ELF 段数据
+     * （elf64_user_access 返回裸 user 指针），若还走在旧（父进程共享）表上，
+     * 新表里 valloc 的页与旧表映射会脑裂，且可能写坏父进程内存。 */
+    context_switch_page(current->ctx, (u64)(uintptr_t)fresh);
+  }
+#endif
+
   if (elf64_open_and_load(exec->filename, &main_image, 0) < 0) {
     return -1;
   }

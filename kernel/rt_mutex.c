@@ -11,6 +11,8 @@
 void cpu_wait(void);
 #endif
 
+void schedule_switch(void);
+
 static void rt_mutex_pi_boost(rt_mutex_t* m, thread_t* waiter) {
   thread_t* owner;
 
@@ -97,6 +99,14 @@ static void rt_mutex_park_rt(thread_t* cur) {
   preempt_set_need_resched();
   while (cur->state == THREAD_WAITING) {
     cpu_wait();
+  }
+  /* 【被停止的等待者不能继续持锁路径】等待期间线程可能被 thread_exit
+   * （回收器/异常路径不会等待挂起线程）：若继续走完 rt_mutex_lock 的
+   * 竞争循环，僵尸线程会拿到锁后在下一个 tick 再也不会被调度 ——
+   * 锁被永久占住（raspi3 上现象：shell 输入几字符后所有 vfs 操作卡死）。
+   * 已停止就直接切走，永不返回。 */
+  if (cur->state == THREAD_STOPPED) {
+    schedule_switch();
   }
 }
 
@@ -187,8 +197,18 @@ void rt_mutex_unlock(rt_mutex_t* m) {
 
   wake = rt_mutex_dequeue_best(m);
   if (wake != NULL) {
-    wake->state = THREAD_RUNNING;
-    wake->sleep_counter = 0;
+    /* 【不要复活已退出的等待者】等待链上的线程若已 thread_exit/被停止
+     * （state != THREAD_WAITING），这里强设 RUNNING 会把一个已死线程
+     * 从 STOPPED 状态"复活"——它不在调度链上却继续执行残留上下文，
+     * 破坏后续内存/锁状态（raspi3 上表现为输入若干字符后 shell 永久
+     * 卡死）。此时只需把它从等待链摘除，锁保持空闲即可。 */
+    if (wake->state == THREAD_WAITING) {
+      wake->state = THREAD_RUNNING;
+      wake->sleep_counter = 0;
+    } else {
+      wake->rt_wait_next = NULL;
+      wake = NULL;
+    }
   }
 
   preempt_enable();
