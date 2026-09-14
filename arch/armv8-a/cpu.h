@@ -145,7 +145,7 @@ static inline u64 read_current_el(void) {
 // System call macros for ARM64
 #define syscall0(syscall_num)                    \
   ({                                             \
-    u64 ret;                                     \
+    int ret;                                   \
     asm volatile(                                \
         "mov x8, %1\n"                           \
         "svc 0\n"                                \
@@ -158,7 +158,7 @@ static inline u64 read_current_el(void) {
 
 #define syscall1(syscall_num, arg1)              \
   ({                                             \
-    u64 ret;                                     \
+    int ret;                                   \
     asm volatile(                                \
         "mov x8, %1\n"                           \
         "mov x0, %2\n"                           \
@@ -172,7 +172,7 @@ static inline u64 read_current_el(void) {
 
 #define syscall2(syscall_num, arg1, arg2)        \
   ({                                             \
-    u64 ret;                                     \
+    int ret;                                   \
     asm volatile(                                \
         "mov x8, %1\n"                           \
         "mov x0, %2\n"                           \
@@ -187,7 +187,7 @@ static inline u64 read_current_el(void) {
 
 #define syscall3(syscall_num, arg1, arg2, arg3)  \
   ({                                             \
-    u64 ret;                                     \
+    int ret;                                   \
     asm volatile(                                \
         "mov x8, %1\n"                           \
         "mov x0, %2\n"                           \
@@ -203,7 +203,7 @@ static inline u64 read_current_el(void) {
 
 #define syscall4(syscall_num, arg1, arg2, arg3, arg4)  \
   ({                                             \
-    u64 ret;                                     \
+    int ret;                                   \
     asm volatile(                                \
         "mov x8, %1\n"                           \
         "mov x0, %2\n"                           \
@@ -220,7 +220,7 @@ static inline u64 read_current_el(void) {
 
 #define syscall5(syscall_num, arg1, arg2, arg3, arg4, arg5)  \
   ({                                             \
-    u64 ret;                                     \
+    int ret;                                   \
     asm volatile(                                \
         "mov x8, %1\n"                           \
         "mov x0, %2\n"                           \
@@ -238,7 +238,7 @@ static inline u64 read_current_el(void) {
 
 #define syscall6(syscall_num, arg1, arg2, arg3, arg4, arg5, arg6)  \
   ({                                             \
-    u64 ret;                                     \
+    int ret;                                   \
     asm volatile(                                \
         "mov x8, %1\n"                           \
         "mov x0, %2\n"                           \

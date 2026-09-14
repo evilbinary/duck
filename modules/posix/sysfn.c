@@ -1293,7 +1293,7 @@ pid_t sys_waitpid(pid_t pid, int* wstatus, int options) {
   }
 }
 
-pid_t sys_wait4(pid_t pid, int* wstatus, int options, struct rusage* rusage) {
+long sys_wait4(pid_t pid, int* wstatus, int options, struct rusage* rusage) {
   (void)rusage;
   return sys_waitpid(pid, wstatus, options);
 }
