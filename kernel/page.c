@@ -5,7 +5,9 @@
  ********************************************************************/
 #include "page.h"
 
-#define DEBUG 1
+/* 缺页路径上的调试日志（page fault / page area not found + vmemory_dump /
+ * page lookup kernel found phy）量大且逐次缺页都打，默认关闭；排查时打开。 */
+// #define DEBUG 1
 
 // in user mode
 void page_error_exit() {
