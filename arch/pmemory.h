@@ -155,6 +155,11 @@ void mm_free(void* p);
 void* mm_alloc_zero_align(size_t size, u32 alignment);
 void* mm_alloc_page(void);
 void mm_free_page(void* p);
+/* p 是否为 boot_info 声明过的 RAM（type==1）内的页对齐地址。
+ * 用途：页池的空闲链 next 指针就存在被释放页自身头部，链上一旦出现非法值，
+ * mm_alloc_page 会把任意地址当页发出去（cpu_zero_phy_page 写它即总线外部
+ * 中止）；释放侧（page_destroy/vfree）也用它在归还前筛掉设备/未认领页。 */
+int mm_page_in_ram(void* p);
 void mm_alloc_init();
 void mm_dump_phy();
 void mm_dump();

@@ -516,6 +516,12 @@ void* valloc(void* addr, size_t size) {
       log_error("valloc: mm_alloc_page failed vaddr=%lx\n", vaddr);
       return NULL;
     }
+    /* 分配器给出的 PA 必须落在 RAM 内：越界页写下去就是同步外部中止
+     * （总线错误），会拖成缺页风暴。拒绝本次分配，让调用方走失败路径。 */
+    if (!mm_page_in_ram(phy_addr)) {
+      log_error("valloc: phy %x outside RAM\n", (u32)(unsigned long)phy_addr);
+      return NULL;
+    }
     /* First zero through the kernel identity mapping so the physical page
      * is clean even before we install the user mapping. */
     cpu_zero_phy_page(phy_addr, PAGE_SIZE);

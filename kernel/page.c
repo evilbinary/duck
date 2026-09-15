@@ -39,7 +39,6 @@ void* page_fault_handle(interrupt_context_t *ic) {
       return ic;
     }
 
-    int mode = context_get_mode(current->ctx);
 #ifdef DEBUG
     log_debug("page fault at %lx\n", fault_addr);
 #endif

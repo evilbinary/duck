@@ -123,6 +123,17 @@ u64* page_clone(u64* old_pgd, u32 level) {
  * VA 0xfb000000→PA 0x3c100000 被归还，mm_free_page 的 str 触发翻译错误
  * 崩溃，并把 0x3f000000 外设区也串进空闲链）。pgd[0]（VA 0-1GB）同理含
  * 内核恒等映射与 MMIO，也不扫。
+ * 【起点必须按 VA 过滤，不能只按 pgd 索引】pgd 粒度是 1GB，而
+ * EXEC_ADDR(0x60000000) 不在 1GB 边界上：起点 pgd[1] 覆盖
+ * VA 0x40000000-0x7FFFFFFF，其中 [0x40000000,0x60000000) 属于 EXEC_ADDR
+ * 之下的空洞 —— 平台代码在那里有【合法的设备映射】（BCM2837 的 core-local
+ * 中断寄存器 CORE0_TIMER_IRQCNTL = 0x40000040，platform_map() 以 PAGE_DEV
+ * 映射 VA=PA=0x40000000）。若不过滤 VA，这一页会被当普通页归还：
+ * mm_free_page 把 PA 0x40000000 推进空闲链（链指针就写在被释放页头部），
+ * 下一次 mm_alloc_page 即把它当用户页发出去，写它立刻是同步外部中止
+ * （raspi3 实测：`valloc: phy 40000000 beyond RAM end`、`ls` 直接失败，
+ * 再往前就是缺页风暴）。32 位架构按 1MB L1 索引扫描（start=EXEC_ADDR>>20）
+ * 天然精确，不存在这个空洞。
  * 【严禁】用 32 位语义（u32*、1MB section、0xFFFFF000）解析 64 位页表：
  * 索引/掩码全错，会把堆内存当页表项，垃圾指针进 mm_page_free_list，
  * 被 page_create 清零后物理擦掉 .text（raspi3 实测内核崩死）。 */
@@ -149,8 +160,18 @@ void page_destroy(u64* upage) {
         if ((e3 & 3) != 3) {
           continue;
         }
-        void* pg = (void*)(e3 & PTE_ADDR_MASK);
+        vaddr_t va = ((vaddr_t)i << PGD_SHIFT) | ((vaddr_t)j << PMD_SHIFT) |
+                     ((vaddr_t)k << PTE_SHIFT);
         pte[k] = 0;
+        /* pgd 1GB 粒度带来的低 VA 空洞（含 0x40000000 的设备映射）：不归还 */
+        if (va < (vaddr_t)EXEC_ADDR || va >= (vaddr_t)0x80000000UL) {
+          continue;
+        }
+        /* 兜底：物理页不在 boot_info 声明的 RAM 内（设备/未认领映射）→ 不归还 */
+        void* pg = (void*)(e3 & PTE_ADDR_MASK);
+        if (!mm_page_in_ram(pg)) {
+          continue;
+        }
         mm_free_page(pg);
       }
       pmd[j] = 0;

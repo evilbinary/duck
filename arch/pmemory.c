@@ -623,6 +623,25 @@ void mm_free_align(void* addr) {
   mm_free(((void**)addr)[-1]);
 }
 
+/* 见 arch/pmemory.h 声明。 */
+int mm_page_in_ram(void* p) {
+  unsigned long a = (unsigned long)p;
+  if (a == 0 || (a & (PAGE_SIZE - 1)) != 0) {
+    return 0;
+  }
+  for (int i = 0; i < boot_info->memory_number; i++) {
+    if (boot_info->memory[i].type != 1) {
+      continue;
+    }
+    unsigned long s = (unsigned long)boot_info->memory[i].base;
+    unsigned long e = s + boot_info->memory[i].length;
+    if (a >= s && a + PAGE_SIZE <= e) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 void* mm_alloc_page(void) {
   if (mm_page_free_list != NULL) {
     void* page = mm_page_free_list;
