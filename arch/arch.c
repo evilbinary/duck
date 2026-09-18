@@ -47,6 +47,13 @@ __attribute__((weak)) void cpu_set_tls(void* tp) { (void)tp; }
  * 只有实现了时基/PMU 的架构才给强实现（当前 armv5）。其它架构空实现。 */
 __attribute__((weak)) void cpu_cache_selftest(void) {}
 
+/* 【分页(MMU)是否已开的默认实现（弱符号）】
+ * 缺省返回 1（认为已开）：其它架构行为完全不变。armv7-a 在 cpu.c 里给出强实现
+ * （读 SCTLR.M），因为 sunxi 这类平台由 U-Boot 引导、进内核时 MMU 还是关的，
+ * 此时全部内存都是 Strongly-ordered，ldrex/strex 不可用，打印锁必须退化为普通
+ * 自旋（完整现象见 libs/libkernelcommon/io.c）。 */
+__attribute__((weak)) int cpu_page_enabled(void) { return 1; }
+
 void context_inherit_live(context_t* child, interrupt_context_t* live) {
   if (child == NULL || live == NULL) {
     return;
@@ -65,6 +72,15 @@ void arch_init(boot_info_t* boot, int cpu) {
   if (cpu == 0) {
     boot_info = boot;
     write_channel_number = 0;
+
+    /* 【打印锁的原子能力跟着 MMU 走】这里读的是硬件事实（armv7-a 读 SCTLR.M；
+     * 其它架构由弱符号返回"已开"）：树莓派固件把内核交进来时 MMU 已经开着 → 1；
+     * sunxi 由 U-Boot 引导进来时 MMU 还是关的 → 0，内核第一句 kprintf 才不会用
+     * ldrex/strex 打死整机（详见 libs/libkernelcommon/io.c）。
+     * 必须放在 platform_init() 之前 —— 那里（cpu_clock_init→cpu_get_rate）就有
+     * 内核的第一句 kprintf。之后 MMU 真正打开时由 cpu_enable_page() 翻回 1。 */
+    io_print_lock_set_atomic(cpu_page_enabled());
+
     platform_init();
 
     cpu_init(cpu);

@@ -98,6 +98,13 @@ void cpu_set_tls(void* tp);
  * 只在 -DMM_DEBUG_PROBE=1 时由 kernel.c 调用。 */
 void cpu_cache_selftest(void);
 
+/* ---- 分页(MMU)是否已开（跨架构查询接口） --------------------------------
+ * 返回"当前 CPU 的 MMU 是否使能"。默认实现（arch.c 弱符号）返回 1；只有
+ * "MMU 可能关着进内核"的架构才需要强实现 —— armv7-a 读 SCTLR.M。
+ * 用途：判断独占指令(ldrex/strex)此刻能否使用，进而决定内核打印锁走原子还是
+ * 普通自旋（见 libs/include/kernel/io.h 的 io_print_lock_set_atomic）。 */
+int cpu_page_enabled(void);
+
 typedef uint32_t phys_address_t;
 typedef uint32_t virtual_address_t;
 

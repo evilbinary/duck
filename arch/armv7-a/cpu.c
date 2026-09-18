@@ -7,6 +7,7 @@
 
 #include "context.h"
 #include "gic2.h"
+#include "kernel/io.h"    /* io_print_lock_set_atomic */
 #include "kernel/memory.h" /* kmalloc/kfree/KERNEL_TYPE */
 #include "kernel/string.h" /* kmemcpy/kmemset */
 
@@ -322,6 +323,22 @@ void cpu_disable_page() {
   asm("mrc p15, 0, %0, c1, c0, 0" : "=r"(reg) : : "cc");
   reg &= ~0x1;
   asm volatile("mcr p15, 0, %0, c1, c0, #0" : : "r"(reg) : "cc");
+  /* MMU 已关：内存全是 Strongly-ordered，打印锁退回普通 load/store 自旋，
+   * 否则 ldrex/strex 会 data abort（详见 libs/libkernelcommon/io.c）。 */
+  io_print_lock_set_atomic(0);
+}
+
+/* 【分页(MMU)是否已开】覆盖 arch.c 里的弱符号（接口见 arch/cpu.h）。
+ * SCTLR.M（bit0）就是 MMU 使能位，cpu_enable_page/cpu_disable_page 读写的也是它。
+ * arch_init() 在第一次 kprintf 之前用它初始化打印锁的原子开关：MMU 关闭时全部
+ * 内存都是 Strongly-ordered，Cortex-A7 对这类内存做独占访问会直接 data abort
+ * （V3s 实测 pc 停在 kprintf 的 strex 之后、DFSR=0x1008/WnR=1、DFAR=&print_lock），
+ * 即 boot 阶段第一句 kprintf 就能打死整机。之后由 cpu_enable_page() /
+ * cpu_disable_page() 跟着 MMU 的真实状态翻转那个开关。 */
+int cpu_page_enabled(void) {
+  u32 reg;
+  asm volatile("mrc p15, 0, %0, c1, c0, 0" : "=r"(reg));
+  return reg & 0x1;
 }
 
 void cpu_enable_smp_mode() {
@@ -493,6 +510,10 @@ void cpu_enable_page() {
   dmb();
   dsb();
   isb();
+
+  /* MMU 已开：内存属性回到 Normal，打印锁恢复真正的原子实现（见
+   * libs/libkernelcommon/io.c）。放最后一行，确保 M 位与 cache/TLB 都已生效。 */
+  io_print_lock_set_atomic(1);
 }
 
 extern void lcpu_wait_start(int cpu);
