@@ -33,7 +33,7 @@ memory_t memory_summary;
  * 开销：只计数、不分配、不加锁；打印走 kprintf（静态缓冲，不递归进分配器）。 */
 #define MM_ALLOC_PROFILE 1 /* 【临时诊断】定位"跑应用后内核堆被吃光"的泄漏点，定位完改回 0 */
 #if MM_ALLOC_PROFILE
-#define MM_PROF_SLOTS 48
+#define MM_PROF_SLOTS 128
 typedef struct {
   void* ra0;
   void* ra1;
@@ -48,10 +48,16 @@ static u32 mm_prof_free_cnt;
 
 void mm_alloc_profile_note(u32 size, void* ra0, void* ra1) {
   int i;
+  /* 【按 ra0 聚合，不按 size】同一调用点常会分配多种大小，按 (ra0,size) 分槽
+   * 会让启动期那些一次性分配（页表/帧缓冲/初始化）把 48 个槽迅速占满，
+   * 之后运行期的调用点（每帧泄漏点就在其中）永远记不上 —— 现象就是 dump 里
+   * 只有启动期调用点、看不到随帧数增长的条目（泄漏点被静默丢弃）。
+   * 改成按 ra0 聚合：size 只记最后一次，cnt/bytes 仍按次数累加。 */
   for (i = 0; i < MM_PROF_SLOTS; i++) {
-    if (mm_prof[i].ra0 == ra0 && mm_prof[i].size == size) {
+    if (mm_prof[i].ra0 == ra0) {
       mm_prof[i].cnt++;
       mm_prof[i].bytes += size;
+      mm_prof[i].size = size;
       goto dump;
     }
   }
@@ -78,7 +84,9 @@ dump:
     kprintf("HEAP freelist=%uk blocks=%u max=%u allocs=%u lastmap=%x\n",
             hf / 1024, hb, hm, hc, hl);
     for (i = 0; i < MM_PROF_SLOTS; i++) {
-      if (mm_prof[i].cnt) {
+      /* 只打印累计 ≥4KB 的调用点：泄漏点会一路涨到几 MB，一次性的小分配不打印，
+       * 日志才看得清（配合相邻两份 dump 做差，bytes 单调涨的那条就是泄漏点） */
+      if (mm_prof[i].cnt && mm_prof[i].bytes >= 4096) {
         kprintf("  ra0=%x ra1=%x size=%u cnt=%u bytes=%u\n",
                 (u32)mm_prof[i].ra0, (u32)mm_prof[i].ra1, mm_prof[i].size,
                 mm_prof[i].cnt, mm_prof[i].bytes);
