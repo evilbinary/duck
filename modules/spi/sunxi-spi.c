@@ -79,7 +79,13 @@ u32 sunxi_spi_xfer(int spi, spi_msg_t* msg) {
     return -1;
   }
 
-  int count = msg->tx_len * msg->bits / 8;
+  /* 【纯读也要发时钟】count 原来只按 tx_len 算：tx_buf==NULL 的纯读算出 0，
+   * 循环一次都不进 —— 一个字节都移不进来，函数却按 rx_len 返回"成功"。
+   * SPI 读必须写哑字节(0xff，见 sunxi_spi_write_txbuf)把时钟打出去，因此取
+   * tx/rx 两者中较大的长度。写路径（rx_len==0）结果不变。 */
+  int tx_count = msg->tx_len * msg->bits / 8;
+  int rx_count = msg->rx_len * msg->bits / 8;
+  int count = tx_count > rx_count ? tx_count : rx_count;
   u8* tx = msg->tx_buf;
   u8* rx = msg->rx_buf;
   u8 val;

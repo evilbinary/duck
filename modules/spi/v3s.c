@@ -131,14 +131,38 @@ void sunxi_spi_init(int spi) {
   }
 }
 
+
+/* 【spi_t 回调适配】spi_t 里的 read/write/cs 回调第一个参数是 spi_t*，而
+ * sunxi_spi_* 的接口用的是 SPI 序号(0/1)，签名不同，不能直接赋值 —— 直接赋值
+ * 会把 spi_t* 当"下标"去索引 spio_base[]（野指针）。这里补三个适配函数，
+ * 固定用 SPI0，与下面的 sunxi_spi_init(0) 保持一致。
+ * 曾经的坑：这两行被注释掉 ⇒ dev->data->write 为 0，st7789 初始化里第一句
+ * spi_dev->write() 就是 blx 0（实机 PREF ABORT ifsr=5、pc=0、lr=spi.c:26）。 */
+static size_t v3s_spi_read(spi_t* spi, u32* data, size_t len) {
+  (void)spi;
+  sunxi_spi_read(0, data, len);
+  return len;
+}
+
+static size_t v3s_spi_write(spi_t* spi, u32* data, size_t len) {
+  (void)spi;
+  sunxi_spi_write(0, data, len);
+  return len;
+}
+
+static void v3s_spi_cs(spi_t* spi, u32 val) {
+  (void)spi;
+  sunxi_spi_cs(0, val);
+}
+
 int spi_init_device(device_t* dev) {
   spi_t* spi = kmalloc(sizeof(spi_t), DEFAULT_TYPE);
   dev->data = spi;
 
   spi->inited = 0;
-  // spi->read = sunxi_spi_read;
-  // spi->write = sunxi_spi_write;
-  spi->cs = sunxi_spi_cs;
+  spi->read = v3s_spi_read;
+  spi->write = v3s_spi_write;
+  spi->cs = v3s_spi_cs;
 
   // use SPI0_BASE
   sunxi_spi_set_base(spio_base);

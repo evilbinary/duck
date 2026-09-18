@@ -29,4 +29,11 @@ typedef struct sunxi_spi {
 u32 sunxi_spi_read_write(int spi, u32* data, u32 count);
 void sunxi_spi_cs(int spi, u32 val);
 
+/* 平台实现（sunxi-spi.c）。注意第一个参数是 SPI 序号(0/1)，与 spi_t 里
+ * read/write 回调的 (spi_t*, u32*, size_t) 签名不同，必须在平台的
+ * spi_init_device() 里做一层适配（见 v3s.c 的 v3s_spi_write/v3s_spi_read），
+ * 不能直接赋值。 */
+u32 sunxi_spi_read(int spi, u32* data, u32 size);
+u32 sunxi_spi_write(int spi, u32* data, u32 size);
+
 #endif
