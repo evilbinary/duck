@@ -33,6 +33,11 @@ typedef struct v3s_lcd{
 		int clk_active;
 	} timing;
 
+	/* TCON0_CTRL[8:4] 像素时钟相位 CLK_DELAY(0..31)：老代码按消隐凑出
+	 * (vfp+vbp+vspw)/2（800x480 那套 = 22）；/conf/system.conf 的 [lcd] clk_delay
+	 * 可以覆盖它（0 是合法值，所以用 0xFFFFFFFF 当"没配"的哨兵）。 */
+	int clk_delay;
+
 	struct led_t * backlight;
 	int brightness;
 }v3s_lcd_t;

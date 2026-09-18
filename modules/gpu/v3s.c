@@ -5,8 +5,26 @@
 #include "v3s-de.h"
 #include "v3s-tcon.h"
 
+#ifdef SYSCONF_MODULE
+#include "modules/sysconf/sysconf.h"
+#endif
+
 #define RGB24_2_RGB565(r, g, b) \
   (u16)((((r) << 8) & 0xF800) | (((g) << 3) & 0x7E0) | (((b) >> 3)))
+
+/* 【TCON 像素时钟源】取决于 CCU_TCON_CLK(0x118) 的选源与 PLL_VIDEO 的分频。
+ * 平台初始化 duck/platform/v3s/init.c 把 PLL_VIDEO 配成 396MHz（那边注释写的
+ * "pll video - 396MHZ"）。若你改了 TCON 选源或 PLL_VIDEO 参数，这里要同步，
+ * 否则点屏时钟会整体错掉（现象：闪 / 花 / 无图）。 */
+#define V3S_TCON_SRC_HZ 396000000
+
+#ifdef SYSCONF_MODULE
+/* 本板这块 vga 设备（v3s_lcd_init 时记下）与"配置就绪"回调：
+ * 驱动 init 跑在 fatfs 之前、读不到 /conf/system.conf，所以 init 里只登记回调
+ * （sysconf_on_ready），由 sysconf 模块在文件系统就绪后触发它来取值+重配硬件。 */
+static vga_device_t* v3s_vga = NULL;
+static void v3s_lcd_apply_conf(void);
+#endif
 
 typedef struct pixel {
   u8 red;
@@ -141,14 +159,28 @@ static inline void v3s_tcon_set_mode(v3s_lcd_t *lcd) {
   val &= ~(0x1 << 0);
   io_write32((u32)&tcon->ctrl, val);
 
-  val = (lcd->timing.v_front_porch + lcd->timing.v_back_porch +
-         lcd->timing.v_sync_len) /
-        2;
-  io_write32((u32)&tcon->tcon0_ctrl, (1 << 31) | ((val & 0x1f) << 4));
-  // val = clk_get_rate(lcd->clktcon) / lcd->timing.pixel_clock_hz;
-  // val=0x01000000/lcd->timing.pixel_clock_hz;
+  /* 【TCON0_CTRL[8:4] = 像素时钟相位 CLK_DELAY(0..31)】
+   * 老代码取 (vfp+vbp+vspw)/2（800x480 那套 = 22），这组值在实机上能出图，所以
+   * 默认沿用；要微调（出现采样噪点/雪花时按 1 步进扫 0..31）就用
+   * /conf/system.conf 的 [lcd] clk_delay 覆盖，不用重编内核。 */
+  io_write32((u32)&tcon->tcon0_ctrl, (1 << 31) | ((lcd->clk_delay & 0x1f) << 4));
 
-  io_write32((u32)&tcon->tcon0_dclk, (0xf << 28) | ((val / 2) << 0));
+  /* 【像素时钟分频】dclk = TCON 源时钟 / (div + 1)。
+   * 老代码是 `val=(vfp+vbp+vspw)/2; dclk=val/2` 的魔数：800x480 那套消隐凑出
+   * 11 ⇒ 396MHz/12 = 33MHz。这里改成按面板 pclk 反推，**pclk_hz=33MHz 时算出的
+   * div 与老代码逐位相同**（396/33-1 = 11），所以默认路径的寄存器值没有变化；
+   * 好处是配置里换了 pclk，分频会跟着变，不用改代码。
+   * 前提是 V3S_TCON_SRC_HZ 与 CCU 实际选源一致（本文件按 396MHz 估）——
+   * 若不一致，只有"改用别的 pclk"那条新路会偏，"沿用 33MHz"这条路仍与老代码等价。 */
+  val = V3S_TCON_SRC_HZ / lcd->timing.pixel_clock_hz;
+  if (val > 0) {
+    val -= 1; /* 寄存器是 div（实际分频 = div+1） */
+  }
+  if (val > 63) {
+    val = 63;
+  }
+  io_write32((u32)&tcon->tcon0_dclk, (0xf << 28) | (val & 0x3f));
+
   io_write32((u32)&tcon->tcon0_timing_active,
              ((lcd->width - 1) << 16) | ((lcd->height - 1) << 0));
 
@@ -190,10 +222,40 @@ static inline void v3s_tcon_set_mode(v3s_lcd_t *lcd) {
   io_write32((u32)&tcon->tcon0_io_tristate, 0);
 }
 
+/* 【把帧缓冲 VA→PA 映射铺一遍】长度取 vga->framebuffer_length。
+ * v3s_lcd_init() 与配置应用（v3s_lcd_apply_conf）共用：分辨率变大时要补映射。 */
+static void v3s_lcd_map_fb(vga_device_t *vga) {
+  u32 addr = (u32)(uintptr_t)vga->frambuffer;
+  u32 paddr = (u32)(uintptr_t)vga->pframbuffer;
+  for (u32 i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
+    page_map(addr, paddr, PAGE_FB);
+    addr += PAGE_SIZE;
+    paddr += PAGE_SIZE;
+  }
+}
+
+/* 【DE/TCON 起振序列】面板参数一变就得按这个顺序重来一遍：
+ * 关 TCON → 配 DE(模式+使能) → 配 TCON(时序+分频) → 开 TCON → 设扫描地址。
+ * 只在"还没开始画"的时候调用（屏幕会黑一下再恢复，DE 重新同步）。 */
+static void v3s_lcd_bringup(v3s_lcd_t *lcd) {
+  /* todo clk video enable / todo gpio set —— 见 v3s_lcd_init 里的说明 */
+  v3s_tcon_disable(lcd);
+  v3s_de_set_mode(lcd);
+  v3s_de_enable(lcd);
+  v3s_tcon_set_mode(lcd);
+  v3s_tcon_enable(lcd);
+
+  v3s_de_set_address(lcd, lcd->vram[lcd->index]);
+  v3s_de_enable(lcd);
+}
+
 int v3s_lcd_init(vga_device_t *vga) {
   log_info("v3s_lcd_init\n");
   v3s_lcd_t *lcd = kmalloc(sizeof(v3s_lcd_t),DEFAULT_TYPE);
   vga->priv = lcd;
+#ifdef SYSCONF_MODULE
+  v3s_vga = vga;
+#endif
 
   lcd->de = V3S_DE_BASE;
   lcd->tcon = V3S_TCON_BASE;
@@ -202,8 +264,16 @@ int v3s_lcd_init(vga_device_t *vga) {
   lcd->rsttcon = 36;
   lcd->width = vga->width;
   lcd->height = vga->height;
-  lcd->bits_per_pixel = 16;
-  lcd->bytes_per_pixel = 4;
+  /* 【面板参数：下面这一组是实测能用的老参数（800x480 那套消隐 + 33MHz）】
+   * 字段映射：le→h_back_porch  ri→h_front_porch  up→v_back_porch
+   *           lo→v_front_porch  hs→h_sync_len     vs→v_sync_len
+   *   "x:800,y:480,depth:18,pclk_khz:33000,le:87,ri:40,up:31,lo:13,hs:1,vs:1"
+   * 【换屏/换分辨率不要改这里】用 /conf/system.conf 的 [lcd] 段覆盖（sysconf 模块
+   * 在 fatfs 之后下发），改文件重启即可，不用重编内核。
+   * 【历史】这里一度被改成 480x272 那套（42/8/1、11/4/1、10MHz、bpp18），v3s 上
+   * 结果黑屏 —— 见下面 tcon0_dclk 处关于分频与 396MHz 前提的说明。 */
+  lcd->bits_per_pixel = 16;  /* 老参数：走 16bpp 那条 FRM/dither 路（18 是另一条） */
+  lcd->bytes_per_pixel = 4;  /* DE UI 侧是 32bpp（pitch = 4*width） */
   lcd->index = 0;
   lcd->vram[0] = vga->pframbuffer;
   lcd->vram[1] = vga->pframbuffer;
@@ -221,6 +291,12 @@ int v3s_lcd_init(vga_device_t *vga) {
   lcd->timing.den_active = 1;
   lcd->timing.clk_active = 1;
 
+  /* CLK_DELAY 默认沿用老代码的凑法：(vfp+vbp+vspw)/2（这组 = 22）。
+   * 配置里给了 clk_delay 就在 v3s_lcd_apply_conf() 里覆盖它。 */
+  lcd->clk_delay = (lcd->timing.v_front_porch + lcd->timing.v_back_porch +
+                    lcd->timing.v_sync_len) /
+                   2;
+
   // map tcon 4k
   page_map(V3S_TCON_BASE, V3S_TCON_BASE, PAGE_DEV);
   // map ccu 1k
@@ -235,13 +311,7 @@ int v3s_lcd_init(vga_device_t *vga) {
 
   // vga->pframbuffer=kmalloc(vga->framebuffer_length*2,DEFAULT_TYPE);
   // map fb
-  addr = vga->frambuffer;
-  u32 paddr = vga->pframbuffer;
-  for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    page_map(addr, paddr, PAGE_FB);
-    addr += 0x1000;
-    paddr += 0x1000;
-  }
+  v3s_lcd_map_fb(vga);
 
   // init
   // todo clk video enable
@@ -251,16 +321,134 @@ int v3s_lcd_init(vga_device_t *vga) {
   // V3S_GPIOE23 set 3
 
   // tcon init
-  v3s_tcon_disable(lcd);
-  v3s_de_set_mode(lcd);
-  v3s_de_enable(lcd);
-  v3s_tcon_set_mode(lcd);
-  v3s_tcon_enable(lcd);
-
-  v3s_de_set_address(lcd, lcd->vram[0]);
-  v3s_de_enable(lcd);
+  v3s_lcd_bringup(lcd);
   log_info("v3s_lcd_init end\n");
+
+#ifdef SYSCONF_MODULE
+  /* 登记"配置就绪"回调：sysconf 模块（注册在 fatfs 之后）跑到时会调它，
+   * 由本驱动自己去 /conf/system.conf 的 [lcd] 段取值并重配 DE/TCON。 */
+  sysconf_on_ready(v3s_lcd_apply_conf);
+#endif
 }
+
+#ifdef SYSCONF_MODULE
+/* 【应用 /conf/system.conf 的 [lcd] 段】—— 由 sysconf 模块在文件系统就绪后回调
+ * （登记见 v3s_lcd_init 里的 sysconf_on_ready）。分层上"参数怎么落到硬件"完全在
+ * 本驱动内：直接 sysconf_get_int() 取值、直接改自己的 v3s_lcd_t/vga_device_t，
+ * 不再经过 ioctl、也不需要 sysconf 去找设备（它现在不认识任何显示设备）。
+ *
+ * 【没配就不动】每个键的 def 传"当前值"，缺键 ⇒ 保持驱动内置默认；一个键都没配
+ * 时连 bringup 都不跑（重跑会重新起振 DE/TCON，没必要就别动）。
+ * clk_delay 例外：0 是合法相位，所以用 -1 当"没配"的哨兵。 */
+static void v3s_lcd_apply_conf(void) {
+  vga_device_t *vga = v3s_vga;
+  v3s_lcd_t *lcd;
+  int v;
+  int configured = 0;
+  u32 test_color;
+  u32* fb;
+  u32 i;
+  u32 n;
+
+  if (vga == NULL || vga->priv == NULL) {
+    return;
+  }
+  lcd = (v3s_lcd_t *)vga->priv;
+
+  v = sysconf_get_int("lcd", "width", -1);
+  if (v > 0) {
+    vga->width = (u32)v;
+    configured = 1;
+  }
+  v = sysconf_get_int("lcd", "height", -1);
+  if (v > 0) {
+    vga->height = (u32)v;
+    configured = 1;
+  }
+  v = sysconf_get_int("lcd", "bpp", -1);
+  if (v > 0) {
+    lcd->bits_per_pixel = v;
+    configured = 1;
+  }
+  v = sysconf_get_int("lcd", "pclk_hz", -1);
+  if (v > 0) {
+    lcd->timing.pixel_clock_hz = v;
+    configured = 1;
+  }
+  v = sysconf_get_int("lcd", "hbp", -1);
+  if (v > 0) {
+    lcd->timing.h_back_porch = v;
+    configured = 1;
+  }
+  v = sysconf_get_int("lcd", "hfp", -1);
+  if (v > 0) {
+    lcd->timing.h_front_porch = v;
+    configured = 1;
+  }
+  v = sysconf_get_int("lcd", "hspw", -1);
+  if (v > 0) {
+    lcd->timing.h_sync_len = v;
+    configured = 1;
+  }
+  v = sysconf_get_int("lcd", "vbp", -1);
+  if (v > 0) {
+    lcd->timing.v_back_porch = v;
+    configured = 1;
+  }
+  v = sysconf_get_int("lcd", "vfp", -1);
+  if (v > 0) {
+    lcd->timing.v_front_porch = v;
+    configured = 1;
+  }
+  v = sysconf_get_int("lcd", "vspw", -1);
+  if (v > 0) {
+    lcd->timing.v_sync_len = v;
+    configured = 1;
+  }
+  v = sysconf_get_int("lcd", "clk_delay", -1);
+  if (v >= 0) {
+    lcd->clk_delay = v & 0x1f;
+    configured = 1;
+  }
+
+  if (configured) {
+    lcd->width = vga->width;
+    lcd->height = vga->height;
+    /* 长度跟着分辨率重算（*8 是历史映射余量，与其它平台保持一致） */
+    vga->framebuffer_length =
+        lcd->width * lcd->height * lcd->bytes_per_pixel * 8;
+
+    v3s_lcd_map_fb(vga);
+    v3s_lcd_bringup(lcd);
+
+    log_info(
+        "v3s lcd conf: %dx%d bpp=%d pclk=%d hbp=%d hfp=%d hspw=%d vbp=%d vfp=%d "
+        "vspw=%d clk_delay=%d\n",
+        lcd->width, lcd->height, lcd->bits_per_pixel,
+        lcd->timing.pixel_clock_hz, lcd->timing.h_back_porch,
+        lcd->timing.h_front_porch, lcd->timing.h_sync_len,
+        lcd->timing.v_back_porch, lcd->timing.v_front_porch,
+        lcd->timing.v_sync_len, lcd->clk_delay);
+  } else {
+    log_debug("v3s: no [lcd] config, keep built-in panel params\n");
+  }
+
+  /* 【点屏自检】[lcd] test_color = 0xFFFFFF：把整屏填成纯色。
+   * 驱动手里就有帧缓冲指针（vga->frambuffer），直接写，不需要任何 ioctl：
+   *   屏上出现纯色 ⇒ DE/TCON/面板/背光这条链全通，黑屏只是没有应用往上画；
+   *   仍然黑 ⇒ 时序/时钟/背光问题。0xFFFFFF / 0xFFFFFFFF 在任何格式下都是白。 */
+  test_color = (u32)sysconf_get_int("lcd", "test_color", 0);
+  fb = vga->frambuffer;
+  if (test_color != 0 && fb != NULL && lcd->width > 0 && lcd->height > 0) {
+    n = (u32)lcd->width * (u32)lcd->height;
+    for (i = 0; i < n; i++) {
+      fb[i] = test_color; /* DE 的 UI 通道是 32bpp（pitch = 4*width） */
+    }
+    log_info("v3s: test_color %x -> %dx%d @%x\n", test_color, lcd->width,
+             lcd->height, (u32)(uintptr_t)fb);
+  }
+}
+#endif /* SYSCONF_MODULE */
 
 void gpu_flush(vga_device_t *vga, u32 index) {
   vga->framebuffer_index = index;
@@ -301,6 +489,11 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
   vga->mode = mode;
   vga->write = NULL;
   // vga->flip_buffer=gpu_flush;
+
+  /* 【不要在这里强制面板尺寸】这里一度被改成 vga->width/height = 480x272
+   * （去配合那套 480x272 时序），v3s 上结果黑屏，已回退成沿用 mode 给的尺寸。
+   * 要换尺寸同样走 /conf/system.conf 的 [lcd] width/height（v3s_lcd_apply_conf 会
+   * 同步重算 framebuffer_length 并补页映射），不要改这里。 */
 
   vga->framebuffer_index = 0;
   vga->framebuffer_count = 1;

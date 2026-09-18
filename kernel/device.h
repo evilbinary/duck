@@ -84,6 +84,10 @@ void device_remove();
 
 device_t* device_find(u32 id);
 
+/* 按设备名查找（驱动注册 device_t 时填的 name，如 "vga"/"serial"/"vga1"）。
+ * 多实例设备（多块屏/多个串口）用名字定位比用 id 直观。 */
+device_t* device_find_name(char* name);
+
 device_t* device_create(u8* name, u32 id, u32 type);
 
 #endif

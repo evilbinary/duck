@@ -296,4 +296,7 @@ int lcd_init(void) {
 
 void lcd_exit(void) { kprintf("lcd exit\n"); }
 
-module_t lcd_module = {.name = "vga", .init = lcd_init, .exit = lcd_exit};
+/* 模块名取 "lcd"，别用 "vga"：gpu 模块（duck/modules/gpu/gpu.c）注册的名字就是
+ * "vga"，两个模块同名时启动日志会出现两条 "module run vga"，没法分辨哪条是
+ * gpu、哪条是这里（module_run_all 打印的是 mod->name），排查点屏问题时会误判。 */
+module_t lcd_module = {.name = "lcd", .init = lcd_init, .exit = lcd_exit};

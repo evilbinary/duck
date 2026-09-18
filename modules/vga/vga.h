@@ -34,6 +34,8 @@ enum VGA_MODE {
 #define VGA_IOC_READ_FRAMBUFFER_BPP _IOW(VGA_IOC_MAGIC, 6, int)
 #define VGA_IOC_FLUSH_FRAMBUFFER _IOW(VGA_IOC_MAGIC, 7, int)
 #define VGA_IOC_READ_FRAMBUFFER_INFO _IOW(VGA_IOC_MAGIC, 8, int)
+/* 【面板参数】不再走 ioctl：/conf/system.conf 的 [lcd] 段由驱动自己读并应用
+ * （见 duck/modules/gpu/v3s.c 的 v3s_lcd_apply_conf / duck/modules/sysconf）。 */
 
 typedef struct vga_device vga_device_t;
 

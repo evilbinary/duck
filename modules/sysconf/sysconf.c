@@ -1,43 +1,48 @@
 /*******************************************************************
  * 系统配置服务（/conf/system.conf）—— 内核模块 sysconf
  *
- * 【为什么做成模块，且必须注册在 fatfs 之后】
- * 配置在 SD 卡上，而 gpu/lcd 这些驱动的 init 排在 sdhci/fatfs 之前 ——
- * 驱动自己读不到 /conf/*。所以"读配置 → 下发驱动"这件事只能放在文件系统可用
- * 之后，且要在 xwin/用户态开始画之前。做法和 loader（同样要读文件）一致：
- * 在 app/init/module.c 的公共段（在所有平台块之后）注册，
- *     fatfs/fat 之后，xwin 之前
- * 于是 module_run_all() 跑到这里时 "/" 已挂好，日志里能看到
- * "module run sysconf"，顺序一眼可见。
+ * 【职责：只做三件事，不认识任何具体驱动/设备】
+ *   1) 读文件并解析（段/键/值，格式见下）；
+ *   2) 对外提供取值：sysconf_get_int() / sysconf_get_str()；
+ *   3) 文件系统就绪后，按注册顺序回调各驱动登记的"配置就绪"函数
+ *      （sysconf_on_ready()）——取值和写硬件都在驱动自己那边。
+ *
+ * 【为什么必须做成模块、且注册在 fatfs 之后】
+ * 配置在 SD 卡上，而 gpu/lcd 这些驱动的 init 排在 sdhci/fatfs 之前（见
+ * app/init/module.c 的注册顺序）——驱动 init 时 "/" 还没挂，自己读不到文件。
+ * 所以"什么时候能读文件"只能由这个模块提供：做法和 loader（同样要读文件）
+ * 一致，注册在公共段（所有平台块之后）：fatfs/fat 之后、xwin 之前。
+ * 驱动要参与配置，只需在自己的 init 里 sysconf_on_ready(自己的应用函数)，
+ * 登记不读文件、时机无所谓。
  *
  * 【流程】
  *   module_run_all()
+ *     → gpu/lcd/… 的 init：… sysconf_on_ready(v3s_lcd_apply_conf) …
+ *     → fatfs init："/" 挂好
  *     → sysconf_init()
  *       → sysconf_apply(SYSCONF_DEFAULT_PATH)     读文件、解析
- *         → 解析 [lcd] 段
- *           → device_find(DEVICE_VGA)->ioctl(VGA_IOC_SET_LCD_CONF, &conf)
- *             → 各平台 gpu/<plat>.c 的 vga_set_lcd_conf() 重配 DE/TCON
+ *         → 按登记顺序回调（drivers 在这里 sysconf_get_* 取值并重配硬件）
  *
  * 【文件格式】（见 app/resource/conf/system.conf）
  *   # 注释（行首或行尾）
  *   [section]
- *   key = value        value 支持十进制与 0x 十六进制
- * 文件不存在 / 段不存在 / 某一项为 0 ⇒ 保持驱动内置默认值，不报错。
- * 所以没有 SD 卡、没有文件系统的平台（stm32/esp32 等）只是多打一行提示。
- *
- * 【以后加新段】
- *   在 sysconf_apply() 末尾按段追加一个 sysconf_apply_xxx()；
- *   其它内核代码也可以直接用 sysconf_get_int() 取值，不必各自读文件。
+ *   key = value        value 支持十进制与 0x 十六进制（负数也可）
+ * 文件不存在 / 段不存在 / 键不存在 ⇒ 取值接口返回调用方给的 def，驱动据此
+ * 保持内置默认，不报错；没有 SD 卡/文件系统的平台只会多打一行提示。
  ********************************************************************/
 #include "sysconf.h"
 
 #include "kernel/logger.h"
 #include "kernel/string.h"
-#include "modules/vga/vga.h"
 
 /* 整个文件读进内存再解析：配置文件很小（几百字节），一次读完最省事 */
 #define SYSCONF_MAX 4096
 #define SYSCONF_LINE 160
+
+/* 能登记多少个"配置就绪"回调（驱动数量级，够用即可） */
+#ifndef SYSCONF_MAX_APPLY
+#define SYSCONF_MAX_APPLY 8
+#endif
 
 static char sysconf_buf[SYSCONF_MAX + 1];
 static u32 sysconf_len = 0;
@@ -122,8 +127,10 @@ static int sysconf_parse_num(const char* p, int def) {
 
 int sysconf_loaded(void) { return sysconf_ok; }
 
-/* 取 [section] 里 key 的整数值；找不到返回 def */
-int sysconf_get_int(const char* section, const char* key, int def) {
+/* 【按 段+键 取原始值】把 [section] 里 key 的 value 拷进 out（已去注释、去首尾
+ * 空白）。找到返回 1，没找到返回 0。整型/字符串两个取用接口都建在它上面。 */
+static int sysconf_find(const char* section, const char* key, char* out,
+                        u32 out_size) {
   char line[SYSCONF_LINE];
   char cur_section[32];
   int sec_ok = 0;
@@ -217,48 +224,67 @@ int sysconf_get_int(const char* section, const char* key, int def) {
       while (vs < n && (line[vs] == ' ' || line[vs] == '\t')) {
         vs++;
       }
-      return sysconf_parse_num(&line[vs], def);
+      /* 拷出值：line 已 NUL 结尾，注释与首尾空白前面都处理过了 */
+      {
+        u32 len = (u32)(n - vs);
+        if (len > out_size - 1) {
+          len = out_size - 1;
+        }
+        kstrncpy(out, &line[vs], len);
+        out[len] = 0;
+      }
+      return 1;
     }
   }
-  return def;
+  out[0] = 0;
+  return 0;
 }
 
-/* 把 [lcd] 段下发给 VGA 驱动 */
-static void sysconf_apply_lcd(void) {
-  lcd_conf_t conf;
-  device_t* dev;
+/* 取 [section] 里 key 的整数值；找不到返回 def */
+int sysconf_get_int(const char* section, const char* key, int def) {
+  char v[SYSCONF_LINE];
 
-  kmemset(&conf, 0, sizeof(conf));
-  conf.width = sysconf_get_int("lcd", "width", 0);
-  conf.height = sysconf_get_int("lcd", "height", 0);
-  conf.bpp = sysconf_get_int("lcd", "bpp", 0);
-  conf.pclk_hz = sysconf_get_int("lcd", "pclk_hz", 0);
-  conf.hbp = sysconf_get_int("lcd", "hbp", 0);
-  conf.hfp = sysconf_get_int("lcd", "hfp", 0);
-  conf.hspw = sysconf_get_int("lcd", "hspw", 0);
-  conf.vbp = sysconf_get_int("lcd", "vbp", 0);
-  conf.vfp = sysconf_get_int("lcd", "vfp", 0);
-  conf.vspw = sysconf_get_int("lcd", "vspw", 0);
+  if (!sysconf_find(section, key, v, sizeof(v))) {
+    return def;
+  }
+  return sysconf_parse_num(v, def);
+}
 
-  if (conf.width == 0 && conf.height == 0 && conf.pclk_hz == 0) {
-    log_info("sysconf: no [lcd] section, keep driver defaults\n");
+/* 取 [section] 里 key 的字符串值；没取到返回 -1 且 out 置空 */
+int sysconf_get_str(const char* section, const char* key, char* out,
+                    u32 out_size) {
+  if (out == NULL || out_size == 0) {
+    return -1;
+  }
+  out[0] = 0;
+  if (!sysconf_find(section, key, out, out_size)) {
+    return -1;
+  }
+  return 0;
+}
+
+/* ---------------- 配置就绪回调 ---------------- */
+
+static sysconf_apply_fn sysconf_apply_list[SYSCONF_MAX_APPLY];
+static int sysconf_apply_count = 0;
+
+void sysconf_on_ready(sysconf_apply_fn fn) {
+  if (fn == NULL) {
     return;
   }
+  if (sysconf_apply_count >= SYSCONF_MAX_APPLY) {
+    log_warn("sysconf: too many apply hooks (%d)\n", sysconf_apply_count);
+    return;
+  }
+  sysconf_apply_list[sysconf_apply_count++] = fn;
+  log_debug("sysconf: apply hook %d registered\n", sysconf_apply_count);
+}
 
-  dev = device_find(DEVICE_VGA);
-  if (dev == NULL) {
-    dev = device_find(DEVICE_VGA_QEMU);
+static void sysconf_notify_ready(void) {
+  int i;
+  for (i = 0; i < sysconf_apply_count; i++) {
+    sysconf_apply_list[i]();
   }
-  if (dev == NULL || dev->ioctl == NULL) {
-    log_warn("sysconf: no vga device, [lcd] skipped\n");
-    return;
-  }
-  if (dev->ioctl(dev, VGA_IOC_SET_LCD_CONF, &conf) == 0) {
-    log_warn("sysconf: [lcd] not supported by this driver\n");
-    return;
-  }
-  log_info("sysconf: [lcd] %dx%d bpp=%d pclk=%d applied\n", conf.width,
-           conf.height, conf.bpp, conf.pclk_hz);
 }
 
 int sysconf_apply(const char* path) {
@@ -267,18 +293,17 @@ int sysconf_apply(const char* path) {
   }
   if (sysconf_load(path) != 0) {
     log_info("sysconf: %s not found, use built-in defaults\n", path);
+    sysconf_notify_ready(); /* 也让驱动知道"没有配置"，便于统一处理 */
     return -1;
   }
   log_info("sysconf: load %s (%d bytes)\n", path, sysconf_len);
 
-  sysconf_apply_lcd();
-  /* 以后其它子系统的参数（网络/声音/…）也在这里按段追加 */
+  sysconf_notify_ready();
   return 0;
 }
 
-/* ---- 模块入口 ----
- * 由 app/init/module.c 注册在 fatfs 之后（见文件头），init 时自动加载默认路径。
- * 想换路径/运行时重载，直接调 sysconf_apply()。 */
+/* ---------------- 模块入口 ----------------
+ * 注册在 fatfs 之后（见 app/init/module.c），此时 "/" 已挂好。 */
 int sysconf_init(void) {
   log_debug("sysconf init\n");
   return sysconf_apply(SYSCONF_DEFAULT_PATH);
