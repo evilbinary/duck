@@ -31,7 +31,8 @@ memory_t memory_summary;
  * 用 arm-none-eabi-addr2line 反查 ra0/ra1 即可得到调用点。
  * 默认关闭：定位完把 MM_ALLOC_PROFILE 改回 0。
  * 开销：只计数、不分配、不加锁；打印走 kprintf（静态缓冲，不递归进分配器）。 */
-#define MM_ALLOC_PROFILE 1 /* 【临时诊断】定位"跑应用后内核堆被吃光"的泄漏点，定位完改回 0 */
+#define MM_ALLOC_PROFILE 0 /* 【临时诊断】定位"跑应用后内核堆被吃光"的泄漏点；已定位并修好
+                            * （pmemory.c 的 ya_free 合并/摘链），需要再排查时改回 1 */
 #if MM_ALLOC_PROFILE
 #define MM_PROF_SLOTS 128
 typedef struct {
