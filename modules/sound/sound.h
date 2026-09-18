@@ -24,8 +24,8 @@
 
 
 typedef struct sound_device{
-    void * buffer;
-    char* sound_buf;
+    void * buffer;      /* 环形缓冲（buffer_create 出来的 buffer_t*） */
+    char* sound_buf;    /* DMA 搬运缓冲（内核堆，必须 cache 刷写后再发货） */
     int is_play;
     int play_size;
     int buf_pos;

@@ -145,20 +145,36 @@ typedef struct {
 
 #else defiend(V3S)
 
+/* 【V3s DMA 寄存器映射·依据手册 4.8.3 "DMA Register List"】
+ *   DMA_IRQ_EN_REG     0x00   （32bit，每通道 4bit；N=0~7 ⇒ 只用 irq_en0）
+ *   DMA_IRQ_PEND_REG   0x10
+ *   DMA_AUTO_GATE_REG  0x20
+ *   DMA_STA_REG        0x30
+ *   DMA_EN_REG         0x100 + N*0x40      （N = 0~7）
+ *
+ * 【原先错在哪】本分支比 T113_S3 分支少一个 security 寄存器，却没把占位字补回来：
+ *   status 落在 0x28（应 0x30）、version 落在 0x38（应 0x40），于是 **channel[0]
+ *   落在 0xF8 而不是 0x100** —— 整块通道寄存器错位 8 字节：desc_addr / enable /
+ *   left_bytes 全写进保留区，外观看就是"DMA 引擎是死的"（真机实测：音频 tone test
+ *   期间 AC_DAC_CNT 恒定不变、codec FIFO 始终为空、完成中断永不触发）。
+ * 占位字数量按手册算：auto_gate(0x20) → 3 个字 → status(0x30) → 3 个字 →
+ *   version(0x40) → 47 个字(0x44..0xFC) → channel[0](0x100) ✓ */
 typedef struct {
-  u32 volatile irq_en0; /* 0x0 dma irq enable register 0 */
-  u32 volatile irq_en1; /* 0x4 dma irq enable register 1 */
-  u32 volatile reserved0[2];
-  u32 volatile irq_pending0; /* 0x10 dma irq pending register 0 */
-  u32 volatile irq_pending1; /* 0x14 dma irq pending register 1 */
-  u32 volatile reserved1[2];
-  u32 volatile auto_gate; /* 0x20 dma auto gating register */
-  u32 volatile reserved4[1];
-  u32 volatile status; /* 0x30 dma status register */
-  u32 volatile reserved5[3];
-  u32 volatile version; /* 0x40 dma Version register */
-  u32 volatile reserved6[47];
-  dma_channel_reg_t channel[16]; /* 0x100 dma channel register */
+  u32 volatile irq_en0;       /* 0x00 dma irq enable register 0 */
+  u32 volatile irq_en1;       /* 0x04（V3s 只有 8 通道，占位保证后续偏移） */
+  u32 volatile reserved0[2];  /* 0x08 */
+  u32 volatile irq_pending0;  /* 0x10 dma irq pending register 0 */
+  u32 volatile irq_pending1;  /* 0x14 dma irq pending register 1 */
+  u32 volatile reserved1[2];  /* 0x18 */
+  u32 volatile auto_gate;     /* 0x20 DMA_AUTO_GATE_REG */
+  u32 volatile reserved2[3];  /* 0x24 */
+  u32 volatile status;        /* 0x30 DMA_STA_REG */
+  u32 volatile reserved3[3];  /* 0x34 */
+  u32 volatile version;       /* 0x40 dma Version register */
+  u32 volatile reserved4[47]; /* 0x44..0xFC */
+  /* 0x100：手册只有 N=0~7，这里保留 16 个是为了兼容共用的 SUNXI_DMA_MAX 循环
+   * （dma_init_all 只取地址，不访问 8 号以上的寄存器） */
+  dma_channel_reg_t channel[16];
 } dma_reg_t;
 
 #endif

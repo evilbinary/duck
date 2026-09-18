@@ -229,8 +229,27 @@ void platform_map() {
   // test_cpu_speed();
 }
 
+/* 最近一次从 GICC_IAR 取到的原始 INTID（1023 = spurious）。
+ * 供 interrupt_ack_pending() 在"中断处理中再异常/提前返回"时补 EOI —— 与
+ * t113-s3 平台（duck/platform/t113-s3/init.c 的同名实现）保持一致。 */
+static u32 interrupt_last_irq = 1023u;
+
+/* 【健壮性·IRQ 兜底】把当前 active 的中断补一次 EOI。
+ * duck/kernel/exceptions.c 里的同名函数是 __attribute__((weak)) 空实现，不覆盖它
+ * 的话，"中断处理没走到 EOI 就异常/提前返回"的中断会一直 active。DMA 中断是电平触发
+ * 的：挂起位没清干净/EOI 没补上时，GIC 会不停重复投递 ⇒ 实测音频 DMA 出现
+ * 11324 次/秒的中断风暴（回调被反复调用、每次只搬进一两个字，DAC 拿不到连续数据）。
+ * GIC 规范：EOIR 写入与当前最高优先级 active 中断不匹配时会被忽略 ⇒ 正常路径已经
+ * ack 过的情况下重复调用是安全的。 */
+void interrupt_ack_pending(void) {
+  if (interrupt_last_irq != 1023u) {
+    gic_irqack2(interrupt_last_irq);
+  }
+}
+
 int interrupt_get_source(u32 no) {
   u32 irq = gic_irqwho2();
+  interrupt_last_irq = irq;
   no = EX_TIMER;
 
   if (irq == IRQ_TIMER0) {
@@ -239,7 +258,16 @@ int interrupt_get_source(u32 no) {
     no = EX_NONE;
     gic_irqack2(irq);
   } else if (irq == IRQ_DMAC) {
-    kprintf("irq dma %d\n", irq);
+    /* 【只打前 8 次】这是 DMA 中断的热路径：音频播放时约每 23ms 一次，每次到这里
+     * 都 kprintf（115200 下 12 字节≈1ms 阻塞、且在中断上下文里）会把 CPU 时间
+     * 大量耗在串口上，也把启动日志淹掉。前几次足够证明"中断真的送达"。 */
+    {
+      static u32 dbg_dma_irq;
+      if (dbg_dma_irq < 8u) {
+        dbg_dma_irq++;
+        kprintf("irq dma %d\n", irq);
+      }
+    }
 
     no = EX_DMA;
     gic_irqack2(irq);

@@ -446,42 +446,49 @@ typedef struct {
 } DEBE_T;
 #define DEBE ((DEBE_T*)0x01E60800)
 
-/* Audio Codec */
+/* Audio Codec
+ * 【订正·依据数据手册 4.13.4 "Audio Codec Register List"】
+ *   1) 基址是 0x01c22c00（原写 0x01C23C00 是笔误，那片没有 codec）；
+ *   2) AC_DAC_TXDATA 在 0x020（不是结构体原先暗示的 0x0C），0x01C 是保留；
+ *   3) 模拟部分寄存器【不在这个基址上】，走 AC_PR_CFG@0x01c23000 的 8 位索引窗口
+ *      （见 duck/modules/sound/v3s.c 的 ac_pr_write()）。 */
 typedef struct {
-  __IO  u32 DAC_DPC;        // 0x00 DAC Digital Part Control
-  __IO  u32 DAC_FIFOC;      // 0x04 DAC FIFO Control
-  __IO  u32 DAC_FIFOS;      // 0x08 DAC FIFO Status
-  __O   u32 DAC_TXDATA;     // 0x0� DAC TX Data
-  __IO  u32 ADC_FIFOC;      // 0x10 ADC FIFO Control
-  __IO  u32 ADC_FIFOS;      // 0x14 ADC FIFO Status
-  __I   u32 ADC_RXDATA;     // 0x18 ADC RX Data
-  __I   u32 RES0;           // 0x1C
-  __IO  u32 DAC_MIXER_CTRL; // 0x20 DAC & Out Mixer Control
-  __IO  u32 ADC_MIXER_CTRL; // 0x24 ADC & In Mixer Control
-  __IO  u32 ADC_DAC_TUNE;   // 0x28 ADC & DAC Performance Tuning
-  __IO  u32 CAL_CTRL0;      // 0x2C Bias & DA16 Calibration Control_0
-  __I   u32 RES1;           // 0x30
-  __IO  u32 CAL_CTRL1;      // 0x34 Bias & DA16 Calibration Control_1
-  __I   u32 RES2[2];        // 0x38..0x3C
-  __IO  u32 DAC_CNT;        // 0x40 DAC TX FIFO Counter
-  __IO  u32 ADC_CNT;        // 0x44 ADC RX FIFO Counter
-  __IO  u32 DAC_DBG;        // 0x48 DAC Debug
-  __IO  u32 ADC_DBG;        // 0x4C ADC Debug
-  __I   u32 RES3[8];        // 0x50..0x6C
-  __IO  u32 ADC_DAP_CTRL;   // 0x70 ADC DAP Control
-  __IO  u32 ADC_DAP_LCTRL;  // 0x74 ADC DAP Left Control
-  __IO  u32 ADC_DAP_RCTRL;  // 0x78 ADC DAP Right Control
-  __IO  u32 ADC_DAP_PARA;   // 0x7C ADC DAP Parameters
-  __IO  u32 ADC_DAP_LAC;    // 0x80 ADC DAP Left Average Coefficient
-  __IO  u32 ADC_DAP_LDAT;   // 0x84 ADC DAP Left Decay & Attack Time
-  __IO  u32 ADC_DAP_RAC;    // 0x88 ADC DAP Right Average Coefficient
-  __IO  u32 ADC_DAP_RDAT;   // 0x8C ADC DAP Right Decay & Attack Time
-  __IO  u32 ADC_DAP_HPFC;   // 0x90 ADC DAP HPF Coefficient
-  __IO  u32 ADC_DAP_LINAC;  // 0x94 ADC DAP Left Input Signal Low Average Coef
-  __IO  u32 ADC_DAP_RINAC;  // 0x98 ADC DAP Right Input Signal Low Average Coef
-  __IO  u32 ADC_DAP_OPT;    // 0x9C ADC DAP Optimum
+  __IO  u32 DAC_DPC;        // 0x000 DAC Digital Part Control
+  __IO  u32 DAC_FIFOC;      // 0x004 DAC FIFO Control
+  __IO  u32 DAC_FIFOS;      // 0x008 DAC FIFO Status
+  __I   u32 RES_TX;         // 0x00C reserved
+  __IO  u32 ADC_FIFOC;      // 0x010 ADC FIFO Control
+  __IO  u32 ADC_FIFOS;      // 0x014 ADC FIFO Status
+  __I   u32 ADC_RXDATA;     // 0x018 ADC RX Data
+  __I   u32 RES0;           // 0x01C reserved
+  __O   u32 DAC_TXDATA;     // 0x020 DAC TX Data（手册确认：0x020，不是 0x00C）
+  __I   u32 RES_TX1[7];     // 0x024..0x03C reserved
+  __IO  u32 DAC_CNT;        // 0x040 DAC TX FIFO Counter
+  __IO  u32 ADC_CNT;        // 0x044 ADC RX FIFO Counter
+  __IO  u32 DAC_DG;         // 0x048 DAC Debug
+  __IO  u32 ADC_DG;         // 0x04C ADC Debug
+  __I   u32 RES_DAP[4];     // 0x050..0x05C reserved
+  __IO  u32 DAC_DAP_CTR;    // 0x060 DAC DAP Control
+  __I   u32 RES_DAP1[3];    // 0x064..0x06C reserved
+  __IO  u32 ADC_DAP_CTR;    // 0x070 ADC DAP Control
+  __IO  u32 ADC_DAP_LCTR;   // 0x074 ADC DAP Left Control
+  __IO  u32 ADC_DAP_RCTR;   // 0x078 ADC DAP Right Control
+  __IO  u32 ADC_DAP_PARA;   // 0x07C ADC DAP Parameter
+  __IO  u32 ADC_DAP_LAC;    // 0x080 ADC DAP Left Average Coefficient
+  __IO  u32 ADC_DAP_LDAT;   // 0x084 ADC DAP Left Decay & Attack Time
+  __IO  u32 ADC_DAP_RAC;    // 0x088 ADC DAP Right Average Coefficient
+  __IO  u32 ADC_DAP_RDAT;   // 0x08C ADC DAP Right Decay & Attack Time
+  __IO  u32 ADC_DAP_HPFC;   // 0x090 ADC DAP HPF Coefficient
+  __IO  u32 ADC_DAP_LINAC;  // 0x094 ADC DAP Left Input Signal Low Average Coef
+  __IO  u32 ADC_DAP_RINAC;  // 0x098 ADC DAP Right Input Signal Low Average Coef
+  __IO  u32 ADC_DAP_OPT;    // 0x09C ADC DAP Optimum
+  /* 0x0A0~0x0FC 保留；DAC DRC 在 0x100~，ADC DRC 在 0x1C0~，驱动都用不到，
+   * 需要时按手册 4.13.4 的表逐个补（这里不再猜偏移）。 */
+  __I   u32 RES_DRC[0x400 / 4 - 0x0A0 / 4];  // 0x0A0..0x3FC
+  __IO  u32 PR_CFG;         // 0x400 AC Parameter Configuration（模拟寄存器访问窗口）
 } AC_T;
-#define AC ((AC_T*)0x01C23C00)
+#define AC ((AC_T*)0x01C22C00)   /* 手册 4.13.4：AC 基址 0x01c22c00 */
+#define AC_PR_BASE (0x01C23000)  /* 手册 4.13.5.121 注：模拟部分经这个地址的 8 位窗口访问 */
 
 /* UART */
 typedef struct {

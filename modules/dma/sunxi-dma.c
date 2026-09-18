@@ -49,15 +49,36 @@ void *dma_handler(interrupt_context_t *ic) {
   int irq = gic_irqwho();
 
   int i;
-  uint pending;
   u32 channel_no = 0;
   dma_reg_t *dma_reg = (dma_reg_t *)SUNXI_DMA_BASE;
 
   for (i = 0; i < 8 && i < SUNXI_DMA_MAX; i++) {
-    pending = (DMA_PKG_END_INT << (i * 4));
-    if (dma_reg->irq_pending0 & pending) {
-      dma_reg->irq_pending0 = pending;
-      log_debug("dma pedding %d\n", i);
+    /* 【该通道的三个挂起位必须一起清干净】
+     * 手册 4.8.4.x DMA_IRQ_PEND_REG：每通道占 4 bit：
+     *   +0 = HALF（半包结束）/ +1 = PKG（整包结束）/ +2 = QUEUE（队列结束），
+     *   +3 保留；三者都是"写 1 清"。
+     * 老代码只清 PKG(+1)：HALF / QUEUE 一旦置位就永远留着 ⇒ DMA 中断线一直有效
+     * （电平触发）⇒ GIC 不停重复投递。实测音频 DMA 出现 11324 次/秒的中断风暴：
+     * 回调被反复调用、传输被反复重装，FIFO 里只剩 0~1 个字，DAC 拿不到连续数据。
+     * 这里用 0x7 掩码一次清完，但只在 PKG（整包结束）时才回调一次。 */
+    u32 ch_mask =
+        (DMA_PKG_HALF_INT | DMA_PKG_END_INT | DMA_QUEUE_END_INT) << (i * 4);
+    u32 bits = dma_reg->irq_pending0 & ch_mask;
+    if (bits) {
+      dma_reg->irq_pending0 = bits; /* W1C：把已置位的都清掉 */
+      if ((bits & (DMA_PKG_END_INT << (i * 4))) == 0) {
+        continue; /* 半包/队列结束：清位即可，不回调 */
+      }
+      /* 【只打前 8 次】这条在音频/刷屏时是中断热路径（音频约每 23ms 一次），
+       * 常开会刷爆串口、拖慢中断甚至引入爆音，也把启动日志淹掉；
+       * 但保留前几次能证明"中断真的送达了"。 */
+      {
+        static u32 dbg_irq;
+        if (dbg_irq < 8u) {
+          dbg_irq++;
+          log_debug("dma pedding %d\n", (int)i);
+        }
+      }
 
       /* 【cache 一致性】描述符是 CPU 与 DMA 共享的内存：DMA 硬件写它时绕过 CPU
        * cache，回调里若读 desc 状态（或重新投喂）必须先失效，否则读到旧值。
@@ -77,9 +98,16 @@ void *dma_handler(interrupt_context_t *ic) {
     }
   }
   for (i = 8; i < SUNXI_DMA_MAX; i++) {
-    pending = (DMA_PKG_END_INT << ((i - 8) * 4));
-    if (dma_reg->irq_pending1 & pending) {
-      dma_reg->irq_pending1 = pending;
+    /* 同上：HALF/PKG/QUEUE 三位一起清（V3s 只有 0~7 通道，这一支对它有实无实
+     * 都无妨；t113 有 16 通道时会用到）。 */
+    u32 ch_mask =
+        (DMA_PKG_HALF_INT | DMA_PKG_END_INT | DMA_QUEUE_END_INT) << ((i - 8) * 4);
+    u32 bits = dma_reg->irq_pending1 & ch_mask;
+    if (bits) {
+      dma_reg->irq_pending1 = bits; /* W1C */
+      if ((bits & (DMA_PKG_END_INT << ((i - 8) * 4))) == 0) {
+        continue; /* 半包/队列结束：清位即可，不回调 */
+      }
       /* 校验见上：非法/未映射地址不得做 cache 维护 */
       if (is_dma_desc_addr(dma_channel_source[i].desc)) {
         cpu_invalidate_dcache_range((unsigned long)dma_channel_source[i].desc,
@@ -135,6 +163,14 @@ void dma_init_all(void) {
   io_write32(V3S_CCU_BASE + CCU_BUS_CLK_GATE0, reg | 1 << 6);
 
 #endif
+
+  /* 【寄存器布局自检·务必保留】手册 4.8.3：DMA 通道寄存器必须从 DMA_BASE+0x100 开始
+   * （DMA_EN_REG = 0x100 + N*0x40）。这一行能把"结构体占位字算错 ⇒ 通道寄存器整体
+   * 错位 ⇒ desc_addr/enable 写进保留区 ⇒ DMA 像死了一样（搬不动数据、完成中断不触发）"
+   * 这种事故在启动日志里直接暴露，不用等到某个驱动"没声音"再去查。 */
+  log_info("dma: base %x channel0 %x (expect %x) auto_gate %x\n", (u32)DMA_BASE,
+           (u32)&dma_reg->channel[0], (u32)(DMA_BASE + 0x100),
+           dma_reg->auto_gate);
 
   dma_reg->irq_en0 = 0;
   dma_reg->irq_en1 = 0;
@@ -277,7 +313,21 @@ void dma_set_mode(u32 hdma, u32 mode, dma_interrupt_handler_t fun, void *data) {
   if (mode & (1u << 16)) {
     dma_set.loop_mode = 0;
     dma_set.wait_cyc = 8; /* NORMAL_WAIT */
+#if defined(V3S)
+    /* 【V3s 的流式分块 —— 这个值错了音频就是碎片的】
+     * 手册 4.8.4.12 DMA_PARA_REG：
+     *   [15:8] DATA_BLK_SIZE：每搬 N 字节就等 n 个周期再查 DRQ
+     *   [7:0]  WAIT_CYC
+     *   Note2：N 必须是 burst×width 的整数倍（本例 4×4=16 ⇒ m*16）
+     *   Note4：N < 32 字节时必须写 0
+     * t113 那边（较新的 sun6i 风格 DMA）沿用主线 sun6i-dma 的写法把 N 置 0 是可行的，
+     * 但 V3s 上 N=0 ⇒ **每次 DRQ 只搬一个 burst**：实测音频 DMA 每秒完成 11323 次、
+     * 每次 FIFO 只多 0~1 个字（46MB/s 的碎片传输）⇒ 声音完全是错的。
+     * 取 64 字节 = 16 个字（16 的整数倍 ✓，且小于 codec FIFO 的 512 字节容量）。 */
+    dma_set.data_block_size = 64;
+#else
     dma_set.data_block_size = 0;
+#endif
   }
   // channel config (from dram to audio io)
   dma_set.channel_cfg.src_drq_type = DMAC_CFG_TYPE_DRAM;  // dram
@@ -333,6 +383,39 @@ void dma_set_mode(u32 hdma, u32 mode, dma_interrupt_handler_t fun, void *data) {
   }
 
   log_debug("dma init settting\n");
+
+#if defined(V3S)
+  /* 【V3s 的通道配置位布局与 t113 不同 —— 必须按手册重建配置字】
+   * 手册 4.8.4.8 DMA_CFG_REG：
+   *   [4:0]  SRC_DRQ_TYPE     [6:5]  SRC_ADDR_MODE(0=linear,1=IO)
+   *   [8:7]  SRC_BST_LEN(0=1,2=8)   [10:9] SRC_DATA_WIDTH(0=8,1=16,2=32)
+   *   [20:16] DST_DRQ_TYPE   [22:21] DST_ADDR_MODE
+   *   [24:23] DST_BST_LEN    [26:25] DST_DATA_WIDTH
+   * 而 dma_channel_config_t（按 t113 的引擎写的）把 burst 放在 [6:7]/[22:23]、
+   * addr_mode 放在 [8]/[24]：换到 V3s 上 ⇒ 目的地址模式落到保留值 2（**不是 IO 模式**）
+   * ⇒ DMA 以"线性地址"往 codec 寄存器区连写 4096 字节（只有第一个字落进 TXDATA，
+   * 也就是实测看到的"FIFO 里只有 0~1 个字"），同时 burst 也成了非法值 ⇒ DRQ 握手
+   * 失效（每次 4096 字节仅 ~88µs 就"完成" = 46MB/s 的碎片传输）。
+   * 这里按手册重建这个 32bit 配置字；t113 不受影响（下面仍在 #if V3S 内）。 */
+  {
+    u32 cfg = 0;
+    cfg |= (1u & 0x1fu) << 0;  /* SRC_DRQ_TYPE = 1 (SDRAM) */
+    cfg |= (0u & 0x3u) << 5;   /* SRC_ADDR_MODE = 0 线性 */
+    cfg |= (2u & 0x3u) << 7;   /* SRC_BST_LEN  = 2 ⇒ 8 拍 */
+    cfg |= (2u & 0x3u) << 9;   /* SRC_DATA_WIDTH = 2 ⇒ 32bit */
+    cfg |= (15u & 0x1fu) << 16;/* DST_DRQ_TYPE = 15 (Audio Codec) */
+    cfg |= (1u & 0x3u) << 21;  /* DST_ADDR_MODE = 1 ⇒ IO（固定地址）★关键 */
+    cfg |= (2u & 0x3u) << 23;  /* DST_BST_LEN  = 2 ⇒ 8 拍 */
+    cfg |= (2u & 0x3u) << 25;  /* DST_DATA_WIDTH = 2 ⇒ 32bit */
+    *(volatile u32*)(&dma_set.channel_cfg) = cfg;
+    log_info("dma: cfg=%x (dst drq=%d bst=%d am=%d w=%d | src drq=%d bst=%d am=%d "
+             "w=%d)\n",
+             cfg, (cfg >> 16) & 0x1f, (cfg >> 23) & 0x3, (cfg >> 21) & 0x3,
+             (cfg >> 25) & 0x3, cfg & 0x1f, (cfg >> 7) & 0x3, (cfg >> 5) & 0x3,
+             (cfg >> 9) & 0x3);
+  }
+#endif
+
   dma_setting(hdma, &dma_set);
 }
 

@@ -72,4 +72,7 @@ add_files(
     source+common_source
 )
 
-add_includedirs('../')
+add_includedirs(
+    '../',
+    '../../',  # 为 modules/sysconf/sysconf.h（[sound] 配置段）
+)
