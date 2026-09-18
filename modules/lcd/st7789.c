@@ -555,19 +555,15 @@ int lcd_init_mode(vga_device_t* vga, int mode) {
 
   dma_init(0, type, dma_st7789_handler, NULL);
 
-  // frambuffer
-  device_t* fb_dev = device_find(DEVICE_LCD);
-  if (fb_dev != NULL) {
-    vnode_t* frambuffer = vfs_find(NULL, "/dev/fb");
-    if (frambuffer == NULL) {
-      vnode_t* frambuffer = vfs_create_node("fb", V_FILE);
-      vfs_mount(NULL, "/dev", frambuffer);
-    }
-    frambuffer->device = fb_dev;
-    frambuffer->op = &device_operator;
-  } else {
-    log_error("dev fb not found\n");
-  }
+  /* 【不要动 /dev/fb】/dev/fb 是主板主显示（VGA/RGB）的节点：由
+   * duck/modules/gpu/gpu.c 创建并绑定 DEVICE_VGA，应用侧 libgui（screen_init*）
+   * 就是靠 open("/dev/fb") + IOC_READ_FRAMBUFFER_* 取分辨率和帧缓冲地址的。
+   * 这块 SPI 屏自己的节点是 /dev/lcd（duck/modules/lcd/lcd.c 建，绑 DEVICE_LCD）。
+   * 老代码在这里无条件执行 frambuffer->device = fb_dev，会把【已经存在】的
+   * /dev/fb 从 VGA 改写成 ST7789 ⇒ 应用问到 128x128，却按 128 的 stride 往
+   * 480x272 的帧缓冲里拷 ⇒ 现象是"屏黑/画面错位"。多屏要靠按设备名选择，
+   * 不能用改名覆盖的方式。 */
+
 
 #else
 

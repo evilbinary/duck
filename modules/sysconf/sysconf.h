@@ -42,6 +42,17 @@ int sysconf_get_str(const char* section, const char* key, char* out,
  * 【惯用法】def 传"当前值"⇒ 没配就不动；要区分"配了 0"就用 -1 之类的哨兵。 */
 int sysconf_get_int(const char* section, const char* key, int def);
 
+/* 遍历 [section] 段的每个 key = value（顺序同文件）。
+ * cb 返回 1 = 继续，返回 0 = 停止；返回"实际遍历到的项数"（0 = 段不存在/文件没加载）。
+ * 用在"段内项名事先不知道"的配置，例如 [dev] 段的节点绑定表：
+ *   [dev]
+ *   fb  = vga
+ *   lcd = lcd
+ * 见 sysconf.c 的 sysconf_apply_dev()。 */
+int sysconf_foreach(const char* section,
+                    int (*cb)(const char* key, const char* val, void* user),
+                    void* user);
+
 /* 配置文件是否已成功读入内存（1 = 已加载） */
 int sysconf_loaded(void);
 
