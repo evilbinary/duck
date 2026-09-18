@@ -398,15 +398,23 @@ void dma_set_mode(u32 hdma, u32 mode, dma_interrupt_handler_t fun, void *data) {
    * 失效（每次 4096 字节仅 ~88µs 就"完成" = 46MB/s 的碎片传输）。
    * 这里按手册重建这个 32bit 配置字；t113 不受影响（下面仍在 #if V3S 内）。 */
   {
+    /* mode 的 bit18 = "设备侧按 16bit 宽度访问"（宽度字段 1 = 16bit / 2 = 32bit）。
+     * 为什么需要它：V3s 内置 codec 的 TX FIFO 是【每次访问一个 16bit 样本】
+     * （手册 FIFO_I[23:0] = {TXDATA[15:0], 8'b0}；主线 sun4i-codec.c 的 16bit 播放
+     * 也把 addr_width 设成 DMA_SLAVE_BUSWIDTH_2_BYTES）。若这里用 32bit 宽度，DMA 会
+     * 把 app 打包好的 16bit 立体声（一个字含 L|R 两个样本）整字塞进 FIFO，而 codec
+     * 只当【一个】样本来用 ⇒ PCM 被以两倍速度消耗、声道也错位（实测症状就是"播放太快"，
+     * 量化结果：88202 字/秒 = 44100 帧/秒 × 2 字/帧）。 */
+    u32 w = (mode & (1u << 18)) ? 1u : 2u; /* 1 = 16bit, 2 = 32bit */
     u32 cfg = 0;
     cfg |= (1u & 0x1fu) << 0;  /* SRC_DRQ_TYPE = 1 (SDRAM) */
     cfg |= (0u & 0x3u) << 5;   /* SRC_ADDR_MODE = 0 线性 */
     cfg |= (2u & 0x3u) << 7;   /* SRC_BST_LEN  = 2 ⇒ 8 拍 */
-    cfg |= (2u & 0x3u) << 9;   /* SRC_DATA_WIDTH = 2 ⇒ 32bit */
+    cfg |= (w & 0x3u) << 9;    /* SRC_DATA_WIDTH（audio: 16bit） */
     cfg |= (15u & 0x1fu) << 16;/* DST_DRQ_TYPE = 15 (Audio Codec) */
     cfg |= (1u & 0x3u) << 21;  /* DST_ADDR_MODE = 1 ⇒ IO（固定地址）★关键 */
     cfg |= (2u & 0x3u) << 23;  /* DST_BST_LEN  = 2 ⇒ 8 拍 */
-    cfg |= (2u & 0x3u) << 25;  /* DST_DATA_WIDTH = 2 ⇒ 32bit */
+    cfg |= (w & 0x3u) << 25;   /* DST_DATA_WIDTH（audio: 16bit） */
     *(volatile u32*)(&dma_set.channel_cfg) = cfg;
     log_info("dma: cfg=%x (dst drq=%d bst=%d am=%d w=%d | src drq=%d bst=%d am=%d "
              "w=%d)\n",

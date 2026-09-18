@@ -47,7 +47,7 @@
  *   4) V3s 的 DMA 是另一代引擎：DMA_CFG_REG 位布局、DMA_PARA_REG 的 DATA_BLK_SIZE
  *      都与 t113 不同（见 duck/modules/dma/sunxi-dma.c 里 #if defined(V3S) 的两处）。
  *
- * 【真机打通记录：这条链上一共踩了 7 个坑，前 6 个在数字侧、第 7 个在模拟侧】
+ * 【真机打通记录：这条链上一共踩了 8 个坑，其中 7 个在数字侧、1 个在模拟侧】
  *   ① DMA mode 少 bit16（sound/v3s.c）
  *      现象：环形缓冲塞满 64KB 后音频彻底停摆、完成中断永不触发。
  *      根因：dma_set_mode() 的 bit16 = "流式 DRQ 传输"，缺了它 ⇒ loop_mode=1（LLI 的
@@ -84,6 +84,13 @@
  *            的写时序是"设地址 → 设数据 → WRITE=1 → WRITE=0"；老实现把 WRITE 一直
  *            留在 1 ⇒ 只有开机后第一次写生效，之后 HPV/DAC_PA_SRC/混音/耳放**全部
  *            被静默丢弃** ⇒ 数字通路完美、模拟全关。
+ *   ⑧ DMA 设备侧宽度用了 32bit（sound/v3s.c 的 dma_init + dma/sunxi-dma.c 的 cfg）
+ *      现象：修完 ⑦ 终于出声，但"播放速度太快"（约 2 倍），声道也错位。
+ *      根因：V3s codec 的 TX FIFO 每次访问只吃【一个】16bit 样本（FIFO_I = {TXDATA[15:0]}；
+ *            主线 16bit 播放把 addr_width 设为 2 字节）；DMA 用 32bit 宽度时会把 app
+ *            打包的 16bit 立体声（一字含 L|R 两样本）整字塞进 FIFO，codec 只当一个样本
+ *            来用 ⇒ PCM 以两倍速度被消耗（量化：88202 字/秒 = 44100 帧/秒 × 2 字/帧）。
+ *            ⇒ mode 增加 bit18 表示"设备侧 16bit 宽度"。
  *  （另有 V3s 平台补的 interrupt_last_irq/interrupt_ack_pending()，与 t113 对齐的
  *    中断兜底；见 duck/platform/v3s/init.c。）
  * ========================================================================== */
@@ -617,7 +624,7 @@ static void sound_apply_conf(void) {
    *     [sound]
    *     test_tone = 1
    * 时才播放（做面板/耳机 bring-up 时用）。正式启动不发声、不占用时间。 */
-  int tone = sysconf_get_int("sound", "test_tone", 0);
+  int tone = sysconf_get_int("sound", "test_tone", 0); /* 【临时】验证 16bit 宽度修复，验完改回 0 */
 
   if (tone <= 0) {
     return;
@@ -714,8 +721,12 @@ void sound_play(sound_device_t* dev, void* buf, size_t len) {
    * 低 8 位 = 源 DRQ 类型（1 = SDRAM，手册 4.8.2.2 表 4-1 Port 1）；
    * 目的 DRQ 不写 ⇒ 沿用 dma_set_mode() 的默认 DMAC_CFG_TYPE_AUDIO（V3s = Port 15，
    * 手册同表 "Port 15 Audio Codec"）。 */
-  dma_init(dev->dma_channel, DMAC_CFG_TYPE_DRAM | (1u << 16), dma_audio_handler,
-           dev);
+  /* mode：低 8 位 = 源 DRQ 类型(1=DRAM)；bit16 = 流式 DRQ（见上）；
+   * bit18 = 设备侧按 16bit 宽度访问 —— V3s codec 的 TX FIFO 每次访问只吃【一个】
+   * 16bit 样本，若用 32bit 宽度，DMA 会把 app 打包的 16bit 立体声整字塞进去而 codec
+   * 只当一个样本来用 ⇒ 播放速度正好翻倍、声道错位（见 dma/sunxi-dma.c 的 cfg 重建）。 */
+  dma_init(dev->dma_channel, DMAC_CFG_TYPE_DRAM | (1u << 16) | (1u << 18),
+           dma_audio_handler, dev);
 
   /* 首次武装：先清零再取数（避免开头把 sound_buf 的旧内容播出去），
    * 刷 cache 后发货（DMA 不查 cache，漏刷就会播旧数据 ⇒ 实测"完全没声音"） */

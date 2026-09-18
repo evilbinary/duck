@@ -116,7 +116,32 @@ u32 gic_irqwho(void) { return gic.cpu->ia; }
 
 void gic_irqack(int irq) {
   gic.cpu->eoi = irq;
-  gic.cpu->dir = irq;
+
+  /* 【收尾要不要再写 GICC_DIR（GICC + 0x1000）—— 判据来自规范本身，不用平台去声明】
+   * 依据 ARM IHI 0048B《GIC Architecture Specification V2.0》：
+   *   · §3.2.1：GICv2 中 "when GICC_CTLR.EOImode is set to 0, a valid EOIR write
+   *     **also deactivates** the interrupt it references" ⇒ EOImode=0 时 EOIR 一步
+   *     到位（priority drop + 去激活），根本不需要 DIR；
+   *   · Table 4-30 / 4-31 [9] EOImode(NS/S)：
+   *       0 = "GICC_EOIR has both priority drop and deactivate interrupt functionality.
+   *            **Accesses to the GICC_DIR are UNPREDICTABLE.**"
+   *       1 = "GICC_EOIR has priority drop functionality only. The GICC_DIR register has
+   *            deactivate interrupt functionality."（split 模式）
+   * ⇒ 所以正确判据就是 EOImode 本身 = GICv2 的 GICC_CTLR **bit9**（注意不是 bit1，
+   *   bit1 是 EnableGrp1/AckCtl），硬件已经把答案放在寄存器里了。
+   *
+   * 本仓库各平台 gic_init*() 写的都是 GICC_CTLR = G0_ENABLE(0x01) ⇒ EOImode=0 ⇒ 走第一
+   * 档 ⇒ 这里不会写 DIR，与"EOImode=0 时写 DIR 的行为是 UNPREDICTABLE"正好一致。
+   * 对 V3s 还顺带避开一个坑：DIR 在 GICC+0x1000 = 0x01c83000（GIC-400 TRM 表 3-1 给
+   * CPU interface 的区间是 0x2000-0x3FFF，DIR 在其末页），而内核只 page_map 了
+   * 0x01c81000 / 0x01c82000 两页（platform/v3s/init.c）⇒ 一旦去写就会在中断上下文里
+   * data abort（实测：DMA 完成中断第一次到来时 "exception inside IRQ handler no=2"，
+   * pc 停在下面那条 dir 写上，pte 1c83000 -> 0）。
+   * 【将来改用 split 模式】把 GICC_CTLR bit9 置 1 时，必须同时把 DIR 那一页映射上
+   * （V3s: page_map(0x01C83000, 0x01C83000, PAGE_DEV)），否则就会踩上面那个坑。 */
+  if (gic.cpu->ctl & (1u << 9)) {
+    gic.cpu->dir = irq;
+  }
   gic_unpend(irq);
 }
 

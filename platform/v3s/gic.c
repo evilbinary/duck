@@ -204,6 +204,19 @@ void gic_irqack2(int irq) {
   gic_unpend2(irq);
 }
 
+/* 【关于 GICC_DIR（= 0x01c82000 + 0x1000 = 0x01c83000）】
+ * GIC-400 TRM (DDI 0471B) 表 3-1 给 CPU interface 的地址区间是 0x2000-0x3FFF，其寄存器
+ * 表最后一行正是 "0x1000  GICC_DIR  WO  -  Deactivate Interrupt Register" ⇒ 本平台这块
+ * 地址在硬件上是存在的（Allwinner 的 "SCU 0x01C80000 / GIC_DIST +0x1000 / GIC_CPUIF
+ * +0x2000" 就是 GIC-400 原样平移）。
+ * 但本平台用不到它：GICC_CTLR 写的是 G0_ENABLE(0x01) ⇒ bit9(EOImode)=0 ⇒ 按 ARM IHI 0048B
+ * §3.2.1，写 EOIR 就已经完成去激活，且此时访问 DIR 的行为是 UNPREDICTABLE —— 所以通用
+ * gic_irqack()（libs/libarchcommon/arm/gic2.c）不会碰它。而内核只映射到 0x01c82fff
+ * （platform/v3s/init.c），一旦去写就会 data abort（实测：DMA 完成中断第一次到来就是
+ * "exception inside IRQ handler no=2"，pte 1c83000 -> 0）。
+ * 【将来若要用 split 模式（EOImode=1，配合优先级抢占）】必须先补
+ * page_map(0x01C83000, 0x01C83000, PAGE_DEV)。 */
+
 void gic_init2(void) {
   struct v3s_gic_dist *gp = GIC_DIST_BASE;
   struct v3s_gic_cpu *cp = GIC_CPU_BASE;
