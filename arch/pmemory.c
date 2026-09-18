@@ -91,8 +91,10 @@ void ya_alloc_init() {
   kassert(mmt.blocks != NULL);
 }
 
-#define ya_block_ptr(ptr) ((block_t*)ptr - 1);
-#define ya_block_addr(ptr) ((block_t*)ptr + 1);
+/* 【别在宏末尾带分号】带上分号就只能当语句用，写进表达式会出现
+ * "expected ')' before ';'"（相邻合并/切分需要在表达式里算地址）。 */
+#define ya_block_ptr(ptr) ((block_t*)(ptr) - 1)
+#define ya_block_addr(ptr) ((block_t*)(ptr) + 1)
 
 #define MAGIC_FREE 999999999
 #define MAGIC_USED 888888888
@@ -205,6 +207,101 @@ block_t* ya_new_block(size_t size) {
   return block;
 }
 
+/* ---------------- 链操作：唯一入口 ----------------
+ * 【为什么必须集中】block->next/prev 被"已用链(g_block_list)"和"空闲链
+ * (g_block_free)"共用，任何一处手写摘链/挂链漏改 head/tail 或漏改邻居的
+ * prev，都会让块永久孤立（既不在已用链、从空闲链 head 也不可达）——现象就是
+ * "跑应用一段时间后内核堆前沿一路推进，最后 ya_sbrk 断言"。
+ * 下面的 unlink/append 同时维护 head、last、双向指针，别处一律不许直接改。 */
+static void ya_list_unlink(block_t** head, block_t** last, block_t* block) {
+  if (block->prev != NULL) {
+    block->prev->next = block->next;
+  }
+  if (block->next != NULL) {
+    block->next->prev = block->prev;
+  }
+  if (*head == block) {
+    *head = block->next;
+  }
+  if (*last == block) {
+    *last = block->prev;
+  }
+  block->prev = NULL;
+  block->next = NULL;
+}
+
+static void ya_list_append(block_t** head, block_t** last, block_t* block) {
+  if (*head == NULL) {
+    *head = block;
+    *last = block;
+    block->prev = NULL;
+    block->next = NULL;
+    return;
+  }
+  /* 防御：head 非空而 last 丢了（历史遗留状态），先从头把尾巴找回来，
+   * 否则 *last 解引用就是写 NULL+offset（raspi2 上实测崩过）。 */
+  if (*last == NULL) {
+    block_t* b = *head;
+    while (b->next != NULL) {
+      b->next->prev = b;
+      b = b->next;
+    }
+    *last = b;
+  }
+  block->prev = *last;
+  block->next = NULL;
+  (*last)->next = block;
+  *last = block;
+}
+
+/* 在两条链里按 header 地址找块：物理相邻合并要按【地址】判断，
+ * 而链表是逻辑顺序，所以不能用 next/prev 直接当邻居。 */
+static block_t* ya_find_block_by_header(block_t* hdr) {
+  block_t* b;
+  if (hdr == NULL) {
+    return NULL;
+  }
+  for (b = mmt.g_block_list; b != NULL; b = b->next) {
+    if (b == hdr) {
+      return b;
+    }
+  }
+  for (b = mmt.g_block_free; b != NULL; b = b->next) {
+    if (b == hdr) {
+      return b;
+    }
+  }
+  return NULL;
+}
+
+/* block 之后紧邻的物理块（没有则 NULL）。
+ * 块布局：[block_t header][data(size)][int MAGIC_END]
+ * ⇒ 下一个 header 地址 = data + size + sizeof(int)。
+ * 必须用链表核对这个地址确实是登记过的块，否则会把越界地址当块用。 */
+static block_t* ya_phys_next(block_t* block) {
+  return ya_find_block_by_header(
+      (block_t*)((u8*)ya_block_addr(block) + block->size + sizeof(int)));
+}
+
+/* block 之前紧邻的物理块（没有则 NULL） */
+static block_t* ya_phys_prev(block_t* block) {
+  block_t* lists[2];
+  int li;
+  lists[0] = mmt.g_block_list;
+  lists[1] = mmt.g_block_free;
+  for (li = 0; li < 2; li++) {
+    for (block_t* b = lists[li]; b != NULL; b = b->next) {
+      if (b == block) {
+        continue;
+      }
+      if ((block_t*)((u8*)ya_block_addr(b) + b->size + sizeof(int)) == block) {
+        return b;
+      }
+    }
+  }
+  return NULL;
+}
+
 block_t* ya_find_free_block(size_t size) {
   block_t* block = mmt.g_block_free;
   block_t* find_block = NULL;
@@ -240,40 +337,37 @@ void* ya_alloc(size_t size) {
    * 统一交给 ya_find_free_block：找不到合适块时它自己会 fallback 到
    * ya_new_block（见其函数尾），语义不变但不再白吃内存。 */
   block = ya_find_free_block(size);
-  /* 【复用时必须先把块从空闲链上摘掉】ya_find_free_block 只检查 free 标志、
-   * 不摘链。若不管它，这个块之后被 ya_free 时，block->prev/next 还指着空闲链、
-   * 却会被当成"已用链"的邻居去拆 → 空闲链被拆断、节点被永久孤立（既不在已用
-   * 链，从 head 也不可达），累计起来就是"跑久了内核堆被吃光"。
-   * 空闲链的 prev 由 ya_free 维护（见其尾部说明），这里仍从头扫一遍找前驱。 */
+  /* 【复用时先把块从空闲链上摘掉】用统一入口，head/last/邻居 prev 一起维护；
+   * 以前这里手写摘链漏了 next->prev，空闲链的双向指针会逐渐失真。 */
   if (block->free == BLOCK_FREE) {
-    block_t* prev_free = NULL;
-    block_t* cur = mmt.g_block_free;
-    while (cur != NULL && cur != block) {
-      prev_free = cur;
-      cur = cur->next;
-    }
-    if (cur == block) {
-      if (prev_free != NULL) {
-        prev_free->next = block->next;
-      } else {
-        mmt.g_block_free = block->next;
-      }
-      if (mmt.g_block_free_last == block) {
-        mmt.g_block_free_last = prev_free;
-      }
-      block->prev = NULL;
-      block->next = NULL;
-    } else {
-      /* 标记为 FREE 却不在空闲链上：不动链结构，只记一笔 */
-      log_error("ya_alloc block %x marked FREE but not in freelist\n", block);
-    }
+    ya_list_unlink(&mmt.g_block_free, &mmt.g_block_free_last, block);
   }
+
+  /* 【大块切分】相邻合并之后，空闲块可能远大于本次请求。若整块给出，这个块
+   * 就再也不能服务同尺寸的小请求（下一次又得 carve 新内存），"合并"反而会
+   * 加剧碎片。所以余量足够时把尾部切出来还回空闲链，只留 size 给调用方。 */
+  if (block->size >= size + sizeof(block_t) + sizeof(int) + align_to) {
+    block_t* rest = (block_t*)((u8*)ya_block_addr(block) + size + sizeof(int));
+    rest->size = block->size - size - sizeof(block_t) - sizeof(int);
+    rest->free = BLOCK_FREE;
+    rest->count = 0;
+    rest->no = 0;
+    rest->tid = 0;
+    rest->magic = MAGIC_FREE;
+    rest->prev = NULL;
+    rest->next = NULL;
+    *((int*)((u8*)ya_block_addr(rest) + rest->size)) = MAGIC_END;
+    ya_list_append(&mmt.g_block_free, &mmt.g_block_free_last, rest);
+    block->size = size;
+  }
+
   block->free = BLOCK_USED;
   block->magic = MAGIC_USED;
   void* addr = ya_block_addr(block);
   kassert(addr != NULL);
-  int* end = addr + block->size;
-  kassert((*end) == MAGIC_END);
+  /* 数据区末尾的越界哨兵：切分时就地写过，未切分时是建块时写的；
+   * 这里统一再写一次（覆盖"合并后残留的中间 header"）。 */
+  *((int*)((u8*)addr + block->size)) = MAGIC_END;
 
   block->no = mmt.alloc_count++;
   mmt.alloc_size += size;
@@ -427,66 +521,53 @@ void ya_free(void* ptr) {
   block->free = BLOCK_FREE;
   block->count = 0;
   kmemset(ptr, 0, block->size);
-  block->count = 0;
 
-  // remove from block list
-  block_t* prev = block->prev;
-  block_t* next = block->next;
-  if (prev != NULL) {
-    prev->next = next;
-  }
-  if (next != NULL) {
-    next->prev = prev;
+  /* 【摘出已用链】必须走统一入口。原代码只更新了 g_block_list，漏了
+   * g_block_list_last —— 一旦释放的是表尾，ya_new_block 仍会往这个"已经挂到
+   * 空闲链上"的块后面接（把它的 next 写坏），空闲链就此断掉，节点永久孤立。 */
+  ya_list_unlink(&mmt.g_block_list, &mmt.g_block_list_last, block);
+
+  /* 【向后合并】把紧跟在后面的空闲块并进来（原先 merge 整段被注释掉）。
+   * 块布局 [header][data(size)][int END] ⇒ 跨过下一个块 = sizeof(block_t)+its
+   * size+sizeof(int)。合并后数据区变大，末尾哨兵仍是原邻居的 END。 */
+  for (;;) {
+    block_t* nxt = ya_phys_next(block);
+    if (nxt == NULL || nxt->free != BLOCK_FREE) {
+      break;
+    }
+    ya_list_unlink(&mmt.g_block_free, &mmt.g_block_free_last, nxt);
+    block->size += sizeof(block_t) + nxt->size + sizeof(int);
+    /* 被吸收的 header 作废：magic 置 0 ⇒ 以后误释放它会被 ya_free 的
+     * "invalid block" 分支挡下（清晰报错），而不是把堆链改坏。 */
+    nxt->magic = 0;
+    nxt->free = 0;
+    nxt->size = 0;
+    nxt->prev = NULL;
+    nxt->next = NULL;
   }
 
-  if (block == mmt.g_block_list) {
-    mmt.g_block_list = next;
-  }
-
-  /* 【防御】head/tail 必须成对：可能出现 head 非空而 tail 为 NULL 的状态，
-   * 直接解引用 tail 就是写 NULL+offset（raspi2 上实测崩过，addr=4）。 */
-  if (mmt.g_block_free_last == NULL) {
-    mmt.g_block_free_last = mmt.g_block_free;
-  }
-  if (mmt.g_block_free == NULL) {
-    mmt.g_block_free = block;
-    mmt.g_block_free_last = block;
+  /* 【向前合并】如果前一个物理块也空闲，就把当前块并进它（结果块=前块） */
+  for (;;) {
+    block_t* prv = ya_phys_prev(block);
+    if (prv == NULL || prv->free != BLOCK_FREE) {
+      break;
+    }
+    ya_list_unlink(&mmt.g_block_free, &mmt.g_block_free_last, prv);
+    prv->size += sizeof(block_t) + block->size + sizeof(int);
+    block->magic = 0;
+    block->free = 0;
+    block->size = 0;
     block->prev = NULL;
-  } else {
-    block->prev = mmt.g_block_free_last;
-    mmt.g_block_free_last->next = block;
-    mmt.g_block_free_last = block;
+    block->next = NULL;
+    block = prv;
   }
-  /* 【不要清 block->prev】原代码在这里把 prev 也置 NULL，使空闲链的
-   * tail->prev 恒为 NULL（双向链接断掉），后续按 prev 摘链不可靠。
-   * 只清 next（新尾节点）。与 ya_alloc 里"复用前先摘链"配套。 */
-  block->next = NULL;
-  ptr = NULL;
 
-  // todo merge
-  //  if (next != NULL) {
-  //    if (next->free == BLOCK_FREE) {
-  //      block->size += next->size + sizeof(block_t);
-  //      block->next = next->next;
-  //      int size = next->size;
-  //      if (next->next) {
-  //        next->next->prev = block;
-  //      }
-  //      // memset(next,0,size);
-  //    }
-  //  }
-  //  block_t* prev = block->prev;
-  //  if (prev != NULL) {
-  //    if (prev->free == BLOCK_FREE) {
-  //      prev->size += block->size;
-  //      prev->next = block->next;
-  //      if (block->next != NULL) {
-  //        block->next->prev = prev;
-  //      }
-  //      int size = block->size;
-  //      // memset(block,0,size);
-  //    }
-  //  }
+  /* 合并后的数据区末尾必须是 MAGIC_END（原块的 END 正好落在新末尾） */
+  *((int*)((u8*)ya_block_addr(block) + block->size)) = MAGIC_END;
+
+  /* 挂回空闲链（append 统一维护 head/last/双向指针） */
+  ya_list_append(&mmt.g_block_free, &mmt.g_block_free_last, block);
+  ptr = NULL;
 }
 
 int is_line_intersect(int a1, int a2, int b1, int b2) {
