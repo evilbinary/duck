@@ -6,6 +6,7 @@
 #include "dev/devfs.h"
 #include "dma/dma.h"
 #include "kernel/kernel.h"
+#include "sound.h"   /* SNDCTL_DSP_*/AFMT_* 等 OSS ioctl 常量 */
 
 static size_t read(device_t* dev, void* buf, size_t len) {
   u32 ret = 0;

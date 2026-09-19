@@ -64,6 +64,13 @@ if arch_source.get(arch_type):
 if plat_source.get(plat):
     source+=plat_source.get(plat)
 
+# 【兜底】平台没有专用 RTC 实现时，用通用实现 general.c。
+# app/init/module.c 是无条件 REGISTER_MODULE(rtc) 的；若这里不留符号，
+# 未列出的平台（如 miyoo）会编出空库，链接期报
+# `undefined reference to 'rtc_module'`。
+if not source:
+    source += ['general.c']
+
 
 add_files(
     source+common_source

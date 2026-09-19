@@ -1,6 +1,11 @@
 #ifndef GPIO_H
 #define GPIO_H
 
+/* 【CCU 寄存器基址】sunxi-sdhci.c 等模块要用 CCU_BASE / CCU_PLL_PERIPH0_CTRL，
+ * 这组宏定义在 h3-ccu.h。v3s 的 gpio.h 也是同样做法（#include "v3s-ccu.h"）。
+ * 缺这一行时 orangepi-pc 会报 `'CCU_BASE' undeclared`（sunxi-sdhci.c:368）。 */
+#include "h3-ccu.h"
+
 #define MMIO_BASE       0x01C20800
 
 #define SUNXI_PIO_BASE		0x01C20800

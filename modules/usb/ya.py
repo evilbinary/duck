@@ -49,6 +49,10 @@ source=[]
 
 if plat_source.get(plat):
     source+=plat_source.get(plat)
+else:
+    # 【兜底】平台没有 USB host 实现时用 dummy.c：usb.c 在 common_source 里，
+    # 会无条件调用 usb_host_init()/usb_device_init()，缺实现会链接失败（如 miyoo）。
+    source += ['dummy.c']
 
 source+=common_source
 

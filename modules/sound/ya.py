@@ -66,6 +66,12 @@ if arch_source.get(arch_type):
 
 if plat_source.get(plat):
     source+=plat_source.get(plat)
+else:
+    # 【兜底】平台没有专用 sound 实现（或条目为空，如 orangepi-pc / versatilepb）时
+    # 用 dummy.c：app/init/module.c 会 REGISTER_MODULE(sound)（SOUND_MODULE 由
+    # musl-oot 的 config.mak 提供），编出空库会在链接期报
+    # `undefined reference to 'sound_module'`。
+    source += ['dummy.c']
 
 
 add_files(

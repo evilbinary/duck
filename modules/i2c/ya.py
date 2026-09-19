@@ -37,7 +37,10 @@ plat_source={
         'sunxi-twi.c'
     ],
     'orangepi-pc':[
-        'h3.c'
+        'h3.c',
+        # H3 与 V3S/T113-S3 是同一套 sunxi TWI 控制器；power/axp209.c（orangepi-pc
+        # 已选）需要 sunxi_i2c_start/write_data/stop，这几个函数在 sunxi-twi.c 里。
+        'sunxi-twi.c'
     ]
 }
 arch_source={
