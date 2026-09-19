@@ -24,6 +24,7 @@
 #include "dev/devfs.h"
 #include "dma/dma.h"
 #include "kernel/kernel.h"
+#include "kernel/schedule.h" /* schedule_get_ticks ✓（先前自己的 extern 与内核声明冲突 ✗） */
 #include "sound.h" /* SNDCTL_DSP_x / AFMT_x 等 OSS 常量（照 t113-s3/dummy ✓） */
 
 /* ---- 两个【不同】的物理基址 ✗✓（我第一版就把它们搞混了）----
@@ -544,64 +545,42 @@ static size_t read(device_t *dev, void *buf, size_t len) {
   return 0;
 }
 
+/* 【write：非阻塞 ✗✓ 照 v3s.c 的写法】
+ * v3s（本仓库里工作正常的驱动 ✓）是：
+ *     write() → sound_play()（塞进环 + 首次武装 DMA）→ return len ✓ 从不等待 ✓
+ *     环满了就 ring_clear()【丢旧的】✓ 绝不 sleep ✗
+ * 我之前给 miyoo 写的是"积压满就 thread_sleep 等"✗ ⇒ 应用的音频线程会被挂死 ✓
+ * ⇒ 环里缓冲播完就"一下断"✓✓（现象完全吻合 ✓）。现在改为纯非阻塞 ✓。
+ * 节奏由应用自己掌握（SDL 音频线程按片长自己算延时 ✓，v3s 上就是这么跑的 ✓）。 */
 static size_t write(device_t *dev, const void *buf, size_t len) {
   const u8 *p = (const u8 *)buf;
-  size_t left = len;
+  u32 n = (u32)len;
 
+  (void)dev;
   if (snd_started == 0) {
     bach_start();
   }
-  while (left > 0) {
-    size_t n;
-    /* 【按时间推算积压 ✗✓】不再读那个"饱和计数"的水位 ✗（见文件头说明 ✓）：
-     * 积压 = 累计写入 − 按时间推算的已播量 ✓ */
-    play_sync();
+  if (n == 0) {
+    return 0;
+  }
+  if (n > RING_SIZE) { /* 一次超过一整环 ⇒ 只留最后一环（同 v3s 的丢旧 ✓） */
+    p += (n - RING_SIZE);
+    n = RING_SIZE;
+  }
 
-    /* 【欠载监测】积压为 0 ⇒ 硬件已经把数据播空（供给断档 ✓） */
-    if (snd_backlog == 0) {
-      static u32 dry_dbg = 0;
-      if (dry_dbg < 10u) {
-        dry_dbg++;
-        log_warn("bach dry: backlog=0 (underrun)\n");
-      }
+  /* 写入环（可能跨环尾 ✓） */
+  {
+    u32 first = RING_SIZE - snd_wr;
+    if (first > n) {
+      first = n;
     }
-    /* 【写入节奏】应用隔多久写一次、一次写多少、写时积压多少 ✓ */
+    kmemcpy(snd_ring + snd_wr, p, first);
+    if (n > first) {
+      kmemcpy(snd_ring, p + first, n - first);
+    }
+    /* DMA 直读内存 ⇒ 写完必须刷 cache ✓（DMA 不看 cache ✓，漏刷会播旧数据 ✓） */
     {
-      static u32 wr_dbg = 0;
-      static u32 last_ms = 0;
-      u32 now = schedule_get_ticks();
-      if (wr_dbg < 24u) {
-        wr_dbg++;
-        log_info("bach wr: len=%d backlog=%d queued=%d dt=%dms\n", (int)len,
-                 (int)snd_backlog, (int)snd_queued, (int)(now - last_ms));
-      }
-      last_ms = now;
-    }
-
-    /* 【节流 ✗✓】只补到 BACKLOG_MAX ⇒ 环里【尚未播出】的数据永远不会被覆盖 ✓
-     *（原来靠水位算 free ✗：那是饱和计数 ⇒ 从不节流 ⇒ 覆盖未播数据 ⇒ 跳帧/断续 ✓） */
-    if (snd_backlog >= BACKLOG_MAX) {
-      thread_sleep(thread_current(), 1);
-      continue;
-    }
-    n = left;
-    if (n > (size_t)(BACKLOG_MAX - snd_backlog)) {
-      n = (size_t)(BACKLOG_MAX - snd_backlog);
-    }
-    /* 不跨 ring 末尾的写法：分两段拷（KISS ✓） */
-    {
-      size_t first = RING_SIZE - snd_wr;
-      if (first > n) {
-        first = n;
-      }
-      kmemcpy(snd_ring + snd_wr, p, first);
-      if (n > first) {
-        kmemcpy(snd_ring, p + first, n - first);
-      }
-    }
-    /* DMA 直读内存 ⇒ 写完必须刷 cache ✓（否则读到旧数据 ✓） */
-    {
-      u32 tail = snd_wr + (u32)n;
+      u32 tail = snd_wr + n;
       if (tail > RING_SIZE) {
         cpu_flush_dcache_range((unsigned long)(snd_ring + snd_wr),
                                (unsigned long)(snd_ring + RING_SIZE));
@@ -612,12 +591,31 @@ static size_t write(device_t *dev, const void *buf, size_t len) {
                                (unsigned long)(snd_ring + tail));
       }
     }
-    snd_wr = (snd_wr + (u32)n) % RING_SIZE;
-    p += n;
-    left -= n;
-    bach_queue((u32)n);
+    snd_wr = (snd_wr + n) % RING_SIZE;
+    bach_queue(n); /* 敲一下 trigger 告诉硬件有新数据 ✓ */
   }
-  return len;
+  snd_queued += 0; /* 已在 bach_queue 里累计 ✓ */
+
+  /* 只做【统计/日志】✓，绝不再拿它阻塞 ✗ */
+  play_sync();
+  {
+    static u32 wr_dbg = 0;
+    static u32 last_ms = 0;
+    static u32 last_hb = 0;
+    u32 now = schedule_get_ticks();
+    if (wr_dbg < 8u) {
+      wr_dbg++;
+      log_info("bach wr: len=%d backlog=%d queued=%d dt=%dms\n", (int)len,
+               (int)snd_backlog, (int)snd_queued, (int)(now - last_ms));
+    }
+    last_ms = now;
+    if (last_hb == 0 || (now - last_hb) >= 1000u) {
+      log_info("bach hb: queued=%d backlog=%d raw=%x\n", (int)snd_queued,
+               (int)snd_backlog, bach_level_raw());
+      last_hb = now;
+    }
+  }
+  return len; /* ★ 永远收下并返回 len（绝不短写、绝不阻塞 ✓） */
 }
 
 void codec_init(void) {
