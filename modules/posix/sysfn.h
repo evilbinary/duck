@@ -339,10 +339,21 @@ ssize_t sys_readlinkat(int dirfd, const char* restrict pathname,
 int sys_faccessat(int dirfd, const char* pathname, int mode, int flags);
 // size_t sys_ioctl(u32 fd, u32 cmd, ...);
 size_t sys_ioctl(u32 fd, u32 cmd, void* args);
-u64 sys_open_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5);
-u64 sys_access_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5);
-u64 sys_stat_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5);
-u64 sys_readlink_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5);
+/* 【ABI 关键·勿改成 u64】这些 dispatch 由 sys_fn_call 经架构的 sys_call_fn
+ * 函数指针调用：ARM32 = u32(*)(u32×6)，ARM64 = u64(*)(u64×6)，按「字」计参。
+ * 用 u64 声明在 32 位 ARM 上会把参数槽从 6 个变成 12 个，a2 之后全读栈垃圾
+ * （实测：open 的 flags 取到 r2 残留 = 路径指针 → "open attr range error"，
+ * console 打不开 → dup2 失败 → shell 收不到输入、系统进 idle 像卡死）。
+ * 字长类型 unsigned long 同时匹配 ARM32(u32) 与 ARM64(u64)。 */
+typedef unsigned long sys_arg_t;
+u64 sys_open_dispatch(sys_arg_t a0, sys_arg_t a1, sys_arg_t a2, sys_arg_t a3,
+                      sys_arg_t a4, sys_arg_t a5);
+u64 sys_access_dispatch(sys_arg_t a0, sys_arg_t a1, sys_arg_t a2,
+                        sys_arg_t a3, sys_arg_t a4, sys_arg_t a5);
+u64 sys_stat_dispatch(sys_arg_t a0, sys_arg_t a1, sys_arg_t a2, sys_arg_t a3,
+                      sys_arg_t a4, sys_arg_t a5);
+u64 sys_readlink_dispatch(sys_arg_t a0, sys_arg_t a1, sys_arg_t a2,
+                          sys_arg_t a3, sys_arg_t a4, sys_arg_t a5);
 int sys_close(u32 fd);
 size_t sys_write(u32 fd, void* buf, size_t nbytes);
 size_t sys_read(u32 fd, void* buf, size_t nbytes);
@@ -412,9 +423,10 @@ int sys_mkdir(const char* pathname, mode_t mode);
 int sys_access(const char* pathname, int mode);
 int sys_fstat64(int fd, struct stat* stat);
 int sys_statfs64(const char* filename, struct statfs* stat);
-u64 sys_open_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5);
-u64 sys_readlink_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4,
-  u64 a5);
+u64 sys_open_dispatch(sys_arg_t a0, sys_arg_t a1, sys_arg_t a2, sys_arg_t a3,
+                      sys_arg_t a4, sys_arg_t a5);
+u64 sys_readlink_dispatch(sys_arg_t a0, sys_arg_t a1, sys_arg_t a2,
+                          sys_arg_t a3, sys_arg_t a4, sys_arg_t a5);
 
 int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
               int child_tid);

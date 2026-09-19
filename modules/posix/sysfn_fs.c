@@ -279,7 +279,8 @@ static u32 sys_open_kpath(const char* name, int attr) {
     return -1;
   }
   if (attr > 020200000) {
-    log_error("open attr range error %x\n", attr);
+    /* 打印文件名便于定位（attr 异常多因调用约定不匹配/参数错位） */
+    log_error("open attr range error %x name=%s\n", attr, name);
     return -1;
   }
 
@@ -385,7 +386,9 @@ u32 sys_open(char* name, int attr, ...) {
 // flags, mode)
 //   but with syscall number 56.
 // Keep both working by inspecting the first argument.
-u64 sys_open_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5) {
+/* dispatch 的参数宽度说明见 sysfn.h 的 sys_arg_t（务必用字长类型） */
+u64 sys_open_dispatch(sys_arg_t a0, sys_arg_t a1, sys_arg_t a2, sys_arg_t a3,
+                      sys_arg_t a4, sys_arg_t a5) {
   (void)a3;
   (void)a4;
   (void)a5;
@@ -433,7 +436,8 @@ u64 sys_open_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5) {
   return (u64)sys_open((char*)pathname, flags);
 }
 
-u64 sys_access_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5) {
+u64 sys_access_dispatch(sys_arg_t a0, sys_arg_t a1, sys_arg_t a2,
+                        sys_arg_t a3, sys_arg_t a4, sys_arg_t a5) {
   (void)a4;
   (void)a5;
   long s0 = (long)a0;
@@ -474,7 +478,8 @@ u64 sys_access_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5) {
   return (u64)sys_access(pathname, mode);
 }
 
-u64 sys_stat_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5) {
+u64 sys_stat_dispatch(sys_arg_t a0, sys_arg_t a1, sys_arg_t a2, sys_arg_t a3,
+                      sys_arg_t a4, sys_arg_t a5) {
   (void)a4;
   (void)a5;
   long s0 = (long)a0;
@@ -508,8 +513,8 @@ u64 sys_stat_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5) {
   return (u64)sys_stat(pathname, statbuf);
 }
 
-u64 sys_readlink_dispatch(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4,
-                                 u64 a5) {
+u64 sys_readlink_dispatch(sys_arg_t a0, sys_arg_t a1, sys_arg_t a2,
+                          sys_arg_t a3, sys_arg_t a4, sys_arg_t a5) {
   (void)a4;
   (void)a5;
   long s0 = (long)a0;
