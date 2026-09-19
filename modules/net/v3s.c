@@ -29,14 +29,19 @@
 //   EPHY = GATE4(0x070) b0 + RST2(0x2C8) b2。
 //
 // 【为什么轮询不用中断】上层 duck/modules/posix/sysfn_net.c 直接
-// device_find(DEVICE_NET)->read/write 取原始以太帧，本来就不是阻塞语义；
-// 中断还要加 EX_NET + interrupt_get_source() 分发（IRQ_ETHER=114）。
-// 先保证功能，中断收包留作后续。
+// device_find(DEVICE_NET)->read/write 取原始以太帧，本来就不是阻塞语义。
+// 【中断现状（S5）】EMAC 已注册到统一中断框架（irq_register(IRQ_ETHER…)，
+// 见本文件 net_init_device 末尾），MAC 的 RX 中断已打开；中断里只做
+// W1C 清状态 + 计数/置标志，读包仍走下面的轮询路径 —— 语义等价、零回归，
+// 并且 /dev/irq 里能看到 114 的真实计数。要变成纯事件驱动收包，
+// 下一步是让 emac_net_read 消费 emac_rx_seen（或改走 irq_request_bh）。
 //
 
 #include "arch/cpu.h"
 #include "archcommon/io.h"
+#include "gpio.h" /* 平台头：IRQ_ETHER（114）等 IRQ 号宏 */
 #include "gpio/v3s.h"
+#include "kernel/irq.h" /* 统一中断框架：irq_register/irq_enable */
 #include "kernel/kernel.h"
 #include "v3s-ccu.h"
 
@@ -50,8 +55,12 @@
 
 #define BASIC_CTL_0 0x00    /* b3:2 SPEED(11=100M) b1 LOOPBACK b0 DUPLEX */
 #define BASIC_CTL_1 0x04    /* b29:24 BURST_LEN b1 RX_TX_PRI b0 SOFT_RST */
-#define INT_STA 0x08        /* 中断状态（只读） */
+#define INT_STA 0x08        /* 中断状态（只读，W1C 清除） */
 #define INT_EN 0x0C         /* 中断使能 */
+
+/* 中断位（手册 §8.5.3 INT_STA/INT_EN） */
+#define EMAC_INT_TX (1u << 0) /* 发送完成 */
+#define EMAC_INT_RX (1u << 8) /* 收到一帧 */
 #define TX_CTL_0 0x10       /* b31 TX_EN */
 #define TX_CTL_1 0x14       /* b31 TX_DMA_START b30 TX_DMA_EN b10:8 TX_TH b1 TX_MD */
 #define TX_DMA_DESC_LIST 0x20
@@ -581,6 +590,35 @@ static int emac_net_ioctl(device_t* dev, u32 cmd, void* args) {
   }
 }
 
+/* ================================================================== */
+/* 中断路径（统一中断框架：irq_register / irq_enable）                  */
+/* ================================================================== */
+/* 【S5】设计文档 §10：EMAC 改中断收包。这里先做"中断只清状态 + 计数/置标志"，
+ * 重活（扫描述符环、交付上层）仍由 emac_net_read() 在原来的轮询路径里做 ——
+ * 与"直接在 ISR 里做"语义等价，但"什么时候有包"由轮询变成事件驱动，
+ * 而且 /dev/irq 里能看到 EMAC 的真实中断计数（S5 的验收点之一）。
+ * 中断里**只做 W1C 清状态**：电平型中断不清会立刻重投递 ⇒ 风暴。 */
+static volatile u32 emac_irq_count;
+static volatile u32 emac_rx_seen;
+
+static int emac_irq(u32 irq, void *arg) {
+  u32 sta;
+
+  (void)irq;
+  (void)arg;
+
+  sta = emac_read(INT_STA);
+  if (sta == 0) {
+    return 0; /* 不是我的 ⇒ 共享中断时框架会继续问下一个 handler */
+  }
+  emac_write(INT_STA, sta); /* 先清状态，再计数 */
+  emac_irq_count++;
+  if (sta & EMAC_INT_RX) {
+    emac_rx_seen = 1;
+  }
+  return 1; /* 已处理 */
+}
+
 int net_init_device(device_t* dev) {
   u32 v;
 
@@ -630,6 +668,17 @@ int net_init_device(device_t* dev) {
   /* 先把 MAC/DMA 打开（不等链路）：link 只决定"能不能发出去"，
    * 先让 DMA FSM 跑起来，日志里的 sta 才有意义 */
   emac_start();
+
+  /* 【S5】注册到统一中断框架，然后才开 MAC 的 RX 中断。
+   * 【顺序不能反】**框架对"未注册的号"的策略是告警一次 + 自动 mask** ——
+   * 如果在 irq_register() 之前就开 INT_EN，第一次 RX 就会被当成未注册号
+   * 直接 mask 掉，网卡从此收不到中断（和 v3s 上 tick 注册顺序那条坑同源）。 */
+  irq_register(IRQ_ETHER, emac_irq, NULL, "emac", IRQ_FLAG_SHARED);
+  irq_enable(IRQ_ETHER);
+  emac_write(INT_STA, 0xFFFFFFFF); /* 清掉复位以来的历史状态 */
+  emac_write(INT_EN, EMAC_INT_RX); /* 只开 RX（TX 仍走轮询，减少中断量） */
+  kprintf("emac: irq %d registered, INT_EN=%x\n", IRQ_ETHER,
+          emac_read(INT_EN));
 
   /* 开机最多等 ~1s 链路，并把 PHY 状态打出来（判断网线/自协商用） */
   for (v = 0; v < 200 && !emac.link_up; v++) {
