@@ -411,6 +411,17 @@ int kvsprintf(char *buf, const char *fmt, va_list args) {
   return kvsnprintf(buf, KVSPRINTF_UNBOUNDED, fmt, args);
 }
 
+/* 带界 + 不定参的便捷包装：给"直接写代码调用"的场景用（内部走 va_list 版本）。
+ * 老代码请继续用 kvsprintf（无界），新代码优先用 ksnprintf/kvsnprintf。 */
+int ksnprintf(char *buf, size_t size, const char *fmt, ...) {
+  va_list args;
+  int r;
+  va_start(args, fmt);
+  r = kvsnprintf(buf, size, fmt, args);
+  va_end(args);
+  return r;
+}
+
 void sprintf(char *buf, const char *fmt, ...) {
   int i;
   va_list args;

@@ -36,6 +36,7 @@ enum {
   DEVICE_TRACE,
   DEVICE_LCD,
   DEVICE_POWER,
+  DEVICE_IRQ, /* /dev/irq：统一中断框架的只读诊断出口（modules/irq） */
 };
 
 enum {

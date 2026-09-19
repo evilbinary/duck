@@ -45,6 +45,9 @@ int kvsprintf(char *buf, const char *fmt, va_list args);
  * kvsprintf 是无界包装（保留老调用者行为），新代码请优先用它。 */
 int kvsnprintf(char *buf, size_t size, const char *fmt, va_list args);
 
+/* 带界 + 不定参的便捷包装（内部调 kvsnprintf） */
+int ksnprintf(char *buf, size_t size, const char *fmt, ...);
+
 #ifdef __cplusplus
 }
 #endif

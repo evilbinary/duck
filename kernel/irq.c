@@ -141,6 +141,14 @@ int irq_chip_register(struct irq_chip *chip, u32 irq_base, u32 irq_num) {
 
 void irq_set_tick(u32 irq) {
   tick_irq = irq;
+  /* tick 是平台在 gic_init2() 一类流程里**直接使能**的（框架不参与它的 unmask），
+   * 所以这里把 desc 的 enabled 置上：否则 /dev/irq、irq_dump 里 tick 会显示成
+   * "没使能"，与事实不符（v3s 实测就是 50 号 EN=0 的假象）。
+   * 注意本函数按约定在 irq_chip_register() **之前**调用，此时还没有 chip，
+   * 所以不在这里碰 desc[].chip —— 稍后 irq_chip_register() 会按号段统一填上。 */
+  if (irq_valid(irq)) {
+    desc[irq].enabled = 1;
+  }
   kprintf("irq: tick irq = %u\n", irq);
 }
 
@@ -336,7 +344,11 @@ int irq_set_affinity(u32 irq, u32 cpu) {
 u32 irq_get_count(u32 irq) { return irq_valid(irq) ? desc[irq].count : 0; }
 
 const char *irq_get_name(u32 irq) {
-  if (!irq_valid(irq) || desc[irq].action == NULL) return "unregistered";
+  if (!irq_valid(irq)) return "?";
+  /* tick 走 EX_TIMER 槽、不在 action 链上，所以这里单独给名字 ——
+   * 与首派发日志里的 "first dispatch <n> 'tick'" 保持一致（/dev/irq、irq_dump 都受益）。 */
+  if (irq == tick_irq) return "tick";
+  if (desc[irq].action == NULL) return "unregistered";
   return desc[irq].action->name ? desc[irq].action->name : "?";
 }
 
