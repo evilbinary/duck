@@ -1166,31 +1166,96 @@ void* sys_thread_addr(void* vaddr) {
   return phy_addr;
 }
 
+/* ===================== futex =====================
+ * 【为什么必须按"地址"登记等待者】
+ * 原实现里 FUTEX_WAKE 唤醒的是 thread_current()（**调用者自己** ✗），真正的等待者
+ * 谁也等不到唤醒，只能靠 sleep 超时兜底；而 FUTEX_WAIT 也只是盲目睡 400 tick。
+ *
+ * 这条路上站着 SDL 的音频：SDL_mutexP/V → pthread_mutex_lock → musl → futex；
+ * SDL_OpenAudio 还会 SDL_CreateThread() 起音频线程。miyoo 的 /dev/dsp 是空壳
+ * （codec_init 空、write 直接丢弃、DMA 模块为 dummy）⇒ 音频线程长时间不释放
+ * mixer 互斥 ⇒ 主线程在 mutex 上等 ⇒ 现象正是"应用完全卡死、CPU 却空闲、连 60 帧
+ * 统计都打不出来"；而 v3s 有真音频驱动、音频线程持续进展 ⇒ 互斥很快释放 ⇒ 不卡。
+ *
+ * 现在：等待者按地址登记；FUTEX_WAKE 唤醒**登记在该地址上的等待者**；同时保留
+ * 400 tick 兜底睡眠（万一没人唤醒也能自己醒来重试，不会比以前更糟）。
+ * ================================================ */
+#define FUTEX_WAITER_MAX 8
+static struct {
+  u32* addr;
+  thread_t* t;
+} futex_waiters[FUTEX_WAITER_MAX];
+static u32 futex_dbg;
+
+static void futex_waiter_add(u32* addr, thread_t* t) {
+  int i;
+  if (t == NULL) {
+    return;
+  }
+  for (i = 0; i < FUTEX_WAITER_MAX; i++) {
+    if (futex_waiters[i].t == t) {
+      futex_waiters[i].addr = addr;
+      return;
+    }
+  }
+  for (i = 0; i < FUTEX_WAITER_MAX; i++) {
+    if (futex_waiters[i].t == NULL) {
+      futex_waiters[i].t = t;
+      futex_waiters[i].addr = addr;
+      return;
+    }
+  }
+  /* 表满：退化为旧的"纯超时"行为，功能不受影响 */
+}
+
+static u32 futex_waiter_wake(u32* addr) {
+  u32 n = 0;
+  int i;
+  for (i = 0; i < FUTEX_WAITER_MAX; i++) {
+    thread_t* w = futex_waiters[i].t;
+    if (w == NULL || futex_waiters[i].addr != addr) {
+      continue;
+    }
+    /* 只在"还在等"时唤醒；已经自己超时醒来的直接清槽 */
+    if (w->state == THREAD_SLEEP || w->state == THREAD_WAITING) {
+      thread_wake(w); /* 同时清零 sleep_counter ⇒ 兜底睡眠也会立刻结束 */
+      n++;
+    }
+    futex_waiters[i].t = NULL;
+    futex_waiters[i].addr = NULL;
+  }
+  return n;
+}
+
 int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
               const struct timespec* timeout, /* or: uint32_t val2 */
               uint32_t* uaddr2, uint32_t val3) {
   thread_t* current = thread_current();
-  if ((futex_op & FUTEX_WAKE) == FUTEX_WAIT) {
-    if (*uaddr == val) {
-      log_debug("wait %d\n", current->id);
-      thread_sleep(current, 400);
-    } else {
-      // thread_sleep(current, 0);
-      return EAGAIN;
-    }
 
-  } else if ((futex_op & FUTEX_WAKE) == FUTEX_WAKE) {
-    if (*uaddr == val) {
-      log_debug("wake %d\n", current->id);
-
-      thread_wake(current);
-    } else {
-      return EAGAIN;
-    }
-  } else {
-    log_debug("sys futext not impl %d\n", futex_op);
+  /* 【诊断·可删】只打前 16 次：确认应用真的走到 futex、以及 op 类型
+   * （0=WAIT / 1=WAKE）。若 gnuboy 卡住时这里完全没有输出 ⇒ 它与 futex 无关。 */
+  if (futex_dbg < 16u) {
+    futex_dbg++;
+    log_info("futex op=%x addr=%x val=%x tid=%d\n", (u32)futex_op & 0xff,
+             (u32)(uintptr_t)uaddr, val, current->id);
   }
 
+  if ((futex_op & FUTEX_WAKE) == FUTEX_WAIT) {
+    if (uaddr == NULL || *uaddr != val) {
+      return EAGAIN;
+    }
+    /* 登记 + 有界等待：正常由另一线程的 FUTEX_WAKE 唤醒，没人唤醒也会超时醒来 */
+    futex_waiter_add(uaddr, current);
+    thread_sleep(current, 400);
+    return 0;
+  }
+
+  if ((futex_op & FUTEX_WAKE) == FUTEX_WAKE) {
+    /* 唤醒登记在该地址上的等待者（不是调用者自己 ✗） */
+    return (int)futex_waiter_wake(uaddr);
+  }
+
+  log_debug("sys futext not impl %d\n", futex_op);
   return 0;
 }
 

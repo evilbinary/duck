@@ -73,63 +73,60 @@ static void init_gpio(void) {
   // log_debug("keyboard pins init end\n");
 }
 
+/* 【按键队列：先进先出 + 只在电平跳变时入队】
+ * 原实现两处硬伤（实测：日志被 `key buffer is full` 刷爆，游戏"按一下只有 1 帧效果"
+ * ⇒ 看着像卡在标题画面）：
+ *   ① `if (val == active)` 分支里**每次 read 都入队一个"按下"** ⇒ 按住不放时每帧都在
+ *      塞事件 ⇒ 队列瞬间满；
+ *   ② 满了以后 `scan_code_index = 0`，把**【已排队的】用户按键整体丢弃**（应丢新事件）。
+ * 出队侧原来取 `scan_code_buffer[index-1]`（**最新**那个）且移位方向错 ⇒ 消费者拿到
+ * 乱序/重复的按下与松开 ⇒ 应用刚置上的 keyPad 位立刻被"松开"清掉 ⇒ 只看到一帧的按下。
+ * 现在：边沿触发入队、满则丢新并限速打印、出队取最旧（FIFO）。 */
+static void scan_code_push(u32 code) {
+  if (scan_code_index >= MAX_CHARCODE_BUFFER) {
+    static u32 full_dbg = 0;
+    if (full_dbg < 8u) {
+      full_dbg++;
+      log_warn("key queue full, drop code=%x (further msgs suppressed)\n", code);
+    }
+    return;
+  }
+  scan_code_buffer[scan_code_index++] = code;
+}
+
 static size_t read(device_t* dev, void* buf, size_t len) {
   u32 ret = 0;
-
-  char* keys = (char*)buf;
-  int key_cnt = 0;
-  u32 scan_code = 0;
 
   for (int i = 0; i < 16; i++) {
     int val = gpio_input(0, _pins[i].pin);
 
-    if (scan_code_index > MAX_CHARCODE_BUFFER) {
-      scan_code_index = 0;
-      log_warn("key buffer is full\n");
-    }
-
     if (val == _pins[i].active) {
-      // log_debug("pin %d %d\n", i, val);
-      _pins[i].status = 1;  // down
-      scan_code = _pins[i].key;
-      keys++;
-      key_cnt++;
+      /* 【按下沿】只在状态变化时入队一次（原实现每次 read 都入队 ⇒ 队列洪泛 ✗） */
+      if (_pins[i].status != 1) {
+        _pins[i].status = 1;
+        scan_code_push(_pins[i].key);
+      }
 
-      // if (i <= 3) {
-      //   // 按键互斥
-      //   for (int j = 0; j <= 3; j++) {
-      //     if (i != j && _pins[j].status == 1) {
-      //       _pins[j].status = 0;
-      //       // scan_code_buffer[scan_code_index++] = _pins[j].key;
-      //       scan_code_buffer[scan_code_index++] = _pins[j].key | 0x80;
-      //     }
-      //   }
-      // }
-
-      scan_code_buffer[scan_code_index++] = scan_code;
     } else if (_pins[i].status == 1) {
-      _pins[i].status = 0;  // up
-      scan_code = _pins[i].key | 0x80;
-
-      keys++;
-      key_cnt++;
-
-      scan_code_buffer[scan_code_index++] = scan_code;
-    } else {
+      /* 【松开沿】 */
       _pins[i].status = 0;
+      scan_code_push(_pins[i].key | 0x80);
     }
   }
 
   if (scan_code_index > 0) {
-    kstrncpy(buf, &scan_code_buffer[scan_code_index - 1], 1);
-    for (int i = 0; i < scan_code_index; i++) {
+    /* FIFO：取【最旧】的一个，其余整体前移（原实现取最新 + 移位方向错 ✗） */
+    kstrncpy(buf, &scan_code_buffer[0], 1);
+    for (int i = 0; i + 1 < scan_code_index; i++) {
       scan_code_buffer[i] = scan_code_buffer[i + 1];
     }
     scan_code_index--;
     ret = 1;
   }
 
-  return key_cnt > 0 ? key_cnt : -1;
+  /* 返回**实际写出的字节数**（0/1）：调用方 event_read_joystick()/event_read_key()
+   * 按返回值当有效字节数用；旧实现返回本轮扫到的按键个数（可能 2、3…）⇒ 语义不符。 */
+  return ret;
 }
 
 int keyboard_init(void) {
