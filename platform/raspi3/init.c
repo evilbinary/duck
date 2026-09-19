@@ -3,6 +3,10 @@
 #include "kernel/page.h"
 #include "libs/include/types.h"
 
+/* 统一中断框架：struct irq_chip / irq_chip_register / irq_set_tick */
+#include "kernel/irq.h"
+#include "libs/include/archcommon/irq_chip.h"
+
 static void io_write32(volatile unsigned int* port, u32 data);
 static u32 io_read32(volatile unsigned int* port);
 void ipi_clear(int cpu);
@@ -26,6 +30,35 @@ static u32 io_read32(volatile unsigned int* port) {
 
 // EMMC interrupt is peripheral IRQ 62 => pending2 bit (62-32)=30.
 #define IRQ2_EMMC_BIT           (1u << 30)
+
+/* 使能寄存器（mask/unmask 用；偏移与 DISABLE* 对称）*/
+#define IRQ_ENABLE1             ((volatile unsigned int*)(BCM2835_IRQ_BASE_ADDR + 0x10))
+#define IRQ_ENABLE2             ((volatile unsigned int*)(BCM2835_IRQ_BASE_ADDR + 0x14))
+#define IRQ_BASIC_ENABLE        ((volatile unsigned int*)(BCM2835_IRQ_BASE_ADDR + 0x18))
+
+/* ================================================================== */
+/* 统一中断框架的"平台唯一 IRQ 标识"号段（raspi3/BCM2837）              */
+/* ================================================================== */
+/* BCM2837 是两层结构：每核的本地源（CORE0_IRQ_SOURCE）+ 外设位图（PENDING1/2/BASIC）。
+ * 两层都归同一个 chip 管（位图型：框架通过 for_each_pending 取号）：
+ *   0           每核虚拟定时器 CNTV —— tick 走这个号（irq_set_tick）
+ *   1           每核"其它"源（GPU/PMU/AXI…）：无从解码 ⇒ 报上来让框架计数+告警一次，
+ *               并把外设位图整体 mask（沿用老 interrupt_get_source 的兜底，防硬锁死）
+ *   32..63      外设 IRQ_PENDING1 位 0..31
+ *   64..95      外设 IRQ_PENDING2 位 0..31（EMMC = 位 30 ⇒ 号 94）
+ *   96..103     IRQ_BASIC_PENDING 位 0..7（位 8/9 只是 PENDING1/2 的"有东西"镜像，不单独报） */
+#define IRQ_RASPI3_CNTV        0
+#define IRQ_RASPI3_UNKNOWN     1
+#define IRQ_RASPI3_IRQ1_BASE   32
+#define IRQ_RASPI3_IRQ2_BASE   64
+#define IRQ_RASPI3_BASIC_BASE  96
+#define IRQ_RASPI3_IRQ_NUM     128
+#define IRQ_RASPI3_IRQ1(n)     (IRQ_RASPI3_IRQ1_BASE + (n))
+#define IRQ_RASPI3_IRQ2(n)     (IRQ_RASPI3_IRQ2_BASE + (n))
+#define IRQ_RASPI3_BASIC(n)    (IRQ_RASPI3_BASIC_BASE + (n))
+/* SD 卡（EMMC）用的号：老路径是"清状态 + 永久关中断"（SD 实际走轮询），
+ * 现在交给框架 ⇒ 首次触发会被"告警一次 + 自动 mask"，效果等价且可观测 */
+#define IRQ_RASPI3_EMMC        IRQ_RASPI3_IRQ2(30)
 
 // BCM2835 EMMC register block base
 #define BCM2835_EMMC_BASE_ADDR  (MMIO_BASE + 0x00300000)
@@ -110,6 +143,116 @@ u32 read_core_timer_pending(int cpu) {
   return tmp;
 }
 
+/* ================================================================== */
+/* 统一中断框架的控制器实例（位图型：实现 for_each_pending）             */
+/* ================================================================== */
+/* 设计文档 §8：raspi2/raspi3 的 BCM2835/37 legacy intc 是位图型 ——
+ * 框架不"claim"，而是由控制器把所有挂起的号喂进来（for_each_pending 回调）。 */
+
+static void raspi3_irq_mask(u32 irq) {
+  if (irq == IRQ_RASPI3_CNTV) {
+    /* 每核定时器：清本核的本地源路由（0 = 该核 CNTV/mailbox 全关） */
+    io_write32((volatile unsigned int*)(CORE0_TIMER_IRQCNTL + 4 * cpu_get_id()),
+               0);
+    return;
+  }
+  if (irq == IRQ_RASPI3_UNKNOWN) {
+    /* 沿用老 interrupt_get_source() 的兜底：把当前挂起的外设位图整体关掉。
+     * 解不开的源如果不清，IRQ 线会一直拉着 ⇒ 硬锁死（老代码专门为这个写过一段）。 */
+    u32 p1 = io_read32(IRQ_PENDING1);
+    u32 p2 = io_read32(IRQ_PENDING2);
+    u32 b = io_read32(IRQ_BASIC_PENDING);
+    if (p1) io_write32(IRQ_DISABLE1, p1);
+    if (p2) io_write32(IRQ_DISABLE2, p2);
+    if (b) io_write32(IRQ_BASIC_DISABLE, b);
+    return;
+  }
+  if (irq >= IRQ_RASPI3_IRQ1_BASE && irq < IRQ_RASPI3_IRQ1_BASE + 32) {
+    io_write32(IRQ_DISABLE1, 1u << (irq - IRQ_RASPI3_IRQ1_BASE));
+    return;
+  }
+  if (irq >= IRQ_RASPI3_IRQ2_BASE && irq < IRQ_RASPI3_IRQ2_BASE + 32) {
+    io_write32(IRQ_DISABLE2, 1u << (irq - IRQ_RASPI3_IRQ2_BASE));
+    return;
+  }
+  if (irq >= IRQ_RASPI3_BASIC_BASE && irq < IRQ_RASPI3_BASIC_BASE + 8) {
+    io_write32(IRQ_BASIC_DISABLE, 1u << (irq - IRQ_RASPI3_BASIC_BASE));
+  }
+}
+
+static void raspi3_irq_unmask(u32 irq) {
+  if (irq == IRQ_RASPI3_CNTV) {
+    io_write32((volatile unsigned int*)(CORE0_TIMER_IRQCNTL + 4 * cpu_get_id()),
+               0x08);
+    return;
+  }
+  if (irq >= IRQ_RASPI3_IRQ1_BASE && irq < IRQ_RASPI3_IRQ1_BASE + 32) {
+    io_write32(IRQ_ENABLE1, 1u << (irq - IRQ_RASPI3_IRQ1_BASE));
+    return;
+  }
+  if (irq >= IRQ_RASPI3_IRQ2_BASE && irq < IRQ_RASPI3_IRQ2_BASE + 32) {
+    io_write32(IRQ_ENABLE2, 1u << (irq - IRQ_RASPI3_IRQ2_BASE));
+    return;
+  }
+  if (irq >= IRQ_RASPI3_BASIC_BASE && irq < IRQ_RASPI3_BASIC_BASE + 8) {
+    io_write32(IRQ_BASIC_ENABLE, 1u << (irq - IRQ_RASPI3_BASIC_BASE));
+  }
+}
+
+/* 控制器把当前所有挂起的号喂给框架：框架对每个号做
+ * "查表 → 派发 → （未注册则）计数 + 告警一次 + 自动 mask"。 */
+static int raspi3_irq_pending(int (*cb)(u32, void*), void* arg) {
+  u32 p1, p2, b, core;
+  int n;
+
+  /* ① 外设位图：PENDING2 先报（EMMC 等"会立刻出事"的号在 2 号位图） */
+  p2 = io_read32(IRQ_PENDING2);
+  for (n = 0; n < 32; n++) {
+    if (p2 & (1u << n)) {
+      cb(IRQ_RASPI3_IRQ2(n), arg);
+    }
+  }
+  p1 = io_read32(IRQ_PENDING1);
+  for (n = 0; n < 32; n++) {
+    if (p1 & (1u << n)) {
+      cb(IRQ_RASPI3_IRQ1(n), arg);
+    }
+  }
+  b = io_read32(IRQ_BASIC_PENDING) & 0xFFu; /* 只有低 8 位是真源 */
+  for (n = 0; n < 8; n++) {
+    if (b & (1u << n)) {
+      cb(IRQ_RASPI3_BASIC(n), arg);
+    }
+  }
+
+  /* ② 每核本地源：
+   *    mailbox(IPI)：只清不报 —— 它不是设备中断，报上去只会被判"未处理"并触发
+   *                  告警 + 自动 mask（对 mailbox 毫无意义）；
+   *    其它位      ：报成 UNKNOWN，让框架计数 + 告警一次 + 兜底 mask；
+   *    CNTV(tick)  ：**最后**报 —— tick 的 handler（do_schedule）可能切换上下文，
+   *                  放最后可保证"切走之后"不再继续派发别的号。 */
+  core = read_core_timer_pending(cpu_get_id());
+  if (core & 0xF0u) {
+    ipi_clear(cpu_get_id());
+  }
+  if (core & ~(0x08u | 0xF0u)) {
+    cb(IRQ_RASPI3_UNKNOWN, arg);
+  }
+  if (core & 0x08u) {
+    cb(IRQ_RASPI3_CNTV, arg);
+  }
+  return 0;
+}
+
+struct irq_chip raspi3_bcm_chip = {
+    .name = "bcm2837-legacy",
+    .for_each_pending = raspi3_irq_pending,
+    .mask = raspi3_irq_mask,
+    .unmask = raspi3_irq_unmask,
+    /* eoi = NULL：位图型没有 EOI 概念 —— 清设备状态（W1C）就算完成一次中断。
+     * set_priority/set_type/set_affinity 也留 NULL（框架调用前判空）。 */
+};
+
 void timer_init(int hz) {
   int cpu = cpu_get_id();
   kprintf("cpu %d timer init\n", cpu);
@@ -125,6 +268,21 @@ void timer_init(int hz) {
   write_cntv_tval(cntfrq[cpu]);
   io_write32((volatile unsigned int*)(CORE0_TIMER_IRQCNTL + 0x4 * cpu), 0x08);
   enable_cntv(1);
+
+  /* ==================================================================
+   * 接入统一中断框架（位图型 BCM2837 legacy 控制器）
+   * ==================================================================
+   * 【顺序】先 set_tick 再 register：反过来的话，"chip 已注册、tick 还没声明"的
+   * 窗口里若有中断进来，tick 号会被当成"未注册号"而**自动 mask** ⇒ 时钟永久停掉
+   * （这条坑 v3s 那边已记录，见设计文档 §11.1-3）。
+   * 【为什么放这里】timer_init 由 schedule_init() 调用，此时控制台/页表都已就绪；
+   * 每颗 CPU 都会走到这里，而 irq_chip_register/irq_set_tick 都是幂等的。
+   * 【切换后的行为变化】中断从此走 kernel/irq.c：
+   *   - tick 仍经 EX_TIMER 槽交给 do_schedule（框架会先置 ic->no = EX_TIMER）；
+   *   - 未注册的号 = 计数 + 告警一次 + 自动 mask（取代老路径"一律 IRQ_DISABLE*"）；
+   *   - 老 interrupt_get_source() 不再被调用（保留作为参考实现）。 */
+  irq_set_tick(IRQ_RASPI3_CNTV);
+  irq_chip_register(&raspi3_bcm_chip, 0, IRQ_RASPI3_IRQ_NUM);
 }
 
 void timer_end(void) {

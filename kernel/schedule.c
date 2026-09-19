@@ -208,7 +208,16 @@ void* do_schedule(interrupt_context_t* ic) {
   thread_t* current_thread = thread_current();
 
   if (current_thread == NULL) {
-    log_debug("schedule current is null\n");
+    /* 【必须 ack 定时器 —— 这就是"早期 tick 风暴"的根因，见设计文档 §11.1-2】
+     * 本函数由 tick（走 EX_TIMER 槽）调用。内核早期（中断控制器已注册、但
+     * thread_init 之前）current_thread 还不存在；如果这里直接 return，
+     * **定时器中断永远不被清** ⇒ 自动重装的定时器立刻重投递 ⇒ IRQ 风暴 +
+     * 启动停摆（"schedule current is null" 刷屏，再也进不了 shell）。
+     * raspi3 切到统一中断框架后实测：chip 注册的那一瞬 tick 就来了，日志被刷
+     * 了 644 行后卡死。所以没有当前线程时也要 timer_end()（只写定时器寄存器，
+     * 不需要线程上下文），并让 tick 计数继续走 —— 但不切换上下文。 */
+    timer_end();
+    timer_ticks[cpu]++;
     return ic;
   }
 

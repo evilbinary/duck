@@ -96,6 +96,12 @@ void irq_bh_poll(void);
 
 /* ---------------- 供 arch 入口 / 平台调用 ---------------- */
 
+/* 中断状态的"保存/还原"（不是无条件开关）：返回进入时的中断状态，restore 按原值还原。
+ * 用于"改表/初始化"这类临界区 —— 不能在原本关中断的上下文里无条件开中断，
+ * 否则会提前放行 tick（见设计文档 §11.1-2 的启动风暴）。 */
+u32 irq_save_flags(void);
+void irq_restore_flags(u32 flags);
+
 int irq_core_enabled(void); /* 未注册任何 chip ⇒ 0，平台走老的 interrupt_get_source() */
 /* claim 型（GIC/PLIC）：内部取号 → 派发 → EOI → 跑 bottom half。
  * 【必须返回值透传】tick 走 EX_TIMER 槽，而 do_schedule() 可能返回**切换后的新上下文**

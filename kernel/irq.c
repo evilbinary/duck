@@ -65,21 +65,35 @@ static u32 bh_overflow;
  * ARM32 用 mrs/msr cpsr 实现；其它架构暂退化为 cpu_cli/cpu_sti（它们当前没有平台
  * 会注册 chip，等有需要时把这对函数提到 arch 层各自实现即可）。 */
 #if (defined(ARMV7_A) || defined(ARMV7) || defined(ARMV5)) && !defined(ARM64)
-static u32 irq_save_flags(void) {
+u32 irq_save_flags(void) {
   u32 cpsr;
   __asm__ __volatile__("mrs %0, cpsr" : "=r"(cpsr));
   __asm__ __volatile__("msr cpsr_c, %0" ::"r"(cpsr | 0xC0u)); /* I|F = 1（关 IRQ/FIQ）*/
   return cpsr;
 }
-static void irq_restore_flags(u32 flags) {
+void irq_restore_flags(u32 flags) {
   __asm__ __volatile__("msr cpsr_c, %0" ::"r"(flags));
 }
+#elif defined(ARM64)
+/* ARM64 用 DAIF：daifset #3 = I|F 置位（关 IRQ/FIQ），还原时整体写回 DAIF。
+ * 【为什么必须有这个分支】以前 ARM64 落到下面的 #else（cpu_cli/cpu_sti），
+ * 而 cpu_sti() 是**无条件开中断** —— 在"原本就关着中断"的上下文里使用会提前开中断
+ * （正是 §11.1-2 那条坑）。kernel_init 现在也用这对原语，所以必须真正保存/还原。 */
+u32 irq_save_flags(void) {
+  u64 daif;
+  __asm__ __volatile__("mrs %0, daif" : "=r"(daif));
+  __asm__ __volatile__("msr daifset, #3" ::: "memory");
+  return (u32)daif;
+}
+void irq_restore_flags(u32 flags) {
+  __asm__ __volatile__("msr daif, %0" ::"r"((u64)flags));
+}
 #else
-static u32 irq_save_flags(void) {
+u32 irq_save_flags(void) {
   cpu_cli();
   return 0;
 }
-static void irq_restore_flags(u32 flags) {
+void irq_restore_flags(u32 flags) {
   (void)flags;
   cpu_sti();
 }
@@ -140,6 +154,8 @@ int irq_chip_register(struct irq_chip *chip, u32 irq_base, u32 irq_num) {
 }
 
 void irq_set_tick(u32 irq) {
+  int changed = (tick_irq != irq);
+
   tick_irq = irq;
   /* tick 是平台在 gic_init2() 一类流程里**直接使能**的（框架不参与它的 unmask），
    * 所以这里把 desc 的 enabled 置上：否则 /dev/irq、irq_dump 里 tick 会显示成
@@ -149,7 +165,11 @@ void irq_set_tick(u32 irq) {
   if (irq_valid(irq)) {
     desc[irq].enabled = 1;
   }
-  kprintf("irq: tick irq = %u\n", irq);
+  /* 多核平台每颗 CPU 都会调用本函数（schedule_init → timer_init）⇒
+   * 只在值真正变化时打印，避免开机刷 4 行一样的 tick 声明。 */
+  if (changed) {
+    kprintf("irq: tick irq = %u\n", irq);
+  }
 }
 
 int irq_core_enabled(void) { return primary_chip() != NULL; }
