@@ -177,7 +177,7 @@ static int bach_pick_index(int rate) {
  * the_horror 的增益按"线路电平"给 ✓，而应用送的是满刻度 PCM ✓ ⇒ 过载 ⇒ 又响又毛 ✓。
  * 这里在写环时做简单衰减（右移 = 每 +1 约 -6dB ✓），不动任何硬件寄存器 ✓（零风险）：
  *   SND_VOL_SHIFT = 0 不衰减 / 1 一半(-6dB) / 2 四分之一(-12dB) ✓（想调音量就改这个 ✓） */
-#define SND_VOL_SHIFT 1
+#define SND_VOL_SHIFT 2 /* 2 = 1/4 幅度（-12dB）✓；想更小用 3=-18dB ✓、想更响用 1=-6dB ✓ */
 
 /* 带衰减的拷贝（S16LE ✓，按 2 字节一个样本处理 ✓） */
 static void snd_copy_attn(u8 *dst, const u8 *src, u32 n) {
