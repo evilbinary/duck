@@ -92,7 +92,7 @@ struct reg_val {
 static const int src_rates[] = {8000,  11025, 12000, 16000, 22050,
                                 24000, 32000, 44100, 48000};
 
-#define RING_SIZE (64 * 1024)
+#define RING_SIZE (192 * 1024)
 static u8 snd_ring[RING_SIZE] __attribute__((aligned(64)));
 static u32 snd_wr;    /* 应用写到 ring 的字节偏移 */
 static int snd_rate = 44100;
@@ -171,6 +171,29 @@ static int bach_pick_index(int rate) {
     }
   }
   return best;
+}
+
+/* 【软件音量 ✗✓】用户反馈"音量太大、有毛刺" ⇒ 典型【数字削顶(clipping)】：
+ * the_horror 的增益按"线路电平"给 ✓，而应用送的是满刻度 PCM ✓ ⇒ 过载 ⇒ 又响又毛 ✓。
+ * 这里在写环时做简单衰减（右移 = 每 +1 约 -6dB ✓），不动任何硬件寄存器 ✓（零风险）：
+ *   SND_VOL_SHIFT = 0 不衰减 / 1 一半(-6dB) / 2 四分之一(-12dB) ✓（想调音量就改这个 ✓） */
+#define SND_VOL_SHIFT 1
+
+/* 带衰减的拷贝（S16LE ✓，按 2 字节一个样本处理 ✓） */
+static void snd_copy_attn(u8 *dst, const u8 *src, u32 n) {
+  u32 i;
+  if (SND_VOL_SHIFT == 0) {
+    if (n != 0) {
+      kmemcpy(dst, src, n);
+    }
+    return;
+  }
+  for (i = 0; i + 1u < n; i += 2u) {
+    int v = (int)(short)((u16)src[i] | ((u16)src[i + 1u] << 8));
+    v >>= SND_VOL_SHIFT;
+    dst[i] = (u8)(v & 0xff);
+    dst[i + 1u] = (u8)((v >> 8) & 0xff);
+  }
 }
 
 /* ring 的虚拟地址 → BACH 要的 MIU 地址（DRAM 基址 0x20000000 ✓，不是外设基址 ✗） */
@@ -568,15 +591,44 @@ static size_t write(device_t *dev, const void *buf, size_t len) {
     n = RING_SIZE;
   }
 
+  /* 【照 t113-s3 的语义：宁可丢输入，也绝不覆盖未播数据 ✗✓】关键修复
+   * t113-s3 的环是"固定小块 DMA + 中断续投"⇒ 真正的 FIFO ⇒ 环满只丢数据 ✓，
+   * 硬件正在播的位置绝不会被顶掉 ✓。
+   * 我们 miyoo 是【硬件直接读整个环】✗ ⇒ 若环满仍继续写 ⇒ 覆盖尚未播出的数据
+   * ⇒ 听感就是"前一段还没播完，就被插进下一段" ✓✓（用户现象 ✓）。
+   * 这里改成：只写"按时间模型算出来的空闲空间"那么多 ✓，超出部分【丢掉】✗，
+   * 而且丢的是【输入的前段】（尽量贴近实时 ✓）。绝不阻塞、绝不覆盖 ✗。 */
+  {
+    u32 freeb;
+    play_sync();
+    freeb = (snd_backlog >= RING_SIZE) ? 0u : (RING_SIZE - snd_backlog);
+    if (n > freeb) {
+      u32 drop = n - freeb;
+      static u32 drop_dbg = 0;
+      if (drop_dbg < 10u) {
+        drop_dbg++;
+        log_warn("bach wr drop-new %d of %d B (backlog=%d)\n", (int)drop,
+                 (int)n, (int)snd_backlog);
+      }
+      p += drop;
+      n = freeb;
+    }
+    if (n == 0) {
+      return len; /* 环已满 ⇒ 这批全丢 ✓（非阻塞 ✓，应用不会卡 ✓） */
+    }
+  }
+  n &= ~1u; /* 按 2 字节（一个 16bit 样本）对齐 ✓，保证样本不会被拆到环两端 ✓ */
+
   /* 写入环（可能跨环尾 ✓） */
   {
     u32 first = RING_SIZE - snd_wr;
     if (first > n) {
       first = n;
     }
-    kmemcpy(snd_ring + snd_wr, p, first);
+    first &= ~1u; /* 样本对齐 ✓（snd_wr 本身也是 2 的倍数 ✓） */
+    snd_copy_attn(snd_ring + snd_wr, p, first); /* 带音量衰减 ✓ */
     if (n > first) {
-      kmemcpy(snd_ring, p + first, n - first);
+      snd_copy_attn(snd_ring, p + first, n - first);
     }
     /* DMA 直读内存 ⇒ 写完必须刷 cache ✓（DMA 不看 cache ✓，漏刷会播旧数据 ✓） */
     {
@@ -596,25 +648,6 @@ static size_t write(device_t *dev, const void *buf, size_t len) {
   }
   snd_queued += 0; /* 已在 bach_queue 里累计 ✓ */
 
-  /* 只做【统计/日志】✓，绝不再拿它阻塞 ✗ */
-  play_sync();
-  {
-    static u32 wr_dbg = 0;
-    static u32 last_ms = 0;
-    static u32 last_hb = 0;
-    u32 now = schedule_get_ticks();
-    if (wr_dbg < 8u) {
-      wr_dbg++;
-      log_info("bach wr: len=%d backlog=%d queued=%d dt=%dms\n", (int)len,
-               (int)snd_backlog, (int)snd_queued, (int)(now - last_ms));
-    }
-    last_ms = now;
-    if (last_hb == 0 || (now - last_hb) >= 1000u) {
-      log_info("bach hb: queued=%d backlog=%d raw=%x\n", (int)snd_queued,
-               (int)snd_backlog, bach_level_raw());
-      last_hb = now;
-    }
-  }
   return len; /* ★ 永远收下并返回 len（绝不短写、绝不阻塞 ✓） */
 }
 
