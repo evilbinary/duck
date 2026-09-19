@@ -107,10 +107,19 @@ static void bach_start(void) {
   /* 时钟 */
   *(volatile u16 *)(uintptr_t)(R_BACH_CLK + 0x0) = 0x00c0;
   *(volatile u8 *)(uintptr_t)(R_BACH_CLK + 0x1c) = 0x01;
-  /* audiotop 固定表 */
-  for (i = 0; i < (int)(sizeof(audiotop_init) / sizeof(audiotop_init[0]));
-       i++) {
-    wtop(audiotop_init[i].off, audiotop_init[i].val);
+  /* audiotop 固定表：0x00..0xBC【整表写入】（含 0 ✓，避免依赖复位态 ✗）
+   * 非零项照 ewokos probe：0x00=0x0A14 0x04=0x30 0x08=0x80 0x0C=0x1A5
+   *                       0x20=0x3000 0x84=0x3C1E，其余 0 ✓ */
+  for (i = 0; i < 48; i++) {
+    u32 off = (u32)i * 4;
+    u16 v = 0;
+    if (off == 0x00) v = 0x0A14;
+    if (off == 0x04) v = 0x0030;
+    if (off == 0x08) v = 0x0080;
+    if (off == 0x0C) v = 0x01A5;
+    if (off == 0x20) v = 0x3000;
+    if (off == 0x84) v = 0x3C1E;
+    wtop(off, v);
   }
   /* 通道 0：复位 → 立数水位 */
   w16(CH0 + CH_CTRL0, 0x0001);
@@ -142,6 +151,23 @@ static void bach_start(void) {
   w16(CH0 + CH_CTRL0, r16(CH0 + CH_CTRL0) | 0x0002);
   w16(CH0 + SUB + SUB_EN, r16(CH0 + SUB + SUB_EN) | (1 << 15));
   snd_started = 1;
+  log_info("bach start: miu ring=%x rate=%d\n", miu_of((u32)(uintptr_t)snd_ring),
+           snd_rate);
+  /* 【自检方波】440Hz、S16LE 双声道、约 0.18 秒 ⇒ 上电应听到一声短促"哔"。
+   * 有哔 ⇒ 管线通 ✓（问题只会在应用数据 ✗）；没哔 ⇒ 使能位/上电还缺 ✗。 */
+  {
+    u32 n = RING_SIZE / 2;
+    u32 idx;
+    for (idx = 0; idx < n / 2; idx++) {
+      u16 v = (((idx / 2) / 50) & 1) ? 0x1f00 : (u16)0xe100; /* ±约 7900 */
+      snd_ring[idx * 2] = (u8)(v & 0xff);
+      snd_ring[idx * 2 + 1] = (u8)(v >> 8);
+    }
+    cpu_flush_dcache_range((unsigned long)snd_ring,
+                           (unsigned long)(snd_ring + n));
+    snd_wr = n % RING_SIZE;
+    bach_queue(n);
+  }
 }
 
 /* 【OSS ioctl】照 t113-s3.c 的骨架 ✓：GETFMTS 必须答 AFMT_S16_LE，
@@ -252,7 +278,15 @@ static size_t write(device_t *dev, const void *buf, size_t len) {
   return len;
 }
 
-void codec_init(void) { /* 时钟/上电在 bach_start() 里做 ✓ */ }
+void codec_init(void) {
+  /* 【设备寄存器页映射】照 t113-s3 的 page_map(CODEC_BASE, CODEC_BASE, PAGE_DEV) ✓。
+   * 放在 codec_init（驱动初始化 ✓ 只做一次 ✓），而不是每次播放的 bach_start ✓。
+   * 恒等映射只覆盖 RAM，设备寄存器区间不在页表里 ✗
+   * （fault 日志 `pte 28000 -> 0` 就是证据 ✓）。按页对齐映射三个区间 ✓。 */
+  page_map(R_BACH & ~0xfffU, R_BACH & ~0xfffU, PAGE_DEV); /* BACH 数字 0x202a0400 ✓ */
+  page_map(R_BACH_TOP & ~0xfffU, R_BACH_TOP & ~0xfffU, PAGE_DEV); /* audiotop 0x20206800 ✓ */
+  page_map(R_BACH_CLK & ~0xfffU, R_BACH_CLK & ~0xfffU, PAGE_DEV); /* 时钟 0x2028400 ✓ */
+}
 
 int sound_init(void) {
   device_t *dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
