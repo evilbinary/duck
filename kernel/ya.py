@@ -19,6 +19,7 @@ add_files(
     'rt_mutex.c',
     'syscall.c',
     'exceptions.c',
+    'irq.c',
     'memory.c',
     'module.c',
     'device.c',

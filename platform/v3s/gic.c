@@ -6,6 +6,7 @@
  * Tom Trebisky  1-4-2017
  */
 #include "libs/include/types.h"
+#include "libs/include/archcommon/irq_chip.h" /* struct irq_chip：统一中断框架的控制器抽象 */
 
 #define IRQ_UART0 32
 #define IRQ_TIMER0 50
@@ -347,3 +348,76 @@ void gic_watch(void) {
     gic_check2();
   }
 }
+
+/* ================================================================== */
+/* 统一中断框架（duck/kernel/irq.c）的控制器实例                        */
+/* 设计文档：docs/develop/architecture/中断子系统设计.md                 */
+/* ================================================================== */
+/* 【为什么平台自带一份而不是直接用 gic2.c 的 gicv2_chip】
+ *   1) eoi 必须用 gic_irqack2()（EOIR + 清 pending），而不是通用 gic_irqack()
+ *      —— 通用那份会去读 GICC_CTLR.EOImode 再决定是否写 DIR，本平台 EOImode=0
+ *      且 DIR 那一页(0x01c83000)未映射，平台这份更直接；
+ *   2) 这里的 mask/priority/type/affinity 直接写 GIC_DIST_BASE，不依赖通用
+ *      gic2.c 里那份全局 gic 结构是否已被 gic_init() 初始化（少一层耦合）。 */
+
+extern u32 interrupt_last_irq; /* platform/v3s/init.c：interrupt_ack_pending() 兜底用 */
+
+static void v3s_gic_mask(u32 irq) {
+  struct v3s_gic_dist *gp = GIC_DIST_BASE;
+  gp->icenable[irq / 32] = 1u << (irq % 32); /* GICD_ICENABLERn：写 1 关 */
+}
+
+static void v3s_gic_unmask(u32 irq) {
+  struct v3s_gic_dist *gp = GIC_DIST_BASE;
+  gp->isenable[irq / 32] = 1u << (irq % 32); /* GICD_ISENABLERn：写 1 开 */
+}
+
+/* 【记下最近一次 claim 的号】kernel/exceptions.c 的兜底（中断内再异常时补 EOI）
+ * 依赖它：interrupt_ack_pending() 会拿这个号去写 EOIR。老路径里是
+ * interrupt_get_source() 负责记录，新框架下由这里负责。 */
+static u32 v3s_gic_get_active(void) {
+  u32 irq = (u32)gic_irqwho2();
+  interrupt_last_irq = irq;
+  return irq;
+}
+
+static void v3s_gic_eoi(u32 irq) { gic_irqack2((int)irq); }
+
+static void v3s_gic_set_priority(u32 irq, u32 prio) {
+  struct v3s_gic_dist *gp = GIC_DIST_BASE;
+  gp->ipriority[irq] = prio; /* 与既有 gic_irq_priority() 保持同一写法 */
+}
+
+/* GICD_ICFGRn：每中断 2 bit，bit1: 0=电平 1=边沿；SGI/PPI(<32) 固定边沿 */
+static void v3s_gic_set_type(u32 irq, u32 type) {
+  struct v3s_gic_dist *gp = GIC_DIST_BASE;
+  u32 idx, shift, edge = 0;
+
+  if (irq < 32) return;
+  if (type == IRQ_TYPE_EDGE_RISING || type == IRQ_TYPE_EDGE_FALLING) edge = 1;
+
+  idx = irq / 16;
+  shift = (irq % 16) * 2 + 1;
+  if (edge) {
+    gp->icfg[idx] |= (1u << shift);
+  } else {
+    gp->icfg[idx] &= ~(1u << shift);
+  }
+}
+
+static void v3s_gic_set_affinity(u32 irq, u32 cpu) {
+  struct v3s_gic_dist *gp = GIC_DIST_BASE;
+  if (irq < 32) return; /* SGI/PPI 是 per-CPU 的 */
+  gp->itargets[irq] |= (1 << cpu) & 0xff;
+}
+
+struct irq_chip gicv2_v3s_chip = {
+    .name = "gicv2-v3s",
+    .get_active = v3s_gic_get_active,
+    .eoi = v3s_gic_eoi, /* EOImode=0 ⇒ EOIR 一步完成去激活，不碰 DIR */
+    .mask = v3s_gic_mask,
+    .unmask = v3s_gic_unmask,
+    .set_priority = v3s_gic_set_priority,
+    .set_type = v3s_gic_set_type,
+    .set_affinity = v3s_gic_set_affinity,
+};

@@ -5,6 +5,8 @@
  ********************************************************************/
 #include "gic2.h"
 
+#include "archcommon/irq_chip.h" /* struct irq_chip：统一中断框架的控制器抽象 */
+
 gic_t gic;
 
 void gic_init_base(void *cpu_addr, void *dist_addr) {
@@ -197,3 +199,63 @@ void gic_poll(u32 irq) {
     }
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* 统一中断框架（duck/kernel/irq.c）需要的补充接口                       */
+/* 设计文档：docs/develop/architecture/中断子系统设计.md                  */
+/* ------------------------------------------------------------------ */
+
+/* 关闭（mask）一个中断：写 GICD_ICENABLERn（原来只有 enable，这是缺口） */
+void gic_irq_disable(int irq) {
+  int x = irq / 32;
+  unsigned long mask = 1 << (irq % 32);
+  gic.dist->icenable[x] = mask;
+}
+
+void gic_irq_unmask(int irq) { gic_irq_enable(irq); }
+
+/* 触发类型：GICD_ICFGR，每中断 2 bit，bit1 为 0=电平 / 1=边沿；
+ * SGI/PPI（<32）由架构固定为边沿，忽略。 */
+void gic_irq_set_type(u32 irq, u32 type) {
+  u32 idx, shift, edge = 0;
+
+  if (irq < 32) return;
+  if (type == IRQ_TYPE_EDGE_RISING || type == IRQ_TYPE_EDGE_FALLING) edge = 1;
+
+  idx = irq / 16;
+  shift = (irq % 16) * 2 + 1;
+  if (edge) {
+    gic.dist->icfg[idx] |= (1u << shift);
+  } else {
+    gic.dist->icfg[idx] &= ~(1u << shift);
+  }
+}
+
+void gic_irq_set_affinity(u32 irq, u32 cpu) {
+  if (irq < 32) return; /* SGI/PPI 是 per-CPU 的 */
+  gic.dist->itargets[irq] = (1u << (cpu & 0x7)) & 0xff;
+}
+
+/* 读 GICC_IAR 取当前 active 的中断号（1023 = spurious） */
+u32 gic_get_active(void) { return gic.cpu->ia; }
+
+/* 适配层：把既有函数（参数是 int）转成 irq_chip 的 u32 签名，避免函数指针类型不兼容 */
+static void gicv2_mask(u32 irq) { gic_irq_disable((int)irq); }
+static void gicv2_unmask(u32 irq) { gic_irq_enable((int)irq); }
+static void gicv2_eoi(u32 irq) { gic_irqack((int)irq); }
+static void gicv2_prio(u32 irq, u32 prio) { gic_irq_priority(0, irq, prio); }
+static void gicv2_type(u32 irq, u32 type) { gic_irq_set_type(irq, type); }
+static void gicv2_affinity(u32 irq, u32 cpu) { gic_irq_set_affinity(irq, cpu); }
+
+/* 通用 GICv2 控制器（v3s/t113/cubieboard2… 可直接用；
+ * v3s 因为 GICC_DIR 未映射，要在平台里换成自己的 eoi=gic_irqack2，见 platform/v3s/gic.c） */
+struct irq_chip gicv2_chip = {
+    .name = "gicv2",
+    .get_active = gic_get_active,
+    .eoi = gicv2_eoi, /* 内部已按 EOImode 决定是否写 GICC_DIR */
+    .mask = gicv2_mask,
+    .unmask = gicv2_unmask,
+    .set_priority = gicv2_prio,
+    .set_type = gicv2_type,
+    .set_affinity = gicv2_affinity,
+};

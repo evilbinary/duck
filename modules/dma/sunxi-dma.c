@@ -6,6 +6,7 @@
 #include "sunxi-dma.h"
 
 #include "dma.h"
+#include "kernel/irq.h" /* 统一中断框架：irq_register/irq_enable/irq_set_priority */
 #include "kernel/kernel.h"
 
 #define SUNXI_DMA_MAX 16
@@ -45,12 +46,17 @@ static inline int dma_buf_cacheable(const void* p, size_t len) {
   return 1;
 }
 
-void *dma_handler(interrupt_context_t *ic) {
-  int irq = gic_irqwho();
-
+/* 【统一中断框架 handler】签名从 (interrupt_context_t*) 换成 (irq, arg)：
+ * 只有 tick 需要回传上下文（可能切线程），外设中断不需要。
+ * 返回 1 = "是我的中断且已处理"，0 = "不是我的"（共享中断时框架会继续问下一个）。
+ * 中断号不用自己再读 IAR —— 框架 claim 之后直接传进来。 */
+static int dma_irq(u32 irq, void *arg) {
   int i;
-  u32 channel_no = 0;
+  int handled = 0;
   dma_reg_t *dma_reg = (dma_reg_t *)SUNXI_DMA_BASE;
+
+  (void)irq;
+  (void)arg;
 
   for (i = 0; i < 8 && i < SUNXI_DMA_MAX; i++) {
     /* 【该通道的三个挂起位必须一起清干净】
@@ -65,6 +71,7 @@ void *dma_handler(interrupt_context_t *ic) {
         (DMA_PKG_HALF_INT | DMA_PKG_END_INT | DMA_QUEUE_END_INT) << (i * 4);
     u32 bits = dma_reg->irq_pending0 & ch_mask;
     if (bits) {
+      handled = 1;
       dma_reg->irq_pending0 = bits; /* W1C：把已置位的都清掉 */
       if ((bits & (DMA_PKG_END_INT << (i * 4))) == 0) {
         continue; /* 半包/队列结束：清位即可，不回调 */
@@ -104,6 +111,7 @@ void *dma_handler(interrupt_context_t *ic) {
         (DMA_PKG_HALF_INT | DMA_PKG_END_INT | DMA_QUEUE_END_INT) << ((i - 8) * 4);
     u32 bits = dma_reg->irq_pending1 & ch_mask;
     if (bits) {
+      handled = 1;
       dma_reg->irq_pending1 = bits; /* W1C */
       if ((bits & (DMA_PKG_END_INT << ((i - 8) * 4))) == 0) {
         continue; /* 半包/队列结束：清位即可，不回调 */
@@ -121,10 +129,11 @@ void *dma_handler(interrupt_context_t *ic) {
     }
   }
 
-  gic_irqack(irq);
-  // kprintf("dma handler %d\n", irq);
+  /* 【EOI 不在这里做】统一中断框架在派发返回后统一写 EOIR（单一所有者），
+   * 这样不会出现"某条路径忘了 ack ⇒ 电平中断反复重投递"（历史上曾出现音频
+   * DMA 11324 次/秒的中断风暴）。 */
 
-  return NULL;
+  return handled;
 }
 
 void dma_init_all(void) {
@@ -201,7 +210,11 @@ void dma_init_all(void) {
 
   dma_init_ok = 1;
 
-  exception_regist(EX_DMA, dma_handler);
+  /* 注册到统一中断框架（原来的 exception_regist(EX_DMA, dma_handler)）。
+   * IRQ_FLAG_SHARED：同号后续还要挂其它 handler 时不会被拒（拒绝是默认行为，
+   * 用来根治历史上"后注册静默覆盖前者"的问题）。
+   * 注意只注册不使能：真正 unmask 在 dma_set_mode() 里（与原来一致）。 */
+  irq_register(IRQ_DMAC, dma_irq, NULL, "dma", IRQ_FLAG_SHARED);
   log_debug("dma init end\n");
 }
 
@@ -378,8 +391,10 @@ void dma_set_mode(u32 hdma, u32 mode, dma_interrupt_handler_t fun, void *data) {
     dma_source->dma_func.m_data = data;
     dma_source->dma_func.m_func = fun;
 
-    gic_irq_priority(0, IRQ_DMAC, 10);
-    gic_irq_enable(IRQ_DMAC);
+    /* 统一中断框架的写法：优先级 + 使能都走框架（内部再落到控制器的
+     * set_priority/unmask 回调上），与原来 gic_irq_priority/gic_irq_enable 等价。 */
+    irq_set_priority(IRQ_DMAC, 10);
+    irq_enable(IRQ_DMAC);
   }
 
   log_debug("dma init settting\n");

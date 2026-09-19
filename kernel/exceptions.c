@@ -5,11 +5,16 @@
  ********************************************************************/
 #include "exceptions.h"
 
+#include "irq.h"
 #include "preempt.h"
 #include "thread.h"
 #include "schedule.h"
 
-interrupt_handler_t *exception_handlers[EXCEPTION_NUMBER];
+/* 【类型修正】interrupt_handler_t 本身已经是函数指针类型，所以数组元素就是它，
+ * 不该再写成 interrupt_handler_t*（那是指向函数指针的指针）。原来那种写法靠隐式转换
+ * 在 exceptions.c 里"侥幸能跑"，但一旦在别处（如 kernel/irq.c）直接调用就会报
+ * "called object is not a function or function pointer"。 */
+interrupt_handler_t exception_handlers[EXCEPTION_NUMBER];
 fault_hook_fn fault_hook = NULL;
 
 /* pid0/kernel-level threads (init, idle) must never be reaped through the
@@ -74,9 +79,22 @@ void *exception_process(interrupt_context_t *ic) {
       kmemcpy(current->ctx->ksp, ic, sizeof(interrupt_context_t));
     }
   } else if (ic->no == EX_IRQ) {
-    u32 source = interrupt_get_source(ic->no);
-    ic->no = source;
-    was_irq = 1;
+    /* 【统一中断框架】平台注册了 irq_chip（irq_chip_register）就走新路径：
+     * 控制器取号 → 查表派发 → 框架统一 EOI → 跑 bottom half。
+     * 没注册 chip 的平台（riscv-virt/esp32/stm32f4xx/dmulator…）继续走老的
+     * interrupt_get_source()，行为完全不变。
+     * 细节见 docs/develop/architecture/中断子系统设计.md 第 6 节。 */
+    if (irq_core_enabled()) {
+      /* 注意必须把返回值透传出去：tick（EX_TIMER 槽）的 do_schedule() 可能返回
+       * 切换后的新上下文，直接 return ic 会把时钟抢占丢掉。
+       * 这里已经由框架完成 EOI，所以不再走下面的 interrupt_ack_pending()。 */
+      return irq_claim_and_dispatch(ic);
+    }
+    {
+      u32 source = interrupt_get_source(ic->no);
+      ic->no = source;
+      was_irq = 1;
+    }
   }
   /* 【健壮性】异常发生在中断处理内部（保存的 CPSR 是 IRQ/FIQ 模式）时，说明某个
    * 中断还没被 EOI 就出了异常。不补 EOI 的话它会一直 active，把更低优先级的中断

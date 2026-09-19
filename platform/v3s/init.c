@@ -3,7 +3,11 @@
 #include "arch/interrupt.h"
 #include "arch/pmemory.h"
 #include "gpio.h"
+#include "libs/include/archcommon/irq_chip.h" /* 统一中断框架：irq_chip_register/irq_set_tick */
 #include "v3s-ccu.h"
+
+/* platform/v3s/gic.c 提供的控制器实例（get_active/eoi/mask/priority/type/affinity） */
+extern struct irq_chip gicv2_v3s_chip;
 
 static void io_write32(uint port, u32 data) { *(u32 *)port = data; }
 
@@ -47,6 +51,22 @@ void timer_init(int hz) {
 
   gic_init(0);
   gic_init2();
+
+  /* 【接入统一中断框架】注册控制器并把"哪个号是 tick"告诉框架：
+   * 从此所有外设中断都走 duck/kernel/irq.c 的 desc 表派发（控制器取号 → 查表 →
+   * 框架统一 EOI → bottom half），本文件的 interrupt_get_source() 不再参与；
+   * 未注册的号会"告警一次 + 自动 mask"（USB OTG 103 那类风暴由此根治）。
+   * tick（IRQ_TIMER0）仍走老的 EX_TIMER 槽：do_schedule 需要 interrupt_context_t
+   * 且可能切换上下文，perf 也是通过覆盖 exception_handlers[EX_TIMER] 挂钩的。
+   * 【为什么放在 gic_init2() 之后】它刚把 GICD/GICC 使能、优先级与 IRQ_TIMER0 打开；
+   * 而此处 CPU 中断仍是屏蔽的（cpu_cli 状态），不会在 kernel_init 中段被打断。 */
+  /* 【顺序有讲究】先声明 tick 再注册控制器：
+   * 反过来的话，在"chip 已注册、tick 还没声明"的窗口里若有中断进来，IRQ_TIMER0
+   * 会被当成"未注册号"而**自动 mask** —— 时钟就此永久停掉。
+   * 先 set_tick：此时 irq_core_enabled() 还是 0，走老路径，行为与改动前一致；
+   * 再 register：两者都就位后框架才开始接管。 */
+  irq_set_tick(IRQ_TIMER0);
+  irq_chip_register(&gicv2_v3s_chip, 0, 160);
 
   // timer_watch();
   // gic_watch();
@@ -239,8 +259,11 @@ void platform_map() {
 
 /* 最近一次从 GICC_IAR 取到的原始 INTID（1023 = spurious）。
  * 供 interrupt_ack_pending() 在"中断处理中再异常/提前返回"时补 EOI —— 与
- * t113-s3 平台（duck/platform/t113-s3/init.c 的同名实现）保持一致。 */
-static u32 interrupt_last_irq = 1023u;
+ * t113-s3 平台（duck/platform/t113-s3/init.c 的同名实现）保持一致。
+ * 【非 static 的原因】走统一中断框架后，claim 动作发生在
+ * platform/v3s/gic.c 的 v3s_gic_get_active() 里，那边要写这个变量；
+ * 老路径（interrupt_get_source）下则由本文件自己写。 */
+u32 interrupt_last_irq = 1023u;
 
 /* 【健壮性·IRQ 兜底】把当前 active 的中断补一次 EOI。
  * duck/kernel/exceptions.c 里的同名函数是 __attribute__((weak)) 空实现，不覆盖它
@@ -255,6 +278,10 @@ void interrupt_ack_pending(void) {
   }
 }
 
+/* 【已由统一中断框架取代】平台注册了 gicv2_v3s_chip 之后（见 timer_init），
+ * kernel/exceptions.c 的 EX_IRQ 分支走 irq_claim_and_dispatch()，这个函数不会再被调用。
+ * 保留它有两个作用：① 未注册 chip 的平台/早期阶段仍可用；② 它是"IRQ 号 → 逻辑源"
+ * 的老参考实现（含历史上踩过的注释）。 */
 int interrupt_get_source(u32 no) {
   u32 irq = gic_irqwho2();
   interrupt_last_irq = irq;

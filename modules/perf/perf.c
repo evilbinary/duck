@@ -10,7 +10,7 @@
 #include "../backtrace/backtrace.h"
 #include "../posix/sysfn_no.h"
 
-extern interrupt_handler_t* exception_handlers[];
+extern interrupt_handler_t exception_handlers[]; /* 与 kernel/exceptions.c 定义一致 */
 
 static perf_stats_t perf_stats;
 static interrupt_handler_t perf_origin_timer = NULL;
