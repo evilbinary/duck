@@ -47,7 +47,7 @@ void log_default(int tag, const char* message, va_list args) {
   kmemset(logger_buf, 0, LOG_MSG_BUF);
   char* tag_msg = (char*)log_level_strings[tag];
   if (log_info_mod.fd < 0) {
-    int size = kvsprintf(logger_buf, message, args);
+    int size = kvsnprintf(logger_buf, LOG_MSG_BUF, message, args);
     if (size >= LOG_MSG_BUF - 1) {
       const char* trunc = "...<truncated>";
       int trunc_len = kstrlen(trunc);
@@ -62,10 +62,11 @@ void log_default(int tag, const char* message, va_list args) {
     kprintf("%s", logger_buf);
   } else {
     kmemset(logger_buf, 0, LOG_MSG_BUF);
-    kvsprintf(logger_buf, "[%08d] tid: %d %s: ", ticks, tid, tag_msg);
+    kvsnprintf(logger_buf, LOG_MSG_BUF, "[%08d] tid: %d %s: ", ticks, tid,
+               tag_msg);
     log_write(log_info_mod.fd, logger_buf, kstrlen(logger_buf));
     kmemset(logger_buf, 0, LOG_MSG_BUF);
-    int size = kvsprintf(logger_buf, message, args);
+    int size = kvsnprintf(logger_buf, LOG_MSG_BUF, message, args);
     if (size >= LOG_MSG_BUF - 1) {
       const char* trunc = "...<truncated>";
       int trunc_len = kstrlen(trunc);
@@ -99,7 +100,7 @@ void log_default_color(int tag, const char* message, va_list args) {
     // Print header and message separately to avoid nesting logger_buf inside printf_buffer
     kprintf("%s[%08d] %stid:%d %s%-5s %s", LOG_GRAY, ticks,
             LOG_WHITE_BOLD, tid, tag_color, tag_msg, LOG_WHITE);
-    int size = kvsprintf(logger_buf, message, args);
+    int size = kvsnprintf(logger_buf, LOG_MSG_BUF, message, args);
     if (size > LOG_MSG_BUF) {
       kprintf("log overflow %d\n", size);
     }
@@ -107,14 +108,14 @@ void log_default_color(int tag, const char* message, va_list args) {
   } else {
     kmemset(logger_buf, 0, LOG_MSG_BUF);
     int size =
-        kvsprintf(logger_buf, "%s[%08d] %stid:%d %s%-5s %s", LOG_GRAY, ticks,
+        kvsnprintf(logger_buf, LOG_MSG_BUF, "%s[%08d] %stid:%d %s%-5s %s", LOG_GRAY, ticks,
                  LOG_WHITE_BOLD, tid, tag_color, tag_msg, LOG_NONE);
     if (size > LOG_MSG_BUF) {
       kprintf("log overflow %d\n",size);
     }
     log_write(log_info_mod.fd, logger_buf, kstrlen(logger_buf));
     kmemset(logger_buf, 0, LOG_MSG_BUF);
-    size = kvsprintf(logger_buf, message, args);
+    size = kvsnprintf(logger_buf, LOG_MSG_BUF, message, args);
     if (size > LOG_MSG_BUF) {
       kprintf("log overflow %d\n",size);
     }
@@ -128,7 +129,9 @@ void log_format(int tag, const char* message, va_list args) {
   if (log_info_mod.logger_size == 0) {
     kprintf("[early] ");
     char buf[256];
-    kvsprintf(buf, message, args);
+    /* 【边界】这是栈上的 256 字节缓冲，必须带 sizeof —— 以前是无界 kvsprintf，
+     * 一条稍长的日志就能写穿内核栈。 */
+    kvsnprintf(buf, sizeof(buf), message, args);
     kprintf("%s", buf);
     return;
   }

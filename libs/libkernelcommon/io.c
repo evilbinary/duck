@@ -9,6 +9,11 @@
 
 #include "stdarg.h"
 
+/* 取平台的"打印缓冲槽位数"策略（多核每 CPU 一槽 / 单核 1 槽，见 platform.h）。
+ * io.c 是通用层看不到 MP_ENABLE，所以显式包含平台头文件 —— 只影响本编译单元，
+ * 不会把 MP_ENABLE 之类宏泄漏给别的文件。 */
+#include "platform/platform.h"
+
 write_channel_fn write_channels[10];
 u32 write_channel_number = 0;
 
@@ -30,7 +35,36 @@ void print_char(u8 ch) {
   }
 }
 
-char printf_buffer[KPRINT_BUF];
+/* 【per-CPU 打印缓冲】以前所有 CPU 共用这一块：一旦抢锁失败（锁被别的 CPU 长期占用，
+ * 见下面有界自旋会主动放弃抢锁），两颗 CPU 就会同时往同一块 2KB 缓冲里写字符串，
+ * 日志立刻被打成交错乱码（raspi3 实测："add kerneap 2 kernel init end"、
+ * "lASSERT FAILED: cED: current != NULL ..." 这种）。
+ * 改成每颗 CPU 一个槽位后，即便锁没抢到，也只是输出顺序交错，**内容不再互相覆盖**。
+ * 槽位不够（CPU 数 > KPRINT_BUF_SLOTS）时回落到 0 号槽，行为与改动前一致。 */
+/* 槽位数由平台策略给出（platform.h：MP_ENABLE ⇒ 4 槽；单核 ⇒ 1 槽，省 6KB .bss）。
+ * 拿不到平台头文件时按多核保守取 —— 槽位不足会退化成"多核并发踩同一块缓冲"，
+ * 那正是曾经让 raspi3 起不来的原因，所以缺省必须偏安全一侧。 */
+#ifndef KPRINT_BUF_SLOTS
+#define KPRINT_BUF_SLOTS 4
+#endif
+char printf_buffer[KPRINT_BUF_SLOTS][KPRINT_BUF];
+
+/* 【保持本文件平台无关】通用层不认识架构寄存器，只调用各架构统一提供的
+ * cpu_get_id()（各架构签名一致：u32 cpu_get_id(void)）。 */
+extern u32 cpu_get_id(void);
+
+static char* printf_buf_this_cpu(void) {
+#if KPRINT_BUF_SLOTS == 1
+  /* 单核：只有 0 号槽，连 cpu_get_id() 都不用调（早期启动阶段它未必可靠） */
+  return printf_buffer[0];
+#else
+  u32 id = cpu_get_id();
+  if (id >= KPRINT_BUF_SLOTS) {
+    id = 0; /* 越界（CPU 数 > 槽数）时回落 0 号槽，绝不出界 */
+  }
+  return printf_buffer[id];
+#endif
+}
 
 /* 所有 CPU 共用 printf_buffer 和同一个控制台：并发打印会互相覆盖字符串，
  * 实测日志被打成乱码（探针数据完全取不出来）。这里加锁——有界自旋：
@@ -79,15 +113,23 @@ int kprintf(const char* fmt, ...) {
   }
   locked = (spins <= 200000);
 
-  kmemset(printf_buffer, 0, KPRINT_BUF);
+  /* 取本 CPU 专属的输出缓冲：它是本 CPU 独占的 ⇒ 即使上面没抢到锁（locked==0），
+   * 也只是与别的 CPU 的输出交错，不会把自己的字符串写坏。 */
+  char* buf = printf_buf_this_cpu();
+
+  kmemset(buf, 0, KPRINT_BUF);
   int i = 0;
   va_list args;
   va_start(args, fmt);
-  i = kvsprintf(printf_buffer, fmt, args);
+  /* 【有界格式化】必须用 kvsnprintf：以前这里是 kvsprintf，格式化结果超长时会
+   * 写穿 KPRINT_BUF。而本缓冲区紧邻 print_lock（实测相距正好 2048），一旦踩过去
+   * 打印锁就永久卡住、整机日志全停 —— 所以这里的界不是"锦上添花"，是必需品。 */
+  i = kvsnprintf(buf, KPRINT_BUF, fmt, args);
   va_end(args);
 
-  int len = kstrlen(printf_buffer);
-  if (i > KPRINT_BUF) {
+  int len = kstrlen(buf);
+  /* kvsnprintf 已保证不越界且必补 '\0' ⇒ 这里只做"是否被截断"的诊断标记 */
+  if (i >= KPRINT_BUF - 1) {
     len = KPRINT_BUF-1;
     // OVER PRINT
     print_char('O');
@@ -104,7 +146,7 @@ int kprintf(const char* fmt, ...) {
   }
 
   for (int i = 0; i < len; i++) {
-    print_char(printf_buffer[i]);
+    print_char(buf[i]);
   }
   if (locked) {
     if (atomic) {

@@ -40,6 +40,11 @@ char*	kstrdup(const char *s);				// This is not in the standard.
 
 int kvsprintf(char *buf, const char *fmt, va_list args);
 
+/* 带界格式化（vsnprintf 语义）：写入绝不越过 buf[0..size-1]，结尾一定补 '\0'，
+ * size==0 时不写任何字节；返回实际写入长度（不含结尾 '\0'）。
+ * kvsprintf 是无界包装（保留老调用者行为），新代码请优先用它。 */
+int kvsnprintf(char *buf, size_t size, const char *fmt, va_list args);
+
 #ifdef __cplusplus
 }
 #endif
