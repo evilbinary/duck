@@ -34,6 +34,56 @@ enum VGA_MODE {
 #define VGA_IOC_READ_FRAMBUFFER_BPP _IOW(VGA_IOC_MAGIC, 6, int)
 #define VGA_IOC_FLUSH_FRAMBUFFER _IOW(VGA_IOC_MAGIC, 7, int)
 #define VGA_IOC_READ_FRAMBUFFER_INFO _IOW(VGA_IOC_MAGIC, 8, int)
+/* 【显示格式/方向：由 LCD 驱动申报，应用/库按申报处理】
+ * 以前只有 bpp ⇒ 16bpp 到底是 RGB555 还是 RGB565 根本区分不了 ⇒ 各应用各自猜
+ * （miyoo 上就猜成了 555，屏幕是 565 ⇒ 颜色错）。现在由驱动明确申报：
+ *   format：VGA_FMT_*（一个字段涵盖颜色空间与每像素排布）；UNKNOWN(0) = 未申报，
+ *           由 vga_fmt_from_bpp() 按 bpp 推断（历史约定：16bpp 按 RGB555）
+ *   rotate：显示变换，用"旋转角度 + 镜像"表达（VGA_ROT_* / VGA_FLIP_*，0 = 不变换） */
+#define VGA_IOC_READ_FRAMBUFFER_FORMAT _IOW(VGA_IOC_MAGIC, 9, int)
+#define VGA_IOC_READ_FRAMBUFFER_TRANSFORM _IOW(VGA_IOC_MAGIC, 10, int)
+
+/* 【显示格式：只有一个字段 `format`，值域涵盖"颜色空间 + 每像素排布"】
+ * 以前 format 只有 FB_RGB/FB_NV12/FB_BGR 三个粗值（回答"要不要转 YUV、是不是 BGR"），
+ * 但 16bpp 到底是 RGB555 还是 RGB565 表达不了 ⇒ 应用只能猜。现在把值域扩全，
+ * 一个字段回答所有问题；gpu/gpu.h 里的 FB_* 作为【兼容别名】指向本枚举。
+ *   UNKNOWN：驱动未申报 ⇒ 由 bpp 推断（历史行为：16bpp 按 RGB555） */
+#define VGA_FMT_UNKNOWN 0
+#define VGA_FMT_RGB555 1  /* 16bpp */
+#define VGA_FMT_RGB565 2  /* 16bpp */
+#define VGA_FMT_BGR565 3  /* 16bpp，R/B 交换 */
+#define VGA_FMT_ARGB8888 4 /* 32bpp */
+#define VGA_FMT_RGB888 5  /* 24bpp */
+#define VGA_FMT_NV12 6    /* YUV420SP，需要软件转换 */
+
+/* 未申报格式时按 bpp 推断，保持老行为 */
+static inline u32 vga_fmt_from_bpp(u32 format, u32 bpp) {
+  if (format != VGA_FMT_UNKNOWN) {
+    return format;
+  }
+  if (bpp == 16) {
+    return VGA_FMT_RGB555; /* 历史约定 */
+  }
+  if (bpp == 32) {
+    return VGA_FMT_ARGB8888;
+  }
+  if (bpp == 24 || bpp == 18) {
+    return VGA_FMT_RGB888;
+  }
+  return VGA_FMT_UNKNOWN;
+}
+
+/* 【显示变换：由驱动申报，应用/库据此处理】
+ * 用"旋转角度 + 镜像"表达，而不是一个"是否倒装"的布尔（不同面板有 90/180/270、
+ * 也有只做镜像的）。低 2 位 = 旋转，bit2/bit3 = 水平/垂直镜像；0 = 不做变换。
+ * 未申报的驱动保持 0 ⇒ 行为与以前完全一致。 */
+#define VGA_ROT_0 0
+#define VGA_ROT_90 1
+#define VGA_ROT_180 2
+#define VGA_ROT_270 3
+#define VGA_ROT_MASK 0x3u
+#define VGA_FLIP_H (1u << 2) /* 左右镜像 */
+#define VGA_FLIP_V (1u << 3) /* 上下镜像 */
 /* 【面板参数】不再走 ioctl：/conf/system.conf 的 [lcd] 段由驱动自己读并应用
  * （见 duck/modules/gpu/v3s.c 的 v3s_lcd_apply_conf / duck/modules/sysconf）。 */
 
@@ -55,9 +105,13 @@ typedef struct vga_device {
   u32 inited;
   write_pixel_fn write;
   flip_buffer_fn flip_buffer;
-  u32 format;
+  u32 format; /* 显示格式（唯一权威字段）：VGA_FMT_*，涵盖颜色空间 + 每像素排布 */
   u32* priv;
   u32* pframbuffer;
+  /* 【新字段必须追加在末尾】这个构建系统不跟踪头文件依赖：若插在中间，其他模块
+   * （xwin 等）仍按旧偏移读 priv/pframbuffer ⇒ 会把 pframbuffer 读成垃圾值
+   * （实测 pa=2 ⇒ `xwin: fb map failed`）。追加在末尾则老目标文件完全不受影响。 */
+  u32 rotate; /* VGA_ROT_* | VGA_FLIP_H | VGA_FLIP_V：驱动申报的显示变换（0=不变换） */
 } vga_device_t;
 
 size_t vga_read(device_t* dev, void* buf, size_t len);

@@ -248,6 +248,10 @@ size_t lcd_ioctl(device_t* dev, u32 cmd, void* args) {
     ret = vga->height;
   } else if (cmd == VGA_IOC_READ_FRAMBUFFER_BPP) {
     ret = vga->bpp;
+  } else if (cmd == VGA_IOC_READ_FRAMBUFFER_FORMAT) {
+    ret = vga->format;
+  } else if (cmd == VGA_IOC_READ_FRAMBUFFER_TRANSFORM) {
+    ret = vga->rotate;
   } else if (cmd == VGA_IOC_FLUSH_FRAMBUFFER) {
     if (vga->frambuffer != NULL && vga->flip_buffer != NULL) {
       u32 offset = (u32)(uintptr_t)args;

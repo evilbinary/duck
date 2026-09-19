@@ -38,6 +38,12 @@ size_t gpu_ioctl(device_t* dev, u32 cmd, void* args) {
     ret = vga->height;
   } else if (cmd == VGA_IOC_READ_FRAMBUFFER_BPP) {
     ret = vga->bpp;
+  } else if (cmd == VGA_IOC_READ_FRAMBUFFER_FORMAT) {
+    /* 显示格式（VGA_FMT_*，涵盖颜色空间 + 每像素排布；0=未申报） */
+    ret = vga->format;
+  } else if (cmd == VGA_IOC_READ_FRAMBUFFER_TRANSFORM) {
+    /* 显示变换（旋转 0/90/180/270 + 水平/垂直镜像，见 VGA_ROT_* / VGA_FLIP_*） */
+    ret = vga->rotate;
   } else if (cmd == VGA_IOC_FLUSH_FRAMBUFFER) {
     if (vga->frambuffer != NULL && vga->flip_buffer != NULL) {
       u32 offset = (u32)(uintptr_t)args;

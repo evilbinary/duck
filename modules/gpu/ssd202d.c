@@ -31,10 +31,10 @@
 
 #ifdef NV12
 #define ARGB_OFFSET 0
-#define FORMAT 1
+#define FORMAT VGA_FMT_NV12 /* 显示数据要经 rgb2nv12 送屏（原为裸值 1） */
 #define BPP 16
 #else
-#define FORMAT 0  // nv12
+#define FORMAT VGA_FMT_RGB888 /* 24bpp 直出 RGB（原为裸值 0） */
 #define ARGB_OFFSET 0x20000000;
 #define BPP 24
 #endif
@@ -175,8 +175,14 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
 
   vga->frambuffer = 0xfb000000;
 
-  // vga->format = 1;  // nv12
+  /* 【向应用/库申报显示格式与变换】gpu.c 通过 VGA_IOC_READ_FRAMBUFFER_FORMAT /
+   * _TRANSFORM 上报给 libgui。
+   *   ① 显示格式如实照宏 FORMAT 申报 = NV12：本链路的 framebuffer 数据要经
+   *      rgb2nv12() 转成 YUV 才送屏。**不能**申报成 RGB565 —— 那样 libgui 只会做
+   *      555→565 的位序转换，而链路真正要的是 YUV ⇒ 颜色依旧不对（踩过）。
+   *   ② miyoo 的面板倒装 ⇒ 旋转 180°。 */
   vga->format = FORMAT;
+  vga->rotate = VGA_ROT_180;
 
   vga->framebuffer_length = vga->width * vga->height * vga->bpp / 2;
 
