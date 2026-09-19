@@ -4,6 +4,7 @@
 #include "arch/pmemory.h"
 #include "gpio.h"
 #include "libs/include/archcommon/irq_chip.h" /* 统一中断框架：irq_chip_register/irq_set_tick */
+#include "kernel/irq.h" /* S4 验收自检用：irq_dispatch_ctx/irq_get_desc/struct irq_desc */
 #include "v3s-ccu.h"
 
 /* platform/v3s/gic.c 提供的控制器实例（get_active/eoi/mask/priority/type/affinity） */
@@ -67,6 +68,45 @@ void timer_init(int hz) {
    * 再 register：两者都就位后框架才开始接管。 */
   irq_set_tick(IRQ_TIMER0);
   irq_chip_register(&gicv2_v3s_chip, 0, 160);
+
+/* 【S4 验收·自检开关】默认 0（不影响正常启动）；要复核"未处理中断策略"时置 1，
+ * 开机日志会打出 `irq-accept(S4): PASS unhandled=.. logged=1 masked=1`，
+ * 之后 `cat /dev/irq` 也能看到该号 UNHANDLED=1、MASK=1。
+ * 2026-09-19 v3s 真机验收：PASS（103 = USB OTG，见 docs/.../中断子系统设计.md §10 S4）。 */
+#define IRQ_ACCEPT_SELFTEST 0
+
+#if IRQ_ACCEPT_SELFTEST
+  /* ==================================================================
+   * S4 验收：未处理中断策略 = 告警一次 + 自动 mask
+   * ==================================================================
+   * 验收样本用 103（USB OTG Device），它是设计文档 §1 记录的历史风暴源、
+   * 平台侧没有 handler，正是"已使能却没人管"的典型。
+   * 【为什么合成派发】不等硬件真的来中断，测试本身才没有不确定性；而框架里
+   * "未注册 ⇒ 告警 + 自动 mask"的判定、计数、mask 动作都在这一条路径上。
+   * 【为什么只跑一次】本函数每颗 CPU 都会调用（多核平台），自检只应在 CPU0 做：
+   * 否则后面几颗 CPU 会看到 unhandled 已经不是 1，断言必然误报 FAIL。
+   * 本平台 MP_ENABLE 未定义（副核停在 kernel_init 里），这里仍加保险。 */
+  {
+    static int selftest_done = 0;
+    if (!selftest_done) {
+      struct irq_desc* d;
+      int ok;
+      selftest_done = 1;
+
+      irq_enable(103);             /* 先在控制器上放行：模拟"这个号被使能了" */
+      irq_dispatch_ctx(103, NULL); /* 走进"没有 handler"的分支 */
+      d = irq_get_desc(103);
+      /* unhandled 用 >= 1：真机的 103 有可能在自检之前先来一次（那正是历史现象），
+       * 计数就变成 2 —— 而"告警只一次"(logged) 与"已自动 mask"(masked) 是稳定状态，
+       * 这三个合起来才是 S4 的判定要点。 */
+      ok = (d != NULL) && (d->unhandled >= 1) && (d->logged == 1) &&
+           (d->masked == 1);
+      kprintf("irq-accept(S4): %s unhandled=%u logged=%u masked=%u\n",
+              ok ? "PASS" : "FAIL", d ? d->unhandled : 0, d ? d->logged : 0,
+              d ? d->masked : 0);
+    }
+  }
+#endif
 
   // timer_watch();
   // gic_watch();
