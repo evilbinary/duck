@@ -32,6 +32,9 @@ plat_source={
     'versatilepb':[
         'e1000.c',
     ],
+    'v3s':[
+        'v3s.c',
+    ],
 }
 
 # Architecture-specific drivers

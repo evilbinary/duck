@@ -9,6 +9,13 @@
 // 平台特定的初始化函数由各个驱动文件实现
 // raspi2/raspi3: net_init_device() in bcm2837.c
 // x86/qemu: net_init_device() in e1000.c
+// v3s: net_init_device() in v3s.c（片上 EMAC + 内置 10/100M PHY）
+//
+// 【注意不要在这里放 weak 默认实现】本模块是静态库：一旦 net_module 被引用，链接器
+// 就会拉入 net.o，此时若本文件里有 weak 的 net_init_device，引用就被"满足"了，
+// 平台驱动所在的 v3s.o/bcm2837.o 永远不会被拉进来（实测 kernel.elf 里
+// net_init_device 停在 W，EMAC 完全没初始化）。所以注册侧用 NET_DRIVER 宏限定：
+// 只有真的有网卡驱动的平台才注册 net 模块（见根 ya.py 与 app/init/module.c）。
 extern int net_init_device(device_t* dev);
 
 int net_init(void) {

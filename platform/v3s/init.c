@@ -226,6 +226,14 @@ void platform_map() {
   // dma
   page_map(0x01C02000, 0x01C02000, PAGE_DEV);
 
+  // emac：V3s 片上以太网（Synopsys DesignWare GMAC 核 + 全志 glue，
+  // MAC 在 +0x0000、DMA 在 +0x1000，寄存器见 duck/modules/net/v3s.c）
+  // 【两页都要映射】只映射 MAC 页时一访问 DMA 页就 data abort
+  page_map(0x01C30000, 0x01C30000, PAGE_DEV);
+  page_map(0x01C31000, 0x01C31000, PAGE_DEV);
+  // system control：EMAC-EPHY 时钟寄存器 @0x01C00030（选择内部 PHY/SMI/MII 并上电）
+  page_map(0x01C00000, 0x01C00000, PAGE_DEV);
+
   // test_cpu_speed();
 }
 
@@ -272,7 +280,14 @@ int interrupt_get_source(u32 no) {
     no = EX_DMA;
     gic_irqack2(irq);
   } else {
-    kprintf("irq else %d\n", irq);
+    /* 【别无限打印】实测 USB OTG_Device(103) 会持续触发且没人处理：115200 下每条
+     * kprintf 要 ~1ms 且阻塞，会把串口和 CPU 全吃掉（日志里上万行 "irq else 103"）。
+     * 只报前 8 次用来暴露"有中断没被处理"，之后静默 —— 与上面 IRQ_DMAC 的处理一致。 */
+    static u32 dbg_irq_else;
+    if (dbg_irq_else < 8u) {
+      dbg_irq_else++;
+      kprintf("irq else %d (unhandled, 之后静默)\n", irq);
+    }
   }
 
   return no;
