@@ -90,6 +90,13 @@ void* page_fault_handle(interrupt_context_t *ic) {
       } else {
         if (current->fault_count < 1) {
           log_error("%s memory fault at %lx\n", current->name, fault_addr);
+          /* 【诊断】把崩之前最近的系统调用序列打出来：用户程序崩在野指针
+           * （如 miyoo 上 /bin/ls 崩在 dfar=0xfffffffc）时，多半是某个 syscall
+           * 返回了负值被当成指针 ⇒ 这串调用号能直接定位是哪一个。 */
+          {
+            extern void sys_trace_dump(void);
+            sys_trace_dump();
+          }
           void* pte_page = (void*)((u32)fault_addr & ~(PAGE_SIZE - 1));
           void* pte_prev = (void*)((u32)pte_page - PAGE_SIZE);
           log_error("pte %x -> %x\n", pte_page,

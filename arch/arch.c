@@ -17,12 +17,15 @@ __attribute__((weak)) void cpu_flush_dcache_range(unsigned long start,
                                                   unsigned long stop) {
   (void)start;
   (void)stop;
+
+  kprintf("cpu_flush_dcache_range not implemented\n");
 }
 
 __attribute__((weak)) void cpu_invalidate_dcache_range(unsigned long start,
                                                        unsigned long stop) {
   (void)start;
   (void)stop;
+  kprintf("cpu_invalidate_dcache_range not implemented\n");
 }
 
 __attribute__((weak)) void cpu_invalidate_icache(void) {}

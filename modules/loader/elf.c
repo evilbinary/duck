@@ -19,9 +19,9 @@
 // #define LOAD_ELF_DEBUG 1
 
 #ifdef LOAD_ELF_DEBUG
-#define elf32_log_debug kprintf
+#define elf32_log_debug log_info
 #else
-#define elf32_log_debug(...)
+#define elf32_log_debug(...) log_info(__VA_ARGS__)
 #endif
 
 #define elf32_log_error kprintf
@@ -259,6 +259,28 @@ static int elf32_map_segment(int fd, const Elf32_Phdr* ph) {
       return -1;
     }
     elf32_user_cache_sync((void*)ph->p_vaddr, ph->p_filesz);
+
+    /* 【诊断】按用户视角把整段回读一遍算滚动校验和并打印。
+     * PC 上对同一段字节用同样算法算一遍即可判定：
+     *   sum 相同 ⇒ 进内存的字节 == 卡上文件 ✓
+     *   sum 不同 ⇒ 读卡/装载链路把数据改坏了 ✗
+     * 算法：sum = sum * 131 + byte（u32，溢出即截断，初值 0）。 */
+    {
+      void* kp = elf32_user_access(thread_current(),
+                                   (void*)(uintptr_t)ph->p_vaddr, ph->p_filesz);
+      if (kp != NULL) {
+        const u8* b = (const u8*)kp;
+        u32 sum = 0;
+        u32 k;
+        for (k = 0; k < ph->p_filesz; k++) {
+          sum = sum * 131u + b[k];
+        }
+        log_info("elf32 seg sum vaddr=%x filesz=%x sum=%08x\n", ph->p_vaddr,
+                 ph->p_filesz, sum);
+      } else {
+        elf32_log_error("elf32 seg sum access failed vaddr=%x\n", ph->p_vaddr);
+      }
+    }
   }
   return 0;
 }

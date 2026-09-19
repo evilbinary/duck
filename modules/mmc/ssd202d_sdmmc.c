@@ -69,7 +69,9 @@
 // Reg Static Init Setting
 //-----------------------------------------------------------------------------------------------------------
 #define V_MIE_PATH_INIT		0
-#define V_MMA_PRI_INIT      (R_MIU_R_PRIORITY|R_MIU_W_PRIORITY)
+/* 与能跑的 ewokos system 版一致（多 R_MIU_BUS_BURST8：MIU 总线突发设置影响
+ * DMA 能否正确写入内存）。 */
+#define V_MMA_PRI_INIT      (R_MIU_R_PRIORITY|R_MIU_W_PRIORITY|R_MIU_BUS_BURST8)
 #define V_MIE_INT_EN_INIT   (R_DATA_END_IEN|R_CMD_END_IEN|R_SDIO_INT_IEN)
 #define V_RSP_SIZE_INIT		0
 #define V_CMD_SIZE_INIT		(5<<8)
@@ -664,6 +666,8 @@ void Hal_SDMMC_SetBusTiming(IPEmType eIP, BusTimingEmType eBusTiming)
 		case EV_BUS_DEF:
 		case EV_BUS_HS:
 			gu16_DDR_MODE_REG[eIP] = (R_PAD_CLK_SEL|R_PAD_IN_SEL|R_FALL_LATCH);
+			/* 注：曾试过去掉 R_PAD_IN_RDY_SEL|R_PRE_FULL_SEL0|R_PRE_FULL_SEL1，
+			 * 实测对"每个 64 字节 region 首字节 bit7 被置 1"毫无影响 ⇒ 已还原。 */
 			gu16_DDR_MODE_REG_ForR2N[eIP] = gu16_DDR_MODE_REG[eIP] | R_PAD_IN_RDY_SEL | R_PRE_FULL_SEL0 | R_PRE_FULL_SEL1;
             break;
 		case EV_BUS_SDR12:
@@ -1239,10 +1243,9 @@ RspStruct * HAL_SDMMC_DATAReq(uint8_t u8Slot, uint8_t u8Cmd, uint32_t u32Arg, ui
 	if( (u8Cmd == 24) || (u8Cmd==25))
 		eCmdType = EV_CMDWRITE;
 
-	if(u16BlkCnt>1)
-		bCloseClock = FALSE;
-	else
-		bCloseClock = TRUE;
+	/* 恒不关 SD 时钟：原逻辑在单扇区读(blkCnt==1)时置 TRUE，_SDMMC_EndProcess()
+	 * 会据此清 R_CLK_EN 关掉时钟；v3s/sunxi 驱动从不关时钟，靠 auto-stop 结束传输。 */
+	bCloseClock = FALSE;
 
 	Hal_SDMMC_SetCmdToken(eIP, u8Cmd, u32Arg);
 	Hal_SDMMC_TransCmdSetting(eIP, eTransType, u16BlkCnt, u16BlkSize, Hal_CARD_TransMIUAddr(pu8Buf), pu8Buf);
@@ -1277,6 +1280,13 @@ uint16_t SDMMC_Init(uint8_t u8Slot)
 {
 	IPEmType eIP  = EV_IP_FCIE1;
 	RspStruct * eRspSt;
+
+	/* 补上 pad/采样与 NRC 配置（本函数此前几乎为空，全靠 boot 阶段遗留设置；
+	 * 参考实现初始化时同样调用 SetBusTiming + SetNrcDelay）。
+	 * SetBusTiming 写的是采样相位位 R_PAD_CLK_SEL/R_PAD_IN_SEL/R_FALL_LATCH。
+	 * DataWidth 不在这里动，避免与 boot 已协商好的位宽冲突。 */
+	Hal_SDMMC_SetBusTiming(eIP, EV_BUS_DEF);
+	Hal_SDMMC_SetNrcDelay(eIP, 8000000);
 
 	// _SDMMC_InfoInit(u8Slot);
 
