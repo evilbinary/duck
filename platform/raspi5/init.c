@@ -68,18 +68,491 @@ static void uart_init(void) {
   }
 }
 
+/* 【极早期探针 · 第四轮：把"复位次数"当进度条】覆盖 boot/arm64 的弱默认实现
+ * （空函数），由 boot-armv8-a.s 在最前面调用（MMU 未开 → 直接物理地址访问）。
+ *
+ * 【真机已验证（上一版）】把 PSCI SYSTEM_RESET 放在第一条指令、且此前只碰
+ * RAM，实测固件日志确实自己重来了一次，且标记跨热复位活了下来（只多一次
+ * 重启）。于是三件事确定：
+ *   1) 固件确实跳到我们的 0x80000 ✓（排除"根本没跑到"）；
+ *   2) smc #0 且 x0=0x84000009 能复位整机 ✓ → 有不依赖任何外设的输出通道；
+ *   3) RAM 标记跨热复位保留 ✓ → 可做"跨复位状态机"。
+ *
+ * 【本轮做法】"写设备"一旦被同步外部中止打死就彻底静默、什么也看不出，所以
+ * 把危险操作拆成一步一步：每次启动只做一步，做完把 step+1 写回 RAM 并复位。
+ * 哪一步把 CPU 打死，重启就停在那一步。用户只需数"固件日志重来了几次"
+ * （每步约 7~11 秒，看第一行 "RP1_UART ..." 出现几次）：
+ *   0 次            → 第 0 步（写 0x7D001000）就中止了
+ *   N 次后静默      → 第 N 步（0 起数）中止
+ *   7 次后无限循环  → 六步全部走通（default 分支的"报告结束"标记）
+ * 同时每一步都会往对应串口写字母：哪一步的地址正好是控制台，就会在那一刻
+ * 看到 BBBBBB / AAAAAA / FFFFFF / HHHHHH / GGGGGG。
+ */
+/* 读一个 32 位设备寄存器（用于"设备到底答不答应"的判定：PL011 的
+ * PeriphID0 @+0xFE0 应为 0x11，见 DTB `arm,primecell-periphid = <0x341011>`）。
+ * 注意：对没有设备应答的 PCIe 地址做【读】可能拿到 UR → 同步外部中止 → CPU
+ * 卡死，所以读测试一律放在最后一步（卡死就正好说明"没设备应答"）。 */
+static u32 dev_read32(u64 addr) { return *(volatile u32*)(uintptr_t)addr; }
+static void dev_write32(u64 addr, u32 v) {
+  *(volatile u32*)(uintptr_t)addr = v;
+  dsb();
+}
+
+/* 三个候选控制台地址（DTB /tmp/rpi5b.dts 推出来的 CPU 侧地址） */
+#define UART10_LO 0x7D001000ULL      /* SoC UART10 的 legacy 低外设镜像 */
+#define UART10_HI 0x107D001000ULL    /* SoC UART10 原生高地址视图 */
+#define RP1_UART0_ADDR 0x1F00030000ULL /* RP1 UART0：非预取窗口 + PCIe 0x30000 */
+
+/* 只做"使能"：8N1+FIFO、UARTEN|TXE|RXE。分频（IBRD/FBRD）不动，保留固件设好
+ * 的值 —— 那样波特率仍然是对的。
+ * 【为什么必须写 CR/LCRH】上一轮只写 DR、五个地址全无反应；若固件在交接前把
+ * TX 关了（或根本没使能这条 UART），只写 DR 就是往 FIFO 丢字节而不发送 ——
+ * 看起来和"地址不对"一模一样。 */
+static void pl011_enable(u64 base) {
+  volatile u32* u = (volatile u32*)(uintptr_t)base;
+  u[0x2C / 4] = 0x70;  /* LCRH: 8N1 + FIFO enable */
+  u[0x30 / 4] = 0x301; /* CR: UARTEN|TXE|RXE */
+  dsb();
+}
+
+/* 使能 + 连写 6 个字符（字符之间留点时间，让 posted 写有节奏地出去）。 */
+static void pl011_try(u64 base, char c) {
+  volatile u32* u = (volatile u32*)(uintptr_t)base;
+  pl011_enable(base);
+  for (int i = 0; i < 6; i++) {
+    u[0] = (u32)c;
+    for (volatile int d = 0; d < 4000; d++) {
+    }
+  }
+}
+
+/* 结束标记用：足够长的忙等（不依赖任何定时器 —— 万一 CNTVCT 没跑，用计数器
+ * 反而会永远等下去）。让"结束循环"看起来明显比"步骤/报告"慢很多。 */
+static void slow_delay(void) {
+  for (volatile u64 i = 0; i < 2000000000ULL; i++) {
+  }
+}
+
+/* 【RC 寄存器读写】根复合体基址 0x1000120000（DTB pcie@1000120000
+ * reg = <0x10 0x120000 0x00 0x9310>）。偏移与位域取自 Linux
+ * drivers/pci/controller/pcie-brcmstb.c：
+ *   0x4008 MISC_CTRL : [12]SCB_ACCESS_EN [13]CFG_READ_UR_MODE
+ *                      [21:20]MAX_BURST_SIZE（BCM7712/2712 用 2 = 512B）
+ *                      [10]RCB_MPS_MODE [7]RCB_64B_MODE
+ *   0x4068 PCIE_STATUS: [7]PORT(1=RC) [6]LINK_IN_L23 [5]DL_ACTIVE
+ *                      [4]PHYLINKUP
+ *   0x9000 EXT_CFG_INDEX / 0x8000 EXT_CFG_DATA：配置空间间接访问
+ * brcm_pcie_link_up() 判定 = DL_ACTIVE && PHYLINKUP。 */
+#define RC_BASE 0x1000120000ULL
+#define RC_MISC_CTRL 0x4008u
+#define RC_PCIE_STATUS 0x4068u
+
+static u32 rc_rd(u32 off) { return dev_read32(RC_BASE + off); }
+static void rc_wr(u32 off, u32 v) {
+  *(volatile u32*)(uintptr_t)(RC_BASE + off) = v;
+  dsb();
+}
+
+/* 【PCIe 配置空间读】brcm_pcie_map_bus() 的用法：
+ *   写 0x9000 = idx，其中 idx = (bus << 20) | (devfn << 12)
+ *   然后读 0x8000 + (where & 0xFFF) 就是该寄存器的值
+ * 我们在 MISC_CTRL 里置了 CFG_READ_UR_MODE：读不存在的设备返回 0xFFFFFFFF
+ * 而不会中止 CPU —— 所以这一组读是安全的（不像内存读）。
+ * 用它能直接问硬件：RP1（Pi 5 上在 bus 1 / devfn 0）的 vendor ID 与 BAR 被
+ * 分到哪个 PCIe 地址 —— 这是"RP1 寄存器窗口到底在哪"最权威的答案。 */
+static u32 rc_cfg_read(u32 bus, u32 devfn, u32 where) {
+  rc_wr(0x9000, (bus << 20) | (devfn << 12));
+  return rc_rd(0x8000 + (where & 0xFFFu));
+}
+
+/* 【RP1 的 GPIO/引脚复用】40 针排针上的引脚都在 RP1 里，寄存器区（DTB
+ * gpio@d0000 的 reg 给出）：IO_BANK0 = 0xD0000、RIO = 0xE0000、
+ * PADS_BANK0 = 0xF0000 —— 换算到 CPU 侧（RP1 窗口 0x1F00000000）就是
+ * 0x1F0D0000 / 0x1F0E0000 / 0x1F0F0000。
+ * 【纠正历史错误】最早那版探针写的是 0x1C0D0000（0x1C 窗口）—— 那是错的窗口
+ * （0x1C 那个窗口映射的是 PCIe 0x4_00000000 起），所以那次"引脚重配"根本没
+ * 落到 RP1 上，却让我们以为"引脚复用不是问题"。
+ * 每脚 8 字节、CTRL 在 +4：GPIO14 → +0x74、GPIO15 → +0x7C；CTRL[4:0] = FUNCSEL。
+ * PADS 每脚 4 字节：GPIO14 → +0x3C、GPIO15 → +0x40；0x40 = IN_ENABLE、无上下拉。 */
+#define RP1_IO_BANK0 0x1F0D0000ULL
+#define RP1_PADS_BANK0 0x1F0F0000ULL
+
+/* 【RP1 时钟管理器】clocks@18000（RP1 内 0x40018000 → CPU 0x1F018000）。
+ * 定义取自 Linux drivers/clk/clk-rp1.c（rpi-6.6.y）：
+ *   CLK_UART_CTRL    = 0x00054  → CPU 0x1F018054
+ *   CLK_UART_DIV_INT = 0x00058
+ *   CLK_UART_SEL     = 0x00060（clk_uart 的 num_std_parents=0，父源在 AUXSRC）
+ *   CLK_CTRL_ENABLE  = BIT(11) = 0x800
+ * clk_uart 的父源顺序：0=pll_sys_pri_ph、1=pll_video、2=xosc、3..8=clksrc_gp0..5
+ * 注意：DTB 的 assigned-clock-rates 里**没有** 0x0f（CLK_UART）——它是固件为
+ * 自己的控制台打开的（enable_rp1_uart=1），Linux 侧由 PL011 驱动按波特率设。 */
+#define RP1_CLK_UART_CTRL 0x1F018054ULL
+#define RP1_CLK_UART_DIV_INT 0x1F018058ULL
+#define RP1_CLK_CTRL_ENABLE 0x800u
+
+/* 【RP1 UART 时钟分频扫描的候选值】单位：分频整数部分。
+ * 0 = 不改动（保留固件留下的值，等价于"只置 ENABLE"）。
+ * 依据：115200 = clk / (16 × (IBRD + FBRD/64))，而固件的 IBRD/FBRD 我们不动，
+ * 所以只要把 clk 恢复成固件原来那个值，波特率就自动是对的 —— 而 clk =
+ * 父时钟 / DIV_INT，父时钟未知，于是干脆把 DIV_INT 从 1 扫到 64。 */
+static const u8 rp1_div_cands[] = {0, 1,  2,  3,  4,  5,  6,  8,  10, 12, 16,
+                                   20, 24, 25, 26, 30, 32, 40, 48, 50, 60, 64};
+
+static void uart_putc(volatile u32* base, char c);
+
+/* 以十进制打出 1~3 位数（探测用，只走带边界的 uart_putc）。 */
+static void put_dec(volatile u32* base, u32 v) {
+  if (v >= 100u) {
+    uart_putc(base, (char)('0' + (v / 100u) % 10u));
+  }
+  if (v >= 10u) {
+    uart_putc(base, (char)('0' + (v / 10u) % 10u));
+  }
+  uart_putc(base, (char)('0' + v % 10u));
+}
+
+static void rp1_pinmux_uart0(u32 funcsel) {
+  volatile u32* c14 = (volatile u32*)(uintptr_t)(RP1_IO_BANK0 + 0x74);
+  volatile u32* c15 = (volatile u32*)(uintptr_t)(RP1_IO_BANK0 + 0x7C);
+  volatile u32* p14 = (volatile u32*)(uintptr_t)(RP1_PADS_BANK0 + 0x3C);
+  volatile u32* p15 = (volatile u32*)(uintptr_t)(RP1_PADS_BANK0 + 0x40);
+  *c14 = (*c14 & ~0x1Fu) | (funcsel & 0x1Fu);
+  *c15 = (*c15 & ~0x1Fu) | (funcsel & 0x1Fu);
+  *p14 = 0x40;
+  *p15 = 0x40;
+  dsb();
+}
+
+/* 补上 Linux brcm_pcie_setup() 里 MISC_CTRL 的那一段。我们此前只写了出站
+ * 窗口，从没设置过 SCB_ACCESS_EN / CFG_READ_UR_MODE / burst 等 —— 而 RP1
+ * 的寄存器访问恰恰要求 RC 这一套齐备。 */
+static void rc_misc_ctrl_init(void) {
+  u32 v = rc_rd(RC_MISC_CTRL);
+  v &= ~0x00303480u;                    /* 清这 5 个字段 */
+  v |= 0x00003480u | (2u << 20);        /* 1<<12 |1<<13 |1<<10 |1<<7 | burst=2 */
+  rc_wr(RC_MISC_CTRL, v);
+}
+
+/* _start 的第一条指令就调用它，此时 sp 还没设 → 必须 naked（无函数序言、
+ * 不碰栈）。上一版在这里做的"只碰 RAM 的复位信标"已经完成使命（真机验证
+ * 通过），现在整件事都搬到 boot_probe()（有栈、C 代码）里做。 */
+__attribute__((naked)) void boot_probe0(void) {
+  /* 【第二十二轮】_start 的第一条指令：按 arm64 启动协议关掉 MMU。
+   * 第二十一轮的日志证明：加上 arm64 Image 头之后，固件终于认出了我们的镜像
+   * （出现了从未有过的 "Kernel relocated to 0x200000"）—— 之前十几轮"代码根本
+   * 没被执行"的根因就是缺那个头。
+   * 现在代码能跑了，第一件事就是把入口状态摆正：协议要求内核入口是
+   * "MMU 关、x0 = DTB"。固件交接时 MMU 可能还开着且只映射低地址，那样我们对
+   * RP1（0x1F00030000 / 0x1C030000）的访问会被翻译或直接中止。
+   * 关闭序列严格遵守 ARM 要求：DSB → TLBI → DSB → ISB → 清 SCTLR.M → ISB。 */
+  __asm__ volatile(
+      "mrs x0, CurrentEL\n\t"
+      "lsr x0, x0, #2\n\t"
+      "cmp x0, #3\n\t"
+      "b.eq 3f\n\t"
+      "cmp x0, #2\n\t"
+      "b.eq 2f\n\t"
+      /* ---- EL1 ---- */
+      "dsb sy\n\t"
+      "tlbi vmalle1\n\t"
+      "dsb sy\n\t"
+      "isb\n\t"
+      "mrs x1, sctlr_el1\n\t"
+      "bic x1, x1, #1\n\t"
+      "msr sctlr_el1, x1\n\t"
+      "isb\n\t"
+      "b 9f\n\t"
+      /* ---- EL2 ---- */
+      "2:\n\t"
+      "dsb sy\n\t"
+      "tlbi alle2\n\t"
+      "dsb sy\n\t"
+      "isb\n\t"
+      "mrs x1, sctlr_el2\n\t"
+      "bic x1, x1, #1\n\t"
+      "msr sctlr_el2, x1\n\t"
+      "isb\n\t"
+      "b 9f\n\t"
+      /* ---- EL3 ---- */
+      "3:\n\t"
+      "dsb sy\n\t"
+      "tlbi alle3\n\t"
+      "dsb sy\n\t"
+      "isb\n\t"
+      "mrs x1, sctlr_el3\n\t"
+      "bic x1, x1, #1\n\t"
+      "msr sctlr_el3, x1\n\t"
+      "isb\n\t"
+      "9:\n\t"
+      "ret\n\t" ::: "x0", "x1", "memory");
+}
+
+/* 【PCIe 根复合体出站窗口】RP1 挂在 PCIe 后面，ARM 要访问它，必须由 RC 的
+ * CPU_2_PCIE_MEM_WINx 建立「CPU 地址 ⇄ PCIe 总线地址」映射。Linux 是自己按
+ * DTB ranges 编程这些窗口的（drivers/pci/controller/pcie-brcmstb.c 的
+ * brcm_pcie_set_outbound_win()）；固件很可能只给 VideoCore 那条访问路径做了
+ * 映射、没给 ARM 这条路径编程 → 这正好解释上一轮所有 RP1 地址的静默。
+ *
+ * 寄存器（DTB: pcie@1000120000 reg = <0x10 0x120000 0x00 0x9310> → 基址
+ * 0x1000120000；偏移取自上面那个 Linux 驱动，win 索引步进 LO/HI 8 字节、
+ * BASE_LIMIT 4 字节）：
+ *   +0x400c WIN_LO          PCIe 侧目标地址低 32 位
+ *   +0x4010 WIN_HI          PCIe 侧目标地址高 32 位
+ *   +0x4070 WIN_BASE_LIMIT  CPU 侧 base[15:4] / limit[31:20]（1MB 粒度）
+ *   +0x4080 WIN_BASE_HI     CPU 侧 base 的 MB 高位（MB>>12，低 8 位）
+ *   +0x4084 WIN_LIMIT_HI    同上，limit
+ * 值与 DTB pcie ranges 一致（幂等：固件若已编程，写进去的还是同一份）：
+ *   非预取 PCIe 0x0          ↔ CPU 0x1F00000000（约 4GB）
+ *   预取   PCIe 0x4_00000000  ↔ CPU 0x1C00000000（12GB）
+ */
+static void rc_outbound_win(int win, u64 cpu_addr, u64 pcie_addr, u64 size) {
+  volatile u32* rc = (volatile u32*)(uintptr_t)0x1000120000ULL;
+  u64 cpu_mb = cpu_addr >> 20;
+  u64 lim_mb = (cpu_addr + size - 1) >> 20;
+
+  rc[(0x400C + 8 * win) / 4] = (u32)pcie_addr;
+  rc[(0x4010 + 8 * win) / 4] = (u32)(pcie_addr >> 32);
+
+  u32 bl = rc[(0x4070 + 4 * win) / 4]; /* 读-改-写，别踩别的字段 */
+  bl &= ~(0xFFF00000u | 0xFFF0u);
+  bl |= (u32)((cpu_mb & 0xFFF) << 4) | (u32)((lim_mb & 0xFFF) << 20);
+  rc[(0x4070 + 4 * win) / 4] = bl;
+
+  u32 bh = rc[(0x4080 + 8 * win) / 4];
+  bh = (bh & ~0xFFu) | (u32)((cpu_mb >> 12) & 0xFF);
+  rc[(0x4080 + 8 * win) / 4] = bh;
+
+  u32 lh = rc[(0x4084 + 8 * win) / 4];
+  lh = (lh & ~0xFFu) | (u32)((lim_mb >> 12) & 0xFF);
+  rc[(0x4084 + 8 * win) / 4] = lh;
+}
+
+/* 往一个候选 RP1 UART 地址做最小初始化并连写 6 个字符（实现见 pl011_try）。 */
+static void rp1_uart_try(u64 base, char c) { pl011_try(base, c); }
+
+/* 【PSCI 复位】DTB 有 `psci { method = "smc"; }`；x0 = 0x84000009 =
+ * SYSTEM_RESET。真机已验证（上一版在第一条指令处复位成功，日志重启一次）。
+ * 这是本板唯一不依赖任何外设的可观测通道，用它当"进度条"。 */
+static void psci_reset(void) {
+  __asm__ volatile(
+      "mov w0, #9\n\t"
+      "movk w0, #0x8400, lsl #16\n\t"
+      "smc #0\n\t"
+      "smc #0\n\t"
+      "1:\n\t"
+      "wfi\n\t"
+      "b 1b\n\t" ::: "x0", "memory");
+}
+
+/* 【步进式探针 · 第十轮】每次启动只做一步，做完把 step+1 写回 RAM 再复位。
+ * 跨复位状态：0x20000000 = {magic, step, payload}（热复位不丢，已实测）。
+ *
+ * 【前两轮真机结论】
+ *   第八轮：内存读 0x1F00030000+0xFE0 成功返回 0x11 → 那个地址上有设备应答 ✓
+ *   第九轮：FUNCSEL 1..8 八个值全试过、**一个字母都没出来**；状态回读的
+ *           8 个 bit 也基本为 0（CR/LCRH/IBRD/FR 读回来是 0、GPIO CTRL 的
+ *           FUNCSEL 读回来是 0）。
+ *   → 综合起来最像：**设备在，但寄存器读回来是 0、写进去不生效** = 外设块
+ *     时钟/电源没被使能（RP1 的 UART 时钟由 RP1 自己的 clock manager 提供，
+ *     Linux 是在 clk-rp1.c 里打开 CLK_UART 的；我们没有那一步）。
+ *
+ * 【真机已验证（第十三轮前）】上一版的 payload 是 15（四位全中）= 写 RP1
+ * 寄存器【生效】：IBRD 写-读回一致 ✓、GPIO14 CTRL 写-读回一致 ✓、
+ * CR=0x301 写-读回一致 ✓。加上 PeriphID 能读回 0x11，所以"地址对、写有效"。
+ * 那"能配置却发不出字"就只剩：**UART 没有波特率时钟**（字节进了 FIFO 但
+ * 移位器不动）。另外：跨镜像的 RAM 残留会把旧 payload 重放（上一版踩到），
+ * 所以这版 magic 带版本号（0x5A5A0013），且结束时【主动清状态】。
+ *
+ * 【本轮（第十四）核心思路：什么都不碰，只写 DR】
+ * 由 Linux 源码确认的事实：
+ *   · 地址对：pinctrl-rp1.c 的 PIN(14, pwm0,dpi,uart4,i2c3,uart0,gpio,...)
+ *     → **位置 4 就是 uart0**，我们写的 funcsel=4 本来就是对的（不是它的问题）；
+ *   · pads 的 bank0 偏移 = +0x0004、GPIO CTRL 步长 0x8（GPIO14 → +0x74）✓
+ *     RP1_PAD_OUT_DISABLE 是 bit7，我们写 0x40 不会关输出 ✓
+ *   · 前几轮已实测：写 IBRD/GPIO CTRL/CR 都**生效**。
+ * 那唯一没试过的"最纯"组合就是：**除了数据寄存器 DR，其它寄存器一个都不写**
+ * （不碰 funcsel、不碰 CR/LCRH/IBRD、不碰 pads）。固件从开机第一行就在用这
+ * 条串口打印，说明交接瞬间它的状态本来是好的 —— 如果之前失败是我们自己把
+ * 它改坏的，这一版就会立刻出字。
+ *
+ * 【第十四轮真机结论】config.txt 已经带上 enable_rp1_uart=1（日志里 uart0-pi5、
+ * disable-bt-pi5 都加载了，kernel 481352 字节 = 那版），**"只写 DR、别的都不写"
+ * 依然一个字都没有** → 说明不是我们改坏的，而是**固件在交接前把这条串口停车了**。
+ * 【本轮（第十五）假设】停车用的是引脚控制里那两个我们一直"读-改-写保留"的字段：
+ *   GPIO_CTRL bits12-13 OUTOVER：0=外设控制、1=反相、2=强制低、3=强制高
+ *   GPIO_CTRL bits14-15 OEOVER ：0=外设控制、1..3=越权
+ *   PADS bit7 OUT_DISABLE       ：1=输出关闭
+ * 只要 OUTOVER/OEOVER 任一非 0（或 pad 输出被关），UART 配得再对，TX 也到不了
+ * 引脚 —— 这和"寄存器读写全正常、却一个字节都出不来"完全吻合。
+ *
+ * 【第十六轮真机结论】只重启了 2 次就停住 = 第 2 次（写 16 字节那步）卡死。
+ * 1（第 0 步写的 'F'）+ 16 = 17 > FIFO 的 16 格 → **写 DR 被永久阻塞** →
+ * 既证明"我们的写确实进了 UART 的 FIFO"，也证明 **TX FIFO 永远排不出去**。
+ * 同时重新审日志顺序："RP1_UART 0000001c00030000" 出现在 "Read /config.txt"
+ * 【之前】，那时 enable_rp1_uart 还没生效 → 它是**默认控制台 = SoC UART10**
+ * （官方 dts 注释："The system UART"，Pi5 左边 3 针调试口）打的。也就是说：
+ * 适配器很可能接在**系统 UART**上，而前几轮我们一直在写 RP1 那条（没接线）！
+ *
+ * 步骤（每次启动推进 3 个候选，总共 22 个候选 → 8 轮，然后停住）：
+ *   每一轮：关 UART（清发送 FIFO）→ 引脚 CTRL 写 4 + pad 0x40（解停车）
+ *           → CLK_UART 置 ENABLE + 写本次候选的 DIV_INT → LCRH/CR 使能
+ *           → 打出 "<分频>U\r\n"（DIV_INT=0 的候选打 "KU"）
+ *   候选跑完：清状态 → 长停顿 → 永久停住（断电重上电即可重跑）
+ *
+ * 读数：找【看起来正常可读】的那一行，例如 "26U" → 分频 26 就复原了固件的
+ * UART 时钟；"KU" 可读 → 说明"只置 ENABLE"就够（那就不是分频问题）。
+ * 全是一堆乱码或什么都没有 → 时钟不是（唯一）原因，再往引脚/复位方向查。
+ */
+/* 【跨复位状态】三份冗余：主状态在 0x20000000，另有两个"我来过"的镜像标记。
+ * 上一版只有一个位置，若被固件启动过程踩掉，就会永远从第 0 步重来 ——
+ * 表现是"无限重启、永远不结束"。这里只要任意一份还在，就认为状态有效。
+ *   st[0] = magic，st[1] = step，st[2] = payload */
+#define PROBE_MAGIC 0x5A5A0022ULL
+
+/* 【LED 报告通道】板上 ACT 灯 = dts 的 "2712_STAT_LED" = gpio@7d517c00 的第 9 脚。
+ * gpio@7d517c00 是 BCM2712 自己的 GPIO 块（compatible "brcm,brcmstb-gpio"，
+ * reg = <0x7d517c00 0x40>，CPU 侧 0x107D517C00）。寄存器布局取自 Linux
+ * drivers/gpio/gpio-brcmstb.c：
+ *   每 bank 8 个 32 位寄存器 = 0x20 字节；bank0 就在基址
+ *   +0x00 ODEN，+0x04 DATA（输出值），+0x08 IODIR（方向），…
+ * LED 是 active-low（dts flags = 0x01）→ 输出 0 = 亮。
+ * 为什么用它：串口这条通道至今打不出一个字，而 LED 你能"眼睁睁看到"，
+ * 不用数日志、不用重启计数 —— 闪烁次数就是一位数字。 */
+#define LED_BASE 0x107D517C00ULL
+#define LED_BIT 9u
+
+static void led_wait(u32 n) {
+  for (volatile u32 i = 0; i < n; i++) {
+  }
+}
+static void led_set(int on) {
+  volatile u32* g = (volatile u32*)(uintptr_t)LED_BASE;
+  u32 d = g[0x04u / 4];
+  if (on) {
+    d &= ~(1u << LED_BIT);
+  } else {
+    d |= (1u << LED_BIT);
+  }
+  g[0x04u / 4] = d;
+  dsb();
+}
+/* iodir_bit=0 / 1 两种方向极性各试一遍（bgpio 的 dirout 极性这里不猜）。 */
+static void led_dir(u32 iodir_bit) {
+  volatile u32* g = (volatile u32*)(uintptr_t)LED_BASE;
+  u32 d = g[0x08u / 4];
+  if (iodir_bit) {
+    d |= (1u << LED_BIT);
+  } else {
+    d &= ~(1u << LED_BIT);
+  }
+  g[0x08u / 4] = d;
+  dsb();
+}
+static void led_pulse(u32 on_units, u32 off_units) {
+  led_set(1);
+  led_wait(on_units);
+  led_set(0);
+  led_wait(off_units);
+}
+
+/* 【带边界的单字节输出】只在 TXFF(FR bit5) 为 0 时写入，最多等约 20 万次循环。
+ * 真机教训（第十六轮）：UART 没有波特率时钟时字节排不出去，FIFO 满后
+ * 对 DR 的写会【永远阻塞】，直接把 CPU 卡死 —— 那一轮就是这样停在 2 次重启。
+ * 以后所有串口输出都必须走这个函数。 */
+static void uart_putc(volatile u32* base, char c) {
+  for (int t = 0; t < 200000; t++) {
+    if ((base[0x18u / 4] & 0x20u) == 0u) {
+      break;
+    }
+  }
+  base[0] = (u32)c;
+  dsb();
+}
+#define PROBE_STATE 0x20000000ULL
+#define PROBE_MIRROR1 0x21000000ULL
+#define PROBE_MIRROR2 0x22000000ULL
+
+/* 只写数据寄存器 DR（偏移 0），别的寄存器一个都不碰。 */
+static void dr_write(u64 base, char c, int n) {
+  volatile u32* dr = (volatile u32*)(uintptr_t)base;
+  for (int i = 0; i < n; i++) {
+    *dr = (u32)c;
+    for (volatile int d = 0; d < 4000; d++) {
+    }
+  }
+  dsb();
+}
+
+void boot_probe(void) {
+  /* 【第二十三轮：最小 Hello World】
+   * 只做三件事：
+   *   1) 建两条 RC 出站窗口（值取自真 DTB 的 pcie ranges）；
+   *   2) 把 "Hello World" 直接写进 RP1 UART0 的两个候选 CPU 地址：
+   *      0x1F030000（非预取窗口）、0x1C030000（固件日志里报的预取窗口）；
+   *      【一个寄存器都不配置】—— 固件交接前一直在用这条串口打印，
+   *      它的 LCRH/CR/分频/引脚本来就是好的，我们只写数据寄存器 DR。
+   *   3) 然后【永久停住，不再复位】。
+   * 判读：
+   *   · 串口出现 "Hello World" → 全通了 ✓✓
+   *   · 没有输出、但机器【只启动这一次】（不再出现第 2 次启动）
+   *     → 代码确实在跑 ✓，问题只剩 UART 写出这一环
+   *   · 仍然出现第 2 次启动（与以前一样）→ 代码仍未被执行 ✗
+   */
+  static const char msg[] = "Hello World\r\n";
+  volatile u32* u1f = (volatile u32*)(uintptr_t)0x1F030000ULL;
+  volatile u32* u1c = (volatile u32*)(uintptr_t)0x1C030000ULL;
+  int i;
+
+  rc_misc_ctrl_init();
+  rc_outbound_win(0, 0x1F00000000ULL, 0x0ULL, 0x100000000ULL);
+  rc_outbound_win(1, 0x1C00000000ULL, 0x400000000ULL, 0x300000000ULL);
+  dsb();
+
+  /* 非预取窗口那条（DTB ranges 推出来的地址） */
+  for (i = 0; i < (int)sizeof(msg) - 1; i++) {
+    uart_putc(u1f, msg[i]);
+  }
+  dsb();
+  /* 预取窗口那条（固件自己日志里报的 0x1c00030000） */
+  for (i = 0; i < (int)sizeof(msg) - 1; i++) {
+    uart_putc(u1c, msg[i]);
+  }
+  dsb();
+
+  for (;;) {
+    __asm__ volatile("wfi");
+  }
+}
+
+
+/* 这里（MMU 已开、只映射了 RAM 的早期页表）不再写设备地址，避免翻译错误。
+ * 保留符号以匹配 boot-armv8-a.s 的调用点。 */
+void boot_probe2(void) {}
+
 void uart_send(u8 c) {
+  // 先写 RP1 UART0（40-pin GPIO14/15 —— 固件日志所在的口，USB-TTL 就接这里，
+  // config.txt 的 enable_uart=1 配的也是它）。放在最前：万一另一个口的地址在
+  // 本板无效导致访问中止，至少这个口已经先出去了。
   while (io_read32(UART0_FR) & 0x20) {
   }
   io_write32(UART0_DR, c);
+  // 再写 SoC 的 UART10（DTB chosen/stdout-path = serial10 的调试口）
+  while (io_read32(UART10_FR) & 0x20) {
+  }
+  io_write32(UART10_DR, c);
 }
 
 unsigned int uart_receive(void) {
-  unsigned int c;
-  while (io_read32(UART0_FR) & 0x10) {
+  // 两个口都轮询（用户到底接在哪个口上 bring-up 阶段无法确定）：
+  // FR 的 RXFE(bit4) 为 0 表示接收 FIFO 非空。
+  for (;;) {
+    if ((io_read32(UART10_FR) & 0x10) == 0) {
+      return io_read32(UART10_DR) & 0xFF;
+    }
+    if ((io_read32(UART0_FR) & 0x10) == 0) {
+      return io_read32(UART0_DR) & 0xFF;
+    }
   }
-  c = io_read32(UART0_DR) & 0xFF;
-  return c;
 }
 
 u32 read_core_timer_pending(int cpu) {
@@ -144,10 +617,22 @@ void platform_init(void) {
 void platform_end(void) {}
 
 void platform_map(void) {
-  // Map entire legacy MMIO region (4KB pages).
-  for (u32 addr = (u32)MMIO_BASE; addr < (u32)(MMIO_BASE + MMIO_LENGTH);
+  // RP1 南桥窗口（经 PCIe 暴露到 CPU 侧 0x1F00000000）：只映射用到的前 1MB
+  // （UART0 +0x30000、IO_BANK0 +0xD0000、RIO +0xE0000、PADS +0xF0000）。
+  // 【必须用 64 位】0x1F00000000 截断成 u32 会变成 0 —— 那样会把低 16MB
+  // （内核恒等映射、异常向量、页表所在处）按 Device 重映射。
+  for (u64 addr = RP1_WINDOW_BASE; addr < RP1_WINDOW_BASE + RP1_WINDOW_LENGTH;
        addr += 0x1000) {
-    page_map(addr, addr, PAGE_DEV);
+    page_map((vaddr_t)addr, (vaddr_t)addr, PAGE_DEV);
+  }
+
+  // SoC 侧：调试串口 UART10（0x7D001000，固件日志所在）与 GIC-400（0x7FFF9000）。
+  for (u64 addr = SOC_UART10_BASE; addr < SOC_UART10_BASE + SOC_UART10_LENGTH;
+       addr += 0x1000) {
+    page_map((vaddr_t)addr, (vaddr_t)addr, PAGE_DEV);
+  }
+  for (u64 addr = GICD_BASE; addr < GICD_BASE + SOC_GIC_LENGTH; addr += 0x1000) {
+    page_map((vaddr_t)addr, (vaddr_t)addr, PAGE_DEV);
   }
 
   // GIC-400 distributor and cpu interface pages (above 32-bit region)
