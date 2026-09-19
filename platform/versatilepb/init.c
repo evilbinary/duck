@@ -85,10 +85,15 @@ int interrupt_get_source(u32 no) {
   if ((pic->status & PIC_INT_TIMER0) != 0) {
     no = EX_TIMER;
   } else {
-    // kprintf("get source %x\n", sic->status );
-    if (sic->status & (1 << ISR_MOUSE)) {
+    /* 【SIC 位号≠IRQ 号】ISR_MOUSE(0x2c)/ISR_KEYBOARD(0x21) 是 PC 风格的
+     * "中断向量"编码（0x20+IRQ），当寄存器位用会变成 1<<44 / 1<<33 —— 在 32 位
+     * 寄存器上恒为 0，于是 EX_MOUSE / EX_KEYBOARD 永远派发不到（实测症状：
+     * pl050 鼠标中断源已使能，但 mouse_handler 从不执行 ⇒ 应用收不到鼠标事件）。
+     * 本平台 PL050 走 SiC：KMI0(键盘)=bit3、KMI1(鼠标)=bit4（与
+     * modules/keyboard/pl050.c、modules/mouse/pl050.c 里使能的位一致）。 */
+    if (sic->status & (1 << 4)) { /* KMI1 = mouse */
       no = EX_MOUSE;
-    } else if (sic->status & (1 << ISR_KEYBOARD)) {
+    } else if (sic->status & (1 << 3)) { /* KMI0 = keyboard */
       // kprintf("get source keyboard \n");
       no = EX_KEYBOARD;
     }

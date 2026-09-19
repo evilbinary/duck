@@ -65,22 +65,39 @@ static inline int32_t kmi_read(uint8_t* data) {
 
 mouse_device_t mouse_device;
 
+/* 【按 len 分派两种表示】同一驱动被两类调用方读取：
+ *   - xwin 的 xinput_poll：`read(dev, data4, 3)`，期望 **原始 PS/2 包**，
+ *     交给 xinput_ps2_mouse_data() 解析（相对位移）；
+ *   - /dev/mouse（libgui event_read_mouse 的非 xwin 路径）：len=12，
+ *     期望 **绝对坐标事件**（mouse_event_t）。
+ * 两者数据都来自中断里组好的包，这里按 len 分派即可，双方代码都不用改。
+ *
+ * 【必须能返回 0】调用方是 `while (read(...) >= 3)`：返回非 0 必须对应真实数据，
+ * 否则会死循环 —— 原来 `u32 ret = len; ... return ret;` 无条件返回 len，导致
+ * xwin_get_event 系统调用永不返回（实测 infones 卡在 xinput_ps2_mouse_data 里
+ * 反复执行，最终内存被冲垮、pop {fp,pc} 跳到异常向量表）；而且 12 字节写进
+ * 4 字节缓冲还会踩掉调用者的 fp/lr。 */
 static size_t read(device_t* dev, void* buf, size_t len) {
-  u32 ret = len;
-
-  if (mouse_device.event_index < 0) {
+  (void)dev;
+  if (buf == NULL || len < 3) {
     return 0;
   }
-
-  // kprintf("read %x %d %d\n", buf, len, mouse_device.event_index);
-
-  mouse_event_t* data = buf;
-
-  *data = mouse_device.event_data[mouse_device.event_index];
-  if (mouse_device.event_index < 0) {
-    mouse_device.event_index = 0;
+  u32 idx = mouse_device.read_index;
+  if (idx == mouse_device.event_index) {
+    return 0; /* 没有新数据 */
   }
-  return ret;
+  if (len >= sizeof(mouse_event_t)) {
+    *(mouse_event_t*)buf = mouse_device.event_data[idx];
+    mouse_device.read_index = (idx + 1) & 0x3;
+    return sizeof(mouse_event_t);
+  }
+  /* 3 字节原始包（PS/2：byte0=按键+符号位，byte1=X，byte2=Y） */
+  u8* out = buf;
+  out[0] = mouse_device.packet_data[idx][0];
+  out[1] = mouse_device.packet_data[idx][1];
+  out[2] = mouse_device.packet_data[idx][2];
+  mouse_device.read_index = (idx + 1) & 0x3;
+  return 3;
 }
 
 void* mouse_handler(interrupt_context_t* ic) {
@@ -138,11 +155,24 @@ void* mouse_handler(interrupt_context_t* ic) {
       mouse_device.x += rx;
       mouse_device.y -= ry;
 
-      mouse_device.event_data[mouse_device.event_index].x = mouse_device.x;
-      mouse_device.event_data[mouse_device.event_index].y = mouse_device.y;
-      mouse_device.event_data[mouse_device.event_index].sate = btn_state;
+      /* 环形缓冲满（已有 3 个未读事件）时丢弃最新事件：不能覆盖未读事件，
+       * 否则读端 read_index 会读到错位内容 */
+      if (((mouse_device.event_index + 1) & 0x3) != mouse_device.read_index) {
+        mouse_device.event_data[mouse_device.event_index].x = mouse_device.x;
+        mouse_device.event_data[mouse_device.event_index].y = mouse_device.y;
+        mouse_device.event_data[mouse_device.event_index].sate = btn_state;
+        /* 原始包也留一份：xwin 侧按 len=3 读它（见 read 的分派说明） */
+        mouse_device.packet_data[mouse_device.event_index][0] =
+            mouse_device.packet[0];
+        mouse_device.packet_data[mouse_device.event_index][1] =
+            mouse_device.packet[1];
+        mouse_device.packet_data[mouse_device.event_index][2] =
+            mouse_device.packet[2];
+        mouse_device.packet_data[mouse_device.event_index][3] =
+            mouse_device.packet[3];
 
-      mouse_device.event_index = (mouse_device.event_index + 1) & 0x3;
+        mouse_device.event_index = (mouse_device.event_index + 1) & 0x3;
+      }
     }
     state = io_read8(MOUSE_BASE + MOUSE_IIR);
   }
@@ -159,6 +189,7 @@ int mouse_init(void) {
   dev->data = &mouse_device;
 
   mouse_device.event_index = 0;
+  mouse_device.read_index = 0;
   mouse_device.x = 0;
   mouse_device.y = 0;
   mouse_device.btn_old = 0;

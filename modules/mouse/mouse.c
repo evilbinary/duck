@@ -13,20 +13,15 @@ mouse_event_t event;
 u32 has_data = 0;
 
 static size_t read(device_t* dev, void* buf, size_t len) {
-  u32 ret = len;
-  if (has_data < 0) {
+  /* has_data 是 u32，"< 0" 永远不成立 ⇒ 原来会无条件返回数据，调用方
+   * `while (read(...) > 0)` 死循环（与 pl050 同一类 bug）。无数据必须返回 0。 */
+  if (buf == NULL || len < sizeof(mouse_event_t) || has_data == 0) {
     return 0;
   }
   has_data--;
-  // mouse_event_t* e = cqueue_peek(mouse_device.events);
-  // if (e == NULL) {
-  //   return 0;
-  // }
   mouse_event_t* data = buf;
   *data = event;
-  // cqueue_put(mouse_device.events,e);
-  // kpool_put(e);
-  return ret;
+  return sizeof(mouse_event_t);
 }
 
 INTERRUPT_SERVICE

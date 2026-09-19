@@ -78,14 +78,18 @@ int ns2009_get_touch() {
 }
 
 // ns2009 touch
+/* 【统一契约】返回 sizeof(mouse_event_t) 表示"写了一个事件"，0 表示"没有"。
+ * 原实现直接返回 ns2009_get_touch() 的值，而它可能是 I2C 错误码 —— 那种情况
+ * 下缓冲根本没填，调用方却会当成一个事件用（误报坐标）。 */
 static size_t read(device_t* dev, void* buf, size_t len) {
-  if (dev == NULL) return 0;
-  u32 ret = ns2009_get_touch(dev->data);
-  if (ret > 0) {
-    mouse_event_t* data = buf;
-    *data = event;
+  if (dev == NULL || buf == NULL || len < sizeof(mouse_event_t)) return 0;
+  int ret = ns2009_get_touch(dev->data);
+  if (ret != 1) {
+    return 0; /* 未触摸或 I2C 错误 */
   }
-  return ret;
+  mouse_event_t* data = buf;
+  *data = event;
+  return sizeof(mouse_event_t);
   // u32 ret = len;
   // if(has_data<0){
   //   return 0;
