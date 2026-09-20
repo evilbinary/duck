@@ -99,19 +99,19 @@ void* page_fault_handle(interrupt_context_t *ic) {
           }
           void* pte_page = (void*)((u32)fault_addr & ~(PAGE_SIZE - 1));
           void* pte_prev = (void*)((u32)pte_page - PAGE_SIZE);
-          log_error("pte %x -> %x\n", pte_page,
+          log_debug("pte %x -> %x\n", pte_page,
                     page_v2p((u64*)current->vm->upage, pte_page));
-          log_error("pte %x -> %x\n", pte_prev,
+          log_debug("pte %x -> %x\n", pte_prev,
                     page_v2p((u64*)current->vm->upage, pte_prev));
           thread_exit(current, -1);
           if (current->vm != NULL && current->vm->vma != NULL) {
             for (vmemory_area_t* a = current->vm->vma; a != NULL;
                  a = a->next) {
-              log_error("vma %x-%x flags=%d alloc=%x size=%d child=%p\n",
+              log_debug("vma %x-%x flags=%d alloc=%x size=%d child=%p\n",
                         a->vaddr, a->vend, a->flags, a->alloc_addr,
                         a->alloc_size, (void*)a->child);
               for (vmemory_area_t* c = a->child; c != NULL; c = c->next) {
-                log_error("  mmap child %x-%x flags=%d\n", c->vaddr, c->vend,
+                log_debug("  mmap child %x-%x flags=%d\n", c->vaddr, c->vend,
                           c->flags);
               }
             }
