@@ -160,9 +160,21 @@ void page_destroy(u32* upage) {
   kfree_alignment(upage);
 }
 
+/* 虚拟地址 → 物理地址。
+ *
+ * 【修复】必须按 ARM 描述符类型位解释 L1 项：
+ *   bits[1:0]==0b01 粗页表；==0b10 段(1MB)；==0b00 fault；==0b11 保留。
+ * 原实现无条件把 L1 项当 L2 基址（`& 0xFFFFFC00`），有两个问题：
+ *   1) 段映射（内核用来映射 RAM/设备）会被当成"L2 指针"，于是把设备寄存器/
+ *      数据当页表读，算出垃圾 PA（此前 `remap memory fault ... phy: ff000000`
+ *      里那个既不是 RAM 也不是外设的"物理地址"就是这么来的）；
+ *   2) fault/保留项本应返回 NULL 走"未映射→需求分配"，却可能被当成
+ *      "已映射却缺页"而把线程杀掉。
+ * L2 项同理：bits[1:0]==0b00 是 fault，0b11 是保留，都按未映射处理。 */
 void* page_v2p(u64* page, void* vaddr) {
   if (page == NULL) {
     kprintf("page v2p page is null\n");
+    return NULL;
   }
   void* phyaddr = NULL;
   u32* l1 = (u32*)page;
@@ -170,11 +182,22 @@ void* page_v2p(u64* page, void* vaddr) {
   u32 l2_index = (u32)vaddr >> 12 & 0xFF;
   u32 offset = (u32)vaddr & 0x0FFF;
 
-  u32* l2 = ((u32)l1[l1_index]) & 0xFFFFFC00;
+  u32 l1e = l1[l1_index];
+  if ((l1e & 3u) == 2u) { /* 1MB 段描述符：直接得到物理地址 */
+    return (void*)((l1e & 0xFFF00000u) + offset);
+  }
+  if ((l1e & 3u) != 1u) { /* 非粗页表：无效项，视为未映射 */
+    return NULL;
+  }
+  u32* l2 = (u32*)(l1e & 0xFFFFFC00u);
   if (l2 == NULL) {
     return NULL;
   }
-  phyaddr = (l2[l2_index] >> 12) << 12;
+  u32 l2e = l2[l2_index];
+  if ((l2e & 3u) == 0 || (l2e & 3u) == 3) { /* fault / 保留 */
+    return NULL;
+  }
+  phyaddr = (void*)((l2e >> 12) << 12);
   if (phyaddr == NULL) {
     return NULL;
   }

@@ -15,14 +15,6 @@ extern boot_info_t* boot_info;
 memory_manager_t mmt;
 static void* mm_page_free_list = NULL;
 
-/* 【临时诊断】ya_free 三条"静默丢弃"分支的计数。
- * 释放请求被校验拒绝时块不会被回收（仍留在 g_block_list 且标记 BLOCK_USED），
- * 但调用方与 memory_static 已经当作"已释放"处理 ⇒ 表现为
- * "user used 一路降到 0 + 内核堆前沿持续增长"。这里只计数，便于一次运行定量。 */
-u32 ya_free_bad_magic = 0;
-u32 ya_free_bad_state = 0;
-u32 ya_free_bad_end = 0;
-
 // #define DEBUG 1
 #define MM_YA_ALLOC 1
 
@@ -463,10 +455,10 @@ void ya_verify() {
   }
 }
 
-/* 【临时诊断】堆画像：空闲链总量/块数/最大块 + 分配计数 + 映射前沿。
+/* 堆画像（供 ya_sbrk 的 OOM 报错路径使用）：空闲链总量/块数/最大块 +
+ * 分配计数 + 映射前沿。
  * 判据：若 free_total 很大（几十 MB）而 max_free_block 只有几 KB，说明空闲块
- * 高度碎片化、无法满足稍大的请求 ⇒ 分配器只能不断 carve 新块（前沿一直推进），
- * 这就是"跑久了内存被吃光"的真因（ya_free 里 merge 被注释掉）。 */
+ * 高度碎片化、无法满足稍大的请求 ⇒ 分配器只能不断 carve 新块（前沿一直推进）。 */
 void ya_heap_stats(u32* free_bytes, u32* free_blocks, u32* max_free_block,
                    u32* alloc_count, u32* last_map) {
   block_t* b = mmt.g_block_free;
@@ -497,13 +489,11 @@ void ya_free(void* ptr) {
           block, block->size, block->count);
 #endif
   if (!ya_block_magic_valid(block)) {
-    ya_free_bad_magic++;
     log_error("ya_free invalid block ptr=%x block=%x magic=%x\n", ptr, block,
               block != NULL ? block->magic : 0);
     return;
   }
   if (block->free != BLOCK_USED || block->magic != MAGIC_USED || block->size <= 0) {
-    ya_free_bad_state++;
     log_error("ya_free bad state ptr=%x block=%x free=%x magic=%x size=%x\n", ptr,
               block, block->free, block->magic, block->size);
     return;
@@ -511,7 +501,6 @@ void ya_free(void* ptr) {
 
   int* end = ptr + block->size;
   if ((*end) != MAGIC_END) {
-    ya_free_bad_end++;
     log_error("ya_free end marker corrupted ptr=%x block=%x end=%x expect=%x\n",
               ptr, block, *end, MAGIC_END);
     return;
@@ -723,6 +712,9 @@ int mm_page_in_ram(void* p) {
   return 0;
 }
 
+/* 设备保留区间（显示缓冲）**不在这里处理**：显存段已由 boot 侧的内存配置
+ * （boot/arm/init-armv5.c 的 VERSATILEPB 条目）从 RAM 里排除，分配器根本
+ * 看不到它，所以不需要任何运行时"保留区间"过滤。 */
 void* mm_alloc_page(void) {
   if (mm_page_free_list != NULL) {
     void* page = mm_page_free_list;

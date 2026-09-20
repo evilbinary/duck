@@ -22,7 +22,16 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
 
   vga->framebuffer_index = 0;
   vga->framebuffer_count = 1;
-  vga->pframbuffer = 0xfb0000;
+  /* 显存在 RAM 顶部 2MB 内（0x07e00000，跨度 640*480*4 = 0x12C000）。
+   * **这个地址必须与 boot/arm/init-armv5.c 的 VERSATILEPB 内存条目一致**：
+   * 那边把 RAM 顶部 2MB 从 type==1 条目里排除掉（`length = 0x07e00000-0x10000`），
+   * 这样页分配器根本看不到显存段，不会把显存页发给用户 mmap（否则用户页与显示
+   * 缓冲同物理页，GPU 每帧刷黑 ⇒ 用户结构体被写成 0xff000000）。
+   * 改这里的地址就要同步改那边，反之亦然。
+   * 历史：原值是 0x00fb0000（16.4MB）——落在内核管理的 RAM 中部，且没人排除，
+   * 于是被页分配器发出去，成为 PopupManager 崩溃的根因（那个值也像是从 raspi2
+   * 的 0xFB000000 抄漏了两位）。 */
+  vga->pframbuffer = 0x08000000 - 0x200000;
   vga->frambuffer = vga->pframbuffer;
 
   vga->format =FB_BGR;
@@ -35,8 +44,11 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
   vga->flip_buffer = NULL;
   pl110_lcd_init(vga);
 
-  log_info("fb addr:%x end:%x len:%x\n", vga->frambuffer,
-           vga->frambuffer + vga->framebuffer_length, vga->framebuffer_length);
+  /* 按字节算 end：`vga->frambuffer + vga->framebuffer_length` 是指针算术
+   * （frambuffer 是 u32*），会把长度乘 4，打出来的 end 比真实值大 3 倍多。 */
+  log_info("fb addr:%x end:%x len:%x\n", (u32)(uintptr_t)vga->frambuffer,
+           (u32)(uintptr_t)vga->frambuffer + vga->framebuffer_length,
+           vga->framebuffer_length);
 
   // u32 *buffer = vga->frambuffer;
   // for (int i = 0; i < vga->framebuffer_length / 4; i++) {

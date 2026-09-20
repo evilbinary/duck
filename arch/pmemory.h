@@ -159,6 +159,8 @@ void mm_free_page(void* p);
  * 用途：页池的空闲链 next 指针就存在被释放页自身头部，链上一旦出现非法值，
  * mm_alloc_page 会把任意地址当页发出去（cpu_zero_phy_page 写它即总线外部
  * 中止）；释放侧（page_destroy/vfree）也用它在归还前筛掉设备/未认领页。 */
+/* 位置合法性：p 是否落在 boot_info 声明的 RAM（type==1）内。
+ * 无关"归谁"：设备（显存）段已在 boot 侧从 RAM 条目里排除，所以它天然不在其中。 */
 int mm_page_in_ram(void* p);
 void mm_alloc_init();
 void mm_dump_phy();

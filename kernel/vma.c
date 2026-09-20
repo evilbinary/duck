@@ -125,6 +125,8 @@ static vmemory_area_t* s_fb_vma = NULL; /* 默认表里的 fb 项，驱动就绪
 void vmemory_set_fb(u32 addr, u32 size) {
   s_fb_addr = addr;
   s_fb_size = size;
+  /* 显存段不需要在这里做保留登记：它已由 boot 侧的内存配置（init-armv5.c 的
+   * VERSATILEPB 条目把 RAM 顶部 2MB 排除掉）从空闲块里去掉，分配器看不到它。 */
   if (s_fb_vma != NULL) {
     s_fb_vma->vaddr = (vaddr_t)addr;
     s_fb_vma->vend = (vaddr_t)(addr + size);
@@ -143,6 +145,13 @@ vmemory_area_t* vmemory_create_default(vaddr_t koffset) {
   vmemory_area_t* stack = vmemory_area_create((void*)(STACK_ADDR + koffset),
                                               MEMORY_STACK_SIZE, MEMORY_STACK);
   vmemory_area_add(vmm, stack);
+
+  /* mmap 不再单开专用 VA 区：见 memory.h 里 ANON_ADDR 被移除的说明 ——
+   * 之前把 mmap 区放在 0x50000000（EXEC_ADDR=0x60000000 **之下**），而各架构
+   * 管理用户页表的扫描范围都是 [EXEC_ADDR, 0x80000000) ⇒ 落在外面的 mmap
+   * 映射在进程退出时不会被解映射/回收（物理页与 L2 表泄漏），fork 克隆用户区
+   * 也会漏掉它。现在 sys_mmap 走堆区（100MB，与专用区同容量），靠
+   * sys_mmap_vma_overlaps() 避开所有已有 VMA 来防撞车。 */
 
   extern boot_info_t* boot_info;
 
