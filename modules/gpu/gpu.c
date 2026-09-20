@@ -72,6 +72,11 @@ size_t gpu_ioctl(device_t* dev, u32 cmd, void* args) {
   return ret;
 }
 
+/* 【修复】驱动把真实 fb 几何登记给 VM 层（vma.c 原先硬编码 raspi2 的
+ * 0xfb000000 / 1024*768*4；versatilepb(pl110) 的 fb 在 0xfb0000、640x480，
+ * 用户进程此前拿到的是错误的 fb 窗口）。 */
+extern void vmemory_set_fb(u32 addr, u32 size);
+
 void gpu_init_device(device_t* dev) {
   vga_device_t* vga = kmalloc(sizeof(vga_device_t), DEFAULT_TYPE);
   vga->frambuffer = 0;
@@ -79,6 +84,12 @@ void gpu_init_device(device_t* dev) {
   // gpu_init_mode(vga, VGA_MODE_480x272x32);
   // gpu_init_mode(vga, VGA_MODE_640x480x32);
   gpu_init_mode(vga, VGA_MODE_1024x768x32);
+  /* 驱动就绪：以最终生效值登记 fb 几何（pl110 会把请求的 mode 改写为
+   * 其支持的 640x480，地址/尺寸以 vga 结构里的为准） */
+  if (vga->frambuffer != 0 && vga->width > 0 && vga->height > 0) {
+    vmemory_set_fb((u32)(uintptr_t)vga->frambuffer,
+                   (u32)vga->width * (u32)vga->height * 4);
+  }
   log_info("gpu_init_device end\n");
 }
 

@@ -27,7 +27,10 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
 
   vga->format =FB_BGR;
 
-  vga->framebuffer_length = vga->width * vga->height;
+  /* 【修复】fb 长度按字节数（w*h*4）：原来按像素数，导致下面的 fb 映射
+   * 循环只映射 1/4 显存（75 页 vs 300 页），屏幕下方 3/4 的写操作落在
+   * 未映射/被其它用途占用的内存上。 */
+  vga->framebuffer_length = vga->width * vga->height * 4;
 
   vga->flip_buffer = NULL;
   pl110_lcd_init(vga);

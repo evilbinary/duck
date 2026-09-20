@@ -112,6 +112,28 @@ vmemory_area_t* vmemory_area_clone(vmemory_area_t* areas, int flag) {
   return new_area;
 }
 
+/* fb 窗口的地址与尺寸：由显示驱动(gpu module)初始化完成后通过
+ * vmemory_set_fb() 登记（内核不反向依赖 module）。缺省值为 raspi2
+ * (bcm2836) 的参数；versatilepb(pl110) 是 640x480、fb 在 0xfb0000。 */
+static u32 s_fb_addr = 0xfb000000;
+static u32 s_fb_size = 1024 * 768 * 4;
+static vmemory_area_t* s_fb_vma = NULL; /* 默认表里的 fb 项，驱动就绪后回填 */
+
+/* 【接口】显示驱动初始化后调用：登记真实 fb 几何，并回填默认表项 ——
+ * 进程的 vma 表从内核主线程克隆，主线程的表在驱动初始化前就已创建，
+ * 不回填的话硬编码值会被所有子进程继承。 */
+void vmemory_set_fb(u32 addr, u32 size) {
+  s_fb_addr = addr;
+  s_fb_size = size;
+  if (s_fb_vma != NULL) {
+    s_fb_vma->vaddr = (vaddr_t)addr;
+    s_fb_vma->vend = (vaddr_t)(addr + size);
+    s_fb_vma->size = (vaddr_t)size;
+    s_fb_vma->alloc_addr = (vaddr_t)addr;
+    s_fb_vma->alloc_size = (vaddr_t)size;
+  }
+}
+
 vmemory_area_t* vmemory_create_default(vaddr_t koffset) {
   vmemory_area_t* vmm =
       vmemory_area_create((void*)(HEAP_ADDR + koffset), MEMORY_HEAP_SIZE, MEMORY_HEAP);
@@ -140,8 +162,9 @@ vmemory_area_t* vmemory_create_default(vaddr_t koffset) {
   }
   // add dev info
   vmemory_area_t* vmmdev =
-      vmemory_area_create((void*)0xfb000000, 1024 * 768 * 4, MEMORY_DEV);
+      vmemory_area_create((void*)s_fb_addr, s_fb_size, MEMORY_DEV);
   vmemory_area_add(vmm, vmmdev);
+  s_fb_vma = vmmdev; /* 驱动就绪后经 vmemory_set_fb() 回填真实几何 */
 
   return vmm;
 }
