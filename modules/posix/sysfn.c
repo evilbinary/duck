@@ -645,7 +645,7 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
       log_error("mmap install area failed addr=%x\n", start_addr);
       return MAP_FAILED;
     }
-    log_info("mmap anon addr %x len %x prot %x\n", start_addr, length, prot);
+    log_debug("mmap anon addr %x len %x prot %x\n", start_addr, length, prot);
     return start_addr;
   }
 
