@@ -120,7 +120,15 @@ void page_unmap_on(page_dir_t* page, u32 virtualaddr) {
 
 /* 【归还整棵用户页表】32 位短描述符格式（同 armv7-a，见其 mm.c 的
  * page_destroy 注释）。armv5 的 L1/L2 均为 mm_alloc_zero_align 直配，
- * kfree_alignment 经 kpage_v2p + mm_free_align 同样配对（内核堆恒等映射）。 */
+ * kfree_alignment 经 kpage_v2p + mm_free_align 同样配对（内核堆恒等映射）。
+ *
+ * 【ARMv5(VIVT) 必须按 VA 失效缓存】ARM926 的 D-cache 以虚拟地址为 tag，
+ * 进程退出时这里把用户页还给页分配器，若不按 VA clean+invalidate，该物理页
+ * 被下一个进程在**相同的 VA**（同样的栈/堆地址）复用时，CPU 可能直接命中
+ * 已死进程残留的脏 cache 行 —— 新进程读到旧数据（栈/分配器元数据），表现为
+ * mallocng 元数据自相矛盾、指针跳飞。armv7-a 是 PIPT，按物理地址索引，没有
+ * 这个问题（所以同一份代码在树莓派上正常）。vfree 侧早已按 VA+PA 维护，
+ * 这里补齐进程回收这条路径。 */
 void page_destroy(u32* upage) {
   if (upage == NULL) {
     return;
@@ -136,6 +144,12 @@ void page_destroy(u32* upage) {
     for (u32 j = 0; j < 256; j++) {
       if ((l2[j] & 3) != 0) {
         void* pg = (void*)(l2[j] & 0xFFFFF000u);
+        u32 va = (i << 20) | (j << 12);
+        /* 先按用户 VA 与物理地址两侧 clean+invalidate，再归还物理页 */
+        cpu_flush_dcache_range((unsigned long)va,
+                               (unsigned long)va + PAGE_SIZE);
+        cpu_flush_dcache_range((unsigned long)pg,
+                               (unsigned long)pg + PAGE_SIZE);
         l2[j] = 0;
         mm_free_page(pg);
       }
