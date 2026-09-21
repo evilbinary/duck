@@ -34,7 +34,7 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
   vga->pframbuffer = 0x08000000 - 0x200000;
   vga->frambuffer = vga->pframbuffer;
 
-  vga->format =FB_BGR;
+  vga->format = VGA_FMT_ARGB8888;
 
   /* 【修复】fb 长度按字节数（w*h*4）：原来按像素数，导致下面的 fb 映射
    * 循环只映射 1/4 显存（75 页 vs 300 页），屏幕下方 3/4 的写操作落在
@@ -88,10 +88,8 @@ int pl110_lcd_init(vga_device_t *vga) {
   }
 
   
-  *(volatile u32 *)(VERSATILEPB_PL110_LCD_BASE + LCD_CTL) |= (1<<8);
-
   *(volatile u32 *)(VERSATILEPB_PL110_LCD_BASE + LCD_UPBASE) = vga->frambuffer;
-  *(volatile u32 *)(VERSATILEPB_PL110_LCD_BASE + LCD_IMSC) = 0x82B;
+  *(volatile u32 *)(VERSATILEPB_PL110_LCD_BASE + LCD_IMSC) = 0x92B;
 
   log_debug("lcd %dx%d len= %d\n", lcd->width, lcd->height,
             vga->framebuffer_length);
