@@ -154,7 +154,7 @@ static int mouse_irq_handler(u32 irq, void* arg) {
       }
 
       mouse_device.x += rx;
-      mouse_device.y -= ry;
+      mouse_device.y += ry;
 
       /* 环形缓冲满（已有 3 个未读事件）时丢弃最新事件：不能覆盖未读事件，
        * 否则读端 read_index 会读到错位内容 */
