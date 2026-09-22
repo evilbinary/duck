@@ -4,6 +4,8 @@
 #define VIC_BASE_ADDR 0
 // #define VIC_BASE_ADDR 0xffff0000
 
+void versatile_irq_chip_init(void);
+
 // UART0 PL011 PrimeCell on Versatile/PB
 void uart_send_char(unsigned int c) {
   while (io_read32(UART0 + UART_FLAGS) & UART_TRANSMIT)
@@ -72,6 +74,10 @@ void timer_init(int hz) {
   pic |= PIC_INT_TIMER0 | SIC_IRQ_VIC_BIT;
   // pic|= (1 << 4) | (1 << 5);
   io_write32(PIC_BASE + PIC_INT_ENABLE, pic);
+
+#ifdef VERSATILE_USE_IRQ_CHIP
+  versatile_irq_chip_init();
+#endif
 }
 
 void timer_end() {

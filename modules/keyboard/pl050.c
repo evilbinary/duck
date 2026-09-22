@@ -6,6 +6,7 @@
 #include "dev/devfs.h"
 #include "gpio.h"
 #include "kernel/kernel.h"
+#include "kernel/irq.h"
 #include "keyboard.h"
 
 #define VERSATILEPB_PL050_KBD 0x10006000
@@ -43,7 +44,7 @@ static size_t read(device_t* dev, void* buf, size_t len) {
   return ret;
 }
 
-void* keyboard_handler(interrupt_context_t* ic) {
+static int keyboard_irq_handler(u32 irq, void* arg) {
   // Scan Code Set 2
   u32 scan_code = io_read8(VERSATILEPB_PL050_KBD + KDATA);
   if (keyboard_device.scan_code_index > MAX_CHARCODE_BUFFER) {
@@ -72,7 +73,7 @@ void* keyboard_handler(interrupt_context_t* ic) {
   keyboard_device.scan_code_buffer[keyboard_device.scan_code_index++] =
       scan_code;
 
-  return NULL;
+  return 1;
 }
 
 int keyboard_init(void) {
@@ -98,7 +99,11 @@ int keyboard_init(void) {
     kprintf("dev keyboard not found\n");
   }
 
+#ifdef VERSATILE_USE_IRQ_CHIP
+  irq_register(IRQ_SIC_KBD, keyboard_irq_handler, NULL, "kbd", 0);
+#else
   exception_regist(EX_KEYBOARD, keyboard_handler);
+#endif
 
   // keyboard init
   page_map(VERSATILEPB_PL050_KBD, VERSATILEPB_PL050_KBD, PAGE_DEV);
@@ -106,9 +111,13 @@ int keyboard_init(void) {
   *(volatile u32*)(VERSATILEPB_PL050_KBD + KCNTL) = 0x14;
   *(volatile u32*)(VERSATILEPB_PL050_KBD + KCLK) = 8;
 
+#ifdef VERSATILE_USE_IRQ_CHIP
+  irq_enable(IRQ_SIC_KBD);
+#else
   u32 pic = io_read32(SIC_BASE + SIC_INT_ENABLE);
   pic |= 1 << 3;  // 4 on secondary controller KMI 1
   io_write32(SIC_BASE + SIC_INT_ENABLE, pic);
+#endif
 
   return 0;
 }

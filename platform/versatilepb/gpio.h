@@ -34,6 +34,7 @@
 #define PIC_STATUS     0x0
 #define PIC_INT_ENABLE 0x10
 #define PIC_INT_CLEAR 0x14
+#define PIC_VECT_ADDR 0x30
 #define PIC_INT_TIMER0 (1 << 4)
 
 #define SIC_IRQ_VIC_BIT (1<<31)
@@ -43,6 +44,21 @@
 #define SIC_STATUS     0x0
 #define SIC_INT_ENABLE     0x08
 #define SIC_INT_ENCLR 0x0C
+
+/* 统一中断框架（irq_chip）开关：定义后 timer/keyboard/mouse/audio 走
+ * duck/kernel/irq.c 派发；不定义则沿用老的 interrupt_get_source() 路径。 */
+#define VERSATILE_USE_IRQ_CHIP 1
+
+/* IRQ 号：PIC 直接源 0..31，SIC 源 32..63（全局号 = 32 + SIC 位号）。 */
+#ifndef IRQ_NUM_MAX
+#define IRQ_NUM_MAX 64
+#endif
+#define IRQ_PIC_TIMER0 4
+#define IRQ_PIC_SIC 31
+#define IRQ_SIC_BASE 32
+#define IRQ_SIC_KBD (IRQ_SIC_BASE + 3)
+#define IRQ_SIC_MOUSE (IRQ_SIC_BASE + 4)
+#define IRQ_SIC_AACI (IRQ_SIC_BASE + 24)
 
 
 #define UART0 0x101f1000

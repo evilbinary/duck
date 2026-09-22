@@ -6,6 +6,7 @@
 #include "dev/devfs.h"
 #include "gpio.h"
 #include "kernel/kernel.h"
+#include "kernel/irq.h"
 #include "mouse.h"
 
 
@@ -100,7 +101,7 @@ static size_t read(device_t* dev, void* buf, size_t len) {
   return 3;
 }
 
-void* mouse_handler(interrupt_context_t* ic) {
+static int mouse_irq_handler(u32 irq, void* arg) {
   u32 read_count = 0;
   u8 state = 0;
   u32 rx, ry, rz;
@@ -177,7 +178,7 @@ void* mouse_handler(interrupt_context_t* ic) {
     state = io_read8(MOUSE_BASE + MOUSE_IIR);
   }
 
-  return NULL;
+  return 1;
 }
 
 int mouse_init(void) {
@@ -207,7 +208,11 @@ int mouse_init(void) {
     kprintf("dev mouse not found\n");
   }
 
+#ifdef VERSATILE_USE_IRQ_CHIP
+  irq_register(IRQ_SIC_MOUSE, mouse_irq_handler, NULL, "mouse", 0);
+#else
   exception_regist(EX_MOUSE, mouse_handler);
+#endif
 
   // mouse init
   page_map(MOUSE_BASE, MOUSE_BASE, PAGE_DEV);
@@ -255,9 +260,13 @@ int mouse_init(void) {
   /* re-enables mouse */
   io_write8(MOUSE_BASE + MOUSE_CR, MOUSE_CR_EN | MOUSE_CR_RXINTREN);
 
+#ifdef VERSATILE_USE_IRQ_CHIP
+  irq_enable(IRQ_SIC_MOUSE);
+#else
   u32 pic = io_read32(SIC_BASE + SIC_INT_ENABLE);
   pic |= 1 << 4;  // 4 on secondary controller KMI 1
   io_write32(SIC_BASE + SIC_INT_ENABLE, pic);
+#endif
 
   return 0;
 }

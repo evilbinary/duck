@@ -4,8 +4,10 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "dev/devfs.h"
+#include "kernel/irq.h"
 #include "kernel/kernel.h"
 #include "kernel/page.h"
+#include "platform/versatilepb/gpio.h"
 #include "sound.h"
 
 #define AACI_BASE 0x10004000
@@ -26,7 +28,6 @@
 #define AACI_MAINCR_AACIFE (1 << 0)
 #define AACI_MAINCR_SL1TXEN (1 << 4)
 #define AACI_MAINCR_SL12TXEN (1 << 8)
-#define AACI_MAINCR_DMAENABLE (1 << 9)
 
 #define AACI_TXCR_TXEN (1 << 0)
 #define AACI_TXCR_SLOTS (0x1E) /* slot1..slot4 */
@@ -35,6 +36,16 @@
 #define AACI_SR_TXFE (1 << 1)
 #define AACI_SR_TXHE (1 << 3)
 #define AACI_SR_TXFF (1 << 5)
+
+#define AACI_IE_TXIE (1 << 2)
+#define AACI_INTCLR_TXUEC1 (1 << 5)
+
+/* 有中断框架时走环形缓冲 + TX 中断，否则退化为轮询直写。 */
+#if defined(VERSATILE_USE_IRQ_CHIP) && VERSATILE_USE_IRQ_CHIP
+#define AACI_USE_IRQ 1
+#else
+#define AACI_USE_IRQ 0
+#endif
 
 static int g_rate = 48000;
 
@@ -53,6 +64,58 @@ static void aaci_codec_write(u32 reg, u32 val) {
   aaci_write(AACI_SL1TX, (reg & 0x7F) << 12);
 }
 
+#if AACI_USE_IRQ
+/* 环形缓冲：写端在应用线程，读端在 AACI TX 中断。单核下用无锁环形，
+ * 先写数据后更新写指针，中断看到旧写指针就不会读到半成品。 */
+#define AACI_RING_WORDS 16384
+#define AACI_RING_MASK (AACI_RING_WORDS - 1)
+static u32 g_ring[AACI_RING_WORDS];
+static volatile u32 g_r, g_w;
+
+static u32 ring_count(void) { return (g_w - g_r) & AACI_RING_MASK; }
+
+static int ring_push(u32 v) {
+  u32 n = (g_w + 1) & AACI_RING_MASK;
+  if (n == g_r) {
+    return 0;
+  }
+  g_ring[g_w] = v;
+  g_w = n;
+  return 1;
+}
+
+static int ring_pop(u32 *v) {
+  if (g_r == g_w) {
+    return 0;
+  }
+  *v = g_ring[g_r];
+  g_r = (g_r + 1) & AACI_RING_MASK;
+  return 1;
+}
+
+/* 把环形缓冲里的样本尽可能填进 FIFO */
+static void aaci_fill(void) {
+  while (!(aaci_read(AACI_SR1) & AACI_SR_TXFF)) {
+    u32 v;
+    if (!ring_pop(&v)) {
+      break;
+    }
+    aaci_write(AACI_DR1_0, v);
+  }
+}
+
+static int aaci_irq_handler(u32 irq, void *arg) {
+  /* 清 underrun（TXHE 只能靠填数据清，不能写清） */
+  aaci_write(AACI_INTCLR, AACI_INTCLR_TXUEC1);
+  aaci_fill();
+  /* 环里没数据了就关 TX 中断：FIFO 空时 TXHE 恒为 1，若继续使能会中断风暴 */
+  if (ring_count() == 0) {
+    aaci_write(AACI_IE1, 0);
+  }
+  return 1;
+}
+#endif
+
 static size_t read(device_t *dev, void *buf, size_t len) { return 0; }
 
 static size_t write(device_t *dev, void *buf, size_t len) {
@@ -60,6 +123,20 @@ static size_t write(device_t *dev, void *buf, size_t len) {
   size_t words = len / 4;
   size_t i;
 
+#if AACI_USE_IRQ
+  for (i = 0; i < words; i++) {
+    u32 guard = 0;
+    while (!ring_push(p[i])) {
+      if (++guard > 20000000u) {
+        return i * 4;
+      }
+    }
+  }
+  /* 有数据了：重新使能 TX 半空中断，并把 FIFO 先垫满 */
+  aaci_write(AACI_IE1, AACI_IE_TXIE);
+  aaci_fill();
+  return len;
+#else
   for (i = 0; i < words; i++) {
     u32 guard = 0;
     while (aaci_read(AACI_SR1) & AACI_SR_TXFF) {
@@ -70,6 +147,7 @@ static size_t write(device_t *dev, void *buf, size_t len) {
     aaci_write(AACI_DR1_0, p[i]);
   }
   return len;
+#endif
 }
 
 void codec_init() {}
@@ -121,6 +199,13 @@ int sound_init(void) {
   aaci_write(AACI_TXCR1, AACI_TXCR_TXEN | AACI_TXCR_SLOTS | AACI_TXCR_COMPACT);
 
   aaci_codec_write(0x2C, (u32)g_rate);
+
+#if AACI_USE_IRQ
+  g_r = g_w = 0;
+  aaci_write(AACI_IE1, 0); /* 首次 write 再打开 TX 中断 */
+  irq_register(IRQ_SIC_AACI, aaci_irq_handler, NULL, "aaci", 0);
+  irq_enable(IRQ_SIC_AACI);
+#endif
 
   device_t *dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
   dev->name = "sound";
