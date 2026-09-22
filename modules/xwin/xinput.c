@@ -5,6 +5,7 @@
  * X Window System - Input Device Integration
  ********************************************************************/
 #include "xwin.h"
+#include "sysconf/sysconf.h"
 
 // ========== 外部全局显示服务器 ==========
 extern xdisplay_t* g_display;
@@ -12,55 +13,120 @@ extern xdisplay_t* g_display;
 // ========== 键盘状态 ==========
 static u8 key_state[256] = {0};
 
-// ========== 扫描码转换表 (US 键盘布局) ==========
-static const u32 scancode_to_keycode[128] = {
+// ========== 扫描码转换表 (PS/2 Scan Code Set 2, US 键盘布局) ==========
+// 释放事件已由 PL050 驱动统一转成 make|0x80（见 modules/keyboard/pl050.c），
+// 所以这里只维护 make code。运行期可用 /conf/system.conf 的 [input] 段覆盖：
+//   [input]
+//   keymap = us          # 预设（当前仅 us / set2-us，即下面这张表）
+//   key_1d = w           # 逐键覆盖：扫描码(hex) = 字符或 0xNN
+static const u32 default_keymap[128] = {
+    [0x01] = 0x43,  // F9
+    [0x03] = 0x3F,  // F5
+    [0x04] = 0x3D,  // F3
+    [0x05] = 0x3B,  // F1
+    [0x06] = 0x3C,  // F2
+    [0x07] = 0x58,  // F12
+    [0x09] = 0x44,  // F10
+    [0x0A] = 0x42,  // F8
+    [0x0B] = 0x40,  // F6
+    [0x0C] = 0x3E,  // F4
+    [0x0D] = '\t',  // Tab
+    [0x0E] = '`',
+    [0x11] = 0x12,  // Left Alt
+    [0x12] = 0x10,  // Left Shift
+    [0x14] = 0x11,  // Left Ctrl
+    [0x15] = 'q',   [0x16] = '1',   [0x1A] = 'z',   [0x1B] = 's',
+    [0x1C] = 'a',   [0x1D] = 'w',   [0x1E] = '2',
+    [0x21] = 'c',   [0x22] = 'x',   [0x23] = 'd',   [0x24] = 'e',
+    [0x25] = '4',   [0x26] = '3',
+    [0x29] = ' ',   // Space
+    [0x2A] = 'v',   [0x2B] = 'f',   [0x2C] = 't',   [0x2D] = 'r',
+    [0x2E] = '5',
+    [0x31] = 'n',   [0x32] = 'b',   [0x33] = 'h',   [0x34] = 'g',
+    [0x35] = 'y',   [0x36] = '6',
+    [0x3A] = 'm',   [0x3B] = 'j',   [0x3C] = 'u',   [0x3D] = '7',
+    [0x3E] = '8',
+    [0x41] = ',',   [0x42] = 'k',   [0x43] = 'i',   [0x44] = 'o',
+    [0x45] = '0',   [0x46] = '9',
+    [0x49] = '.',   [0x4A] = '/',   [0x4B] = 'l',   [0x4C] = ';',
+    [0x4D] = 'p',   [0x4E] = '-',
+    [0x52] = '\'',
+    [0x54] = '[',   [0x55] = '=',
+    [0x58] = 0x14,  // Caps Lock
+    [0x59] = 0x10,  // Right Shift
+    [0x5A] = '\n',  // Enter
+    [0x5B] = ']',   [0x5D] = '\\',
+    [0x66] = '\b',  // Backspace
+    [0x69] = '1',   // Keypad 1
+    [0x6B] = '4',   // Keypad 4
+    [0x6C] = '7',   // Keypad 7
+    [0x70] = '0',   // Keypad 0
+    [0x71] = '.',   // Keypad .
+    [0x72] = '2',   // Keypad 2
+    [0x73] = '5',   // Keypad 5
+    [0x74] = '6',   // Keypad 6
+    [0x75] = '8',   // Keypad 8
+    [0x76] = 0x1B,  // ESC
+    [0x78] = 0x57,  // F11
+    [0x79] = '+',   // Keypad +
+    [0x7A] = '3',   // Keypad 3
+    [0x7B] = '-',   // Keypad -
+    [0x7C] = '*',   // Keypad *
+    [0x7D] = '9',   // Keypad 9
+};
+
+/* Scan Code Set 1 (XT)。驱动上报的是"原始扫描码 + release|0x80"，
+ * 选哪张表由 /conf/system.conf 的 [input] scanset 决定（默认 2）。 */
+static const u32 default_keymap_set1[128] = {
     [0x01] = 0x1B,  // ESC
-    [0x02] = '1',   [0x03] = '2',   [0x04] = '3',
-    [0x05] = '4',   [0x06] = '5',   [0x07] = '6',
-    [0x08] = '7',   [0x09] = '8',   [0x0A] = '9',
-    [0x0B] = '0',   [0x0C] = '-',   [0x0D] = '=',
-    [0x0E] = '\b',  // Backspace
-    [0x0F] = '\t',  // Tab
+    [0x02] = '1',   [0x03] = '2',   [0x04] = '3',   [0x05] = '4',
+    [0x06] = '5',   [0x07] = '6',   [0x08] = '7',   [0x09] = '8',
+    [0x0A] = '9',   [0x0B] = '0',   [0x0C] = '-',   [0x0D] = '=',
+    [0x0E] = '\b',  [0x0F] = '\t',
     [0x10] = 'q',   [0x11] = 'w',   [0x12] = 'e',   [0x13] = 'r',
     [0x14] = 't',   [0x15] = 'y',   [0x16] = 'u',   [0x17] = 'i',
     [0x18] = 'o',   [0x19] = 'p',   [0x1A] = '[',   [0x1B] = ']',
-    [0x1C] = '\n',  // Enter
-    [0x1D] = 0x11,  // Left Ctrl
-    [0x1E] = 'a',   [0x1F] = 's',   [0x20] = 'd',   [0x21] = 'f',
-    [0x22] = 'g',   [0x23] = 'h',   [0x24] = 'j',   [0x25] = 'k',
-    [0x26] = 'l',   [0x27] = ';',   [0x28] = '\'',  [0x29] = '`',
-    [0x2A] = 0x10,  // Left Shift
-    [0x2B] = '\\',  [0x2C] = 'z',   [0x2D] = 'x',   [0x2E] = 'c',
-    [0x2F] = 'v',   [0x30] = 'b',   [0x31] = 'n',   [0x32] = 'm',
-    [0x33] = ',',   [0x34] = '.',   [0x35] = '/',
-    [0x36] = 0x10,  // Right Shift
-    [0x38] = 0x12,  // Left Alt
-    [0x39] = ' ',   // Space
-    [0x3A] = 0x14,  // Caps Lock
-    [0x3B] = 0x3B,  // F1
-    [0x3C] = 0x3C,  // F2
-    [0x3D] = 0x3D,  // F3
-    [0x3E] = 0x3E,  // F4
-    [0x3F] = 0x3F,  // F5
-    [0x40] = 0x40,  // F6
-    [0x41] = 0x41,  // F7
-    [0x42] = 0x42,  // F8
-    [0x43] = 0x43,  // F9
-    [0x44] = 0x44,  // F10
-    [0x48] = 0x47,  // Insert
-    [0x49] = 0x49,  // Page Up
-    [0x4A] = '/',   // Keypad /
-    [0x4B] = 0x4B,  // Left Arrow
-    [0x4C] = 0x4C,  // Keypad 5
-    [0x4D] = 0x4D,  // Right Arrow
-    [0x4F] = 0x4F,  // End
-    [0x50] = 0x50,  // Down Arrow
-    [0x51] = 0x51,  // Page Down
-    [0x52] = 0x52,  // Insert
-    [0x53] = 0x53,  // Delete
-    [0x57] = 0x57,  // F11
-    [0x58] = 0x58,  // F12
+    [0x1C] = '\n',  [0x1D] = 0x11,  [0x1E] = 'a',   [0x1F] = 's',
+    [0x20] = 'd',   [0x21] = 'f',   [0x22] = 'g',   [0x23] = 'h',
+    [0x24] = 'j',   [0x25] = 'k',   [0x26] = 'l',   [0x27] = ';',
+    [0x28] = '\'',  [0x29] = '`',   [0x2A] = 0x10,  [0x2B] = '\\',
+    [0x2C] = 'z',   [0x2D] = 'x',   [0x2E] = 'c',   [0x2F] = 'v',
+    [0x30] = 'b',   [0x31] = 'n',   [0x32] = 'm',   [0x33] = ',',
+    [0x34] = '.',   [0x35] = '/',   [0x36] = 0x10,  [0x38] = 0x12,
+    [0x39] = ' ',   [0x3A] = 0x14,
+    [0x3B] = 0x3B,  [0x3C] = 0x3C,  [0x3D] = 0x3D,  [0x3E] = 0x3E,
+    [0x3F] = 0x3F,  [0x40] = 0x40,  [0x41] = 0x41,  [0x42] = 0x42,
+    [0x43] = 0x43,  [0x44] = 0x44,
+    [0x48] = 0x47,  [0x49] = 0x49,  [0x4A] = '/',   [0x4B] = 0x4B,
+    [0x4C] = 0x4C,  [0x4D] = 0x4D,  [0x4F] = 0x4F,  [0x50] = 0x50,
+    [0x51] = 0x51,  [0x52] = 0x52,  [0x53] = 0x53,  [0x57] = 0x57,
+    [0x58] = 0x58,
 };
+
+/* 运行期生效的键映射（启动时由 xinput_load_keymap 用所选预设初始化，
+ * 再用 /conf/system.conf 的 [input] 段覆盖）。 */
+static u32 g_keymap[128];
+
+/* E0 扩展键（方向键/Home/End/Ins/Del/右 Ctrl 等）。它们的 make code 与普通键
+ * 有重叠（如 0x74 普通=KP6、E0 0x74=Right），所以必须单独一张表。 */
+static const u32 default_keymap_ext[128] = {
+    [0x6B] = 0x4B,  // Left
+    [0x74] = 0x4D,  // Right
+    [0x75] = 0x48,  // Up
+    [0x72] = 0x50,  // Down
+    [0x6C] = 0x47,  // Home
+    [0x69] = 0x4F,  // End
+    [0x7D] = 0x49,  // Page Up
+    [0x7A] = 0x51,  // Page Down
+    [0x70] = 0x52,  // Insert
+    [0x71] = 0x53,  // Delete
+    [0x14] = 0x11,  // Right Ctrl
+    [0x11] = 0x12,  // Right Alt
+    [0x5A] = '\n',  // Keypad Enter
+    [0x4A] = '/',   // Keypad /
+};
+
+static u8 g_kbd_e0; /* 上一个字节是 0xE0 扩展前缀 */
 
 // ========== 处理键盘扫描码 ==========
 void xinput_keyboard_event(u8 scancode) {
@@ -69,9 +135,9 @@ void xinput_keyboard_event(u8 scancode) {
     u32 pressed = 1;
     u8 code = scancode;
     
-    // 处理释放码 (0xE0 前缀 或 0x80 释放标志)
+    // 0xE0 扩展前缀：记住，下一字节查扩展表
     if (scancode == 0xE0) {
-        // 扩展键，需要下一个字节
+        g_kbd_e0 = 1;
         return;
     }
     
@@ -80,8 +146,9 @@ void xinput_keyboard_event(u8 scancode) {
         code = scancode & 0x7F;
     }
     
-    // 获取键码
-    u32 keycode = scancode_to_keycode[code];
+    // 获取键码（扩展键走 E0 表；0xF0 前缀已由 pl050 驱动消化）
+    u32 keycode = g_kbd_e0 ? default_keymap_ext[code] : g_keymap[code];
+    g_kbd_e0 = 0;
     if (keycode == 0 && code != 0) {
         keycode = code;  // 未映射的键，使用扫描码
     }
@@ -91,11 +158,11 @@ void xinput_keyboard_event(u8 scancode) {
         key_state[code] = pressed;
     }
     
-    // 计算修饰键状态
+    // 计算修饰键状态（Set 2：Shift=0x12/0x59, Ctrl=0x14, Alt=0x11）
     u32 mods = 0;
-    if (key_state[0x2A] || key_state[0x36]) mods |= 0x01;  // Shift
-    if (key_state[0x1D]) mods |= 0x02;  // Ctrl
-    if (key_state[0x38]) mods |= 0x04;  // Alt
+    if (key_state[0x12] || key_state[0x59]) mods |= 0x01;  // Shift
+    if (key_state[0x14]) mods |= 0x02;  // Ctrl
+    if (key_state[0x11]) mods |= 0x04;  // Alt
     
     // 发送键盘事件
     xwin_keyboard_event(g_display, keycode, pressed, mods);
@@ -200,8 +267,68 @@ void xinput_poll(void) {
     }
 }
 
+// ========== 键盘映射配置（/conf/system.conf 的 [input] 段） ==========
+static u32 xinput_hex(const char* s) {
+    u32 v = 0;
+    while (s != NULL && *s != 0) {
+        char c = *s++;
+        u32 d;
+        if (c >= '0' && c <= '9') d = c - '0';
+        else if (c >= 'a' && c <= 'f') d = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F') d = c - 'A' + 10;
+        else break;
+        v = v * 16 + d;
+    }
+    return v;
+}
+
+static u32 xinput_parse_keycode(const char* s) {
+    if (s == NULL || s[0] == 0) return 0;
+    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) return xinput_hex(s + 2);
+    if (kstrncmp(s, "space", 5) == 0) return ' ';
+    if (kstrncmp(s, "enter", 5) == 0) return '\n';
+    if (kstrncmp(s, "tab", 3) == 0) return '\t';
+    if (kstrncmp(s, "esc", 3) == 0) return 0x1B;
+    if (kstrncmp(s, "backspace", 9) == 0) return '\b';
+    if (kstrncmp(s, "shift", 5) == 0) return 0x10;
+    if (kstrncmp(s, "ctrl", 4) == 0) return 0x11;
+    if (kstrncmp(s, "alt", 3) == 0) return 0x12;
+    if (s[0] >= '0' && s[0] <= '9') return xinput_hex(s); /* 十进制数值 */
+    return (u32)(u8)s[0];
+}
+
+static int xinput_keymap_cb(const char* key, const char* val, void* user) {
+    (void)user;
+    if (kstrncmp(key, "key_", 4) == 0) {
+        u32 scan = xinput_hex(key + 4);
+        if (scan < 128) g_keymap[scan] = xinput_parse_keycode(val);
+    }
+    /* keymap = us / set2-us：内置表即该预设，暂无需处理 */
+    return 1;
+}
+
+void xinput_load_keymap(void) {
+    int set = 2;
+    if (sysconf_loaded()) {
+        set = sysconf_get_int("input", "scanset", 2);
+    }
+    if (set == 1) {
+        kmemcpy(g_keymap, default_keymap_set1, sizeof(g_keymap));
+    } else {
+        set = 2;
+        kmemcpy(g_keymap, default_keymap, sizeof(g_keymap));
+    }
+    if (sysconf_loaded()) {
+        int n = sysconf_foreach("input", xinput_keymap_cb, NULL);
+        log_info("xinput: keymap set%d default+%d custom\n", set, n);
+    } else {
+        log_info("xinput: keymap set%d default (no system.conf)\n", set);
+    }
+}
+
 // ========== 初始化输入子系统 ==========
 void xinput_init(void) {
+    xinput_load_keymap();
     log_info("xinput: initialized\n");
 }
 

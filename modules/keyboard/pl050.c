@@ -30,11 +30,10 @@ keyboard_device_t keyboard_device;
 static size_t read(device_t* dev, void* buf, size_t len) {
   u32 ret = 0;
   if (keyboard_device.scan_code_index > 0) {
-    kstrncpy(
-        buf,
-        &keyboard_device.scan_code_buffer[keyboard_device.scan_code_index - 1],
-        1);
-    for (int i = 0; i < keyboard_device.scan_code_index; i++) {
+    /* FIFO：返回【最旧】字节，再整体前移。原来返回 [index-1]（最新）并把
+     * 最旧的覆盖掉 ⇒ 0xE0 扩展前缀被丢、字节重复，方向键因此失效。 */
+    kstrncpy(buf, &keyboard_device.scan_code_buffer[0], 1);
+    for (int i = 0; i + 1 < keyboard_device.scan_code_index; i++) {
       keyboard_device.scan_code_buffer[i] =
           keyboard_device.scan_code_buffer[i + 1];
     }
@@ -52,16 +51,16 @@ static int keyboard_irq_handler(u32 irq, void* arg) {
     log_warn("key buffer is full\n");
   }
 
-  if (keyboard_device.key_release) {
-    // if (scode == LSHIFT || scode == RSHIT) {
-    //   shift_on = FALSE;
-    // }
-    keyboard_device.key_release = 0;
-    scan_code |= 0x80;
-  }
-
+  /* 0xF0 是 Set 2 的释放前缀：只置标志，本身不入 buffer（否则上层会把它
+   * 当成一个键码解析）。0xE0 扩展前缀保留在流里，由 xinput 解析。 */
   if (scan_code == KEY_RELEASE_PREFIX) {
     keyboard_device.key_release = 1;
+    return 1;
+  }
+
+  if (keyboard_device.key_release) {
+    keyboard_device.key_release = 0;
+    scan_code |= 0x80;
   }
 
   if (scan_code == LSHIFT || scan_code == RSHIT) {
