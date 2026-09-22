@@ -39,7 +39,7 @@ plat_source={
         't113-s3.c'
     ],
     'versatilepb':[
-        
+        'pl041.c',
     ],
     'orangepi-pc':[
        
