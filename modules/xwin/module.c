@@ -7,6 +7,7 @@
 #include "xwin.h"
 #include "kernel/module.h"
 #include "dev/devfs.h"
+#include "sysconf/sysconf.h"
 
 /* module.o 若未随 xwin.h 重编，xwin_display 会偏小写穿后面的 g_display。 */
 _Static_assert(sizeof(xdisplay_t) >= 112,
@@ -98,6 +99,10 @@ int xwin_module_init(void) {
         log_error("xwin: init failed\n");
         return -1;
     }
+
+    /* [xwin] cursor = 0/1：是否显示鼠标光标（默认显示）。
+     * 配置读取见 /conf/system.conf；sysconf 在 xwin 之前初始化。 */
+    xwin_display.mouse_visible = (u32)sysconf_get_int("xwin", "cursor", 0);
 
     xinput_init();
     xwin_register_syscall();

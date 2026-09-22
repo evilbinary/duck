@@ -37,7 +37,7 @@
 #include "kernel/string.h"
 
 /* 整个文件读进内存再解析：配置文件很小（几百字节），一次读完最省事 */
-#define SYSCONF_MAX 4096
+#define SYSCONF_MAX 16384
 #define SYSCONF_LINE 160
 
 /* 能登记多少个"配置就绪"回调（驱动数量级，够用即可） */
