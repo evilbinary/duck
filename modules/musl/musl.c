@@ -4,28 +4,59 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "kernel/kernel.h"
+#include "kernel/page.h"
 
-// #define __a_barrier_kuser 0xffff0fa0
-// #define __a_cas_kuser 0xffff0fc0
-// #define __a_gettp_kuser 0xffff0fe0
-// #define __a_ver 0xffff0ffc
+#ifdef ARMV5
+/* ============ ARMv5 musl kuser helper 页 ============
+ * ARMv5(ARM926) 无 LDREX/STREX，musl 的用户态原子操作走内核 kuser helper：
+ *   __a_cas_ptr     = 0xffff0fc0
+ *   __a_barrier_ptr = 0xffff0fa0
+ *   __a_gettp_ptr   = 0xffff0fe0
+ *   version         = *(int*)0xffff0ffc
+ * 这里在 0xffff0000 放一页【用户态可执行】的自包含指令（不能跳内核函数，
+ * 它运行在用户态），并按固定偏移填好。
+ */
+#define KUSER_BASE 0xffff0000u
 
-// void* musl_vector = NULL;
+static void musl_kuser_init(void) {
+  u32* page = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
+  if (page == NULL) {
+    log_error("musl: kuser page alloc failed\n");
+    return;
+  }
+  u32* w = page;
+  for (u32 i = 0; i < PAGE_SIZE / 4; i++) {
+    w[i] = 0;
+  }
 
-// void musl_barrier_kuser() {
-//   log_debug("barrier_kuser\n");
-//   dmb();
-// }
+  /* 0x0fa0 __kuser_memory_barrier: mcr p15,0,r0,c7,c10,5 ; bx lr */
+  w[0xfa0 / 4 + 0] = 0xEE070FBA;
+  w[0xfa0 / 4 + 1] = 0xE12FFF1E;
 
-// int musl_cas_kuser(int* ptr, int oldval, int newval) {
-//   log_debug("musl cas_kuser\n");
-//   return cpu_cmpxchg(ptr, oldval, newval);
-// }
+  /* 0x0fc0 __kuser_cmpxchg (r0=old, r1=new, r2=ptr; 返回 0=成功):
+   *   ldr r3,[r2]; subs r3,r3,r0; streq r1,[r2]; rsbs r0,r3,#0; bx lr */
+  w[0xfc0 / 4 + 0] = 0xE5923000; /* ldr  r3, [r2]      */
+  w[0xfc0 / 4 + 1] = 0xE0533000; /* subs r3, r3, r0    */
+  w[0xfc0 / 4 + 2] = 0x05823000; /* streq r1, [r2]     */
+  w[0xfc0 / 4 + 3] = 0xE2730000; /* rsbs r0, r3, #0    */
+  w[0xfc0 / 4 + 4] = 0xE12FFF1E; /* bx   lr            */
 
-// int musl_gettp(int a, int b, int c) {
-//   log_debug("musl gettp\n");
-//   return sys_thread_self();
-// }
+  /* 0x0fe0 __kuser_get_tls: mrc p15,0,r0,c13,c0,3 ; bx lr */
+  w[0xfe0 / 4 + 0] = 0xEE1D0F70;
+  w[0xfe0 / 4 + 1] = 0xE12FFF1E;
+
+  /* 0x0ffc __kuser_helper_version（musl 读 0xffff0ffc） */
+  w[0xffc / 4] = 5;
+
+  cpu_flush_dcache_range((unsigned long)page,
+                         (unsigned long)page + PAGE_SIZE);
+
+  /* 映射到内核页表；用户进程首次访问时经缺页从内核页表按需映射到 upage */
+  page_map(KUSER_BASE, (u32)(uintptr_t)page, PAGE_USER);
+  log_info("musl: kuser helper %x -> %x\n", KUSER_BASE,
+           (u32)(uintptr_t)page);
+}
+#endif
 
 int musl_init(void) {
   log_info("musl init\n");
@@ -39,20 +70,8 @@ int musl_init(void) {
       "mcr p15, 0, r0, c1, c0, 2\n"
       "mov r0,#0x40000000\n"
       "fmxr fpexc,r0");
-#else defined(ARMV5)
-  // make musl happy ^_^!! User space atomic ops on ARMv5 and earlier
-  // if (musl_vector == NULL) {
-  //   musl_vector = kmalloc_alignment(PAGE_SIZE, PAGE_SIZE, KERNEL_TYPE);
-  // }
-
-  // u32 addr = __a_barrier_kuser & ~0xfff;
-  // page_map(addr, addr, PAGE_USER);
-
-  // *((u32 *)__a_ver) = 2;
-  // *((u32 *)__a_barrier_kuser) = &musl_barrier_kuser;
-  // *((u32 *)__a_cas_kuser) = &musl_cas_kuser;
-  // *((u32 *)__a_gettp_kuser) = &musl_gettp;
-
+#elif defined(ARMV5)
+  musl_kuser_init();
 #endif
 
   return 0;
