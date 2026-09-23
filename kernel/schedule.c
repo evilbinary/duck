@@ -102,6 +102,7 @@ interrupt_context_t* schedule_reschedule(interrupt_context_t* ic) {
     interrupt_context_t* next_ic =
         context_switch(ic, current_thread->ctx, next_thread->ctx);
     thread_set_current(next_thread);
+    preempt_reset(); /* 退出临界区的抢占计数不留给新线程 */
 #ifdef VM_ENABLE
     context_switch_page(next_thread->ctx, next_thread->vm->upage);
 #endif
@@ -123,6 +124,7 @@ void schedule(interrupt_context_t* ic) {
   interrupt_context_t* next_ic =
       context_switch(ic, current_thread->ctx, next_thread->ctx);
   thread_set_current(next_thread);
+  preempt_reset(); /* 退出临界区的抢占计数不留给新线程 */
 #ifdef VM_ENABLE
   context_switch_page(next_thread->ctx, next_thread->vm->upage);
 #endif
@@ -146,6 +148,7 @@ void schedule_switch() {
 
   interrupt_context_t* next_ic =
       context_switch(ic, current_thread->ctx, next_thread->ctx);
+  preempt_reset(); /* 退出临界区的抢占计数不留给新线程 */
 
 #ifdef VM_ENABLE
   context_switch_page(next_thread->ctx, next_thread->vm->upage);

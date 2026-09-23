@@ -34,8 +34,15 @@ size_t pipe_buffer_write_notify(buffer_t* buffer) {
 pipe_t* pipe_create(u32 size) {
   pipe_t* pipe = kmalloc(sizeof(pipe_t),KERNEL_TYPE);
   pipe->wait_queue = rw_queue_create(PIPE_WAIT_QUEUE_SIZE);
+  /* 【不做内核阻塞】buffer_read/write 在空/满时会调用 wait 回调，而 wait 回调
+   * 走 thread_wait()→schedule_switch() 在 vread() 持有 vfs_biglock 期间阻塞：
+   * 别的线程一碰 vfs 就在 rt_mutex_lock(vfs_biglock) 里自旋死锁（system() 实测：
+   * 父进程读 pipe 阻塞并持有 vfs_biglock，子进程 exec /bin/sh 时取锁自旋卡死）。
+   * 本内核的设计本就是"内核不阻塞、等待交给调用者在用户态轮询/靠 waitpid"，
+   * 所以这里不挂阻塞回调：pipe 空读返回 0，写满就停。system()/posix_spawn 的
+   * 同步改由随后的 waitpid（schedule_switch）承担。 */
   pipe->buffer =
-      buffer_create(size, pipe_buffer_write_wait, pipe_buffer_read_wait,
+      buffer_create(size, NULL, NULL,
                     pipe_buffer_write_notify, pipe_buffer_read_notify);
   pipe->buffer->data = pipe->wait_queue;
   return pipe;

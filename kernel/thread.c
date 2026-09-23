@@ -6,6 +6,7 @@
 #include "thread.h"
 
 #include "fd.h"
+#include "preempt.h"
 #include "loader.h"
 #include "schedule.h"
 #include "syscall.h"
@@ -584,6 +585,11 @@ void thread_recycle(thread_t* thread) {
 void thread_stop(thread_t* thread) {
   if (thread == NULL) return;
   thread->state = THREAD_STOPPED;
+  /* 【退出临界区不可抢占】thread_stop 后到真正切走（schedule_switch）之间，
+   * 本线程仍站在自己的内核栈上。若此时被时钟换出，current_threads 立刻改人，
+   * thread_recycle_process 会误判"它没在跑"而把它的 ctx->ksp_start 释放掉 ⇒
+   * 切回来即 UAF。这里禁止抢占，切到新线程后由 preempt_reset() 清计数。 */
+  preempt_disable();
   /* 【移入回收队列】不能在这里直接释放：线程可能还在自己的栈上跑
    * （thread_exit 就发生在它自己的上下文里）。真正的释放由调度器在切换到
    * 其它线程之后调用 thread_recycle_process() 完成。 */
@@ -614,6 +620,16 @@ void thread_recycle_process(void) {
         still_running = 1;
         break;
       }
+    }
+    /* 【僵尸等待被 waitpid 回收前不能释放】退出线程先进 recycle 队列；若父进程
+     * 还在（thread_find_id 能找到），它要留在队列里当僵尸供 thread_find_zombie_child
+     * 找到。回收时 sys_waitpid 把 pid 置 -1，下一轮这里才会真正释放。
+     * 父进程已不在（孤儿）则直接释放，避免泄漏。 */
+    if (!still_running && v->pid != (u32)-1 &&
+        thread_find_id((int)v->pid) != NULL) {
+      prev = v;
+      v = next;
+      continue;
     }
     if (!still_running) {
       if (prev == NULL) {
@@ -1011,6 +1027,10 @@ thread_t* thread_find_id(int id) {
   return NULL;
 }
 
+/* 【僵尸线程不在调度链上】thread_stop→thread_recycle 会 thread_remove 把退出的
+ * 线程从 schedulable_head_thread 摘掉并挂到 recycle 队列，所以只查调度链永远
+ * 找不到僵尸 ⇒ waitpid 直接 ECHILD(-1)（实测 system() 返回 -1）。这里连同
+ * recycle 队列一起查。线程尚未被 thread_recycle_process 释放前都在该队列里。 */
 thread_t* thread_find_zombie_child(int parent_tid, int pid) {
   for (int i = 0; i < MAX_CPU; i++) {
     for (thread_t* p = schedulable_head_thread[i]; p != NULL; p = p->next) {
@@ -1026,6 +1046,18 @@ thread_t* thread_find_zombie_child(int parent_tid, int pid) {
       return p;
     }
   }
+  for (thread_t* p = recycle_head_thread; p != NULL; p = p->next) {
+    if ((int)p->pid != parent_tid) {
+      continue;
+    }
+    if (p->state != THREAD_STOPPED) {
+      continue;
+    }
+    if (pid > 0 && (int)p->id != pid) {
+      continue;
+    }
+    return p;
+  }
   return NULL;
 }
 
@@ -1040,6 +1072,15 @@ int thread_child_exists(int parent_tid, int pid) {
       }
       return 1;
     }
+  }
+  for (thread_t* p = recycle_head_thread; p != NULL; p = p->next) {
+    if ((int)p->pid != parent_tid) {
+      continue;
+    }
+    if (pid > 0 && (int)p->id != pid) {
+      continue;
+    }
+    return 1;
   }
   return 0;
 }

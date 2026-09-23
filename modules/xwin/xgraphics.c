@@ -527,6 +527,10 @@ void xwin_blit(xwindow_t* win, i32 x, i32 y, const u32* data, u32 w, u32 h) {
         u32* dst = win->framebuffer + (u32)dy * win->width + (u32)dx0;
         kmemcpy(dst, src, copy_w * sizeof(u32));
     }
+
+    /* 标记窗口需要提交：xwin_render 只在窗口 damaged 时才走渲染/提交路径
+     * （并重画鼠标光标）。漏标的话应用画面照写 LCD，但光标不刷新。 */
+    win->damaged = 1;
 }
 
 void xwin_blit_transparent(xwindow_t* win, i32 x, i32 y, const u32* data, u32 w, u32 h, u32 key) {

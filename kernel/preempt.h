@@ -30,6 +30,8 @@ int preempt_get_model(void);
 void preempt_disable(void);
 void preempt_enable(void);
 int preempt_count_get(void);
+/* 切换线程后清本核抢占计数（退出临界区的计数不留给新线程） */
+void preempt_reset(void);
 
 void preempt_set_need_resched(void);
 void preempt_clear_need_resched(void);

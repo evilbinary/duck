@@ -512,8 +512,17 @@ ulong cpu_get_cs(void) {
 }
 
 int cpu_tas(volatile int* addr, int newval) {
-  int result = newval;
-  // result = __sync_val_compare_and_swap(addr, newval, result);
+  /* 【必须返回"旧值"】acquire() 的写法是 while (cpu_tas(lock,1)==1)。
+   * 原实现直接 return newval(=1) ⇒ 条件恒真 ⇒ 任何 acquire() 死循环。
+   * 之前没暴露是因为启动路径不碰 acquire；system() 走 pipe → rw_queue_read_wait
+   * → acquire 才第一次命中，表现为读 pipe 时父进程在 acquire 里空转卡死。
+   * ARM926EJ-S(ARMv5) 没有 LDREX/STREX，但有 SWP：原子交换并返回旧值。
+   * 单核 + 内核态不可抢占，SWP 足够。 */
+  int result;
+  asm volatile("swp %0, %1, [%2]"
+               : "=&r"(result)
+               : "r"(newval), "r"(addr)
+               : "memory");
   return result;
 }
 

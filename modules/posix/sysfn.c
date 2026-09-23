@@ -414,15 +414,26 @@ int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
    * and PREF ABORT (pc=0) walking timers/mutexes.
    */
   u32 tflags = FS_CLONE;
-  if ((flags & CLONE_VM) != 0) {
+  /* 【vfork(posix_spawn) 必须给独立 VM】CLONE_VM|CLONE_VFORK 的语义是"共享地址
+   * 空间、父进程挂起，子进程马上 exec"。Linux 在 exec 时 unshare mm；本内核的
+   * run_elf_thread 直接重建当前线程的地址空间，若与父进程 VM_SAME，exec 会把父
+   * 进程的页表/映射一起改掉 ⇒ 父进程恢复后在用户态取指炸飞（实测 system()：
+   * ls 能跑出结果，但调用者 test-system 随后 PREF ABORT pc=0x1024）。
+   * vfork 子进程不需要共享内存（马上 exec），直接给它一份独立 VM（fork 语义）即可。
+   * 只有 pthread 那种"非 VFORK 的 CLONE_VM"才真正需要共享地址空间。 */
+  if ((flags & CLONE_VM) != 0 && (flags & CLONE_VFORK) == 0) {
     tflags |= VM_SAME;
   } else {
     tflags |= VM_CLONE_ALL;
   }
 
-  start_args_t* start_args = stack;
-  void* fn = start_args->start_func;
-  void* arg = start_args->start_arg;
+  /* 【不要再从 stack 顶读 start_func/start_arg】
+   * musl 的 pthread_create 会把 struct start_args 放在栈顶，但 posix_spawn
+   * 直接传 stack+sizeof stack（栈顶没有 start_args）。若统一按 pthread 布局去读，
+   * posix_spawn 会读到未初始化值当入口 ⇒ 子进程跳飞（system() 卡死）。
+   * musl 的 arm clone.s 约定：子进程从 svc 之后继续，r0=0，并用 r5/r6 调
+   * func(arg)。r5/r6 在父进程 svc 时的帧里已保存，context_inherit_live 会带过来，
+   * 所以这里只需 r0=0 并让子进程沿用被复制的 pc 即可，两种调用都成立。 */
 
   thread_t* copy_thread = thread_copy(current, tflags);
   if (copy_thread == NULL) {
@@ -454,9 +465,7 @@ int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
     copy_thread->ctx->usp = (u32)stack;
   }
 
-  thread_set_ret(copy_thread, 0); /* clone child return value */
-  thread_set_arg(copy_thread, arg);
-  thread_set_entry(copy_thread, fn);
+  thread_set_ret(copy_thread, 0); /* clone child return value (r0=0) */
 
   (void)child_tid;
   thread_run(copy_thread);
@@ -1331,7 +1340,6 @@ pid_t sys_waitpid(pid_t pid, int* wstatus, int options) {
 #ifndef WNOHANG
 #define WNOHANG 1
 #endif
-
   for (;;) {
     thread_t* child = thread_find_zombie_child((int)current->id, (int)pid);
     if (child != NULL) {
@@ -1350,11 +1358,10 @@ pid_t sys_waitpid(pid_t pid, int* wstatus, int options) {
     if (options & WNOHANG) {
       return 0;
     }
-    /* Block until thread_exit wakes us; do_schedule will run the child. */
+    /* 阻塞：置 WAITING 后直接切出去（schedule_switch 交换中断帧，
+     * 子进程得以运行）；被 thread_exit 唤醒后继续本循环重试。 */
     current->state = THREAD_WAITING;
-    while (current->state == THREAD_WAITING) {
-      cpu_wait();
-    }
+    schedule_switch();
   }
 }
 
@@ -1454,6 +1461,11 @@ void sys_fn_init() {
   syscall_table[SYS_VHEAP] = &sys_vheap;
   syscall_table[SYS_FORK] = &sys_fork;
   syscall_table[SYS_PIPE] = &sys_pipe;
+#ifdef ARM
+  /* pipe2 (ARM nr=359)：musl 的 system()/spawn 路径会调用。直接复用 pipe，
+   * 忽略 flags（内核 pipe 无 O_CLOEXEC/O_NONBLOCK 语义）。 */
+  syscall_table[359] = &sys_pipe;
+#endif
   syscall_table[SYS_GETPID] = &sys_getpid;
   syscall_table[SYS_GETPPID] = &sys_getppid;
   syscall_table[SYS_DUP] = &sys_dup;

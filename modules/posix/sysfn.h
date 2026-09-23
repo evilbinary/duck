@@ -24,6 +24,7 @@
 
 /* Linux clone(2) flags used by musl pthread_create. */
 #define CLONE_VM 0x00000100
+#define CLONE_VFORK 0x00004000
 #define CLONE_FS 0x00000200
 #define CLONE_FILES 0x00000400
 #define CLONE_SIGHAND 0x00000800
