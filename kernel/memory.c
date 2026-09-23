@@ -6,6 +6,7 @@
 #include "memory.h"
 
 #include "algorithm/queue_pool.h"
+#include "page_ref.h"
 #include "rt_mutex.h"
 #include "thread.h"
 
@@ -131,6 +132,10 @@ void memory_init() {
   memory_summary.kernel_used = 0;
   memory_summary.user_used = 0;
   kpool_init();
+  {
+    extern void page_ref_init(void);
+    page_ref_init();
+  }
 }
 
 memory_t* memory_info() {
@@ -534,6 +539,10 @@ void* valloc(void* addr, size_t size) {
     /* First zero through the kernel identity mapping so the physical page
      * is clean even before we install the user mapping. */
     cpu_zero_phy_page(phy_addr, PAGE_SIZE);
+    {
+      /* COW：新用户页引用计数 = 1 */
+      page_ref_set((u32)(uintptr_t)phy_addr, 1);
+    }
     memory_static(PAGE_SIZE, MEMORY_TYPE_USE);
     /* L2 分配走 kmalloc_alignment，与 memory_lock 同一把（可重入） */
     if (current != NULL) {

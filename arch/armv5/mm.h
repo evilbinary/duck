@@ -32,11 +32,16 @@
 #define L2_NCB (1 << 2)   // 0b01
 #define L2_CNB (2 << 2)   // 0b10
 
-#define L2_AP_RW_ALL (3 << 4)   // full access
+#define L2_AP_RW_ALL (3 << 4)   // full access（用户可写）
 #define L2_AP_RW_PRIV (1 << 4)  // read write privilege level
 #define L2_AP_RWX L2_AP_RW_ALL
 
-#define L2_AP_R 0x2
+/* AP[1:0]=0b10：特权可写、用户只读 —— COW 共享页用它做写保护 */
+#define L2_AP_RO (2 << 4)
+
+/* 软件位（ARMv5 小页描述符 bit[9] 为 IMP，可作私用）：
+ * 标记该页是 fork 后共享的 COW 页 */
+#define L2_COW (1 << 9)
 #define L2_TEXT (7 << 6)
 
 #define L2_TEXT_0 (0 << 6)
@@ -84,5 +89,15 @@ typedef u32 page_dir_t;
 
 /* page_map_on 原型：防止隐式声明导致 flags 丢失（详见 armv7-a/mm.h）。 */
 void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags);
+
+/* ---- COW 纯机制（不含策略/引用计数；引用计数在 kernel 侧） ----
+ * page_put_page：释放用户页时由 arch 回调，交给 kernel 决定"是否真的 free"。
+ * page_cow_query：查该 VA 是否 COW 页，并带出物理页。
+ * page_cow_apply：new_pa==0 标 COW（只读+标记）；!=0 破写指向 new_pa 可写。
+ * page_fault_is_write 在 cpu.c。 */
+extern int (*page_put_page)(void* pa);
+int page_cow_query(u32* upage, u32 va, u32* pa);
+void page_cow_apply(u32* upage, u32 va, u32 new_pa);
+int page_fault_is_write(void);
 
 #endif

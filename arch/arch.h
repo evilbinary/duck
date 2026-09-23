@@ -19,4 +19,6 @@
 
 void arch_init(boot_info_t* boot,int cpu_id);
 
+ullong mm_get_total(void);
+
 #endif

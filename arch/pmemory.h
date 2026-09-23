@@ -70,6 +70,15 @@ void mm_parse_map(void* kernel_page_dir);
 void map_mem_block(void* page, vaddr_t max_size, u64 flags);
 void page_map_kernel(void* page, u64 flag_x, u64 flag_rw);
 
+/* ---- COW 底层接口（各 arch 的 mm.c 实现；kernel 侧调用）----
+ * 依赖方向 kernel → arch；未实现 COW 的架构在其 mm.c 给空实现。 */
+#ifdef CONFIG_COW
+int page_fault_is_write(void);
+int page_cow_query(u32* upage, u32 va, u32* pa);
+void page_cow_apply(u32* upage, u32 va, u32 new_pa);
+extern int (*page_put_page)(void* pa);
+#endif
+
 #define NR_BLOCKS 30
 #define MEM_FREE 1
 #define MEM_USED 0x10

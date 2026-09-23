@@ -5,6 +5,8 @@
  ********************************************************************/
 #include "page.h"
 
+#include "page_ref.h"
+
 /* 缺页路径上的调试日志（page fault / page area not found + vmemory_dump /
  * page lookup kernel found phy）量大且逐次缺页都打，默认关闭；排查时打开。 */
 // #define DEBUG 1
@@ -161,6 +163,25 @@ void* page_fault_handle(interrupt_context_t *ic) {
           }
         }
       } else {
+#ifdef CONFIG_COW
+        /* COW：写权限 fault 且命中 fork 共享的只读页 → 复制一份新页。 */
+        extern void* mm_alloc_page(void);
+        u32 up = (u32)(uintptr_t)current->vm->upage;
+        u32 old_pa = 0;
+        if (page_fault_is_write() && page_cow_query((u32*)up, fault_addr, &old_pa)) {
+          void* np = mm_alloc_page();
+          if (np != NULL) {
+            u32 new_pa = (u32)(uintptr_t)np;
+            kmemcpy((void*)new_pa, (void*)old_pa, PAGE_SIZE);
+            page_ref_set(new_pa, 1);
+            cpu_flush_dcache_range((unsigned long)new_pa,
+                                   (unsigned long)new_pa + PAGE_SIZE);
+            page_ref_dec(old_pa);
+            page_cow_apply((u32*)up, fault_addr, new_pa);
+            return ic;
+          }
+        }
+#endif
         log_error("%s remap memory fault at %lx phy: %lx\n", current->name,
                   fault_addr, phy);
         context_dump_fault(ic, fault_addr);

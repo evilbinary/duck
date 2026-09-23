@@ -54,3 +54,10 @@ void mm_page_enable(u32 page_dir) {
 }
 
 void mm_init_default(u32 kernel_page_dir) {}
+#ifdef CONFIG_COW
+/* ---- COW 接口：本架构暂未实现，给空实现保证 kernel 侧可链接 ----
+ * （armv5 已有真实实现，其余平台按需补齐） */
+int page_fault_is_write(void) { return 0; }
+int page_cow_query(u32* upage, u32 va, u32* pa) { (void)upage; (void)va; (void)pa; return 0; }
+void page_cow_apply(u32* upage, u32 va, u32 new_pa) { (void)upage; (void)va; (void)new_pa; }
+#endif

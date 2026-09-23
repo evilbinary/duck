@@ -82,6 +82,9 @@ u32 read_dfsr() {
   return val;
 }
 
+/* COW 判断：本次 data abort 是否为"写"访问（DFSR bit11 = WnR） */
+int page_fault_is_write(void) { return (read_dfsr() & (1u << 11)) ? 1 : 0; }
+
 u32 read_pc() {
   u32 val = 0;
   asm volatile("ldr %0,[r15]" : "=r"(val));
@@ -386,6 +389,9 @@ void cpu_enable_page() {
 
   reg |= 1 << 8;  // System protection bit.
   reg |= 1 << 9;  // ROM protection bit.
+  /* SW：允许用户态执行 swp/swpb。ARMv5 无 LDREX/STREX，musl 的原子 CAS
+   * （cpu_cmpxchg）和 libatomic 都用 swp；SW=0 时用户态 swp 直接 UNDEF。 */
+  reg |= 1 << 10;
   // reg|= 1<<23; //0 = VMSAv4/v5 and VMSAv6, subpages enabled 1 = VMSAv6,
   // subpages disabled.
 

@@ -32,6 +32,7 @@ add_files(
     'logger.c',
     'vma.c',
     'page.c',
+    'page_ref.c',
     'event.c'
 )
 

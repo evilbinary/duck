@@ -145,6 +145,12 @@
 
 #define SCHEDULE_FREQUENCY 1000
 
+/* 写时复制（COW）：fork 时共享可写页（只读 + 引用计数），写入时才复制。
+ * 关掉则恢复旧的"fork 共享物理页"行为。实现见 kernel/cow.c 与各 arch mm.c。 */
+#ifndef CONFIG_COW
+#define CONFIG_COW 1
+#endif
+
 /* 抢占模型：0 NONE / 1 VOLUNTARY / 2 FULL / 3 RT */
 #ifndef PREEMPT_MODEL_DEFAULT
 #define PREEMPT_MODEL_DEFAULT 0 /* PREEMPT_NONE；完整 RT 改为 3 */

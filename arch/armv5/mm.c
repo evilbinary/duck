@@ -59,6 +59,8 @@ void page_copy(u32* old_page, u32* new_page) {
       for (int l2_index = 0; l2_index < 256; l2_index++) {
         u32* addr = l2[l2_index] >> 12;
         if (addr != NULL || l1_index == 0) {
+          /* 只负责复制页表；是否共享/COW 由上层 vmemory_clone 决定并
+           * 在复制【之前】改好父页表（page_cow_range）。 */
           new_l2[l2_index] = l2[l2_index];
           // kprintf("  %d %x\n", l2_index, addr);
         }
@@ -76,6 +78,72 @@ u32* page_clone(u32* old_page_dir, u32 level) {
   page_copy(old_page_dir, page_dir_ptr_tab);
   return page_dir_ptr_tab;
 }
+
+#ifdef CONFIG_COW
+/* ============ COW（写时复制）PTE 操作 ============ */
+
+/* 取用户 VA 的 L2 槽（未映射返回 NULL） */
+static u32* page_l2_slot(u32* upage, u32 va) {
+  u32 l1i = va >> 20;
+  u32 l2i = (va >> 12) & 0xFF;
+  u32 l1e = upage[l1i];
+  if ((l1e & 0x3) == 0) {
+    return NULL;
+  }
+  u32* l2 = (u32*)(l1e & 0xFFFFFC00);
+  if (l2 == NULL) {
+    return NULL;
+  }
+  return &l2[l2i];
+}
+
+/* 有效映射（small page）且 PTE 存在 */
+static int page_slot_valid(u32* s) {
+  return s != NULL && ((*s) & 0x3) == (u32)L2_SMALL_PAGE &&
+         ((*s) & 0xFFFFF000) != 0;
+}
+
+/* 查：返回 1 = 该 VA 是 COW 页；*pa（可 NULL）带出当前物理页。
+ * 合并了原来的 page_is_cow + page_pte_pa（同一次查表）。 */
+int page_cow_query(u32* upage, u32 va, u32* pa) {
+  u32* s = page_l2_slot(upage, va);
+  if (!page_slot_valid(s) || ((*s) & L2_COW) == 0) {
+    return 0;
+  }
+  if (pa != NULL) {
+    *pa = *s & 0xFFFFF000u;
+  }
+  return 1;
+}
+
+/* 应用：
+ *   new_pa == 0 → 标 COW（可写页改成"用户只读 + COW 标记"；
+ *                 只读页如代码/rodata 自动跳过）；
+ *   new_pa != 0 → 破写（PTE 指向 new_pa、恢复可写、清 COW 标记）。
+ * 合并了原来的 page_make_cow/page_cow_range + page_break_cow。
+ * 引用计数由 kernel 侧处理，arch 不依赖 kernel。 */
+void page_cow_apply(u32* upage, u32 va, u32 new_pa) {
+  u32* s = page_l2_slot(upage, va);
+  if (!page_slot_valid(s)) {
+    return;
+  }
+  u32 d = *s;
+  if (new_pa == 0) {
+    if (((d >> 4) & 0x3) != 3) {
+      return; /* 本来只读（代码/rodata）→ 共享即可，无需 COW */
+    }
+    d = (d & ~0x30u) | L2_AP_RO | L2_COW;
+  } else {
+    d = (d & ~(0x30u | (u32)L2_COW)) | L2_AP_RW_ALL;
+    d = (d & 0xFFFu) | (new_pa & 0xFFFFF000u);
+  }
+  *s = d;
+  dccmvac((unsigned long)s);
+  tlbimva(va);
+  dsb();
+  isb();
+}
+#endif
 
 void page_map_on(page_dir_t* l1, u32 virtualaddr, u32 physaddr, u32 flags) {
   // kprintf("map page %x vaddr:%x paddr:%x\n",l1,virtualaddr,physaddr);
@@ -151,7 +219,11 @@ void page_destroy(u32* upage) {
         cpu_flush_dcache_range((unsigned long)pg,
                                (unsigned long)pg + PAGE_SIZE);
         l2[j] = 0;
-        mm_free_page(pg);
+        /* 是否可释放交给 kernel 的 page_put_page（引用归零才放）；
+         * 未注册 hook（如未启用 COW）就直接释放。arch 不依赖 kernel。 */
+        if (page_put_page == NULL || page_put_page(pg) == 0) {
+          mm_free_page(pg);
+        }
       }
     }
     upage[i] = 0;

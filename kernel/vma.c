@@ -5,6 +5,7 @@
  ********************************************************************/
 #include "memory.h"
 #include "page.h"
+#include "page_ref.h"
 #include "thread.h"
 #include "libs/include/kernel/string.h"
 
@@ -398,6 +399,31 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
 
   vmcopy->vma = vmemory_area_clone(vmthread->vma, 1);
   vmcopy->kpage = page_kernel_dir();
+#ifdef CONFIG_COW
+  /* COW 策略层：fork 前把父进程可写的 EXEC 段页改成"只读+COW"，
+   * 之后 page_clone 复制出的子页表自然是只读的（父子共享物理页）。
+   * 必须【先改父页表再复制】，否则子 PTE 会是可写、写时绕过 COW。
+   * 这里只决定"哪些 VMA 做 COW"，PTE 机制在 arch 的 page_cow_apply。 */
+  {
+    /* arch 只提供 page_cow_apply（改 PTE）与 page_cow_query/page_v2p；
+     * 引用计数（ref++）由 kernel 在这里做。 */
+    vmemory_area_t* a;
+    for (a = vmthread->vma; a != NULL; a = a->next) {
+      if (a->flags != MEMORY_EXEC) {
+        continue;
+      }
+      u32 s = (u32)a->vaddr;
+      u32 e = (u32)a->vend;
+      for (u32 va = s; va < e; va += PAGE_SIZE) {
+        u32 pa = 0;
+        page_cow_apply((u32*)vmthread->upage, va, 0); /* 标 COW（只读+标记） */
+        if (page_cow_query((u32*)vmthread->upage, va, &pa)) {
+          page_ref_inc(pa); /* 引用计数在 kernel 侧 */
+        }
+      }
+    }
+  }
+#endif
   vmcopy->upage = page_clone((u64*)vmthread->upage, 3);
   if (vmcopy->upage == NULL) {
     log_error("vm clone: page_clone failed\n");
@@ -405,6 +431,10 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
   }
   vmcopy->ref = 1;
 
+  /* 栈/堆仍然深拷贝：ARMv5 的 COW 只读页是 "特权可写、用户只读"(AP=10)，
+   * 内核通过用户 VA 写（exec 建栈、copy_to_user）不会触发 fault，会直接改
+   * 共享物理页 → 破坏父进程。栈/堆是内核也频繁写的区域，必须独立。
+   * COW 只用在 EXEC 段的 .data（见 page_copy）。 */
   // 栈拷贝并映射
   vmemory_copy_data(vmcopy, vmthread, MEMORY_STACK);
 

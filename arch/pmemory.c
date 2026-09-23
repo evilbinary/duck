@@ -15,6 +15,10 @@ extern boot_info_t* boot_info;
 memory_manager_t mmt;
 static void* mm_page_free_list = NULL;
 
+/* COW：释放用户页时的回调，由 kernel 注册（page_ref 的 page_put）；
+ * NULL = 直接释放。定义在 arch 通用层，各架构共享。 */
+int (*page_put_page)(void* pa) = 0;
+
 // #define DEBUG 1
 #define MM_YA_ALLOC 1
 
