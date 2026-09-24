@@ -172,12 +172,16 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   thread_t* copy = kmalloc(sizeof(thread_t), KERNEL_TYPE);
   kmemset(copy, 0, sizeof(thread_t));
   kmemmove(copy, thread, sizeof(thread_t));
-  copy->tinfo = thread->tinfo;
-  copy->user_tp = thread->user_tp;
-
   log_debug("thread init default\n");
 
   thread_init_default(copy, thread->level, thread->ctx->eip, thread->data);
+  /* 【fork 子进程必须继承父进程的 TLS】thread_init_default 会把 user_tp 清成
+   * NULL（新线程本应如此）。但 fork 出来的子进程要沿用它自己的 TLS 基址：
+   * musl 的 __pthread_self()/errno 依赖它，清零后 __pthread_self() 变成负地址
+   * （实测 config 在 _Fork 里 `str self->...` 崩在 dfar=0xffffffa0）。
+   * 所以这两个复制必须放在 thread_init_default 之后。 */
+  copy->tinfo = thread->tinfo;
+  copy->user_tp = thread->user_tp;
   copy->data = thread->data;
   copy->pid = thread->id;
   // copy->name = kmalloc(kstrlen(thread->name), KERNEL_TYPE);

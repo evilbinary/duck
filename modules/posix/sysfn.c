@@ -591,6 +591,8 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
   if (current != NULL && current->id > 1) {
     log_debug("sys_mmap2 tid=%d addr=%x len=%d prot=%x flags=%x fd=%d off=%d\n",
               current->id, addr, length, prot, flags, fd, pgoffset);
+    kprintf("MMAP2K tid=%d addr=%x len=%x prot=%x flags=%x fd=%d\n",
+            current->id, (u32)(uintptr_t)addr, (u32)length, prot, flags, fd);
   }
   vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
   if (vm == NULL) {
@@ -642,6 +644,8 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
   void* start_addr = NULL;
   if ((flags & MAP_ANON) == MAP_ANON) {
     start_addr = sys_mmap_pick_anon_addr(current, vm, length);
+    kprintf("MMAP2A tid=%d pick=%x len=%x vm=%x-%x\n", current->id,
+            (u32)(uintptr_t)start_addr, (u32)length, vm->vaddr, vm->vend);
     if (start_addr == NULL) {
       log_error("mmap: no free anon region len=%x\n", length);
       return MAP_FAILED;
@@ -963,24 +967,13 @@ int sys_thread_self() {
   if (current->user_tp != NULL) {
     return (int)current->user_tp;
   }
-  thread_info_t* tinfo = current->tinfo;
-
-  if (tinfo == NULL) {
-    tinfo = kmalloc(sizeof(thread_info_t), KERNEL_TYPE);
-    current->tinfo = tinfo;
-    tinfo->self = tinfo;
-    tinfo->tid = current->id;
-    tinfo->errno = 0;
-    tinfo->prev = tinfo->next = NULL;
-    tinfo->locale = kmalloc(sizeof(locale_t), KERNEL_TYPE);
-    tinfo->robust_list.head = &tinfo->robust_list.head;
-    tinfo->detach_state = DT_JOINABLE;
-    log_debug("locale at %x\n", tinfo->locale);
-    log_debug("thread info at %x\n", tinfo);
-    log_debug("tsd at %x\n", tinfo->tsd);
-  }
-  // log_debug("sys thread self at %x\n", tinfo);
-  return TP_ADJ(tinfo);
+  /* 【关键】user_tp 还没设置时绝不能把内核 tinfo 地址返回给用户态！
+   * 编译器/musl 的 TLS 读取（__aeabi_read_tp / __get_tp → SYS_THREAD_SELF）
+   * 会把这个返回值当 TLS 基址；返回内核地址 ⇒ 用户态去读写内核内存 ⇒
+   * mallocng 的 TLS/errno 状态被写坏 ⇒ 堆元数据损坏、a_crash（gnuboy 实测）。
+   * Linux 在 TPIDRURO 未设置时也返回 0，musl 在 __set_thread_area 之前不会
+   * 真正使用 TLS，所以返回 0 是安全且正确的。 */
+  return 0;
 }
 
 int sys_statx(int dirfd, const char* restrict pathname, int flags,
