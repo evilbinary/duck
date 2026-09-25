@@ -186,13 +186,17 @@ static const u32 default_joymap[256] = {
     [KEY_BUTTON_Y] = 'y',
     [KEY_BUTTON_START] = 0x0A,   // Return
     [KEY_BUTTON_SELECT] = 0x1B,  // Esc
-    [KEY_BUTTON_L1] = 0x3B,      // F1
-    [KEY_BUTTON_R1] = 0x3C,      // F2
-    [KEY_BUTTON_L2] = 0x3D,      // F3
-    [KEY_BUTTON_R2] = 0x3E,      // F4
+    [KEY_BUTTON_L1] = 'l',
+    [KEY_BUTTON_R1] = 'r',
+    [KEY_BUTTON_L2] = '[',
+    [KEY_BUTTON_R2] = ']',
     [KEY_HOME] = 0x47,           // Home
     [KEY_POWER] = 0x1B,          // Esc
 };
+
+/* 运行期手柄映射：启动时用 default_joymap 初始化，再被 /conf/system.conf 的
+ * [input] 段覆盖（joy_<码>=<键码>，码为 KEY_* 的十六进制）。 */
+static u32 g_joymap[256];
 
 void xinput_joystick_event(u8 code) {
     if (g_display == NULL) return;
@@ -201,7 +205,7 @@ void xinput_joystick_event(u8 code) {
         pressed = 0;
         code &= 0x7F;
     }
-    u32 keycode = default_joymap[code];
+    u32 keycode = g_joymap[code];
     if (keycode == 0) return; /* 未映射的键忽略 */
     xwin_keyboard_event(g_display, keycode, pressed, g_display->key_mods);
 }
@@ -349,6 +353,10 @@ static int xinput_keymap_cb(const char* key, const char* val, void* user) {
     if (kstrncmp(key, "key_", 4) == 0) {
         u32 scan = xinput_hex(key + 4);
         if (scan < 128) g_keymap[scan] = xinput_parse_keycode(val);
+    } else if (kstrncmp(key, "joy_", 4) == 0) {
+        /* 手柄逐键覆盖：joy_<KEY_* hex> = <键码或名称>（见 keyboard.h 的 KEY_*） */
+        u32 k = xinput_hex(key + 4);
+        if (k < 256) g_joymap[k] = xinput_parse_keycode(val);
     }
     /* keymap = us / set2-us：内置表即该预设，暂无需处理 */
     return 1;
@@ -373,9 +381,20 @@ void xinput_load_keymap(void) {
     }
 }
 
+static void xinput_load_joymap(void) {
+    kmemcpy(g_joymap, default_joymap, sizeof(g_joymap));
+    if (sysconf_loaded()) {
+        int n = sysconf_foreach("input", xinput_keymap_cb, NULL);
+        log_info("xinput: joymap default+%d custom\n", n);
+    } else {
+        log_info("xinput: joymap default (no system.conf)\n");
+    }
+}
+
 // ========== 初始化输入子系统 ==========
 void xinput_init(void) {
     xinput_load_keymap();
+    xinput_load_joymap();
     log_info("xinput: initialized\n");
 }
 
