@@ -297,7 +297,7 @@ int keyboard_init(void) {
   // stdin default device
   vnode_t* stdin = vfs_find(NULL, "/dev/stdin");
   if (stdin != NULL) {
-    stdin->device = device_find(DEVICE_JOYSTICK);
+    /* 不抢 stdin（见 ssd202d.c 说明）：留给 SDL 后端独占 /dev/joystick */ (void)stdin;
   }
 
   vnode_t* keyboard = vfs_create_node("joystick", V_FILE | V_CHARDEVICE);

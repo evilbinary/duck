@@ -12,6 +12,8 @@
 #include "kernel/config.h"
 #include "arch/cpu.h"
 
+#define FPS_PRINT_INTERVAL 460
+
 // ========== 鼠标光标 (16x16) ==========
 static const u32 cursor_arrow[16][16] = {
     {0xFF000000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
@@ -124,7 +126,7 @@ void xwin_render(xdisplay_t* disp) {
         t_kernel += schedule_get_ticks() - k0;
         disp->frame_count++;
         frame_count++;
-        if (frame_count >= 60) {
+        if (frame_count >= FPS_PRINT_INTERVAL) {
             u32 now = schedule_get_ticks();
             u32 dt = now - fps_t0;
             /* app_fps：两次统计间隔的墙钟帧率（含 fill/blit/sleep 等）
@@ -184,7 +186,7 @@ void xwin_render(xdisplay_t* disp) {
     frame_count++;
     
     // 每 60 帧打印一次
-    if (frame_count >= 60) {
+    if (frame_count >= FPS_PRINT_INTERVAL) {
         u32 now = schedule_get_ticks();
         u32 dt = now - fps_t0;
         u32 app_fps = dt > 0 ? (frame_count * SCHEDULE_FREQUENCY) / dt : 0;

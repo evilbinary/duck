@@ -35,7 +35,7 @@ static u32 scan_code_index = 0;
 #define KEY_POWER_PIN 86
 
 #define DECLARE_GPIO_KEY(name, level) \
-  { name, name##_PIN, level, !level }
+  { name, name##_PIN, level, 0 }
 
 struct gpio_pins {
   int key;
@@ -96,9 +96,13 @@ static void scan_code_push(u32 code) {
 
 static size_t read(device_t* dev, void* buf, size_t len) {
   u32 ret = 0;
+  /* 【诊断·可删】按键原始电平变化时打印一次，用于核对 GPIO 读取是否正常。 */
+  static u32 dbg_raw_last = 0xffffffffu;
+  u32 dbg_raw = 0;
 
   for (int i = 0; i < 16; i++) {
     int val = gpio_input(0, _pins[i].pin);
+    dbg_raw |= ((u32)(val & 1) << i);
 
     if (val == _pins[i].active) {
       /* 【按下沿】只在状态变化时入队一次（原实现每次 read 都入队 ⇒ 队列洪泛 ✗） */
@@ -112,6 +116,11 @@ static size_t read(device_t* dev, void* buf, size_t len) {
       _pins[i].status = 0;
       scan_code_push(_pins[i].key | 0x80);
     }
+  }
+
+  if (dbg_raw != dbg_raw_last) {
+    dbg_raw_last = dbg_raw;
+    kprintf("joy raw=%x pressed=%x\n", dbg_raw, (~dbg_raw) & 0xffff);
   }
 
   if (scan_code_index > 0) {
@@ -140,11 +149,9 @@ int keyboard_init(void) {
   device_add(dev);
   scan_code_index = 0;
 
-  // 无独立键盘的板子：stdin 指向本手柄设备（唯一的本地输入）
-  vnode_t* stdin = vfs_find(NULL, "/dev/stdin");
-  if (stdin != NULL) {
-    stdin->device = device_find(DEVICE_JOYSTICK);
-  }
+  /* 【不要抢占 stdin】stdin 指向 joystick 会让 init/shell 持续 read(0) 并消费
+   * 手柄字节，SDL 的 joystick 后端就读不到（实测 SDL 侧 read 恒返回 0，而内核
+   * raw 打印在变）。需要手柄输入的非 SDL 程序请自行 open("/dev/joystick")。 */
 
   vnode_t* keyboard = vfs_create_node("joystick", V_FILE | V_CHARDEVICE);
   vfs_mount(NULL, "/dev", keyboard);
