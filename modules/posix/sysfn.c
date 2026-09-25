@@ -591,8 +591,6 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
   if (current != NULL && current->id > 1) {
     log_debug("sys_mmap2 tid=%d addr=%x len=%d prot=%x flags=%x fd=%d off=%d\n",
               current->id, addr, length, prot, flags, fd, pgoffset);
-    kprintf("MMAP2K tid=%d addr=%x len=%x prot=%x flags=%x fd=%d\n",
-            current->id, (u32)(uintptr_t)addr, (u32)length, prot, flags, fd);
   }
   vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
   if (vm == NULL) {
@@ -642,15 +640,18 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
   }
 
   void* start_addr = NULL;
-  if ((flags & MAP_ANON) == MAP_ANON) {
+    if ((flags & MAP_ANON) == MAP_ANON) {
     start_addr = sys_mmap_pick_anon_addr(current, vm, length);
-    kprintf("MMAP2A tid=%d pick=%x len=%x vm=%x-%x\n", current->id,
-            (u32)(uintptr_t)start_addr, (u32)length, vm->vaddr, vm->vend);
     if (start_addr == NULL) {
       log_error("mmap: no free anon region len=%x\n", length);
       return MAP_FAILED;
     }
-    if (prot != 0 && valloc(start_addr, length) == NULL) {
+    /* 【anon 无条件分配物理页】mallocng 的 meta area 走 mmap(PROT_NONE)+
+     * mprotect(RW) 两步；内核 mprotect 未实现(ENOSYS)，mallocng 容忍后直接
+     * 写这页。若 prot=0 时缺页靠 page_fault 补，时序上时好时坏 ⇒ 堆元数据
+     * 偶发损坏（gnuboy/testmalloc 实测 a_crash）。这里无条件 valloc+清零，
+     * 让两步流程闭环；PROT_NONE 的"不可访问"语义在单任务场景可接受。 */
+    if (valloc(start_addr, length) == NULL) {
       log_error("mmap anon valloc failed addr=%x len=%x\n", start_addr, length);
       return MAP_FAILED;
     }

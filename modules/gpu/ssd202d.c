@@ -5,6 +5,7 @@
  ********************************************************************/
 #include "gpu.h"
 #include "kernel/kernel.h"
+#include "kernel/memory.h"
 #include "vga/vga.h"
 
 #define DSI_REG_BASE (0x1A2900UL)
@@ -59,20 +60,12 @@ int ssd202_lcd_init(vga_device_t *vga) {
   paddr = kmalloc(vga->framebuffer_length, DEVICE_TYPE);
   addr = vga->frambuffer;
 
-  for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    page_map(addr, paddr, PAGE_FB);
-    addr += 0x1000;
-    paddr += 0x1000;
-  }
+  vmemory_map_phys(addr, paddr, vga->framebuffer_length, MEMORY_FB, PAGE_FB);
   addr = vga->pframbuffer;
   paddr = vga->pframbuffer;
 #endif
 
-  for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    page_map(addr, paddr, PAGE_FB);
-    addr += 0x1000;
-    paddr += 0x1000;
-  }
+  vmemory_map_phys(addr, paddr, vga->framebuffer_length, MEMORY_FB, PAGE_FB);
 
   log_info("fb addr:%x end:%x len:%x\n", vga->frambuffer,
            vga->frambuffer + vga->framebuffer_length, vga->framebuffer_length);

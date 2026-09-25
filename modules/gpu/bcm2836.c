@@ -1,5 +1,6 @@
 #include "bcm2836.h"
 
+#include "kernel/memory.h"
 #include "kernel/page.h"
 #include "vga/vga.h"
 
@@ -162,15 +163,10 @@ int gpu_init_mode(vga_device_t* vga, int mode) {
     return -1;
   }
 
-  u32 paddr = (u32)(uintptr_t)vga->pframbuffer;
-  log_debug("map fb start %x %x\n", addr, paddr);
-
-  for (int i = 0; i < (int)(vga->framebuffer_length / PAGE_SIZE); i++) {
-    page_map(addr, paddr, PAGE_FB);
-    addr += PAGE_SIZE;
-    paddr += PAGE_SIZE;
-  }
-  log_debug("map fb end %x %x\n", addr, paddr);
+  log_debug("map fb start %x %x\n", addr, (u32)(uintptr_t)vga->pframbuffer);
+  vmemory_map_phys((u32)(uintptr_t)vga->frambuffer,
+                   (u32)(uintptr_t)vga->pframbuffer, vga->framebuffer_length,
+                   MEMORY_FB, PAGE_FB);
 
   /* 初始显示平面 0 */
   bcm2836_flip_screen(vga, 0);

@@ -9,7 +9,7 @@
 
 /* 缺页路径上的调试日志（page fault / page area not found + vmemory_dump /
  * page lookup kernel found phy）量大且逐次缺页都打，默认关闭；排查时打开。 */
-// #define DEBUG 1
+#define DEBUG 1
 
 // in user mode
 void page_error_exit() {
@@ -78,13 +78,14 @@ void* page_fault_handle(interrupt_context_t *ic) {
          * 保持【一致】！同一物理页多映射属性不一致在 ARM 上行为未定义）。
          * 原因：NC 映射下每个像素写直落 DRAM，t113 实测 blit ≈126ms/帧；
          * 改可缓存后由 xwin_flip_buffer() 每帧 clean 一次再让 DE 扫。 */
+        /* 【按 VMA/地址区间选属性，不再用 paddr>=0xF0000000 之类的魔数】
+         * 走到这里说明没有用户 VMA，是从内核页表按需镜像一个已存在的物理页：
+         *   - EXEC_ADDR 以下 = MMIO/外设寄存器 → PAGE_DEV（非缓存）；
+         *   - 其余（kuser helper 页 0xffff0000、内核映像等）→ PAGE_USER。
+         * FB 有自己的 VMA（MEMORY_FB），不会走这个分支。 */
         u32 attr;
-        u32 paddr = (u32)(uintptr_t)phy;
         if (fault_addr < (vaddr_t)EXEC_ADDR) {
           attr = PAGE_DEV;
-        } else if (paddr >= 0xF0000000u ||
-                   (u32)(uintptr_t)fault_addr >= 0xF0000000u) {
-          attr = PAGE_FB;
         } else {
           attr = PAGE_USER;
         }
@@ -141,12 +142,18 @@ void* page_fault_handle(interrupt_context_t *ic) {
     u64 *page = (u64*)current->vm->upage;
     void *phy = page_v2p(page, (void*)fault_addr);
 
-    if (area->flags == MEMORY_DEV) {
+    /* 设备 / 帧缓冲：物理页已存在（内核页表已映射），这里按需镜像到用户页表，
+     * 映射属性完全跟着 VMA 类型走：MEMORY_DEV→PAGE_DEV（非缓存），
+     * MEMORY_FB→PAGE_FB（可缓存写回）。不再靠地址区间猜。 */
+    if (area->flags == MEMORY_DEV || area->flags == MEMORY_FB) {
+      u32 dattr = area->attr;
       if (phy == NULL) {
         phy = page_v2p((u64*)current->vm->kpage, (void*)fault_addr);
       }
       if (phy != NULL) {
-        page_map_on((u64*)current->vm->upage, fault_addr, (u64)phy, PAGE_DEV);
+        page_map_on((u64*)current->vm->upage, fault_addr, (u64)phy, dattr);
+      } else {
+        log_error("%s dev/fb fault no phy at %lx\n", current->name, fault_addr);
       }
       return ic;
     } else {

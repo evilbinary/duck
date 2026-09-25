@@ -1,5 +1,6 @@
 #include "v3s.h"
 
+#include "kernel/memory.h"
 #include "vga/vga.h"
 #include "v3s-ccu.h"
 #include "v3s-de.h"
@@ -225,13 +226,10 @@ static inline void v3s_tcon_set_mode(v3s_lcd_t *lcd) {
 /* 【把帧缓冲 VA→PA 映射铺一遍】长度取 vga->framebuffer_length。
  * v3s_lcd_init() 与配置应用（v3s_lcd_apply_conf）共用：分辨率变大时要补映射。 */
 static void v3s_lcd_map_fb(vga_device_t *vga) {
-  u32 addr = (u32)(uintptr_t)vga->frambuffer;
-  u32 paddr = (u32)(uintptr_t)vga->pframbuffer;
-  for (u32 i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    page_map(addr, paddr, PAGE_FB);
-    addr += PAGE_SIZE;
-    paddr += PAGE_SIZE;
-  }
+  /* 内核页表映射 + 登记 fb VMA；分辨率变化时重复调用只更新几何，不重复注入。 */
+  vmemory_map_phys((u32)(uintptr_t)vga->frambuffer,
+                   (u32)(uintptr_t)vga->pframbuffer, vga->framebuffer_length,
+                   MEMORY_FB, PAGE_FB);
 }
 
 /* 【DE/TCON 起振序列】面板参数一变就得按这个顺序重来一遍：

@@ -6,6 +6,7 @@
 #include "vga.h"
 #include "dev/devfs.h"
 #include "dma/dma.h"
+#include "kernel/memory.h"
 #include "kernel/page.h"
 
 size_t vga_read(device_t* dev, void* buf, size_t len) {
@@ -80,11 +81,7 @@ void vga_init_device(device_t* dev) {
   vga_device_t* vga = kmalloc(sizeof(vga_device_t),DEFAULT_TYPE);
   vga->frambuffer = (u32*)bar0;
   dev->data = vga;
-  u32 addr = bar0;
-  for (int i = 0; i < 128; i++) {
-    page_map(addr, addr, PAGE_FB);
-    addr += 0x1000;
-  }
+  vmemory_map_phys(bar0, bar0, 128 * PAGE_SIZE, MEMORY_FB, PAGE_FB);
 
   // vga_init_mode(vga,VGA_MODE_80x25);
   vga_init_mode(vga, VGA_MODE_320x200x256);

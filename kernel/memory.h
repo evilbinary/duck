@@ -51,6 +51,11 @@
 #define MEMORY_STACK 6
 #define MEMORY_MMAP 7
 #define MEMORY_DEV 8
+/* 帧缓冲：物理页已存在（通常由内核页表映射），用户态按需镜像时要用
+ * PAGE_FB（可缓存写回，配合驱动每帧 clean），而不是 MEMORY_DEV 的 PAGE_DEV。
+ * 之前是靠在 page_fault_handle 里用 paddr/fault_addr >= 0xF0000000 判断，
+ * 平台相关且会误伤普通高位地址。 */
+#define MEMORY_FB 9
 
 #define MEMORY_STACK_SIZE 1024 * 1024   // 1m
 #define MEMORY_HEAP_SIZE 1024 * 1024 * 100  // 100m
@@ -80,6 +85,7 @@ typedef struct vmemory_area {
   vaddr_t vend;
   vaddr_t size;
   u8 flags;
+  u8 attr;  /* 页表映射属性(PAGE_DEV/PAGE_FB/PAGE_USER/PAGE_SHARED...)，0=按 flags 推导 */
   vaddr_t alloc_addr;
   vaddr_t alloc_size;
   struct vmemory_area* next;
@@ -138,6 +144,18 @@ void vmemory_map_type(void* page_dir, vaddr_t virt_addr, vaddr_t phy_addr,
 void memory_init();
 
 vmemory_area_t* vmemory_area_create(void* addr, vaddr_t size, u8 flags);
+
+/* 同上，但显式指定该 VMA 的页表映射属性（0 = 按 flags 推导）。 */
+vmemory_area_t* vmemory_area_create_attr(void* addr, vaddr_t size, u8 flags,
+                                         u8 attr);
+
+/* 【设备/帧缓冲一步登记】物理页已存在的区域（MMIO 寄存器窗口、显存）：
+ * 一次调用同时 1) 映射进内核页表（内核驱动可直接访问）；2) 记入默认 VMA
+ * 模板，之后每个新进程的 VMA 链都会带上它（用户态首次访问时缺页按 VMA 的
+ * attr 镜像）。paddr==0 表示恒等映射(vaddr)。
+ * 这样就不用手写 create + add + page_map 三处。 */
+void vmemory_map_phys(vaddr_t vaddr, vaddr_t paddr, vaddr_t size, u8 flags,
+                      u8 attr);
 vmemory_area_t* vmemory_area_destroy(vmemory_area_t* area);
 
 vmemory_area_t* vmemory_area_alloc(vmemory_area_t* areas, void* addr, vaddr_t size);

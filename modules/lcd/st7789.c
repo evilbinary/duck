@@ -8,6 +8,7 @@
 #include "dma/dma.h"
 #include "dma/sunxi-dma.h"
 #include "gpio/sunxi-gpio.h"
+#include "kernel/memory.h"
 #include "lcd.h"
 
 #define WHITE 0xFFFF
@@ -542,14 +543,10 @@ int lcd_init_mode(vga_device_t* vga, int mode) {
   log_debug("lcd %dx%d len= %d\n", vga->width, vga->height,
             vga->framebuffer_length);
 
-  // map fb
-  u32 addr = vga->frambuffer;
-  u32 paddr = vga->pframbuffer;
-  for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    page_map(addr, paddr, PAGE_FB);
-    addr += 0x1000;
-    paddr += 0x1000;
-  }
+  // map fb：内核页表映射 + 登记 fb VMA
+  vmemory_map_phys((u32)(uintptr_t)vga->frambuffer,
+                   (u32)(uintptr_t)vga->pframbuffer, vga->framebuffer_length,
+                   MEMORY_FB, PAGE_FB);
 
   u32 type = DMAC_CFG_TYPE(DMAC_CFG_TYPE_SPI0 << 8 | DMAC_CFG_TYPE_DRAM);
 

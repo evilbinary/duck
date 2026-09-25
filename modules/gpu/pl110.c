@@ -6,6 +6,7 @@
 #include "pl110.h"
 #include "gpu.h"
 #include "vga/vga.h"
+#include "kernel/memory.h"
 
 int gpu_init_mode(vga_device_t *vga, int mode) {
   log_debug("pl110 init\n");
@@ -94,17 +95,12 @@ int pl110_lcd_init(vga_device_t *vga) {
   log_debug("lcd %dx%d len= %d\n", lcd->width, lcd->height,
             vga->framebuffer_length);
 
-  // map fb
-  u32 addr = vga->frambuffer;
-  u32 paddr = vga->pframbuffer;
-  log_debug("map fb start %x %x\n", addr, paddr);
-
-  for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    page_map(addr, paddr, PAGE_FB);
-    addr += PAGE_SIZE;
-    paddr += PAGE_SIZE;
-  }
-  log_debug("map fb end %x %x\n", addr, paddr);
+  // map fb：内核页表映射 + 登记 fb VMA（进程缺页时按 PAGE_FB 镜像）
+  vmemory_map_phys((u32)(uintptr_t)vga->frambuffer,
+                   (u32)(uintptr_t)vga->pframbuffer, vga->framebuffer_length,
+                   MEMORY_FB, PAGE_FB);
+  log_debug("map fb %x %x len %x\n", vga->frambuffer, vga->pframbuffer,
+            vga->framebuffer_length);
 
   log_info("pl110_lcd_init end\n");
 

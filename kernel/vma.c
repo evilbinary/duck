@@ -40,8 +40,62 @@ vmemory_area_t* vmemory_area_create(void* addr, vaddr_t size, u8 flags) {
   area->alloc_addr = (vaddr_t)addr;
   area->alloc_size = 0;
   area->flags = flags;
+  area->attr = PAGE_USER; /* 默认用户可缓存页；DEV/FB 等用 create_attr 显式指定 */
   area->child = NULL;
   return area;
+}
+
+vmemory_area_t* vmemory_area_create_attr(void* addr, vaddr_t size, u8 flags,
+                                         u8 attr) {
+  vmemory_area_t* area = vmemory_area_create(addr, size, flags);
+  if (attr) {
+    area->attr = attr;
+  }
+  return area;
+}
+
+/* 需要"内核页表映射 + 注入每个进程 VMA 模板"的物理区域（见 memory.h）。
+ * 内核不反向依赖具体驱动，驱动在 init 里调 vmemory_map_phys() 登记即可。
+ * 直接复用 vmemory_area_t 作模板链，不另造结构体。 */
+static vmemory_area_t* s_phys_vma = NULL;
+
+void vmemory_map_phys(vaddr_t vaddr, vaddr_t paddr, vaddr_t size, u8 flags,
+                      u8 attr) {
+  if (size == 0) {
+    return;
+  }
+  if (paddr == 0) {
+    paddr = vaddr; /* 恒等映射 */
+  }
+  /* 物理地址进内核页表；VMA 带上 attr，用户态缺页按需镜像时直接用。
+   * 同一 vaddr 重复登记时只更新几何/属性，不重复注入 VMA。 */
+  vmemory_area_t* a = NULL;
+  for (vmemory_area_t* p = s_phys_vma; p != NULL; p = p->next) {
+    if (p->vaddr == vaddr) {
+      a = p;
+      break;
+    }
+  }
+  if (a == NULL) {
+    a = vmemory_area_create_attr((void*)vaddr, size, flags, attr);
+    a->alloc_addr = vaddr;
+    a->alloc_size = size;
+    if (s_phys_vma == NULL) {
+      s_phys_vma = a;
+    } else {
+      vmemory_area_add(s_phys_vma, a);
+    }
+  } else {
+    a->size = size;
+    a->vend = vaddr + size;
+    a->flags = flags;
+    a->attr = attr;
+    a->alloc_addr = vaddr;
+    a->alloc_size = size;
+  }
+  for (vaddr_t off = 0; off < size; off += PAGE_SIZE) {
+    page_map(vaddr + off, paddr + off, a->attr);
+  }
 }
 
 void vmemory_area_add(vmemory_area_t* areas, vmemory_area_t* area) {
@@ -94,6 +148,7 @@ vmemory_area_t* vmemory_area_clone(vmemory_area_t* areas, int flag) {
   vmemory_area_t* p = areas;
   for (; p != NULL; p = p->next) {
     vmemory_area_t* c = vmemory_area_create((void*)p->vaddr, p->size, p->flags);
+    c->attr = p->attr;
     if (flag == 1) {
       c->alloc_addr = p->alloc_addr;
       c->alloc_size = p->alloc_size;
@@ -111,30 +166,6 @@ vmemory_area_t* vmemory_area_clone(vmemory_area_t* areas, int flag) {
     }
   }
   return new_area;
-}
-
-/* fb 窗口的地址与尺寸：由显示驱动(gpu module)初始化完成后通过
- * vmemory_set_fb() 登记（内核不反向依赖 module）。缺省值为 raspi2
- * (bcm2836) 的参数；versatilepb(pl110) 是 640x480、fb 在 0xfb0000。 */
-static u32 s_fb_addr = 0xfb000000;
-static u32 s_fb_size = 1024 * 768 * 4;
-static vmemory_area_t* s_fb_vma = NULL; /* 默认表里的 fb 项，驱动就绪后回填 */
-
-/* 【接口】显示驱动初始化后调用：登记真实 fb 几何，并回填默认表项 ——
- * 进程的 vma 表从内核主线程克隆，主线程的表在驱动初始化前就已创建，
- * 不回填的话硬编码值会被所有子进程继承。 */
-void vmemory_set_fb(u32 addr, u32 size) {
-  s_fb_addr = addr;
-  s_fb_size = size;
-  /* 显存段不需要在这里做保留登记：它已由 boot 侧的内存配置（init-armv5.c 的
-   * VERSATILEPB 条目把 RAM 顶部 2MB 排除掉）从空闲块里去掉，分配器看不到它。 */
-  if (s_fb_vma != NULL) {
-    s_fb_vma->vaddr = (vaddr_t)addr;
-    s_fb_vma->vend = (vaddr_t)(addr + size);
-    s_fb_vma->size = (vaddr_t)size;
-    s_fb_vma->alloc_addr = (vaddr_t)addr;
-    s_fb_vma->alloc_size = (vaddr_t)size;
-  }
 }
 
 vmemory_area_t* vmemory_create_default(vaddr_t koffset) {
@@ -170,18 +201,22 @@ vmemory_area_t* vmemory_create_default(vaddr_t koffset) {
     }
     vmemory_area_add(vmm, vmmk);
   }
-  // add dev info
-  vmemory_area_t* vmmdev =
-      vmemory_area_create((void*)s_fb_addr, s_fb_size, MEMORY_DEV);
-  vmemory_area_add(vmm, vmmdev);
-  s_fb_vma = vmmdev; /* 驱动就绪后经 vmemory_set_fb() 回填真实几何 */
+  /* 把 vmemory_map_phys() 登记过的设备/显存区域注入本进程的 VMA 链
+   * （缺页时用户态才按 flags 镜像;内核页表映射已在那一步完成）。 */
+  for (vmemory_area_t* m = s_phys_vma; m != NULL; m = m->next) {
+    vmemory_area_t* a =
+        vmemory_area_create_attr((void*)m->vaddr, m->size, m->flags, m->attr);
+    a->alloc_addr = m->alloc_addr;
+    a->alloc_size = m->size;
+    vmemory_area_add(vmm, a);
+  }
 
   return vmm;
 }
 
 void vmemory_dump(vmemory_t* vm) {
-  char* type[] = {"free", "use",  "share", "heap",
-                  "exec", "data", "stack", "mmap"};
+  char* type[] = {"free", "use",   "share", "heap", "exec",
+                  "data", "stack", "mmap",  "dev",  "fb"};
   vmemory_area_t* p = vm->vma;
   for (; p != NULL; p = p->next) {
     log_debug(
@@ -192,8 +227,8 @@ void vmemory_dump(vmemory_t* vm) {
 }
 
 void vmemory_dump_area(vmemory_area_t* area) {
-  char* type[] = {"free", "use",  "share", "heap",
-                  "exec", "data", "stack", "mmap"};
+  char* type[] = {"free", "use",   "share", "heap", "exec",
+                  "data", "stack", "mmap",  "dev",  "fb"};
   vmemory_area_t* p = area;
   for (; p != NULL; p = p->next) {
     log_debug("vaddr:%x vend:%x size:%x alloc p:%x size:%x flag:%x type:%s\n",

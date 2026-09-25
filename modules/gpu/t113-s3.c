@@ -5,6 +5,7 @@
  ********************************************************************/
 #include "t113-s3.h"
 
+#include "kernel/memory.h"
 #include "gpio.h"
 #include "gpio/sunxi-gpio.h"
 #include "t113-ccu.h"
@@ -369,17 +370,11 @@ int t113_lcd_init(vga_device_t *vga) {
   lcd->vram[0] = vga->frambuffer;
   lcd->vram[1] = vga->pframbuffer;
 
-  // map fb
-  u32 addr = vga->frambuffer;
-  u32 paddr = vga->pframbuffer;
-  for (int i = 0; i < vga->framebuffer_length / PAGE_SIZE; i++) {
-    /* 【性能】与 xwin 的映射保持一致：可缓存(Write-Back)。
-     * 同一物理页的多个映射属性必须一致，否则 ARM 上行为未定义。
-     * 配套：xwin_flip_buffer() 每帧 clean 一次后再让 DE 扫。 */
-    page_map(addr, paddr, PAGE_FB);
-    addr += 0x1000;
-    paddr += 0x1000;
-  }
+  // map fb：内核页表映射 + 登记 fb VMA（可缓存 Write-Back，与 xwin 一致；
+  // 配套 xwin_flip_buffer() 每帧 clean 一次后再让 DE 扫）
+  vmemory_map_phys((u32)(uintptr_t)vga->frambuffer,
+                   (u32)(uintptr_t)vga->pframbuffer, vga->framebuffer_length,
+                   MEMORY_FB, PAGE_FB);
 
   // map tcon 4k
   page_map(T113_TCON_BASE, T113_TCON_BASE, PAGE_DEV);
@@ -390,7 +385,7 @@ int t113_lcd_init(vga_device_t *vga) {
   // map de 2m
   page_map(T113_DE_BASE, T113_DE_BASE, PAGE_DEV);
 
-  addr = T113_DE_BASE + T113_DE_MUX_GLB;
+  u32 addr = T113_DE_BASE + T113_DE_MUX_GLB;
   for (int i = 0; i < 1024 * 1024 * 2 * 2 / PAGE_SIZE; i++) {
     page_map(addr, addr, PAGE_DEV);
     addr += 0x1000;

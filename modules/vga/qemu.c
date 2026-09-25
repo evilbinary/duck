@@ -4,6 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "dev/devfs.h"
+#include "kernel/memory.h"
 #include "vga.h"
 
 #define QEMU_VENDOR_ID 0x1234
@@ -115,10 +116,8 @@ int qemu_init_device(device_t* dev, u32 vendor_id, u32 device_id) {
   vga->flip_buffer = qemu_flip_screen;
   // qemu_read_reg(VBE_DISPI_INDEX_VIDEO_MEMORY_64K)
   //todo
-  for (int i = 0; i < size * vga->framebuffer_count / PAGE_SIZE/8; i++) {
-    page_map(addr, addr, PAGE_FB);
-    addr += PAGE_SIZE;
-  }
+  vmemory_map_phys(bar0, bar0, size * vga->framebuffer_count / 8, MEMORY_FB,
+                   PAGE_FB);
 
   // #ifdef DOUBLE_BUFFER
   //   vga->frambuffer = bar0 + size * 2;
