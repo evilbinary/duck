@@ -5,6 +5,7 @@
  * X Window System - Input Device Integration
  ********************************************************************/
 #include "xwin.h"
+#include "keyboard/keyboard.h"
 #include "sysconf/sysconf.h"
 
 // ========== 外部全局显示服务器 ==========
@@ -168,6 +169,43 @@ void xinput_keyboard_event(u8 scancode) {
     xwin_keyboard_event(g_display, keycode, pressed, mods);
 }
 
+// ========== 手柄（joystick）按键 ==========
+// GPIO 手柄驱动（modules/keyboard/{ssd202d,t113-s3,v3s,...}.c）注册为
+// DEVICE_JOYSTICK，上报 Linux KEY_* 码流（release = code|0x80），与 keyboard
+// 的 PS/2 set2 是两条独立通道。这里用手柄专用默认映射表把 KEY_* 转成 xwin 的
+// keycode（方向键/Return/Esc/x/y...，与应用层 yui backend_sdl.c 一致），
+// 不经过 default_keymap（那是给 set2 扫描码用的）。
+static const u32 default_joymap[256] = {
+    [KEY_UP] = 0x48,
+    [KEY_DOWN] = 0x50,
+    [KEY_LEFT] = 0x4B,
+    [KEY_RIGHT] = 0x4D,
+    [KEY_BUTTON_A] = 0x0A,       // Return
+    [KEY_BUTTON_B] = 0x1B,       // Esc
+    [KEY_BUTTON_X] = 'x',
+    [KEY_BUTTON_Y] = 'y',
+    [KEY_BUTTON_START] = 0x0A,   // Return
+    [KEY_BUTTON_SELECT] = 0x1B,  // Esc
+    [KEY_BUTTON_L1] = 0x3B,      // F1
+    [KEY_BUTTON_R1] = 0x3C,      // F2
+    [KEY_BUTTON_L2] = 0x3D,      // F3
+    [KEY_BUTTON_R2] = 0x3E,      // F4
+    [KEY_HOME] = 0x47,           // Home
+    [KEY_POWER] = 0x1B,          // Esc
+};
+
+void xinput_joystick_event(u8 code) {
+    if (g_display == NULL) return;
+    u32 pressed = 1;
+    if (code & 0x80) {
+        pressed = 0;
+        code &= 0x7F;
+    }
+    u32 keycode = default_joymap[code];
+    if (keycode == 0) return; /* 未映射的键忽略 */
+    xwin_keyboard_event(g_display, keycode, pressed, g_display->key_mods);
+}
+
 // ========== 处理鼠标移动 ==========
 void xinput_mouse_move(i32 dx, i32 dy) {
     if (g_display == NULL) return;
@@ -256,6 +294,15 @@ void xinput_poll(void) {
         }
     }
     
+    // 轮询手柄设备（GPIO 手柄，上报 KEY_* 码流）
+    device_t* joy = device_find(DEVICE_JOYSTICK);
+    if (joy != NULL && joy->read != NULL) {
+        u8 code;
+        while (joy->read(joy, &code, 1) > 0) {
+            xinput_joystick_event(code);
+        }
+    }
+
     // 轮询鼠标设备
     device_t* mouse_dev = device_find(DEVICE_MOUSE);
     // log_debug("xinput_poll: mouse_dev=%p DEVICE_MOUSE=%d\n", mouse_dev, DEVICE_MOUSE);

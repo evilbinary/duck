@@ -37,6 +37,7 @@ enum {
   DEVICE_LCD,
   DEVICE_POWER,
   DEVICE_IRQ, /* /dev/irq：统一中断框架的只读诊断出口（modules/irq） */
+  DEVICE_JOYSTICK, /* /dev/joystick：GPIO 手柄（miyoomini 等），上报 KEY_* 码流 */
 };
 
 enum {

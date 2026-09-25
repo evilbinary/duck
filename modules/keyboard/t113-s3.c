@@ -285,9 +285,9 @@ void pacl_init() {
 
 int keyboard_init(void) {
   device_t* dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
-  dev->name = "keyboard";
+  dev->name = "joystick";
   dev->read = read;
-  dev->id = DEVICE_KEYBOARD;
+  dev->id = DEVICE_JOYSTICK;
   dev->type = DEVICE_TYPE_CHAR;
   dev->data = scan_code_buffer;
   kmemset(scan_code_buffer, 0, MAX_CHARCODE_BUFFER);
@@ -297,7 +297,7 @@ int keyboard_init(void) {
   // stdin default device
   vnode_t* stdin = vfs_find(NULL, "/dev/stdin");
   if (stdin != NULL) {
-    stdin->device = device_find(DEVICE_KEYBOARD);
+    stdin->device = device_find(DEVICE_JOYSTICK);
   }
 
   vnode_t* keyboard = vfs_create_node("joystick", V_FILE | V_CHARDEVICE);
