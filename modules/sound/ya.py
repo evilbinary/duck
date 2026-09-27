@@ -8,7 +8,9 @@ target("mod-sound")
 set_kind("static")
 
 add_deps(
-    'kernel'
+    'kernel',
+    # v3s.c 读 [sound] 段配置（见下方 add_includedirs 注释）
+    'mod-sysconf'
 )
 
 

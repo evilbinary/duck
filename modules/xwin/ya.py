@@ -9,7 +9,10 @@ set_kind("static")
 
 add_deps(
     'kernel',
-    'mod-vga'
+    'mod-vga',
+    # module.c / xinput.c 读 [xwin]、[input] 配置段，必须声明依赖，
+    # 否则链接拓扑排序里 libmod-sysconf.a 排在本库之前 ⇒ undefined reference
+    'mod-sysconf'
 )
 
 arch=get_arch()

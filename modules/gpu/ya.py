@@ -9,7 +9,9 @@ set_kind("static")
 
 add_deps(
     'kernel',
-    'mod-bcm'
+    'mod-bcm',
+    # v3s.c 等驱动直接 sysconf_get_int() 取 [lcd] 段配置
+    'mod-sysconf'
 )
 
 arch=get_arch()
