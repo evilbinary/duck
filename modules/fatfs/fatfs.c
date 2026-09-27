@@ -405,6 +405,12 @@ uint fat_op_open(vnode_t *node, uint mode) {
 
   if ((mode & O_CREAT) == O_CREAT) {
     log_debug("create new file %s\n", name);
+    /* YiYiYa: 新建节点的 file_info 是 vfs_open_attr 从父目录共享来的
+       （file->data = node->data），fat_path 为空（fat_init_file_info_from_node
+       只在根节点时回填），所以这里必然失败。曾尝试在本地补出完整 FAT
+       路径后继续 f_open，但会让内核 PREF ABORT（pc 落到非对齐地址），
+       疑似 f_open 之后的写盘/目录项路径（disk_write 从未被使用过）另有
+       问题，故暂不回填；open 失败由调用方（fceux 等）容忍即可。 */
     if (fat_volume_path(file_info, buf) < 0) {
       return -1;
     }

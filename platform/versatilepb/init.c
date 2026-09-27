@@ -50,6 +50,13 @@ void platform_map() {
   page_map(PIC_BASE, PIC_BASE, PAGE_DEV);
   page_map(SD_BASE, SD_BASE, PAGE_DEV);
   page_map(SIC_BASE, SIC_BASE, PAGE_DEV);
+  /* YiYiYa: AACI（PL041）音频寄存器必须在这里（启动时）映射。page_map 只写
+     kernel_page_dir，而用户页表是早先建立的：若等到运行时（sound_init）才映，
+     已经存在的用户页表看不到 ⇒ 中断打断到这些线程时，音频中断处理里首次访问
+     0x10004000 会 data abort（日志 "exception inside IRQ handler no=2 ...
+     ack pending"），首个中断的工作被丢掉、FIFO 不再排空、驱动 write() 自旋。
+     在启动时映好，所有上下文都可见，音频中断才可靠。 */
+  page_map(AACI_BASE, AACI_BASE, PAGE_DEV);
 
   kprintf("platform map end\n");
 }

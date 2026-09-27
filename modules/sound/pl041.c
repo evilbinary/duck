@@ -127,7 +127,10 @@ static size_t write(device_t *dev, void *buf, size_t len) {
   for (i = 0; i < words; i++) {
     u32 guard = 0;
     while (!ring_push(p[i])) {
-      if (++guard > 20000000u) {
+      /* YiYiYa: 原上限 2000 万是天文数字——中断/硬件不排水时会烧掉整颗核
+         （实测 fceux 的 count 飙到 1147 万、主循环被拖住）。这里收成 2000：
+         最多丢一点样本，绝不拖死调用方。 */
+      if (++guard > 2000u) {
         return i * 4;
       }
     }
@@ -140,7 +143,8 @@ static size_t write(device_t *dev, void *buf, size_t len) {
   for (i = 0; i < words; i++) {
     u32 guard = 0;
     while (aaci_read(AACI_SR1) & AACI_SR_TXFF) {
-      if (++guard > 20000000u) {
+      /* YiYiYa: 同上，非中断路径也是 2000 万上限，硬件不排水时同样烧核 */
+      if (++guard > 2000u) {
         return i * 4;
       }
     }

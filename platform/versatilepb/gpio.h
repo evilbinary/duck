@@ -60,6 +60,10 @@
 #define IRQ_SIC_MOUSE (IRQ_SIC_BASE + 4)
 #define IRQ_SIC_AACI (IRQ_SIC_BASE + 24)
 
+/* PL041 AACI 音频寄存器基址。必须在平台启动时 page_map（见 init.c），
+   运行时再映只进 kernel_page_dir，已建好的用户页表看不到。 */
+#define AACI_BASE 0x10004000
+
 
 #define UART0 0x101f1000
 
