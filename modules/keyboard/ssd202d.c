@@ -10,6 +10,13 @@
 #include "keyboard.h"
 #include "pic/pic.h"
 
+/* YiYiYa: 按键诊断打印总开关（0=默认静默；排查输入时改 1） */
+#define KBD_DIAG 0
+#if KBD_DIAG
+#define kbd_log(...) log_info(__VA_ARGS__)
+#else
+#define kbd_log(...) ((void)0)
+#endif
 #define KEYBOARD_DATA 0x60
 #define KEYBOARD_STATUS 0x64
 
@@ -83,6 +90,9 @@ static void init_gpio(void) {
  * 乱序/重复的按下与松开 ⇒ 应用刚置上的 keyPad 位立刻被"松开"清掉 ⇒ 只看到一帧的按下。
  * 现在：边沿触发入队、满则丢新并限速打印、出队取最旧（FIFO）。 */
 static void scan_code_push(u32 code) {
+  /* YiYiYa: 诊断——凡是【真正入队】都打一条。配合上面的 kbd chg，即可区分
+     "沿判定没触发"还是"入队时被丢弃（队列满）"。 */
+  kbd_log("kbd push code=%x %s\n", code & 0x7fu, (code & 0x80u) ? "up" : "down");
   if (scan_code_index >= MAX_CHARCODE_BUFFER) {
     static u32 full_dbg = 0;
     if (full_dbg < 8u) {
@@ -104,27 +114,46 @@ static size_t read(device_t* dev, void* buf, size_t len) {
     int val = gpio_input(0, _pins[i].pin);
     dbg_raw |= ((u32)(val & 1) << i);
 
+    /* YiYiYa: 诊断——只在【电平变化】时打印该引脚的判定输入（上一版打 40 行，
+       被紧密读循环瞬间耗光 ✗）。按一下方向键应看到：val 1→0、active=0、st 0→1。 */
+    if (i < 4) {
+      static u8 dbg_last[4] = {0xff, 0xff, 0xff, 0xff};
+      if (dbg_last[i] != (u8)val) {
+        dbg_last[i] = (u8)val;
+        kbd_log("kbd chg i=%d pin=%d val=%d active=%d st=%d\n", i, _pins[i].pin,
+                 val, _pins[i].active, _pins[i].status);
+      }
+    }
+
     if (val == _pins[i].active) {
       /* 【按下沿】只在状态变化时入队一次（原实现每次 read 都入队 ⇒ 队列洪泛 ✗） */
       if (_pins[i].status != 1) {
         _pins[i].status = 1;
+        /* YiYiYa: 诊断——驱动【判定为按下沿】时才打（与上面的 raw 电平打印区分开） */
+        kbd_log("kbd press pin=%d code=%x\n", _pins[i].pin, _pins[i].key);
         scan_code_push(_pins[i].key);
       }
 
     } else if (_pins[i].status == 1) {
       /* 【松开沿】 */
       _pins[i].status = 0;
+      kbd_log("kbd release pin=%d code=%x\n", _pins[i].pin, _pins[i].key);
       scan_code_push(_pins[i].key | 0x80);
     }
   }
 
   if (dbg_raw != dbg_raw_last) {
     dbg_raw_last = dbg_raw;
-    kprintf("joy raw=%x pressed=%x\n", dbg_raw, (~dbg_raw) & 0xffff);
+    /* YiYiYa: 用 log_info 输出，自带内核时间戳（[tick] tid:），便于和 SDL/UI
+       侧的打印对齐时间线，定位按键在哪一跳被拖慢（原 kprintf 无时间戳）。 */
+    kbd_log("joy raw=%x pressed=%x\n", dbg_raw, (~dbg_raw) & 0xffff);
   }
 
   if (scan_code_index > 0) {
     /* FIFO：取【最旧】的一个，其余整体前移（原实现取最新 + 移位方向错 ✗） */
+    /* YiYiYa: 诊断——出队时打印剩下的队列深度，队列被灌满/积压一眼可见 */
+    kbd_log("kbd pop code=%x left=%u\n", (u8)scan_code_buffer[0],
+             (unsigned)(scan_code_index - 1));
     kstrncpy(buf, &scan_code_buffer[0], 1);
     for (int i = 0; i + 1 < scan_code_index; i++) {
       scan_code_buffer[i] = scan_code_buffer[i + 1];

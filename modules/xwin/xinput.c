@@ -298,6 +298,17 @@ void xinput_poll(void) {
         }
     }
     
+    /* YiYiYa: 【不再在这里消费手柄设备】
+     * 原因：驱动 read() 是【单队列、读了就弹】✗ —— 窗口系统（xwin）在这里把
+     * D-pad 抽干并翻译成键盘事件 ✗；而应用（SDL 手柄子系统）也 open
+     * /dev/joystick 读同一个队列 ✗ ⇒ 两边互抢 ⇒ 按键时好时坏、按住不重复。
+     * Linux 的惯例是【手柄不归窗口系统管】：窗口系统只做键盘/鼠标，手柄由
+     * 应用直接消费（SDL joystick / GameController）✓。这里按这个惯例改。
+     *
+     * 影响：依赖"设备方向键 → 键盘事件"的 app（例如 fceux 用键盘映射手柄 ✗）
+     * 在真机上会拿不到设备方向键 ✗ —— 这类 app 应改用 SDL 手柄 API（同 Linux ✓）。
+     * 想恢复：去掉下面 #if 0 / #endif 即可（也可改成按环境变量开关 ✓）。 */
+#if 0
     // 轮询手柄设备（GPIO 手柄，上报 KEY_* 码流）
     device_t* joy = device_find(DEVICE_JOYSTICK);
     if (joy != NULL && joy->read != NULL) {
@@ -306,6 +317,7 @@ void xinput_poll(void) {
             xinput_joystick_event(code);
         }
     }
+#endif
 
     // 轮询鼠标设备
     device_t* mouse_dev = device_find(DEVICE_MOUSE);
