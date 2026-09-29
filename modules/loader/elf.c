@@ -21,7 +21,7 @@
 #ifdef LOAD_ELF_DEBUG
 #define elf32_log_debug log_info
 #else
-#define elf32_log_debug(...) log_info(__VA_ARGS__)
+#define elf32_log_debug(...) ((void)0)
 #endif
 
 #define elf32_log_error kprintf
@@ -275,7 +275,7 @@ static int elf32_map_segment(int fd, const Elf32_Phdr* ph) {
         for (k = 0; k < ph->p_filesz; k++) {
           sum = sum * 131u + b[k];
         }
-        log_info("elf32 seg sum vaddr=%x filesz=%x sum=%08x\n", ph->p_vaddr,
+        elf32_log_debug("elf32 seg sum vaddr=%x filesz=%x sum=%08x\n", ph->p_vaddr,
                  ph->p_filesz, sum);
       } else {
         elf32_log_error("elf32 seg sum access failed vaddr=%x\n", ph->p_vaddr);

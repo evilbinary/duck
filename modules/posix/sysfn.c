@@ -1163,7 +1163,26 @@ int sys_set_tid_adress(void* ptr) {
 }
 
 void sys_exit_group(int status) {
-  sys_exit(status);
+  /* 【真正结束整个进程】musl 的 exit()/_Exit() 走 SYS_exit_group；原实现
+   * 直接 sys_exit（只退当前线程）✗ —— pthread 后台线程（SDL timer 等）
+   * 还活着，ps 里进程一直挂着（gnuboy 按 HOME 打印 "HOME -> exit" 后
+   * 不退出就是这个）。这里先做与 sys_exit 相同的当前线程收尾，再由
+   * thread_exit_group 停掉同进程其它线程并退出当前线程。 */
+  thread_t* current = thread_current();
+  if (current != NULL && current->clear_child_tid != NULL) {
+    int* tidptr = (int*)current->clear_child_tid;
+    *tidptr = 0;
+  }
+  if (current != NULL) {
+    thread_exit_group(current, status);
+    if (current->tinfo != NULL) {
+      ((thread_info_t*)current->tinfo)->detach_state = DT_EXITED;
+    }
+  }
+  /* 与 sys_exit 相同：不能返回 —— 死线程上继续执行会走飞。 */
+  schedule_switch();
+  for (;;) {
+  }
 }
 
 ssize_t sys_readlink(const char* restrict pathname, char* restrict buf,
@@ -1201,7 +1220,22 @@ int sys_kill(pid_t pid, int sig) {
   if (t == NULL) {
     return -1;
   }
-  thread_stop(t);
+  thread_t* current = thread_current();
+  if (t == current) {
+    /* 自杀：只停自己（调用方随后一般就走 exit 了） */
+    thread_stop(t);
+    return 0;
+  }
+  /* 【kill 一个进程 = 结束它的【整个进程】并唤醒其父进程】原实现只有
+   * thread_stop(t)（停一个线程）✗：
+   *   · pthread 后台线程（SDL timer 等）还活着 ⇒ 进程没真正结束；
+   *   · thread_stop 不唤醒父 ⇒ 父在 sys_waitpid 的 THREAD_WAITING 里
+   *     睡死（实测：kill gnuboy 后 gnuboy 从 ps 消失，但 sh/ymain 一直
+   *     wait，整个 system() 链卡住 ✗）。
+   * thread_exit_group：停掉 t 同进程（共享 upage）的所有线程；
+   * thread_exit(t)：把 t 标退出并【唤醒其父】，父醒来后在圆环里查到
+   * 僵尸即返回（sys_waitpid 的实现就是靠重查 + 唤醒 ✓）。 */
+  thread_exit_group(t, 0);
   return 0;
 }
 

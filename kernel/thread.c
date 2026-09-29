@@ -711,6 +711,40 @@ void thread_exit(thread_t* thread, int code) {
   }
 }
 
+/* 【exit_group：结束【整个进程】】musl 的 exit()/_Exit() 走 SYS_exit_group。
+ * 停掉与本线程同属一个进程（共享地址空间）的其它线程；本线程自身随后由
+ * thread_exit 退出（唤醒父进程 waitpid）。同进程判定用【共享页表根 upage】：
+ * sys_clone 的 pthread 路径（CLONE_VM 且非 VFORK）走 VM_SAME，vmemory_clone
+ * 里 upage 直接共享；fork/vfork 的子进程是 page_clone 的新页表 ⇒ upage 不同，
+ * 不会误伤 ✓。
+ * 停法 = thread_stop（标 STOPPED + 摘出调度链 + 进回收队列），回收由调度器
+ * 统一完成。已 STOPPED 的跳过：thread_recycle 无防重入，重复入队会损坏链表 ✗。
+ * 遍历先存 next：thread_stop 会改链表。 */
+void thread_exit_group(thread_t* thread, int code) {
+  if (thread == NULL) {
+    return;
+  }
+  /* 【不误伤调用者】sys_kill 场景下调用者是别的进程（通常不同 upage，
+   * 本来就到不了这里）；但如果是"线程杀自己进程里的另一个线程"，调用者
+   * 与目标同 upage —— 必须跳过它，否则在它自己的上下文里 thread_stop 自己
+   * （标 STOPPED/摘链后继续执行）会留下状态错乱的活线程 ✗。 */
+  thread_t* self = thread_current();
+  if (thread->vm != NULL && thread->vm->upage != NULL) {
+    for (int i = 0; i < MAX_CPU; i++) {
+      thread_t* t = schedulable_head_thread[i];
+      while (t != NULL) {
+        thread_t* next = t->next;
+        if (t != thread && t != self && t->state != THREAD_STOPPED &&
+            t->vm != NULL && t->vm->upage == thread->vm->upage) {
+          thread_stop(t);
+        }
+        t = next;
+      }
+    }
+  }
+  thread_exit(thread, code);
+}
+
 thread_t* thread_find_next(thread_t* thread) {
   thread_t* v = schedulable_head_thread[cpu_get_id()];
 
