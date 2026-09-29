@@ -404,8 +404,16 @@ void thread_exec_reset_fds(thread_t* thread) {
 
 void thread_sleep(thread_t* thread, u32 count) {
   thread->state = THREAD_SLEEP;
-  if(count>0){
-    thread->sleep_counter += count;
+  if (count > 0) {
+    /* YiYiYa: 【睡眠债不能累加】——KISS 设计把"真正换出"推迟到下一次 tick，
+     * 线程在被换出前会继续跑很多帧、每帧一次 nanosleep ⇒ 原来的 `+=` 会把
+     * 这些请求累加：miyoo 实测每 tick 间跑 ~13 帧、SDL_Delay(50) 每帧一次
+     * ⇒ 债 ≈ 650 tick ⇒ 每次被换出要"睡" ≈659ms ✗（帧率被压到 13fps、
+     * 按键 1~2 秒才有反应 ✗）。取 max：一个调度间隔内只保留最大的一次请求，
+     * 每轮最多睡 requested 时长 ⇒ 仍被节流，但不会再出现 659ms 大冻 ✓。 */
+    if (thread->sleep_counter < count) {
+      thread->sleep_counter = count;
+    }
     thread->counter += count;
   }
 }

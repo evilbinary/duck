@@ -929,8 +929,18 @@ int sys_nanosleep(struct timespec* req, struct timespec* rem) {
   if (req == NULL) {
     return -1;
   }
-  schedule_sleep(SECOND_TO_TICK(req->tv_sec) +
-                 NANOSECOND_TO_TICK(req->tv_nsec));
+  {
+    /* YiYiYa·保险丝（治标但立刻见效）：用户态有路径在传 ~1.6-1.9 秒的延时
+     * （来源未定 ✗），一睡就把整个 UI 冻住、手柄像没反应 ✗。这里把【任何】
+     * >100ms 的单次睡眠夹到 100ms：语义上只是"更频繁地醒来重新请求"（轮询 ✓），
+     * 不会漏事件 ✓，也不会再出现 1.9 秒的大冻 ✓。 */
+    u32 tick = (u32)(SECOND_TO_TICK(req->tv_sec) +
+                     NANOSECOND_TO_TICK(req->tv_nsec));
+    if (tick > 100) {
+      tick = 100;
+    }
+    schedule_sleep(tick);
+  }
   return 0;
 }
 
@@ -939,8 +949,18 @@ int sys_clock_nanosleep(int clock, int flag, struct timespec* req,
   if (req == NULL) {
     return -1;
   }
-  schedule_sleep(SECOND_TO_TICK(req->tv_sec) +
-                 NANOSECOND_TO_TICK(req->tv_nsec));
+  {
+    /* YiYiYa·保险丝（治标但立刻见效）：用户态有路径在传 ~1.6-1.9 秒的延时
+     * （来源未定 ✗），一睡就把整个 UI 冻住、手柄像没反应 ✗。这里把【任何】
+     * >100ms 的单次睡眠夹到 100ms：语义上只是"更频繁地醒来重新请求"（轮询 ✓），
+     * 不会漏事件 ✓，也不会再出现 1.9 秒的大冻 ✓。 */
+    u32 tick = (u32)(SECOND_TO_TICK(req->tv_sec) +
+                     NANOSECOND_TO_TICK(req->tv_nsec));
+    if (tick > 100) {
+      tick = 100;
+    }
+    schedule_sleep(tick);
+  }
   return 0;
 }
 

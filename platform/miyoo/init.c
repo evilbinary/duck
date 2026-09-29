@@ -4,6 +4,38 @@
 
 #define IRQ_TIMER0 27
 
+/* CNTFRQ 标定用（本文件没引这个头，按原型局部声明） */
+extern uint64_t read_cntvct(void);
+
+/* YiYiYa·CNTFRQ 标定 -------------------------------------------------------
+ * 本板 read_cntfrq() 读出 0（bootloader 没写）⇒ 旧 fallback 假设 6MHz ✗，
+ * 实测 tick=6000 计数 ≈ 2ms（整个内核的"1 tick=1ms"假设慢 ~2× ⇒ 睡眠/动画/
+ * 游戏速度全都不准 ✗）。用 UART 当秒表：115200 8N1 ⇒ 每字节 10bit；发
+ * CAL_BYTES 个 NUL（线上真的花时间，终端看不见），CNTVCT 前后差 ÷ 发送
+ * 时长 = 计数器真实频率。合理性窗口 [500kHz, 30MHz]，超出退回原 fallback。 */
+#define MIYOO_CALIBRATE_CNTFRQ 1
+#define MIYOO_CAL_BYTES 512
+static u32 g_cntfrq_real = 0;
+
+static u32 calibrate_cntfrq(void) {
+  u64 t0, t1, hz, us;
+  u32 i;
+  t0 = read_cntvct();
+  for (i = 0; i < MIYOO_CAL_BYTES; i++) {
+    uart_send_char(0);
+  }
+  t1 = read_cntvct();
+  us = ((u64)MIYOO_CAL_BYTES * 10ULL * 1000000ULL) / 115200ULL;
+  if (t1 <= t0 || us == 0) {
+    return 0;
+  }
+  hz = ((t1 - t0) * 1000000ULL) / us;
+  if (hz < 500000ULL || hz > 30000000ULL) {
+    return 0;
+  }
+  return (u32)hz;
+}
+
 static u32 cntfrq[MAX_CPU] = {
     0,
 };
@@ -82,6 +114,17 @@ void timer_init(int hz) {
   kprintf("timer init %d\n", cpu);
 
   int frq = read_cntfrq();
+#if MIYOO_CALIBRATE_CNTFRQ
+  if (frq == 0) {
+    if (g_cntfrq_real == 0 && cpu == 0) {
+      g_cntfrq_real = calibrate_cntfrq();
+      kprintf("cntfrq calibrated %d\n", g_cntfrq_real);
+    }
+    if (g_cntfrq_real != 0) {
+      frq = (int)g_cntfrq_real;
+    }
+  }
+#endif
   kprintf("timer frq %d\n", frq);
   cntfrq[cpu] = frq / hz;
 
@@ -97,6 +140,7 @@ void timer_init(int hz) {
   kprintf("val %d\n", val);
   enable_cntv(1);
 
+
   gic_init(0);
   gic_enable(0, IRQ_TIMER0);
 }
@@ -105,6 +149,7 @@ void timer_end() {
   int irq = gic_irqwho();
   gic_irqack(irq);
   write_cntv_tval(cntfrq[0]);
+
 }
 
 int interrupt_get_source(u32 no) {

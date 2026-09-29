@@ -27,12 +27,15 @@ int schedule_state(int cpu) {
   thread_t* v = thread_head();
   for (; v != NULL; v = v->next) {
     if (v->state == THREAD_SLEEP) {
-      /* Only the thread's CPU advances its sleep; otherwise SMP wakes Nx faster. */
-      if (v->cpu_id == cpu) {
-        v->sleep_counter--;
-        if (v->sleep_counter <= 0) {
-          thread_wake(v);
-        }
+      /* YiYiYa: 【不再按 cpu_id 过滤】——原意是防 SMP 下 N 倍唤醒，但 miyoo
+       * 实测【只有 CPU0 有定时器 tick】（boot 打印 ticks=(N,0,0,0) ✓；AP 没
+       * 起来/没 arm 定时器 ✗），而线程的 cpu_id 可能是 1/2/3（创建时所在核 ✗）
+       * ⇒ 它们的 sleep_counter 永远不递减 ⇒ "睡"只能靠事件唤醒 ✗：SDL_Delay(50)
+       * 实测睡 ~1.5 秒、手柄要等事件才有反应 ✗✗。当前实际只有单核在 tick ⇒
+       * 直接递减才对 ✓（将来若 AP 各自 tick，需改成"绝对到期时刻 + 单核负责"）。 */
+      v->sleep_counter--;
+      if (v->sleep_counter <= 0) {
+        thread_wake(v);
       }
     } else if (v->state == THREAD_RUNNING) {
       count++;
