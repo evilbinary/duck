@@ -8,10 +8,17 @@
 #include "arch/pmemory.h"
 #include "cpu.h"
 #include "kernel/memory.h"
+#include "kernel/page_ref.h"
 
 #define PAGE_DIR_NUMBER 4096
 
 extern boot_info_t* boot_info;
+
+/* page_put_page：kernel 侧注册的"该页是否允许释放"回调（COW 共享页 ref>1 不放）。
+ * 它声明在 arch/pmemory.h 里、但被 #ifdef CONFIG_COW 包着；而本文件 include
+ * pmemory.h 的时机早于 kernel/config.h（CONFIG_COW 经 kernel/memory.h 才可见）
+ * ⇒ 那句声明会被跳过（编译报 undeclared）。这里显式声明一次，不依赖头文件时序。 */
+extern int (*page_put_page)(void* pa);
 extern memory_manager_t mmt;
 extern void dccmvac(unsigned long mva);
 extern void* page_kernel_dir(void);
@@ -178,7 +185,12 @@ void page_destroy(u32* upage) {
       if ((l2[j] & 3) != 0) {
         void* pg = (void*)(l2[j] & 0xFFFFF000u);
         l2[j] = 0;
-        mm_free_page(pg);
+        /* 【引用计数闸】COW 共享页（ref>1）不能在这里放掉 —— 另一个进程还在用。
+         * armv5 早就有这道闸；armv7-a 之前是空实现（没有 COW）所以直接放，
+         * 现在 COW 生效，必须同样按引用计数决定。 */
+        if (page_put_page == NULL || page_put_page(pg) == 0) {
+          mm_free_page(pg);
+        }
       }
     }
     /* L2 表本身也归还：上面已把 256 项清空，表私有且已无用 */
@@ -249,7 +261,85 @@ void mm_init_default(u32 kernel_page_dir){
 #ifdef CONFIG_COW
 /* ---- COW 接口：本架构暂未实现，给空实现保证 kernel 侧可链接 ----
  * （armv5 已有真实实现，其余平台按需补齐） */
-int page_fault_is_write(void) { return 0; }
-int page_cow_query(u32* upage, u32 va, u32* pa) { (void)upage; (void)va; (void)pa; return 0; }
-void page_cow_apply(u32* upage, u32 va, u32 new_pa) { (void)upage; (void)va; (void)new_pa; }
+/* ============ COW（写时复制）PTE 操作 ============
+ * 与 armv5/mm.c 同构，但【不用软件标记位】：
+ *   armv5 的 PTE bit9 是 IMP（可私用）⇒ 拿它当 COW 标记；
+ *   而 armv7-a 的 bit9 是 AP[2]（只读位，扩展格式下 PL1 也会只读）
+ *   ⇒ 照抄会让【内核自己也写不进去】。
+ * 这里改用「用户只读(AP[1:0]=0b10) + 引用计数>1」识别 COW 页：
+ *   · 保护：把可写页改成 AP[1:0]=0b10 = 特权可写 / 用户只读
+ *     ⇒ 用户写触发 fault，内核（身份映射侧/特权写）仍可写 ✓
+ *   · 识别：用户只读 + page_ref_get(pa) > 1（fork 时 kernel 侧 page_ref_inc 过）
+ *   · 破写：PTE 指向新页并恢复 AP[1:0]=0b11
+ * 引用计数由 kernel 侧管理（vmemory_clone / page.c 的 COW 路径）。 */
+
+/* 取 VA 对应的小页 PTE（未映射/非小页返回 NULL） */
+static u32* cow_l2_slot(u32* upage, u32 va) {
+  u32 l1i = va >> 20;
+  u32 l2i = (va >> 12) & 0xFF;
+  u32 l1e = upage[l1i];
+  u32* l2;
+  if ((l1e & 0x3) == 0) {
+    return NULL;
+  }
+  l2 = (u32*)(l1e & 0xFFFFFC00u);
+  if (l2 == NULL) {
+    return NULL;
+  }
+  if ((l2[l2i] & 0x3) == 0) {
+    return NULL; /* 空项 */
+  }
+  return &l2[l2i];
+}
+
+/* read_dfsr() 定义在 armv7-a/cpu.c，但头文件没声明它（其它 .c 一直靠隐式声明，
+ * 参数按无原型规则传，容易踩坑）⇒ 这里显式声明一次，供 COW 判断"写故障"。 */
+u32 read_dfsr(void);
+
+int page_fault_is_write(void) { return (read_dfsr() & (1u << 11)) ? 1 : 0; }
+
+int page_cow_query(u32* upage, u32 va, u32* pa) {
+  u32* s = cow_l2_slot(upage, va);
+  u32 d;
+  u32 p;
+  if (s == NULL) {
+    return 0;
+  }
+  d = *s;
+  if (((d >> 4) & 0x3u) != 0x2u) {
+    return 0; /* 不是"用户只读"，不是 COW 页 */
+  }
+  p = d & 0xFFFFF000u;
+  if (page_ref_get(p) <= 1) {
+    return 0; /* 没被共享（引用计数 <=1）⇒ 不是 COW */
+  }
+  if (pa != NULL) {
+    *pa = p;
+  }
+  return 1;
+}
+
+void page_cow_apply(u32* upage, u32 va, u32 new_pa) {
+  u32* s = cow_l2_slot(upage, va);
+  u32 d;
+  if (s == NULL) {
+    return;
+  }
+  d = *s;
+  if (new_pa == 0) {
+    if (((d >> 4) & 0x3u) != 0x3u) {
+      return; /* 本来就不让用户写（代码/rodata）⇒ 共享即可，无需 COW */
+    }
+    d = (d & ~0x30u) | (0x2u << 4); /* AP[1:0]=0b10 特权可写/用户只读 */
+  } else {
+    d = (d & ~0x30u) | (0x3u << 4);              /* 恢复用户可写 */
+    d = (d & 0xFFFu) | (new_pa & 0xFFFFF000u);   /* 指向新页 */
+  }
+  *s = d;
+  cpu_flush_dcache_range((unsigned long)s,
+                         (unsigned long)s + sizeof(u32));
+  tlbimva(va);
+  dsb();
+  isb();
+}
 #endif

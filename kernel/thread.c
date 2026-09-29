@@ -628,7 +628,12 @@ void thread_recycle_process(void) {
     /* 【僵尸等待被 waitpid 回收前不能释放】退出线程先进 recycle 队列；若父进程
      * 还在（thread_find_id 能找到），它要留在队列里当僵尸供 thread_find_zombie_child
      * 找到。回收时 sys_waitpid 把 pid 置 -1，下一轮这里才会真正释放。
-     * 父进程已不在（孤儿）则直接释放，避免泄漏。 */
+     * 父进程已不在（孤儿）则直接释放，避免泄漏。
+     * 【注意：不要试图把 vm/ctx 提前到这里释放】退出的线程此刻可能仍站在自己的
+     * 内核栈上、其页表可能仍是 TTBR0 活跃表（见 thread_recycle 的注释）。实测
+     * 提前 kfree 内核栈 ⇒ 下一次系统调用返回时中断帧被复用 ⇒ PC 变垃圾(UNDEF)；
+     * 提前释放 vm 也有"活跃页表被回收"的风险。真正的"退出即释放"由【本函数下一次
+     * 被调度器调用时】完成（那时它已切走），语义上已经足够早。 */
     if (!still_running && v->pid != (u32)-1 &&
         thread_find_id((int)v->pid) != NULL) {
       prev = v;
