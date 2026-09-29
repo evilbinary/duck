@@ -37,7 +37,7 @@ u32 pty_slave_write(vnode_t *node, u32 offset, u32 size, u8 *buffer);
 
 u32 pty_open(vnode_t *node);
 u32 pty_close(vnode_t *node);
-size_t pty_ioctl(vnode_t *node, u32 cmd, va_list args);
+size_t pty_ioctl(vnode_t *node, u32 cmd, void *args);
 
 
 

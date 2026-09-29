@@ -14,7 +14,13 @@ voperator_t pty_slave_operator = {.close = NULL,
                                   .open = pty_slave_open,
                                   .ioctl = pty_ioctl};
 
-size_t pty_ioctl(vnode_t *node, u32 cmd, va_list args) {
+/* 【形参必须是 void*，不能是 va_list】本函数挂在 voperator_t.ioctl 槽位上
+ * （其类型是 void*），而 AArch64 的 va_list 是"结构体"：按 va_list 声明时，
+ * 编译器会去【读该指针指向的 32 字节】构造副本 ⇒ 无参 ioctl 传 NULL 就
+ * memory fault at 0（和 devfn.c 的 device_ioctl 是同一个坑 ✓）。
+ * 本函数并不使用 args ⇒ 直接改成 void* 即可。 */
+size_t pty_ioctl(vnode_t *node, u32 cmd, void *args) {
+  (void)args;
   if (cmd == IOC_SLAVE) {
     pty_t *pty = node->device;
     return pty->slave->child_number - 1;

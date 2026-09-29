@@ -310,8 +310,14 @@ int page_cow_query(u32* upage, u32 va, u32* pa) {
     return 0; /* 不是"用户只读"，不是 COW 页 */
   }
   p = d & 0xFFFFF000u;
-  if (page_ref_get(p) <= 1) {
-    return 0; /* 没被共享（引用计数 <=1）⇒ 不是 COW */
+  /* 【不要再要求 ref>1！】kernel 侧 vmemory_clone 是"先 page_cow_apply、再
+   * page_cow_query、查到才 page_ref_inc"：标完那一刻 ref 还是 1 ⇒ 若这里要求
+   * ref>1 就永远返回 0 ⇒ 永远不 inc ⇒ 写故障也认不出 COW ⇒ COW 等于空转 ✗
+   * （armv8-a 上实测就是被 fallback 杀掉进程 ✓）。armv5 用 PTE 软件 tag 位识别 ✓，
+   * 本架构没有可用保留位（bit9 = AP[2] ✗）⇒ 改用"用户只读 + 在 RAM 内"识别 ✓，
+   * 设备/MMIO 页由 mm_page_in_ram 排除 ✓。 */
+  if (!mm_page_in_ram((void*)(uintptr_t)p)) {
+    return 0;
   }
   if (pa != NULL) {
     *pa = p;

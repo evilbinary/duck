@@ -63,8 +63,8 @@ size_t device_ioctl(vnode_t *node, u32 cmd, void *args) {
    *     （从垃圾内存读出来的可能是 0/野值，检查通过后跳过去就崩）。
    * 实测 raspi3：/bin/logo 在 openat 之后的 ioctl 路径崩在 0
    *   （pc=device_ioctl+0x64 / devfn.c:69，lr=vioctl+0xc8 / vfs.c:85）。
-   * 内核代码段在 0x100000 之上 ⇒ 函数指针落在其下必是"未初始化/被踩"。
-   * 这里只做防御：宁可让该 ioctl 静默失败，也不让内核踩 0。 */
+   * （定位期曾临时加过"函数指针 < 0x100000 即视为野指针"的启发式，已撤：
+   *  真正的根因是形参类型 va_list/void* 不一致，见 devfn.h 的说明。）*/
   /* 【AArch64 ABI 说明】形参必须是 void*（见 devfn.h 的注释）：以前声明成
    * va_list 时，编译器会去 *读 args 指向的 32 字节* 来构造 va_list 副本，
    * 无参 ioctl（args=NULL）⇒ memory fault at 0。 */
@@ -72,7 +72,7 @@ size_t device_ioctl(vnode_t *node, u32 cmd, void *args) {
     return ret;
   }
   dev = (device_t *)node->device;
-  if (dev->ioctl == NULL || (u64)(uintptr_t)dev->ioctl < 0x100000UL) {
+  if (dev->ioctl == NULL) {
     //log_debug("device %s ioctl null\n", node->name);
     return ret;
   }
