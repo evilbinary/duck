@@ -66,12 +66,21 @@ struct gpio_pins {
     DECLARE_GPIO_KEY(KEY_BUTTON_R2, GPIO_LOW),
     DECLARE_GPIO_KEY(KEY_POWER, GPIO_HIGH),
     DECLARE_GPIO_KEY(KEY_HOME, GPIO_LOW),
+    /* ===== 音量键（待确认硬件引脚后填上，见下）=====
+     * miyoo 部分批次的音量是【ADC 分压】而非独立 GPIO；若为 GPIO，
+     * 取消注释并填入实际引脚号即可（码值用 keyboard.h 的 KEY_VOLUMEUP/DOWN ✓）。
+     * DECLARE_GPIO_KEY(KEY_VOLUMEUP, GPIO_LOW),
+     * DECLARE_GPIO_KEY(KEY_VOLUMEDOWN, GPIO_LOW),
+     */
 };
+
+/* 按键总数：以后加键只改表 ✓（原来扫描循环硬编码 16 ✗，加键会被漏掉） */
+#define KEY_PINS_COUNT ((int)(sizeof(_pins) / sizeof(_pins[0])))
 
 static void init_gpio(void) {
   // log_debug("keyboard pins init\n");
 
-  for (int i = 0; i < 16; i++) {
+  for (int i = 0; i < KEY_PINS_COUNT; i++) {
     // log_debug("keyboard pins config %d\n", i);
     gpio_config(0, _pins[i].pin, 1);
     // log_debug("keyboard pins pull %d\n", i);
@@ -110,7 +119,7 @@ static size_t read(device_t* dev, void* buf, size_t len) {
   static u32 dbg_raw_last = 0xffffffffu;
   u32 dbg_raw = 0;
 
-  for (int i = 0; i < 16; i++) {
+  for (int i = 0; i < KEY_PINS_COUNT; i++) {
     int val = gpio_input(0, _pins[i].pin);
     dbg_raw |= ((u32)(val & 1) << i);
 

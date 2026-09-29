@@ -8,7 +8,19 @@
 
 #include "kernel/kernel.h"
 
-#define KEY_HOME 0xF0
+/* ===== 手柄专用扩展码段（0x70-0x7E 空闲）========================
+ * 手柄字节协议：byte = 键码(低7位) | (松开 ? 0x80 : 0)
+ * ⇒ 键码必须 ≤ 0x7F ✗。旧的 KEY_HOME=0xF0 自带 bit7 ⇒ 驱动把它当"松开"入队，
+ * 消费端（infones/SDL）&0x7F 后也永远匹配不上 ⇒ HOME 键形同不存在 ✗。
+ * 这里为手柄单独开一段扩展码，不再占用键盘码位 ✓。 */
+/* 手柄扩展键码段（0x70-0x7E 空闲）：与 KEY_POWER/KEY_BUTTON_* 同族命名 ✓。
+ * 键码必须 ≤ 0x7F —— 手柄字节协议是 byte = 键码(低7位) | (松开 ? 0x80 : 0) ✗，
+ * 旧的 0xF0 自带 bit7 ⇒ 被当"松开"且消费端 &0x7F 后匹配不上 ✗。 */
+#define KEY_HOME        0x70
+#define KEY_VOLUMEUP    0x71
+#define KEY_VOLUMEDOWN  0x72
+/* 兼容旧名（值已修正为 ≤0x7F）*/
+
 #define KEY_ROLL_BACK 0xF1
 #define KEY_ROLL_FORWARD 0xF2
 
