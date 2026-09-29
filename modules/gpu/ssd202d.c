@@ -47,7 +47,11 @@ void ssd202d_flip_screen(vga_device_t *vga, u32 index) {
   // vga->framebuffer_index = index;
   // kprintf("flip %d %d %d\n",index,vga->width,vga->height);
   // rgb2nv12(vga->pframbuffer, vga->frambuffer, vga->width, vga->height);
-  kmemcpy(vga->pframbuffer, vga->frambuffer, vga->width * vga->height);
+  /* 【必须拷满整帧 NV12 = w*h*3/2】原来只拷了 Y 面（w*h）✗ ⇒ UV（色彩）面永远
+   * 停在【上一帧】⇒ 新灰度画面叠着旧彩色 ⇒ 肉眼看到"两个画面/重影"（实测 miyoo）。
+   * 帧缓冲布局：Y 面 w*h 字节 + UV 面 w*h/2 字节（见 libgui screen_canvas32_to_nv12）。 */
+  kmemcpy(vga->pframbuffer, vga->frambuffer,
+          (vga->width * vga->height * 3) / 2);
 }
 
 int ssd202_lcd_init(vga_device_t *vga) {
