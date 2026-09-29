@@ -836,31 +836,56 @@ int sys_munmap(void* addr, size_t size) {
     log_error("sys munmap not found vm\n");
     return MAP_FAILED;
   }
-  vmemory_area_t* area = vmemory_area_find(vm->child, addr, size);
-  if (area == NULL) {
-    log_warn("sys munmap not found area\n");
+  /* YiYiYa·修复：支持一次 munmap 覆盖【多个/部分】area ✗→✓
+   * 原实现要求 [addr, addr+size) 完全落在【单个】area 内；而 mallocng 的 trim
+   * 会把多个相邻 mmap 合并成一次 munmap ⇒ 永远 area==NULL ⇒ 静默 return ⇒
+   * 物理页/映射【从不释放】⇒ 页池耗尽 ⇒ valloc failed / ya_sbrk oom 卡死 ✗✗。
+   * 现在：与 [addr,end) 相交的 area 逐个 vfree；完全包含的整块摘除，
+   * 部分重叠的裁剪端点（另一端保持；中间被挖空时重复 vfree 是无害的 ✓）。 */
+  {
+    vaddr_t a0 = (vaddr_t)addr;
+    vaddr_t a1 = a0 + size;
+    int freed = 0;
+    vmemory_area_t* prev = NULL;
+    vmemory_area_t* p = vm->child;
+    while (p != NULL) {
+      vmemory_area_t* next = p->next;
+      if (a0 < p->vend && p->vaddr < a1) {
+        vaddr_t s0 = a0 > p->vaddr ? a0 : p->vaddr;
+        vaddr_t s1 = a1 < p->vend ? a1 : p->vend;
+        vfree((void*)s0, (vaddr_t)(s1 - s0));
+        freed++;
+        if (a0 <= p->vaddr && a1 >= p->vend) {
+          /* 完全包含 ⇒ 摘除整块 ✓ */
+          if (prev == NULL) {
+            vm->child = next;
+          } else {
+            prev->next = next;
+          }
+          kfree(p);
+          p = next; /* prev 不变 ✓ */
+          continue;
+        }
+        /* 部分重叠 ⇒ 裁剪端点（保留剩余）✓ */
+        if (p->vaddr >= a0) {
+          p->vaddr = s1;
+        } else {
+          p->vend = s0;
+        }
+      }
+      prev = p;
+      p = next;
+    }
+    if (freed == 0) {
+      static u32 dbg_unmap_miss = 0;
+      if (dbg_unmap_miss < 20) {
+        dbg_unmap_miss++;
+        log_error("munmap: no area intersects %x len=%x\n", (u32)a0,
+                  (u32)size);
+      }
+    }
     return 0;
   }
-  // 释放物理页
-  vfree((void*)area->vaddr, area->size);
-  // 从 child 链表摘掉节点并释放
-  vmemory_area_t* prev = NULL;
-  vmemory_area_t* p = vm->child;
-  while (p != NULL) {
-    if (p == area) {
-      if (prev == NULL) {
-        vm->child = p->next;
-      } else {
-        prev->next = p->next;
-      }
-      kfree(area);
-      break;
-    }
-    prev = p;
-    p = p->next;
-  }
-
-  return 0;
 }
 
 int sys_mprotect(const void* start, size_t len, int prot) {

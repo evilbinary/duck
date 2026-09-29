@@ -20,5 +20,7 @@
 void arch_init(boot_info_t* boot,int cpu_id);
 
 ullong mm_get_total(void);
+/* 物理 RAM 基址（遍历内存块 origin_addr，跨平台通用） */
+ullong mm_get_base(void);
 
 #endif

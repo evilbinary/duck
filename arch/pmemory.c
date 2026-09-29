@@ -38,6 +38,19 @@ int (*page_put_page)(void* pa) = 0;
 
 void mm_add_block(uintptr_t addr, uintptr_t len);
 
+/* YiYiYa：物理 RAM 基址 —— 遍历所有内存块取最小的 origin_addr。
+ * 与 mm_get_total() 同源（都来自 boot_info 的 memory 表），不写死任何平台常量 ✓。 */
+ullong mm_get_base(void) {
+  ullong base = 0;
+  mem_block_t* p = mmt.blocks;
+  for (; p != NULL; p = p->next) {
+    if (base == 0 || (ullong)p->origin_addr < base) {
+      base = (ullong)p->origin_addr;
+    }
+  }
+  return base;
+}
+
 void ya_alloc_init() {
 #ifdef LX6
   kprintf("Y0\n");

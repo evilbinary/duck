@@ -393,7 +393,26 @@ void* kmalloc_alignment(size_t size, int alignment, u32 flag) {
   return addr;
 }
 
-void kfree(void* ptr) { vm_free(ptr); }
+void kfree(void* ptr) {
+  if (ptr == NULL) {
+    return;
+  }
+  /* YiYiYa: 普通 kmalloc 的块没有内核堆块头（vm_alloc 只 bump 指针）——
+   * ptr 落在当前进程堆 VMA 内 ⇒ 属 vm_alloc ⇒ 直接返回，否则会把
+   * "物理地址 - sizeof(mem_block_t)" 当块头读 ⇒ 垃圾 size ⇒ 堆链表损坏 ✗。 */
+  {
+    thread_t* current = thread_current();
+    if (current != NULL && current->vm != NULL && current->vm->vma != NULL) {
+      vmemory_area_t* heap =
+          vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
+      if (heap != NULL && (vaddr_t)ptr >= heap->vaddr &&
+          (vaddr_t)ptr < heap->vend) {
+        return;
+      }
+    }
+  }
+  vm_free(ptr);
+}
 
 void kfree_alignment(void* ptr) {
   void* addr = kpage_v2p(ptr, 0);
@@ -526,21 +545,27 @@ void* valloc(void* addr, size_t size) {
   thread_t* current = thread_current();
   u32 page_alignt = PAGE_SIZE - 1;
   void* vaddr = (vaddr_t)addr & (~page_alignt);
+  void* start_vaddr = vaddr; /* YiYiYa: 失败回滚起点 */
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
+  u32 i; /* 提升作用域：valloc_fail 标签要用 */
 
-  for (u32 i = 0; i < pages; i++) {
+  for (i = 0; i < pages; i++) {
     rt_mutex_lock(&memory_lock);
     void* phy_addr = mm_alloc_page();
     rt_mutex_unlock(&memory_lock);
     if (phy_addr == NULL) {
       log_error("valloc: mm_alloc_page failed vaddr=%lx\n", vaddr);
-      return NULL;
+      goto valloc_fail;
     }
     /* 分配器给出的 PA 必须落在 RAM 内：越界页写下去就是同步外部中止
      * （总线错误），会拖成缺页风暴。拒绝本次分配，让调用方走失败路径。 */
     if (!mm_page_in_ram(phy_addr)) {
       log_error("valloc: phy %x outside RAM\n", (u32)(unsigned long)phy_addr);
-      return NULL;
+      /* 这一页刚被摘出页池（未映射），必须还回去 */
+      rt_mutex_lock(&memory_lock);
+      mm_free_page(phy_addr);
+      rt_mutex_unlock(&memory_lock);
+      goto valloc_fail;
     }
     /* First zero through the kernel identity mapping so the physical page
      * is clean even before we install the user mapping. */
@@ -573,6 +598,29 @@ void* valloc(void* addr, size_t size) {
     vaddr += PAGE_SIZE;
   }
   return addr;
+
+valloc_fail:
+  /* YiYiYa·修复：回滚本次已分配/已映射的前 i 页（否则失败一次泄漏 i 页 ✗）*/
+  {
+    void* va = start_vaddr;
+    for (u32 j = 0; j < i; j++) {
+      void* phy = (current != NULL && current->vm != NULL)
+                      ? page_v2p(current->vm->upage, va)
+                      : NULL;
+      if (phy != NULL) {
+        cpu_flush_dcache_range((unsigned long)va, (unsigned long)va + PAGE_SIZE);
+        cpu_flush_dcache_range((unsigned long)phy, (unsigned long)phy + PAGE_SIZE);
+        page_unmap_on(current->vm->upage, va);
+        rt_mutex_lock(&memory_lock);
+        if (page_put_page == NULL || page_put_page(phy) == 0) {
+          mm_free_page(phy);
+        }
+        rt_mutex_unlock(&memory_lock);
+      }
+      va = (void*)((vaddr_t)va + PAGE_SIZE);
+    }
+  }
+  return NULL;
 }
 
 // free

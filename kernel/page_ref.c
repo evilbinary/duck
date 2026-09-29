@@ -9,6 +9,7 @@
 
 static u16* g_page_ref;
 static u32 g_page_ref_n;
+static u32 g_page_ref_base = 0; /* 物理 RAM 基址：page_ref_init() 时从平台取 ✓ */
 
 /* arch 提供的"释放页"hook（各 arch mm.c 定义）；kernel 注册实现 */
 extern int (*page_put_page)(void* pa);
@@ -22,6 +23,8 @@ void page_ref_init(void) {
     log_error("page_ref: total memory is 0\n");
     return;
   }
+  extern ullong mm_get_base(void);
+  g_page_ref_base = (u32)mm_get_base(); /* ★ 平台基址，不写死 ✓ */
   g_page_ref_n = (u32)(total >> 12);
   if (g_page_ref_n > (1u << 20)) { /* 上限 4GB */
     g_page_ref_n = 1u << 20;
@@ -39,8 +42,18 @@ void page_ref_init(void) {
 #endif
 }
 
+/* YiYiYa·修复：引用计数表必须按【物理地址 - RAM 基址】索引 —— 原来直接
+ * `pa >> 12` ✗，而 RAM 不从 0 起（如 miyoo 是 0x20000000）⇒ 页号远超表容量
+ * ⇒ 每次查表都越界 ⇒ page_ref_dec 返回 1 ⇒ page_put 恒"不放" ⇒ vfree 一页
+ * 都不还 ⇒ 页池/堆耗尽 ⇒ valloc failed / OOM 卡死 ✗✗。
+ * 基址【不写死】：page_ref_init() 时从 mm_get_base() 取（遍历内存块 origin_addr，
+ * 与 mm_get_total() 同源）⇒ 任何平台自动适配 ✓。 */
 static inline int page_ref_idx(u32 pa) {
-  u32 i = pa >> 12;
+  u32 i;
+  if (pa < g_page_ref_base) {
+    return -1;
+  }
+  i = (pa - g_page_ref_base) >> 12;
   if (g_page_ref == NULL || i >= g_page_ref_n) {
     return -1;
   }
