@@ -12,6 +12,12 @@
 
 // #define DEBUG 1
 
+/* page_put_page：kernel 侧注册的"该页是否允许释放"回调（COW 共享页 ref>1 不放）。
+ * 它声明在 arch/pmemory.h 里、被 #ifdef CONFIG_COW 包着，而本文件 include 的
+ * 时机早于 kernel/config.h（经 memory.h 才可见）⇒ 那句会被跳过。
+ * 这里显式声明一次，vfree() 的引用计数闸要用。 */
+extern int (*page_put_page)(void* pa);
+
 queue_pool_t* kernel_pool;
 queue_pool_t* user_pool;
 
@@ -593,7 +599,13 @@ void vfree(void* addr, size_t size) {
                              (unsigned long)phy + PAGE_SIZE);
       page_unmap_on(current->vm->upage, vaddr);
       rt_mutex_lock(&memory_lock);
-      mm_free_page(phy);
+      /* 【必须和 page_destroy 一样走引用计数闸】COW 让页可能被多个进程共享
+       * （ref>1）；这里若无条件 mm_free_page，另一个进程还在用的页就被还进
+       * 池子 ⇒ 被复用 ⇒ 对方读到垃圾/NULL（实测 armv8-a：page fault at 0、
+       * 用户读到内核别名地址 901000xx）。armv5/armv7-a 之前也有同一个洞。 */
+      if (page_put_page == NULL || page_put_page(phy) == 0) {
+        mm_free_page(phy);
+      }
       rt_mutex_unlock(&memory_lock);
       memory_static(PAGE_SIZE, MEMORY_TYPE_FREE);
     }

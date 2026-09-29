@@ -444,13 +444,34 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
      * 引用计数（ref++）由 kernel 在这里做。 */
     vmemory_area_t* a;
     for (a = vmthread->vma; a != NULL; a = a->next) {
-      if (a->flags != MEMORY_EXEC) {
+      /* 【别只看 EXEC】应用真正"装入的映像/数据"在 HEAP 区（见 vmemory_create_default：
+       * mmap 与装载都走堆区 0x70100000+），只标 EXEC 等于 COW 没开 —— 实测 armv8-a
+       * 日志里一条 COW-mark 都没有、page fault at 0 照旧 ✗。
+       * EXEC + HEAP 都标；未映射的页由下面 page_v2p 过滤掉（100MB 区多是空洞，很便宜）。 */
+      if (a->flags != MEMORY_EXEC && a->flags != MEMORY_HEAP) {
         continue;
       }
       u32 s = (u32)a->vaddr;
       u32 e = (u32)a->vend;
       for (u32 va = s; va < e; va += PAGE_SIZE) {
         u32 pa = 0;
+        /* 【必须跳过"内核映像段"】内核自己的段也被登记成 MEMORY_EXEC
+         * （见本文件 191-200：boot_info->segments ⇒ vmemory_area_create），
+         * 它们不是"用户私有代码"：
+         *   · armv7-a 标了没事（AP[1:0]=0b10 仍让【特权可写】✓）；
+         *   · armv8-a 标了就致命 —— PTE_AP_EL1_RO 让 EL1 也变只读 ✗，
+         *     内核一写自己的 .data/.bss 就 fault ⇒ 早期内核崩（实测
+         *     tid:0 page fault at 2/10、tid 变垃圾值 2569472、风暴）✗。
+         * 用户 EXEC 预留区从 EXEC_ADDR 起，故按 EXEC_ADDR 切一刀。 */
+        if (va < (u32)EXEC_ADDR) {
+          continue;
+        }
+        /* 【跳过未映射的页】EXEC 段里含大段"预留区"（如 armv8-a 的
+         * 0x60000000-66400000，实测整段 pa=0），标它既无意义又白占时间；
+         * 真正要保护的是已装入的代码页。 */
+        if (page_v2p((u64*)vmthread->upage, (void*)(uintptr_t)va) == NULL) {
+          continue;
+        }
         page_cow_apply((u32*)vmthread->upage, va, 0); /* 标 COW（只读+标记） */
         if (page_cow_query((u32*)vmthread->upage, va, &pa)) {
           page_ref_inc(pa); /* 引用计数在 kernel 侧 */

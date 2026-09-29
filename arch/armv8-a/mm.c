@@ -6,10 +6,17 @@
 #include "mm.h"
 #include "cpu.h"
 #include "arch/pmemory.h"
+#include "arch/cpu.h"   /* cpu_flush_dcache_range */
 #include "kernel/memory.h"
+#include "kernel/page_ref.h"
 #include "libs/include/kernel/common.h"
 
 extern boot_info_t* boot_info;
+
+/* page_put_page：kernel 侧注册的"该页是否允许释放"回调（COW 共享页 ref>1 不放）。
+ * 声明在 arch/pmemory.h 里、被 #ifdef CONFIG_COW 包着，而本文件 include 的时机
+ * 早于 kernel/config.h ⇒ 会被跳过（undeclared）。显式声明一次。 */
+extern int (*page_put_page)(void* pa);
 
 static u64 v2p_internal(void* vaddr) {
     return (u64)vaddr;
@@ -154,6 +161,17 @@ void page_destroy(u64* upage) {
       if ((e2 & 3) != 3) {
         continue;
       }
+      /* 【整条 pmd 也要按 VA 过滤】pmd 粒度 2MB，而用户区与"内核外设区"可能落在
+       * 同一条 pgd(1GB) 里（armv8-a：内核 core-local/外设映射在 0x40000000-0x5fffffff，
+       * 用户 EXEC/栈在 0x60000000+）⇒ 若不看 VA 就把这条 2MB 的 L3 表清掉+归还，
+       * 内核自己的映射会消失（实测 raspi3：page fault at 4000006c = core-local
+       * 定时器寄存器，随后调度器炸）。 */
+      if ((((vaddr_t)i << PGD_SHIFT) | ((vaddr_t)j << PMD_SHIFT)) <
+              (vaddr_t)EXEC_ADDR ||
+          (((vaddr_t)i << PGD_SHIFT) | ((vaddr_t)j << PMD_SHIFT)) >=
+              (vaddr_t)0x80000000UL) {
+        continue;
+      }
       u64* pte = (u64*)(e2 & PTE_ADDR_MASK);
       for (u32 k = 0; k < PTRS_PER_TABLE; k++) {
         u64 e3 = pte[k];
@@ -162,8 +180,11 @@ void page_destroy(u64* upage) {
         }
         vaddr_t va = ((vaddr_t)i << PGD_SHIFT) | ((vaddr_t)j << PMD_SHIFT) |
                      ((vaddr_t)k << PTE_SHIFT);
-        pte[k] = 0;
-        /* pgd 1GB 粒度带来的低 VA 空洞（含 0x40000000 的设备映射）：不归还 */
+        /* 【必须先判定、后清零】原来这里是 `pte[k]=0` 在前 ⇒ 即使后面因
+         * "非用户区"或"非 RAM(设备/外设)"而 continue，PTE 也已经被抹掉 ⇒
+         * 内核的外设映射（如 0x3f00b000 的 mailbox/"box"、0x40000000 的
+         * core-local 定时器）会随任意进程退出而消失 ⇒ page fault at 3f00b208
+         * / 4000006c，随后调度器崩。顺序换过来：只有真要归还的页才清 PTE。 */
         if (va < (vaddr_t)EXEC_ADDR || va >= (vaddr_t)0x80000000UL) {
           continue;
         }
@@ -172,13 +193,28 @@ void page_destroy(u64* upage) {
         if (!mm_page_in_ram(pg)) {
           continue;
         }
+        pte[k] = 0;
+        /* 【引用计数闸】COW 共享页（ref>1）不放 —— 另一个进程还在用。 */
         mm_free_page(pg);
       }
       pmd[j] = 0;
       kfree_alignment(pte);
     }
-    upage[i] = 0;
-    kfree_alignment(pmd);
+    /* 【pgd 只在"整条都空了"时才清/归还】这条 1GB 里可能还留着内核/外设的 pmd 项
+     * （见上），无条件清掉会连带抹掉内核映射。 */
+    {
+      int still = 0;
+      for (u32 j2 = 0; j2 < PTRS_PER_TABLE; j2++) {
+        if ((pmd[j2] & 3) == 3) {
+          still = 1;
+          break;
+        }
+      }
+      if (!still) {
+        upage[i] = 0;
+        kfree_alignment(pmd);
+      }
+    }
   }
   kfree_alignment(upage);
 }
@@ -219,7 +255,67 @@ void mm_init_default(void) {
 #ifdef CONFIG_COW
 /* ---- COW 接口：本架构暂未实现，给空实现保证 kernel 侧可链接 ----
  * （armv5 已有真实实现，其余平台按需补齐） */
-int page_fault_is_write(void) { return 0; }
-int page_cow_query(u32* upage, u32 va, u32* pa) { (void)upage; (void)va; (void)pa; return 0; }
-void page_cow_apply(u32* upage, u32 va, u32 new_pa) { (void)upage; (void)va; (void)new_pa; }
+/* ============ COW（写时复制）PTE 操作（armv8-a） ============
+ * 64 位描述符 + AP[2:1]；本平台所有页按 EL1 映射（无 EL0 分离，用户跑 EL1t）
+ * ⇒ 保护态只能用 PTE_AP_EL1_RO(2<<6)：EL1 也会只读 ✗（armv7-a 的 AP[1:0]=0b10
+ * 是"特权可写/用户只读"✓，这是它比本平台强的地方）。
+ * ⇒ 所以标记范围必须很干净：只能标用户私有的页，绝不能标内核映像段
+ *   （vma.c 已按 EXEC_ADDR 过滤 ✗）——否则内核一写自己就 fault ⇒ 早期崩 ✗。 */
+#define PTE_AP_MASK_ (3UL << 6)
+
+static u64* cow_l3_slot(u32* upage, u32 va) {
+  u64* pgd = (u64*)(uintptr_t)upage;
+  u32 i = (u32)((vaddr_t)va >> PGD_SHIFT);
+  u32 j = (u32)(((vaddr_t)va >> PMD_SHIFT) & (PTRS_PER_TABLE - 1));
+  u32 k = (u32)(((vaddr_t)va >> PTE_SHIFT) & (PTRS_PER_TABLE - 1));
+  u64* pmd;
+  u64* pte;
+  if ((pgd[i] & 3) != 3) return NULL;
+  pmd = (u64*)(pgd[i] & PTE_ADDR_MASK);
+  if ((pmd[j] & 3) != 3) return NULL;
+  pte = (u64*)(pmd[j] & PTE_ADDR_MASK);
+  if ((pte[k] & 3) != 3) return NULL;
+  return &pte[k];
+}
+
+int page_fault_is_write(void) { return (read_esr() & (1UL << 6)) ? 1 : 0; }
+
+int page_cow_query(u32* upage, u32 va, u32* pa) {
+  u64* s = cow_l3_slot(upage, va);
+  u64 d;
+  u32 p;
+  if (s == NULL) return 0;
+  d = *s;
+  if ((d & PTE_AP_MASK_) == PTE_AP_EL1_RW) return 0;  /* 还可写 ⇒ 非保护态 */
+  p = (u32)(d & PTE_ADDR_MASK);
+  /* 【不要再要求 ref>1！】kernel 侧 vmemory_clone 的标记循环是"先标、再 query、
+   * 查到才 page_ref_inc"：标完那一刻 ref 还是 1 ⇒ 若这里要求 ref>1 就永远返回 0
+   * ⇒ 永远不 inc ⇒ 之后写故障也认不出 ⇒ 走 fallback 把进程杀掉 ✗
+   * （实测 armv8-a：COW-mark 打出一片 7100xxxx，但 config/logo 仍在装载时被
+   *   permission fault 杀掉 ✓）。armv5 之所以没事，是它用 PTE 的软件 tag 位识别 ✓，
+   *   引用计数只用于"退出归还"那道闸 ✓ —— 这里没有可用的保留位（bit9=AP[2] ✗），
+   *   所以改用"只读 + 在 RAM 内"来识别 ✓（设备/MMIO 页由 mm_page_in_ram 排除 ✓）。 */
+  if (!mm_page_in_ram((void*)(uintptr_t)p)) return 0;
+  if (pa != NULL) *pa = p;
+  return 1;
+}
+
+void page_cow_apply(u32* upage, u32 va, u32 new_pa) {
+  u64* s = cow_l3_slot(upage, va);
+  u64 d;
+  if (s == NULL) return;
+  d = *s;
+  if (new_pa == 0) {
+    if ((d & PTE_AP_MASK_) != PTE_AP_EL1_RW) return;
+    d = (d & ~PTE_AP_MASK_) | PTE_AP_EL1_RO;
+  } else {
+    d = (d & ~PTE_AP_MASK_) | PTE_AP_EL1_RW;
+    d = (d & ~PTE_ADDR_MASK) | ((u64)new_pa & PTE_ADDR_MASK);
+  }
+  *s = d;
+  cpu_flush_dcache_range((unsigned long)s, (unsigned long)s + sizeof(u64));
+  asm volatile("tlbi vaae1is, %0" : : "r"((u64)va >> 12) : "memory");
+  asm volatile("dsb sy" : : : "memory");
+  asm volatile("isb" : : : "memory");
+}
 #endif

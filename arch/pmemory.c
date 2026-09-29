@@ -1,5 +1,17 @@
 #include "pmemory.h"
 
+/* 【恒等映射上限：建表与页分配器必须一致】
+ * boot 建表（mm_parse_map → map_mem_block）只把 RAM 的前 MM_IDENTITY_MAX 映射成
+ * 恒等映射；而页分配器（mm_add_block 建的空闲链）若按【整段 RAM】发页，就会发出
+ * 【没有身份映射】的物理页 —— 内核凡是按物理地址直访的地方（COW 破写 / fork 深拷贝
+ * 的 kmemcpy((void*)pa,…)）都会在【内核里再触发一次翻译故障】⇒ 不收敛 ⇒
+ * 缺页风暴 / memory fault at 0（实测 raspi3：ymain 一起来就崩）。
+ * 历史上这个 80MB 上限是为了避免"每次 fork 的 page_clone 建上百个 L2 表" ⇒ 卡住
+ * （见 mm_parse_map 的注释）；这里只是让【分配器】也守同一个约束。 */
+#ifndef MM_IDENTITY_MAX
+#define MM_IDENTITY_MAX (PAGE_SIZE * 20000)
+#endif
+
 #include "kernel/common.h"
 #include "kernel/logger.h"
 #include "kernel/page.h"
@@ -569,6 +581,13 @@ int is_line_intersect(int a1, int a2, int b1, int b2) {
 
 void mm_add_block(uintptr_t addr, uintptr_t len) {
   mem_block_t* block = (mem_block_t*)addr;
+  /* 【必须与恒等映射同上限】超出的部分没有身份映射；一旦发出去，内核按物理地址
+   * 直访（COW 破写 / fork 深拷贝的 kmemcpy((void*)pa,…)）会在内核里再触发一次
+   * 翻译故障 ⇒ 不收敛 ⇒ 缺页风暴。与 mm_parse_map 的 MM_IDENTITY_MAX 保持一致
+   * （实测不加：池到 0x3f000000，而映射只到 0x5017000 ✗）。 */
+  if (len > MM_IDENTITY_MAX) {
+    len = MM_IDENTITY_MAX;
+  }
   block->addr = (uintptr_t)block + sizeof(mem_block_t);
   block->size = len - sizeof(mem_block_t);
   block->origin_size = block->size;
@@ -1108,7 +1127,7 @@ void mm_parse_map(void* kernel_page_dir) {
   /* Cap ~80MB/block. Full 128MB identity PTEs make every fork page_clone
    * allocate 100+ L2 tables — hangs when starting gui while infones runs.
    * PAGE_KERNEL 与 valloc/user 的属性一致（ARMv7 同物理页属性必须相同）。 */
-  map_mem_block(kernel_page_dir, PAGE_SIZE * 20000, PAGE_KERNEL);
+  map_mem_block(kernel_page_dir, MM_IDENTITY_MAX, PAGE_KERNEL);
 
   int size = PAGE_SIZE * 200;
   kprintf("map mem range %x %x\n", 0, size);

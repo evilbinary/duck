@@ -9,7 +9,7 @@
 
 /* 缺页路径上的调试日志（page fault / page area not found + vmemory_dump /
  * page lookup kernel found phy）量大且逐次缺页都打，默认关闭；排查时打开。 */
-// #define DEBUG 1
+#define DEBUG 1
 
 // in user mode
 void page_error_exit() {
@@ -92,7 +92,10 @@ void* page_fault_handle(interrupt_context_t *ic) {
         page_map_on((u64*)current->vm->upage, fault_addr, (u64)phy, attr);
       } else {
         if (current->fault_count < 1) {
-          log_error("%s memory fault at %lx\n", current->name, fault_addr);
+          log_error("%s memory fault at %lx pc=%lx lr=%lx sp=%lx\n",
+                    current->name, (unsigned long)fault_addr,
+                    (unsigned long)ic->pc, (unsigned long)ic->lr,
+                    (unsigned long)ic->sp);
           /* 【诊断】把崩之前最近的系统调用序列打出来：用户程序崩在野指针
            * （如 miyoo 上 /bin/ls 崩在 dfar=0xfffffffc）时，多半是某个 syscall
            * 返回了负值被当成指针 ⇒ 这串调用号能直接定位是哪一个。 */
