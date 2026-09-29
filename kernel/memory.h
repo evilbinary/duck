@@ -164,6 +164,9 @@ vmemory_area_t* vmemory_area_find(vmemory_area_t* areas, void* addr,
 vmemory_area_t* vmemory_area_find_flag(vmemory_area_t* areas, u32 flags);
 void vmemory_area_add(vmemory_area_t* areas, vmemory_area_t* area);
 void vmemory_area_free(vmemory_area_t* area);
+/* 只释放 vma 链表节点（含 child 递归），不 vfree 页 —— 页/页表由
+ * vmemory_destroy → page_destroy 统一归还，见 vma.c 实现处注释。 */
+void vmemory_area_destroy_list(vmemory_area_t* area);
 void vmemory_destroy(vmemory_t* vm);
 void memory_static(u32 size, int type);
 

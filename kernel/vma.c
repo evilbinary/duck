@@ -19,6 +19,20 @@ void vmemory_area_free(vmemory_area_t* area) {
   vfree((void*)vaddr, area->size);
 }
 
+/* 【只释放节点内存】页/页表已由 page_destroy 统一归还（见 vmemory_destroy），
+ * 这里绝不能 vmemory_area_free 每个 area（那会 vfree 页 ⇒ 重复归还 ✗）。
+ * child 是同地址 mmap 子链（vmemory_area_clone 递归拷贝），一并 kfree。 */
+void vmemory_area_destroy_list(vmemory_area_t* area) {
+  while (area != NULL) {
+    vmemory_area_t* next = area->next;
+    if (area->child != NULL) {
+      vmemory_area_destroy_list(area->child);
+    }
+    kfree(area);
+    area = next;
+  }
+}
+
 // alloc by page fault
 vmemory_area_t* vmemory_area_alloc(vmemory_area_t* areas, void* addr,
                                    vaddr_t size) {
@@ -413,6 +427,15 @@ void vmemory_destroy(vmemory_t* vm) {
     vm->upage = NULL;
   }
 #endif
+  /* 【vma 节点释放】页/页表已由 page_destroy 归还；vma 链表节点是 kmalloc
+   * 出来的（vmemory_area_create），此前无人释放 ⇒ 每次 fork/exec 漏 N 个
+   * 节点。VM_SAME（pthread）时 vma 指针共享：ref>1 已提前 return；
+   * "最后一个成员"由 thread_recycle_process 置 ref=1 后走到这里，一并释放 ✓。
+   * 注意上面"共享内核页目录"的 return 分支：那种 vm（内核线程）的 vma 不动。 */
+  if (vm->vma != NULL) {
+    vmemory_area_destroy_list(vm->vma);
+    vm->vma = NULL;
+  }
 }
 
 void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {

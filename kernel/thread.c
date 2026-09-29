@@ -614,6 +614,34 @@ void thread_stop(thread_t* thread) {
  * 页表（L2/L1）的归还也在 vmemory_destroy 里一并完成（每个死进程此前
  * 要漏 16KB L1 + n×1KB L2）。
  * 还不做的：fd 条目、内核区（0x82000000+）私有 L2 副本 —— 体量小，留待下一轮。 */
+/* 【最后一个共享成员判定】vmemory_t.ref 注释写着 "free only when last ref
+ * drops"，但全树只在 vmemory_clone 里 ++、从没有 -- ✗ —— pthread（CLONE_VM）
+ * 共享的 upage/用户物理页永远不满足 ref<=1。回收线程时扫一遍所有"还可能
+ * 活着"的线程（各核调度链 + 回收队列）：没有同 upage 的其它成员，就认为
+ * 自己是最后一个，让调用处把 ref 归 1 交给 vmemory_destroy 真正释放。
+ * 已回收线程的 vm 已置 NULL（自动跳过）；upage 指针复用导致的误判只会
+ * "多保留"（泄漏但安全），不会提前释放 ✓。 */
+static int thread_vm_shared_alive(thread_t* self) {
+  if (self == NULL || self->vm == NULL || self->vm->upage == NULL) {
+    return 0;
+  }
+  for (int i = 0; i < MAX_CPU; i++) {
+    for (thread_t* p = schedulable_head_thread[i]; p != NULL; p = p->next) {
+      if (p != self && p->vm != NULL && p->vm->upage != NULL &&
+          p->vm->upage == self->vm->upage) {
+        return 1;
+      }
+    }
+  }
+  for (thread_t* p = recycle_head_thread; p != NULL; p = p->next) {
+    if (p != self && p->vm != NULL && p->vm->upage != NULL &&
+        p->vm->upage == self->vm->upage) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 void thread_recycle_process(void) {
   thread_t* cur = thread_current();
   thread_t* v = recycle_head_thread;
@@ -661,6 +689,14 @@ void thread_recycle_process(void) {
         recycle_head_thread_count--;
       }
       if (v->vm != NULL) {
+        /* 【共享页表：最后一个成员才真正释放】pthread（CLONE_VM）共享的
+         * upage/物理页不满足 ref<=1，vmemory_destroy 会直接 return ⇒
+         * 每次 spawn 多线程程序（gnuboy/SDL 等）退出/被 kill 后漏一整份
+         * 页表 + 用户物理页。这里判定"最后一个"后把 ref 归 1 交给
+         * vmemory_destroy（page_destroy 归还物理页/页表 + vma 节点）✓。 */
+        if (v->vm->upage != NULL && !thread_vm_shared_alive(v)) {
+          v->vm->ref = 1;
+        }
         vmemory_destroy(v->vm);
         kfree(v->vm);
         v->vm = NULL;
