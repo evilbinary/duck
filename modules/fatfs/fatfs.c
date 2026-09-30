@@ -49,6 +49,10 @@ typedef struct file_info {
   DIR dir;
   FILINFO file;
   int offset;
+  /* 【目录列举位置】= 已从 dir 里读出的条目数（0-based 下一条的下标）。
+   * 连续 readdir（上层 getdents64 一次取一条）时靠它判断"可以接着读"，
+   * 避免每次都 close+open+从头重扫（见 fat_op_read_dir 的性能注释）。 */
+  int dir_pos;
   char fat_path[MAX_FILE_PATH];
 } file_info_t;
 
@@ -431,6 +435,7 @@ uint fat_op_open(vnode_t *node, uint mode) {
       log_error("open dir %s error code %d\n", node->name, res);
       return -1;
     }
+    file_info->dir_pos = 0; /* 新开的 DIR 从位置 0 开始（见 fat_op_read_dir） */
   } else {
     if (fat_volume_path(file_info, buf) < 0) {
       log_error("open file %s missing fat path\n", node->name);
@@ -561,59 +566,72 @@ uint fat_op_read_dir(vnode_t *node, struct vdirent *dirent, u32 *offset,
   if (fat_volume_path(file_info, buf) < 0) {
     return 0;
   }
-  if (file_info->dir.obj.fs != NULL) {
-    f_closedir(&file_info->dir);
-  }
-  res = f_opendir(&file_info->dir, buf);
-  if (res != FR_OK) {
-    return 0;
-  }
 
-  uint i = 0;
-  uint nbytes = 0;
-  uint read_count = 0;
   u32 start = offset != NULL ? *offset : file_info->offset;
   FILINFO fno;
 
-  while (true) {
+  /* 【性能：目录列举必须 O(N)，不能 O(N^2)】
+   * 上层 getdents64 是【一次取一条】调进来的；原来这里每次都
+   * close+opendir+从头逐条 f_readdir 跳到 offset ⇒ 列 N 个文件要
+   * N^2/2 次目录扫描（每次还重新读盘，块缓存又是关的）⇒ roms 下几百个
+   * 文件时"读目录像卡死"。
+   * 现在：DIR 保持打开，连续读（start == 上次位置 dir_pos）直接接着
+   * f_readdir；只有跳转（seek/首次）才重开并跳到 start。
+   * DIR 的最终关闭交给 fat_op_close / fat_op_open。 */
+  if (file_info->dir.obj.fs != NULL && file_info->dir_pos != (int)start) {
+    f_closedir(&file_info->dir);
+  }
+  if (file_info->dir.obj.fs == NULL) {
+    res = f_opendir(&file_info->dir, buf);
+    if (res != FR_OK) {
+      return 0;
+    }
+    file_info->dir_pos = 0;
+  }
+  while (file_info->dir_pos < (int)start) { /* 跳转：跳过前 start 条 */
+    fno.fname[0] = 0;
+    if (f_readdir(&file_info->dir, &fno) != FR_OK || fno.fname[0] == 0) {
+      f_closedir(&file_info->dir);
+      return 0;
+    }
+    file_info->dir_pos++;
+  }
+
+  uint i = (uint)file_info->dir_pos;
+  uint nbytes = 0;
+  uint read_count = 0;
+
+  while (read_count < count) {
     fno.fname[0] = 0;
     res = f_readdir(&file_info->dir, &fno);
     if (res != FR_OK || fno.fname[0] == 0) {
       break;
     }
 
-    if (i < start) {  // 定位到某个文件数量开始
-      i++;
-      continue;
+    if ((fno.fattrib & AM_DIR) == AM_DIR) {
+      dirent->type = DT_DIR;
+    } else if ((fno.fattrib & AM_ARC) == AM_ARC) {
+      dirent->type = DT_REG;
     }
-    if (read_count < count) {
-      if ((fno.fattrib & AM_DIR) == AM_DIR) {
-        dirent->type = DT_DIR;
-      } else if ((fno.fattrib & AM_ARC) == AM_ARC) {
-        dirent->type = DT_REG;
-      }
 
-      kstrcpy(dirent->name, fno.fname);
-      dirent->ino = i + 1;
-      dirent->offset = i + 1;
-      {
-        u32 n = kstrlen(fno.fname) + 1;
-        u32 reclen = 19 + n;
-        dirent->length = (u16)((reclen + 7) & ~7u);
-      }
-      nbytes += dirent->length;
-      dirent++;  // maybe change to offset
-      file_info->offset = i + 1;
-      if (offset != NULL) {
-        *offset = i + 1;
-      }
-      read_count++;
-    } else {
-      break;
+    kstrcpy(dirent->name, fno.fname);
+    dirent->ino = i + 1;
+    dirent->offset = i + 1;
+    {
+      u32 n = kstrlen(fno.fname) + 1;
+      u32 reclen = 19 + n;
+      dirent->length = (u16)((reclen + 7) & ~7u);
     }
+    nbytes += dirent->length;
+    dirent++;
     i++;
+    file_info->dir_pos = (int)i;
+    file_info->offset = (int)i;
+    if (offset != NULL) {
+      *offset = i;
+    }
+    read_count++;
   }
-  f_closedir(&file_info->dir);
 
   return nbytes;
 }
@@ -626,6 +644,7 @@ int fat_op_close(vnode_t *node) {
       if (file_info->dir.obj.fs != NULL) {
         f_closedir(&file_info->dir);
       }
+      file_info->dir_pos = 0;
     } else if (file_info->fil.obj.fs != NULL) {
       f_close(&file_info->fil);
       file_info->fil.obj.fs = NULL;
