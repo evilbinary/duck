@@ -9,7 +9,14 @@
  * 历史上这个 80MB 上限是为了避免"每次 fork 的 page_clone 建上百个 L2 表" ⇒ 卡住
  * （见 mm_parse_map 的注释）；这里只是让【分配器】也守同一个约束。 */
 #ifndef MM_IDENTITY_MAX
-#define MM_IDENTITY_MAX (PAGE_SIZE * 20000)
+/* 【恒等映射上限：建表与页分配器必须一致】
+ * 默认 0 = 不设上限：恒等映射与页分配器都覆盖实际 RAM 全量。
+ * 历史上写死 80MB（PAGE_SIZE*20000）是为了避免"全量恒等映射 ⇒ 每次 fork
+ * page_clone 建上百个 L2 表"卡死；现在 page_copy 对 < EXEC_ADDR 的恒等区
+ * L2 直接共享（见各 arch 的 mm.c），该开销已消失。写死 80MB 的代价是
+ * 128MB 的机器只能用 80MB（实测 miyoo `mem` total 80031k，少用 ~44MB）。
+ * 平台若确实需要更小的窗口，可 -DMM_IDENTITY_MAX=<bytes> 覆盖。 */
+#define MM_IDENTITY_MAX 0
 #endif
 
 #include "kernel/common.h"
@@ -598,7 +605,7 @@ void mm_add_block(uintptr_t addr, uintptr_t len) {
    * 直访（COW 破写 / fork 深拷贝的 kmemcpy((void*)pa,…)）会在内核里再触发一次
    * 翻译故障 ⇒ 不收敛 ⇒ 缺页风暴。与 mm_parse_map 的 MM_IDENTITY_MAX 保持一致
    * （实测不加：池到 0x3f000000，而映射只到 0x5017000 ✗）。 */
-  if (len > MM_IDENTITY_MAX) {
+  if (MM_IDENTITY_MAX != 0 && len > MM_IDENTITY_MAX) {
     len = MM_IDENTITY_MAX;
   }
   block->addr = (uintptr_t)block + sizeof(mem_block_t);
@@ -1137,8 +1144,9 @@ void page_map_kernel(void* page, u64 flag_x, u64 flag_rw) {
 
 void mm_parse_map(void* kernel_page_dir) {
   kprintf("map mem block start\n");
-  /* Cap ~80MB/block. Full 128MB identity PTEs make every fork page_clone
-   * allocate 100+ L2 tables — hangs when starting gui while infones runs.
+  /* 恒等映射窗口 = MM_IDENTITY_MAX（默认 0 = 全 RAM）。历史上限 80MB 是为
+   * 了避免 fork 复制整段恒等映射的 L2 表，现在 page_copy 对 < EXEC_ADDR 的
+   * 恒等区 L2 是共享的（见各 arch mm.c），全量映射不再有每 fork 开销。
    * PAGE_KERNEL 与 valloc/user 的属性一致（ARMv7 同物理页属性必须相同）。 */
   map_mem_block(kernel_page_dir, MM_IDENTITY_MAX, PAGE_KERNEL);
 
