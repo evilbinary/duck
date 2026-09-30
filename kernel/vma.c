@@ -370,6 +370,10 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
                 type_str, addr);
       continue;
     }
+    /* 【引用计数】拷贝页是本进程独占的（不是 COW 共享），登记 ref=1：
+     * 否则它和"page_copy 共享给子进程的父页"一样是 ref==0，exec 回收时
+     * 无法区分 ⇒ 只能不还页（泄漏）。登记后 exec/退出都能正常归还。 */
+    page_ref_set((u32)(uintptr_t)copy_addr, 1);
     void* phy = page_v2p((u64*)vm_src->upage, (void*)addr);
     if (phy != NULL) {
       kmemmove(copy_addr, (void*)addr, PAGE_SIZE);

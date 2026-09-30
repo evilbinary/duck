@@ -661,6 +661,71 @@ void vfree(void* addr, size_t size) {
   }
 }
 
+/* 【exec 回收】把当前进程用户区里【本进程独占】的页归还页分配器，其余页只
+ * 摘映射、绝不还页。供 loader 在"原地 exec 替换映像"前调用（见 elf.c）。
+ *
+ * 为什么不直接用 vfree()：fork 出来的子进程页表里混着三类页，只看 PTE 分不清：
+ *   ref==1：本进程独占（valloc / vmemory_copy_data 拷贝页 / COW 破写新页）
+ *           ⇒ 摘映射 + 归还页分配器；
+ *   ref>1 ：COW 共享（父进程还在用）⇒ 摘映射 + 只减引用（归零才放）；
+ *   ref==0：无计数页 —— 可能是 page_copy 共享给子进程的父进程活页（fork 时
+ *           mmap 区就是这样共享的），也可能是初始用户栈那种 kmalloc 内核堆页。
+ *           这类一律只摘映射：宁可漏，绝不误放父进程的活页（放错＝整机损坏）。
+ * 栈区也一起处理：初始栈是内核堆页（ref==0 ⇒ 只摘映射），exec 后由装载器
+ * elf32_reset_user_stack 重新 valloc。
+ */
+static void vm_release_range(vmemory_t* vm, vaddr_t start, vaddr_t size) {
+  for (vaddr_t va = start; va < start + size; va += PAGE_SIZE) {
+    void* phy = page_v2p(vm->upage, (void*)va);
+    if (phy == NULL) {
+      continue;
+    }
+    if (page_ref_get((u32)(uintptr_t)phy) == 0) {
+      page_unmap_on(vm->upage, va);
+      continue; /* 无计数页：只摘映射，不动物理页 */
+    }
+    /* 与 vfree 一致：摘映射前把 VA/PA 两侧 cache 行清掉，避免串数据 */
+    cpu_flush_dcache_range((unsigned long)va, (unsigned long)va + PAGE_SIZE);
+    cpu_flush_dcache_range((unsigned long)phy, (unsigned long)phy + PAGE_SIZE);
+    page_unmap_on(vm->upage, va);
+    rt_mutex_lock(&memory_lock);
+    if (page_put_page == NULL || page_put_page(phy) == 0) {
+      mm_free_page(phy);
+    }
+    rt_mutex_unlock(&memory_lock);
+    memory_static(PAGE_SIZE, MEMORY_TYPE_FREE);
+  }
+}
+
+void vmemory_release_user_space(vmemory_t* vm) {
+  if (vm == NULL || vm->vma == NULL || vm->upage == NULL) {
+    return;
+  }
+  /* vmemory_create_default 首节点 = 用户堆区；布局不符（别的平台自定义）
+     就原样不动，保持既有行为 */
+  vmemory_area_t* heap = vm->vma;
+  if (heap->flags != MEMORY_HEAP || heap->vaddr != (vaddr_t)HEAP_ADDR) {
+    return;
+  }
+  /* 回收只对"当前地址空间"有效，必须在当前线程自己的 vm 上调用 */
+  thread_t* current = thread_current();
+  if (current == NULL || current->vm != vm) {
+    return;
+  }
+  /* 用户映像（链接在 HEAP 区内）、brk 堆、mallocng 的 mmap 区都在堆区段 */
+  vm_release_range(vm, (vaddr_t)HEAP_ADDR, MEMORY_HEAP_SIZE);
+  vm_release_range(vm, (vaddr_t)STACK_ADDR, MEMORY_STACK_SIZE);
+  /* mmap 区节点（heap->child）：页已随堆区摘除，这里只释放节点，
+     否则旧节点还占着地址区间，新映像的 mmap 会挑不到地方 */
+  if (heap->child != NULL) {
+    vmemory_area_destroy_list(heap->child);
+    heap->child = NULL;
+  }
+  /* brk 前沿复位：新映像的 malloc 从堆底重新长 */
+  heap->alloc_addr = heap->vaddr;
+  heap->alloc_size = 0;
+}
+
 void* kpage_v2p(void* addr, int size) {
   thread_t* current = thread_current();
 #ifdef VM_ENABLE

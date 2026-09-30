@@ -385,6 +385,53 @@ static int elf32_open_and_load(const char* path, elf32_image_info_t* image) {
   return ret;
 }
 
+/* 【exec 预检】只读校验：能打开、ELF 头合法、phdr 表可读、有 PT_LOAD、
+ * 无 PT_INTERP（本 loader 不支持）。不分配、不映射任何东西。
+ * run_elf_thread 必须先过预检、再回收旧地址空间 —— 预检失败保持调用者
+ * 内存原样（exec 失败不动调用者，POSIX 语义；错误返回后调用者还要继续跑）。 */
+static int elf32_precheck(const char* path) {
+  Elf32_Ehdr ehdr;
+  Elf32_Phdr phdr[MAX_PHDR];
+  u32 min_vaddr = 0;
+  u32 max_vaddr = 0;
+  int fd = (int)sys_open_kernel(path, 0);
+  if (fd < 0) {
+    elf32_log_error("elf32 precheck open failed %s\n", path);
+    return -1;
+  }
+  u32 got = sys_read(fd, &ehdr, sizeof(ehdr));
+  if (got != sizeof(ehdr) || !elf32_is_valid(ehdr.e_ident)) {
+    sys_close(fd);
+    elf32_log_error("elf32 precheck bad header %s\n", path);
+    return -1;
+  }
+  if (ehdr.e_type != ET_EXEC || ehdr.e_phnum > MAX_PHDR ||
+      ehdr.e_phentsize != sizeof(Elf32_Phdr)) {
+    sys_close(fd);
+    elf32_log_error("elf32 precheck bad phdr table %s\n", path);
+    return -1;
+  }
+  kmemset(phdr, 0, sizeof(phdr));
+  if (elf32_read_phdrs(fd, &ehdr, phdr) < 0) {
+    sys_close(fd);
+    return -1;
+  }
+  if (elf32_scan_load_range(&ehdr, phdr, &min_vaddr, &max_vaddr) < 0) {
+    sys_close(fd);
+    elf32_log_error("elf32 precheck no PT_LOAD %s\n", path);
+    return -1;
+  }
+  for (int i = 0; i < ehdr.e_phnum; i++) {
+    if (phdr[i].p_type == PT_INTERP) {
+      sys_close(fd);
+      elf32_log_error("elf32 precheck PT_INTERP unsupported %s\n", path);
+      return -1;
+    }
+  }
+  sys_close(fd);
+  return 0;
+}
+
 static int elf32_build_initial_stack(thread_t* current, const exec_params_t* exec,
                                      const elf32_image_info_t* image,
                                      exec_stack_layout_t* layout) {
@@ -639,6 +686,16 @@ int run_elf_thread(long* p) {
   exec_stack_layout_t layout;
   kmemset(&image, 0, sizeof(image));
   kmemset(&layout, 0, sizeof(layout));
+
+  /* 【顺序不能反】先只读预检（失败 ⇒ 调用者内存原样，可继续执行）；
+     过了再回收当前进程的用户堆区 —— 本内核 exec 原地替换映像，若不回收，
+     ymain/console-os 这类大进程里启动小应用（system() → execv）会把旧堆/
+     mmap 全带着跑，直接 OOM（实测 player 经 ymain 启动 vs shell 直接启动）。 */
+  if (elf32_precheck(exec->filename) < 0) {
+    elf32_log_error("elf32 precheck failed %s\n", exec->filename);
+    return -1;
+  }
+  vmemory_release_user_space(current->vm);
 
   if (elf32_open_and_load(exec->filename, &image) < 0) {
     elf32_log_debug("elf32 open and load failed\n");
