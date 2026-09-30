@@ -643,11 +643,11 @@ static size_t write(device_t *dev, const void *buf, size_t len) {
    * 应用（SDL 音频线程）每次写的是新解码数据，就地乘安全 ✓；
    * 音量由 ioctl(SNDCTL_DSP_SETVOLUME) 设置（0..100）✓。 */
   if (g_dsp_volume < 100 && n > 0) {
-    s16 *sp = (s16 *)p;
+    short *sp = (short *)p;   /* YiYiYa: 内核无 s16 typedef，用 short（16bit ✓） */
     u32 cnt = n / 2;
     u32 i;
     for (i = 0; i < cnt; i++) {
-      sp[i] = (s16)(((int)sp[i] * g_dsp_volume) / 100);
+      sp[i] = (short)(((int)sp[i] * g_dsp_volume) / 100);
     }
   }
 
