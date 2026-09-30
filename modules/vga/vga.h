@@ -42,6 +42,10 @@ enum VGA_MODE {
  *   rotate：显示变换，用"旋转角度 + 镜像"表达（VGA_ROT_* / VGA_FLIP_*，0 = 不变换） */
 #define VGA_IOC_READ_FRAMBUFFER_FORMAT _IOW(VGA_IOC_MAGIC, 9, int)
 #define VGA_IOC_READ_FRAMBUFFER_TRANSFORM _IOW(VGA_IOC_MAGIC, 10, int)
+/* YiYiYa: 背光/亮度（0..100）—— 驱动可选实现（vga->set_brightness），
+ * 未实现时 set 只记录值、get 返回记录值 ✓（console-os 设置页对接）。 */
+#define VGA_IOC_SET_BRIGHTNESS _IOW(VGA_IOC_MAGIC, 11, int)
+#define VGA_IOC_GET_BRIGHTNESS _IOW(VGA_IOC_MAGIC, 12, int)
 
 /* 【显示格式：只有一个字段 `format`，值域涵盖"颜色空间 + 每像素排布"】
  * 以前 format 只有 FB_RGB/FB_NV12/FB_BGR 三个粗值（回答"要不要转 YUV、是不是 BGR"），
@@ -112,6 +116,10 @@ typedef struct vga_device {
    * （xwin 等）仍按旧偏移读 priv/pframbuffer ⇒ 会把 pframbuffer 读成垃圾值
    * （实测 pa=2 ⇒ `xwin: fb map failed`）。追加在末尾则老目标文件完全不受影响。 */
   u32 rotate; /* VGA_ROT_* | VGA_FLIP_H | VGA_FLIP_V：驱动申报的显示变换（0=不变换） */
+  /* 【新字段追加末尾】背光/亮度 0..100（默认 100）。驱动可挂 set_brightness
+   * 实现真实调光（miyoo：GPIO4 开关背光）；未挂时只记录值 ✓。 */
+  int brightness;
+  void (*set_brightness)(vga_device_t* vga, int value);
 } vga_device_t;
 
 size_t vga_read(device_t* dev, void* buf, size_t len);

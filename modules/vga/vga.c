@@ -57,6 +57,19 @@ size_t vga_ioctl(device_t* dev, u32 cmd, ...) {
       u32 offset = (u32)(size_t)arg;
       vga->flip_buffer(vga, offset % vga->framebuffer_count);
     }
+  } else if (cmd == VGA_IOC_SET_BRIGHTNESS) {
+    /* YiYiYa: 背光/亮度 0..100（0=关背光）。驱动可挂 set_brightness 实现
+     * 真实调光（miyoo 是 GPIO4 开关）；未挂时只记录值 ✓。 */
+    int v = (int)(size_t)arg;
+    if (v < 0) v = 0;
+    if (v > 100) v = 100;
+    if (vga->set_brightness) {
+      vga->set_brightness(vga, v);
+    }
+    vga->brightness = v;
+    ret = (size_t)v;
+  } else if (cmd == VGA_IOC_GET_BRIGHTNESS) {
+    ret = (size_t)vga->brightness;
   } else if (cmd == VGA_IOC_READ_FRAMBUFFER_INFO) {
     vga_device_t* buffer_info = (vga_device_t*)arg;
     *buffer_info = *vga;

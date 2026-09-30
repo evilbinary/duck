@@ -7,6 +7,7 @@
 #include "kernel/kernel.h"
 #include "kernel/memory.h"
 #include "vga/vga.h"
+#include "gpio/gpio.h"   /* YiYiYa: 背光 GPIO4 控制（见 zdata/miyoo.md: LCD BL = GPIO-4） */
 
 #define DSI_REG_BASE (0x1A2900UL)
 
@@ -52,6 +53,13 @@ void ssd202d_flip_screen(vga_device_t *vga, u32 index) {
    * 帧缓冲布局：Y 面 w*h 字节 + UV 面 w*h/2 字节（见 libgui screen_canvas32_to_nv12）。 */
   kmemcpy(vga->pframbuffer, vga->frambuffer,
           (vga->width * vga->height * 3) / 2);
+}
+
+/* YiYiYa: 背光 —— miyoo 的 LCD BL 接 GPIO-4（PT4103 EN，见 zdata/miyoo.md）。
+ * 纯 GPIO 开关（非 PWM）：亮度 >0 点亮、0 熄灭 ✓。 */
+static void ssd202d_set_brightness(vga_device_t *vga, int value) {
+  (void)vga;
+  gpio_output(0, 4, value > 0 ? 1 : 0);
 }
 
 int ssd202_lcd_init(vga_device_t *vga) {
@@ -180,6 +188,12 @@ int gpu_init_mode(vga_device_t *vga, int mode) {
    *   ② miyoo 的面板倒装 ⇒ 旋转 180°。 */
   vga->format = FORMAT;
   vga->rotate = VGA_ROT_180;
+
+  /* YiYiYa: 背光初始化（GPIO4 输出 + 点亮）+ 挂调光钩子（console-os 设置页用） */
+  gpio_config(0, 4, 1);
+  gpio_output(0, 4, 1);
+  vga->set_brightness = ssd202d_set_brightness;
+  vga->brightness = 100;
 
   vga->framebuffer_length = vga->width * vga->height * vga->bpp / 2;
 

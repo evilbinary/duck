@@ -11,7 +11,9 @@ add_deps(
     'kernel',
     'mod-bcm',
     # v3s.c 等驱动直接 sysconf_get_int() 取 [lcd] 段配置
-    'mod-sysconf'
+    'mod-sysconf',
+    # YiYiYa: ssd202d.c 背光用 gpio_output（GPIO4）
+    'mod-gpio'
 )
 
 arch=get_arch()
