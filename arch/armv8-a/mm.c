@@ -220,6 +220,9 @@ void page_destroy(u64* upage) {
   kfree_alignment(upage);
 }
 
+/* 【bring-up 临时】直写串口探针（绕过 kprintf 的锁/缓冲） */
+extern void puts(char* text);
+
 void mm_page_enable(u64 page_dir) {
   u64 mair = (0xFFUL << 0) | (0x04UL << 8) | (0x44UL << 16);
   asm volatile("msr mair_el1, %0" : : "r"(mair));
@@ -233,28 +236,44 @@ void mm_page_enable(u64 page_dir) {
   asm volatile("msr ttbr0_el1, %0" : : "r"(p_pgd));
   asm volatile("isb");
 
+  puts("[e1]\n"); /* 【bring-up 临时】TTBR0 写完（MMU 仍未开） */
+
   asm volatile("tlbi vmalle1is");
   asm volatile("dsb sy");
   asm volatile("isb");
 
+  puts("[e2]\n"); /* 【bring-up 临时】TLBI/DSB 完成（MMU 仍未开） */
+
   u64 sctlr;
   asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
-  // SPAN=1, I=1, M=1. Disable Data Cache (C=0) for stability during early boot.
+  // SPAN=1, I=1, C=1, M=1.
+  // 【D-cache 必须一起开（C=1）】独占/原子指令只在【可缓存】内存上有定义：
+  // C=0 时所有数据访问实际都是 Non-cacheable，ldaxr/stxr 与 LSE 原子(swpa)
+  // 在真机上未定义/卡死 —— Pi5 实测：切到原子打印锁后的第一条 swpa 就挂住
+  // （QEMU 不模拟缓存所以从不暴露；miyoo(armv7-a) 本来就是 C=1 可缓存）。
+  // 映射已按 RAM=Normal WB / 设备=Device 设好，开 C 安全。
   // Clear WXN (19), UWXN (20), A (1), SA (3) to avoid unnecessary faults.
-  sctlr &= ~((1UL << 19) | (1UL << 20) | (1UL << 2) | (1UL << 1) | (1UL << 3));
-  sctlr |= (1UL << 0) | (1UL << 12) | (1UL << 23);
+  sctlr &= ~((1UL << 19) | (1UL << 20) | (1UL << 1) | (1UL << 3));
+  sctlr |= (1UL << 0) | (1UL << 2) | (1UL << 12) | (1UL << 23);
   asm volatile("msr sctlr_el1, %0" : : "r"(sctlr));
   asm volatile("dsb sy");
   asm volatile("isb");
 
-  /* 【打印锁切回原子实现】MMU 一开，内存就按 MAIR/TCR 的正常属性走
-   * （Normal memory，即便 D-cache 关着也是 Normal Non-cacheable），
-   * 独占指令(ldaxr/stxr)才有定义。开 MMU 之前是 Device-nGnRnE，
-   * 独占访问会卡死/中止（Pi5 实测：内核第一句 kprintf 就没输出）。
+  puts("[e3]\n"); /* 【bring-up 临时】MMU 已开后的第一句输出（验证映射/UART） */
+
+  /* 【打印锁切回原子实现】开 MMU 之前是 Device-nGnRnE，独占访问会卡死/中止
+   * （Pi5 实测：内核第一句 kprintf 就没输出）。现在 MMU + D-cache 都开了，
+   * 内存按 MAIR 走真正的 Normal WB（可缓存）——独占/原子指令此时才有定义。
+   * 【注意】光开 MMU 不够：C=0 时数据访问仍是 Non-cacheable，原子依旧未定义
+   * （所以上面 SCTLR 必须同时置 C=1，不能只置 M=1）。
    * arch_init 用 cpu_page_enabled() 的返回值初始化该开关，这里跟着真实状态翻转。 */
   io_print_lock_set_atomic(1);
 
+  puts("[e4]\n"); /* 【bring-up 临时】打印锁已切原子 */
+
   kprintf("VMSAv8-64 MMU enabled at %lx\n", p_pgd);
+
+  puts("[e5]\n"); /* 【bring-up 临时】MMU enabled 打印完成 */
 }
 
 void mm_init_default(void) {
