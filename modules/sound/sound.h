@@ -21,6 +21,10 @@
 #define SNDCTL_DSP_SPEED 44
 #define SNDCTL_DSP_SETFRAGMENT 55
 #define SNDCTL_DSP_SETTRIGGER 66
+/* YiYiYa: 软件音量（0..100）—— dsp write 时把 S16LE 样本乘系数。
+ * 自定义号（现有 OSS 号 11..66 之外，不与标准冲突）✓ */
+#define SNDCTL_DSP_SETVOLUME 100
+#define SNDCTL_DSP_GETVOLUME 101
 
 
 typedef struct sound_device{

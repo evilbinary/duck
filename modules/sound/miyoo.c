@@ -94,6 +94,9 @@ static const int src_rates[] = {8000,  11025, 12000, 16000, 22050,
 
 #define RING_SIZE (192 * 1024)
 static u8 snd_ring[RING_SIZE] __attribute__((aligned(64)));
+/* YiYiYa: 软件音量 0..100（默认 100）—— dsp write 时把 S16LE 样本乘系数，
+ * 由 ioctl(SNDCTL_DSP_SETVOLUME) 设置（console-os 的"音量 +/-"用它 ✓）。 */
+static int g_dsp_volume = 100;
 static u32 snd_wr;    /* 应用写到 ring 的字节偏移 */
 static int snd_rate = 44100;
 static int snd_started = 0;
@@ -516,7 +519,24 @@ static void bach_start(void) {
 size_t sound_ioctl(device_t *dev, u32 cmd, void *args) {
   u32 ret = 0;
   (void)dev;
-  if (cmd == SNDCTL_DSP_GETFMTS) {
+  if (cmd == SNDCTL_DSP_SETVOLUME) {
+    /* YiYiYa: 软件音量 0..100（0=静音）。返回当前值 ✓。 */
+    u32 *val = args;
+    if (val) {
+      int v = (int)*val;
+      if (v < 0) v = 0;
+      if (v > 100) v = 100;
+      g_dsp_volume = v;
+      log_info("dsp SETVOLUME=%d\n", g_dsp_volume);
+    }
+    ret = (u32)g_dsp_volume;
+  } else if (cmd == SNDCTL_DSP_GETVOLUME) {
+    u32 *val = args;
+    if (val) {
+      *val = (u32)g_dsp_volume;
+    }
+    ret = (u32)g_dsp_volume;
+  } else if (cmd == SNDCTL_DSP_GETFMTS) {
     u32 *val = args;
     if (val) {
       *val = AFMT_S16_LE;
@@ -576,7 +596,7 @@ static size_t read(device_t *dev, void *buf, size_t len) {
  * ⇒ 环里缓冲播完就"一下断"✓✓（现象完全吻合 ✓）。现在改为纯非阻塞 ✓。
  * 节奏由应用自己掌握（SDL 音频线程按片长自己算延时 ✓，v3s 上就是这么跑的 ✓）。 */
 static size_t write(device_t *dev, const void *buf, size_t len) {
-  const u8 *p = (const u8 *)buf;
+  u8 *p = (u8 *)buf;   /* 音量处理需要就地改样本（应用每次写新解码数据 ✓） */
   u32 n = (u32)len;
 
   (void)dev;
@@ -618,6 +638,18 @@ static size_t write(device_t *dev, const void *buf, size_t len) {
     }
   }
   n &= ~1u; /* 按 2 字节（一个 16bit 样本）对齐 ✓，保证样本不会被拆到环两端 ✓ */
+
+  /* YiYiYa: 软件音量 —— 音量 <100 时把 S16LE 样本就地乘系数。
+   * 应用（SDL 音频线程）每次写的是新解码数据，就地乘安全 ✓；
+   * 音量由 ioctl(SNDCTL_DSP_SETVOLUME) 设置（0..100）✓。 */
+  if (g_dsp_volume < 100 && n > 0) {
+    s16 *sp = (s16 *)p;
+    u32 cnt = n / 2;
+    u32 i;
+    for (i = 0; i < cnt; i++) {
+      sp[i] = (s16)(((int)sp[i] * g_dsp_volume) / 100);
+    }
+  }
 
   /* 写入环（可能跨环尾 ✓） */
   {
