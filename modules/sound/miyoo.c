@@ -96,7 +96,7 @@ static const int src_rates[] = {8000,  11025, 12000, 16000, 22050,
 static u8 snd_ring[RING_SIZE] __attribute__((aligned(64)));
 /* YiYiYa: 软件音量 0..100（默认 100）—— dsp write 时把 S16LE 样本乘系数，
  * 由 ioctl(SNDCTL_DSP_SETVOLUME) 设置（console-os 的"音量 +/-"用它 ✓）。 */
-static int g_dsp_volume = 100;
+static int g_dsp_volume = 60;
 static u32 snd_wr;    /* 应用写到 ring 的字节偏移 */
 static int snd_rate = 44100;
 static int snd_started = 0;
