@@ -108,5 +108,14 @@ void gic_enable(int cpu, int irq);
 void gic_init(void* base);
 void gic_send_sgi(int cpu, int irq);
 
+/* 统一中断框架（duck/kernel/irq.c）用的补充接口，实现见 gic2.c */
+void gic_irq_enable(int irq);
+void gic_irq_disable(int irq);
+void gic_irq_unmask(int irq);
+void gic_irq_set_type(u32 irq, u32 type);
+void gic_irq_set_affinity(u32 irq, u32 cpu);
+u32 gic_get_active(void);
+struct irq_chip;
+extern struct irq_chip gicv2_chip;
 
 #endif

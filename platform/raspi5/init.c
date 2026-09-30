@@ -2,6 +2,9 @@
 #include "gpio.h"
 #include "kernel/page.h"
 #include "libs/include/types.h"
+#include "libs/include/archcommon/gic2.h" /* 通用 GICv2 驱动：gicv2_chip/gic_init_base（GIC-400） */
+#include "libs/include/archcommon/irq_chip.h" /* 统一中断框架：struct irq_chip/irq_chip_register/irq_set_tick */
+#include "kernel/irq.h"
 
 static void io_write32(volatile unsigned int* port, u32 data);
 static u32 io_read32(volatile unsigned int* port);
@@ -247,99 +250,7 @@ static void rc_misc_ctrl_init(void) {
   rc_wr(RC_MISC_CTRL, v);
 }
 
-/* _start 的第一条指令就调用它，此时 sp 还没设 → 必须 naked（无函数序言、
- * 不碰栈）。上一版在这里做的"只碰 RAM 的复位信标"已经完成使命（真机验证
- * 通过），现在整件事都搬到 boot_probe()（有栈、C 代码）里做。 */
-__attribute__((naked)) void boot_probe0(void) {
-  /* 【第二十二轮】_start 的第一条指令：按 arm64 启动协议关掉 MMU。
-   * 第二十一轮的日志证明：加上 arm64 Image 头之后，固件终于认出了我们的镜像
-   * （出现了从未有过的 "Kernel relocated to 0x200000"）—— 之前十几轮"代码根本
-   * 没被执行"的根因就是缺那个头。
-   * 现在代码能跑了，第一件事就是把入口状态摆正：协议要求内核入口是
-   * "MMU 关、x0 = DTB"。固件交接时 MMU 可能还开着且只映射低地址，那样我们对
-   * RP1（0x1F00030000 / 0x1C030000）的访问会被翻译或直接中止。
-   * 关闭序列严格遵守 ARM 要求：DSB → TLBI → DSB → ISB → 清 SCTLR.M → ISB。 */
-  __asm__ volatile(
-      "mrs x0, CurrentEL\n\t"
-      "lsr x0, x0, #2\n\t"
-      "cmp x0, #3\n\t"
-      "b.eq 3f\n\t"
-      "cmp x0, #2\n\t"
-      "b.eq 2f\n\t"
-      /* ---- EL1 ---- */
-      "dsb sy\n\t"
-      "tlbi vmalle1\n\t"
-      "dsb sy\n\t"
-      "isb\n\t"
-      "mrs x1, sctlr_el1\n\t"
-      "bic x1, x1, #1\n\t"
-      "msr sctlr_el1, x1\n\t"
-      "isb\n\t"
-      "b 9f\n\t"
-      /* ---- EL2 ---- */
-      "2:\n\t"
-      "dsb sy\n\t"
-      "tlbi alle2\n\t"
-      "dsb sy\n\t"
-      "isb\n\t"
-      "mrs x1, sctlr_el2\n\t"
-      "bic x1, x1, #1\n\t"
-      "msr sctlr_el2, x1\n\t"
-      "isb\n\t"
-      "b 9f\n\t"
-      /* ---- EL3 ---- */
-      "3:\n\t"
-      "dsb sy\n\t"
-      "tlbi alle3\n\t"
-      "dsb sy\n\t"
-      "isb\n\t"
-      "mrs x1, sctlr_el3\n\t"
-      "bic x1, x1, #1\n\t"
-      "msr sctlr_el3, x1\n\t"
-      "isb\n\t"
-      "9:\n\t"
-      "ret\n\t" ::: "x0", "x1", "memory");
-}
 
-/* 【PCIe 根复合体出站窗口】RP1 挂在 PCIe 后面，ARM 要访问它，必须由 RC 的
- * CPU_2_PCIE_MEM_WINx 建立「CPU 地址 ⇄ PCIe 总线地址」映射。Linux 是自己按
- * DTB ranges 编程这些窗口的（drivers/pci/controller/pcie-brcmstb.c 的
- * brcm_pcie_set_outbound_win()）；固件很可能只给 VideoCore 那条访问路径做了
- * 映射、没给 ARM 这条路径编程 → 这正好解释上一轮所有 RP1 地址的静默。
- *
- * 寄存器（DTB: pcie@1000120000 reg = <0x10 0x120000 0x00 0x9310> → 基址
- * 0x1000120000；偏移取自上面那个 Linux 驱动，win 索引步进 LO/HI 8 字节、
- * BASE_LIMIT 4 字节）：
- *   +0x400c WIN_LO          PCIe 侧目标地址低 32 位
- *   +0x4010 WIN_HI          PCIe 侧目标地址高 32 位
- *   +0x4070 WIN_BASE_LIMIT  CPU 侧 base[15:4] / limit[31:20]（1MB 粒度）
- *   +0x4080 WIN_BASE_HI     CPU 侧 base 的 MB 高位（MB>>12，低 8 位）
- *   +0x4084 WIN_LIMIT_HI    同上，limit
- * 值与 DTB pcie ranges 一致（幂等：固件若已编程，写进去的还是同一份）：
- *   非预取 PCIe 0x0          ↔ CPU 0x1F00000000（约 4GB）
- *   预取   PCIe 0x4_00000000  ↔ CPU 0x1C00000000（12GB）
- */
-static void rc_outbound_win(int win, u64 cpu_addr, u64 pcie_addr, u64 size) {
-  volatile u32* rc = (volatile u32*)(uintptr_t)0x1000120000ULL;
-  u64 cpu_mb = cpu_addr >> 20;
-  u64 lim_mb = (cpu_addr + size - 1) >> 20;
-
-  rc[(0x400C + 8 * win) / 4] = (u32)pcie_addr;
-  rc[(0x4010 + 8 * win) / 4] = (u32)(pcie_addr >> 32);
-
-  u32 bl = rc[(0x4070 + 4 * win) / 4]; /* 读-改-写，别踩别的字段 */
-  bl &= ~(0xFFF00000u | 0xFFF0u);
-  bl |= (u32)((cpu_mb & 0xFFF) << 4) | (u32)((lim_mb & 0xFFF) << 20);
-  rc[(0x4070 + 4 * win) / 4] = bl;
-
-  u32 bh = rc[(0x4080 + 8 * win) / 4];
-  bh = (bh & ~0xFFu) | (u32)((cpu_mb >> 12) & 0xFF);
-  rc[(0x4080 + 8 * win) / 4] = bh;
-
-  u32 lh = rc[(0x4084 + 8 * win) / 4];
-  lh = (lh & ~0xFFu) | (u32)((lim_mb >> 12) & 0xFF);
-  rc[(0x4084 + 8 * win) / 4] = lh;
-}
 
 /* 往一个候选 RP1 UART 地址做最小初始化并连写 6 个字符（实现见 pl011_try）。 */
 static void rp1_uart_try(u64 base, char c) { pl011_try(base, c); }
@@ -497,51 +408,6 @@ static void dr_write(u64 base, char c, int n) {
   dsb();
 }
 
-void boot_probe(void) {
-  /* 【第二十三轮：最小 Hello World】
-   * 只做三件事：
-   *   1) 建两条 RC 出站窗口（值取自真 DTB 的 pcie ranges）；
-   *   2) 把 "Hello World" 直接写进 RP1 UART0 的两个候选 CPU 地址：
-   *      0x1F030000（非预取窗口）、0x1C030000（固件日志里报的预取窗口）；
-   *      【一个寄存器都不配置】—— 固件交接前一直在用这条串口打印，
-   *      它的 LCRH/CR/分频/引脚本来就是好的，我们只写数据寄存器 DR。
-   *   3) 然后【永久停住，不再复位】。
-   * 判读：
-   *   · 串口出现 "Hello World" → 全通了 ✓✓
-   *   · 没有输出、但机器【只启动这一次】（不再出现第 2 次启动）
-   *     → 代码确实在跑 ✓，问题只剩 UART 写出这一环
-   *   · 仍然出现第 2 次启动（与以前一样）→ 代码仍未被执行 ✗
-   */
-  static const char msg[] = "Hello World\r\n";
-  volatile u32* u1f = (volatile u32*)(uintptr_t)0x1F030000ULL;
-  volatile u32* u1c = (volatile u32*)(uintptr_t)0x1C030000ULL;
-  int i;
-
-  rc_misc_ctrl_init();
-  rc_outbound_win(0, 0x1F00000000ULL, 0x0ULL, 0x100000000ULL);
-  rc_outbound_win(1, 0x1C00000000ULL, 0x400000000ULL, 0x300000000ULL);
-  dsb();
-
-  /* 非预取窗口那条（DTB ranges 推出来的地址） */
-  for (i = 0; i < (int)sizeof(msg) - 1; i++) {
-    uart_putc(u1f, msg[i]);
-  }
-  dsb();
-  /* 预取窗口那条（固件自己日志里报的 0x1c00030000） */
-  for (i = 0; i < (int)sizeof(msg) - 1; i++) {
-    uart_putc(u1c, msg[i]);
-  }
-  dsb();
-
-  for (;;) {
-    __asm__ volatile("wfi");
-  }
-}
-
-
-/* 这里（MMU 已开、只映射了 RAM 的早期页表）不再写设备地址，避免翻译错误。
- * 保留符号以匹配 boot-armv8-a.s 的调用点。 */
-void boot_probe2(void) {}
 
 void uart_send(u8 c) {
   /* 【LF 补 CR】内核文本只带 '\n'；终端对纯 LF 只下移不复位列 ⇒ 输出呈阶梯状
@@ -592,21 +458,26 @@ u32 read_core_timer_pending(int cpu) {
 
 // Enable the GIC distributor once and the CPU interface per-core.
 static void gic_cpu_init(int cpu) {
+  /* 【复用通用 GICv2 驱动】raspi5 的控制器是 GIC-400（GICv2，见 gpio.h 的 DTB
+   * 注释）。gic_init_base 只记录 GICC/GICD 基址 —— gicv2_chip 的取号/EOI/
+   * mask/优先级都从这两个指针走；寄存器布局用 gic2.h 的结构体，不再手写。 */
+  gic_init_base((void *)GICC_BASE, (void *)GICD_BASE);
+
+  gic_dist_t *dp = (gic_dist_t *)GICD_BASE;
+  gic_cpu_t *cp = (gic_cpu_t *)GICC_BASE;
+
   if (cpu == 0) {
-    io_write64(GICD_BASE + 0x000, 1);  // GICD_CTLR: enable group 0
+    dp->ctl = G0_ENABLE;  // GICD_CTLR: enable distributor
   }
-  io_write64(GICC_BASE + 0x004, 0xFF);  // GICC_PMR: no priority masking
-  io_write64(GICC_BASE + 0x000, 1);     // GICC_CTLR: enable
+  cp->pm = 0xff;           // GICC_PMR: no priority masking
+  cp->ctl = G0_ENABLE;     // GICC_CTLR: enable (EOImode=0)
 
   // Enable virtual timer PPI (banked in GICD_ISENABLER0 for SGI/PPI)
-  io_write64(GICD_BASE + 0x100 + 4 * (GIC_PPI_CNTVIRQ / 32),
-             1u << (GIC_PPI_CNTVIRQ % 32));
+  dp->isenable[GIC_PPI_CNTVIRQ / 32] = 1u << (GIC_PPI_CNTVIRQ % 32);
 
-  // Give PPI27 a reasonable priority (banked GICD_IPRIORITYRn)
-  volatile u64 ipr = GICD_BASE + 0x400 + 4 * (GIC_PPI_CNTVIRQ / 4);
-  u32 shift = 8 * (GIC_PPI_CNTVIRQ % 4);
-  u32 v = io_read64(ipr) & ~(0xFFu << shift);
-  io_write64(ipr, v | (0xA0u << shift));
+  /* Give PPI27 a reasonable priority（GICD_IPRIORITYR 每个中断 1 字节，
+   * 而结构体把 0x400 建模成 u32[128] ⇒ 必须按字节索引，不能用 ipriority[27]） */
+  ((volatile u8 *)dp->ipriority)[GIC_PPI_CNTVIRQ] = 0xA0;
 }
 
 void timer_init(int hz) {
@@ -621,6 +492,17 @@ void timer_init(int hz) {
     kprintf("cntfrq %d\n", cntfrq[cpu]);
   }
   gic_cpu_init(cpu);
+
+  /* 【接入统一中断框架 —— 与 raspi3/v3s 对齐，顺序有讲究】
+   * 先 set_tick 再 register：反过来"chip 已注册、tick 还没声明"的窗口里若有中断
+   * 进来，tick 号会被当"未注册号"自动 mask ⇒ 时钟永久停掉（v3s/raspi3 都记录了
+   * 这条）。控制器实例直接用通用 GICv2 驱动的 gicv2_chip（取号 GICC_IAR / EOI
+   * GICC_EOIR / mask / 优先级），不再在平台里手写；不注册的后果：primary_chip()
+   * ==NULL ⇒ 中断既不取号也不 EOI ⇒ 第一次放开中断就 IRQ 风暴卡死（实测过）。
+   * raspi5 没有 GICv3 的 GICR 帧，所以不能用 arm64/gic3.c，见 libarchcommon/ya.py。 */
+  irq_set_tick(GIC_PPI_CNTVIRQ);
+  irq_chip_register(&gicv2_chip, 0, 128);
+
   write_cntv_tval(cntfrq[cpu]);
   enable_cntv(1);
 }
@@ -691,7 +573,9 @@ void platform_map(void) {
 }
 
 int interrupt_get_source(u32 no) {
-  u32 iar = io_read64(GICC_BASE + 0x00C);
+  /* 【老的兜底路径】注册 irq_chip 后由 irq_claim_and_dispatch() 接管，这里只在
+   * 未注册 chip 时用到；取号/EOI 走通用 GICv2 驱动（gic_irqwho/gic_irqack）。 */
+  u32 iar = gic_irqwho();
   u32 id = iar & 0x3FF;
 
   if (id == GIC_SPURIOUS_ID) {
@@ -699,7 +583,7 @@ int interrupt_get_source(u32 no) {
   }
 
   // Acknowledge / end the interrupt before dispatch.
-  io_write64(GICC_BASE + 0x010, iar);
+  gic_irqack(id);
 
   if (id == GIC_PPI_CNTVIRQ) {
     return EX_TIMER;
@@ -718,7 +602,7 @@ int interrupt_get_source(u32 no) {
 void ipi_enable(int cpu) {
   if (cpu < 0 || cpu >= MAX_CPU) return;
   // SGI0 is used for IPI (GICD_ISENABLER0 is banked per cpu)
-  io_write64(GICD_BASE + 0x100, 1u << 0);
+  gic_irq_enable(0);
 }
 
 // Pi 5 firmware parks secondary cores polling a spin-table at 0xd8+8*cpu.
@@ -726,8 +610,19 @@ void ipi_enable(int cpu) {
 void lcpu_send_start(u32 cpu, u64 entry) {
   (void)entry;
   if (cpu <= 0 || cpu >= MAX_CPU) return;
+  /* 【bring-up 单核验证】raspi3(QEMU) 能跑而 raspi5 卡死：先排除多核并发的干扰
+   * （AP 的启动路径/mm_page_enable/调度器都没有锁保护；日志里 [irq] 出现两次
+   * 就是并发征兆）。单核验证通过后再删掉 #if 0 恢复。 */
+  static int once = 0;
+  if (!once) {
+    once = 1;
+    kprintf("[mp] single-core bring-up: AP release disabled\n");
+  }
+  return;
+#if 0
   volatile u64* rel = (volatile u64*)(SPIN_RELEASE_BASE + 8 * cpu);
   *rel = (u64)&apu_entry;
+#endif
   dsb();
   asm volatile("sev" ::: "memory");
 }
@@ -740,16 +635,15 @@ void lcpu_wait_start(int cpu) {
 void ipi_send(int cpu, int vec) {
   if (cpu < 0 || cpu >= MAX_CPU) return;
   // GICD_SGIR: filter=0 (target list), cpu mask, sgi id
-  u32 val = (1u << 16) << cpu | (vec & 0xF);
-  io_write64(GICD_BASE + 0xF00, val);
+  gic_send_sgi(cpu, vec);
   dsb();
 }
 
 void ipi_clear(int cpu) {
   if (cpu < 0 || cpu >= MAX_CPU) return;
   // Read + EOI pending SGI to clear it.
-  u32 iar = io_read64(GICC_BASE + 0x00C);
+  u32 iar = gic_irqwho();
   if ((iar & 0x3FF) != GIC_SPURIOUS_ID) {
-    io_write64(GICC_BASE + 0x010, iar);
+    gic_irqack(iar & 0x3FF);
   }
 }

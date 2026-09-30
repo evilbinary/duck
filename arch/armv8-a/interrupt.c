@@ -108,6 +108,8 @@ INTERRUPT_SERVICE
 void exception_current_irq(void) {
   interrupt_entering_code(EX_IRQ, 0, 0);
   interrupt_process(interrupt_default_handler);
+  /* 【切勿在此加任何函数调用】x0 = handler 返回值 = 待恢复的 ic 指针；
+   * 任何 bl 都会踩掉 x0 ⇒ eret 到垃圾地址、静默卡死（实测教训）。 */
   interrupt_exit_ret();
 }
 
@@ -142,6 +144,8 @@ INTERRUPT_SERVICE
 void exception_lower_irq(void) {
   interrupt_entering_code(EX_IRQ, 0, 0);
   interrupt_process(interrupt_default_handler);
+  /* 【切勿在此加任何函数调用】x0 = handler 返回值 = 待恢复的 ic 指针；
+   * 任何 bl 都会踩掉 x0 ⇒ eret 到垃圾地址、静默卡死（实测教训）。 */
   interrupt_exit_ret();
 }
 

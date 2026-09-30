@@ -7,6 +7,8 @@
 
 #include "archcommon/irq_chip.h" /* struct irq_chip：统一中断框架的控制器抽象 */
 
+extern int kprintf(const char* fmt, ...);
+
 gic_t gic;
 
 void gic_init_base(void *cpu_addr, void *dist_addr) {
@@ -15,11 +17,18 @@ void gic_init_base(void *cpu_addr, void *dist_addr) {
 }
 
 void *gic_get_base() {
+#if defined(__arm__)
   unsigned val;
   asm volatile("mrc p15, 4, %0, c15, c0, 0" : "=r"(val));
   val >>= 15;
   val <<= 15;
   return (void *)val;
+#else
+  /* 【aarch64 上没有这条 32 位协处理器指令】基址必须由平台显式给出
+   * （gic_init_base）。本文件在 arm64 上只被 raspi5（GIC-400 = GICv2）
+   * 编进来，见 libarchcommon/ya.py。 */
+  return 0;
+#endif
 }
 
 void gic_init(void *base) {
@@ -110,6 +119,10 @@ void gic_irq_priority(u32 cpu, u32 irq, u32 priority) {
 void gic_unpend(int irq) {
   int x = irq / 32;
   unsigned long mask = 1 << (irq % 32);
+  /* 【范围保护】结构体只建模到 GICD_ICPENDR15（512 个中断，见 gic2.h）。
+   * irq 可能来自 GICC_IAR（带 CPUID 位、或 SPI 号 >=512），越界写会踩到
+   * 0x2C0 起的 reserved 区 —— 直接忽略。 */
+  if (irq < 0 || x >= 16) return;
   // GICD_ISPENDRn 寄存器，修改中断的pending状态
   gic.dist->icpend[x] = mask;
 }
