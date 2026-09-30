@@ -138,7 +138,12 @@
 /  ff_memfree() exemplified in ffsystem.c, need to be added to the project. */
 
 
-#define FF_LFN_UNICODE	0
+/* YiYiYa: API 层统一 UTF-8 —— 磁盘文件名是 GBK（FF_CODE_PAGE=936），
+ * fatfs 内部自动 936↔UTF-8 转换（ffunicode.c 已在编译）。
+ * 这样 ls / console-os 列表 / 终端 / 打开路径全部拿到 UTF-8：
+ *   中文文件名显示正常、按名字打开也不丢字节 ✓。
+ * 原来 0=ANSI/OEM（GBK 字节）⇒ UTF-8 的终端/UI 显示乱码、JS 往返易丢字节 ✗。 */
+#define FF_LFN_UNICODE	2
 /* This option switches the character encoding on the API when LFN is enabled.
 /
 /   0: ANSI/OEM in current CP (TCHAR = char)

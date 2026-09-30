@@ -1418,9 +1418,9 @@ pid_t sys_waitpid(pid_t pid, int* wstatus, int options) {
     if (child != NULL) {
       /* 【诊断·可删】确认 waitpid 命中的僵尸与其退出码
        * （定位 spawn 链上 system() 返回 -1 的根因） */
-      log_info("waitpid tid=%d pid=%d -> child=%d code=%d state=%d\n",
-               current->id, (int)pid, (int)child->id, (int)child->code,
-               child->state);
+      // log_info("waitpid tid=%d pid=%d -> child=%d code=%d state=%d\n",
+      //          current->id, (int)pid, (int)child->id, (int)child->code,
+      //          child->state);
       pid_t ret = (pid_t)child->id;
       if (wstatus != NULL) {
         *wstatus = (int)child->code;
@@ -1432,7 +1432,7 @@ pid_t sys_waitpid(pid_t pid, int* wstatus, int options) {
     }
     if (!thread_child_exists((int)current->id, (int)pid)) {
       /* 【诊断·可删】waitpid 走 ECHILD 分支（父/子 id 不匹配时会到这里） */
-      log_info("waitpid tid=%d pid=%d ECHILD\n", current->id, (int)pid);
+      // log_info("waitpid tid=%d pid=%d ECHILD\n", current->id, (int)pid);
       return -1; /* ECHILD */
     }
     if (options & WNOHANG) {
