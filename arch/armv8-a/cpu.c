@@ -7,6 +7,7 @@
 #include "context.h"
 #include "gpio.h"
 #include "libs/include/kernel/common.h"
+#include "libs/include/kernel/io.h" /* io_print_lock_set_atomic：打印锁原子开关 */
 #include "libs/include/types.h"
 
 extern boot_info_t* boot_info;
@@ -125,6 +126,20 @@ void cpu_enable_smp_mode(void) {
   // For simplicity, we assume firmware has set this up
 }
 
+/* 【分页(MMU)是否已开】覆盖 arch.c 里的弱符号（接口见 arch/cpu.h）。
+ * SCTLR_EL1.M（bit0）就是 MMU 使能位。
+ * 【为什么必须有】arch.c 的弱默认返回 1 ⇒ arch_init 会把打印锁设成"用独占
+ * 指令(ldaxr/stxr)"；而树莓派 boot 阶段把 MMU 关着进内核（page_init 才重开），
+ * 此时全部内存都是 Device-nGnRnE，AArch64 对 Device 内存做独占访问监视器不置位、
+ * 在 Pi5(A76) 上直接卡死 —— 实测现象：内核第一句 kprintf（interrupt_init 里）
+ * 打不出来、[i1b] 之后全无输出（display_init 的直写 puts 不过锁所以正常）。
+ * armv7-a 有同款实现（Cortex-A7 上是 data abort）。 */
+int cpu_page_enabled(void) {
+  u64 sctlr;
+  asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+  return (int)(sctlr & 0x1);
+}
+
 // Enable MMU and caches
 void cpu_enable_page(void) {
   cpu_enable_smp_mode();
@@ -142,6 +157,10 @@ void cpu_enable_page(void) {
   asm volatile("msr sctlr_el1, %0" : : "r"(sctlr) : "memory");
   isb();
   dsb();
+
+  /* MMU/缓存已开 ⇒ 独占指令可用，把打印锁切回原子实现
+   * （与 armv7-a 的 cpu_enable_page 行为一致）。 */
+  io_print_lock_set_atomic(1);
 }
 
 // Get CPU number from boot info

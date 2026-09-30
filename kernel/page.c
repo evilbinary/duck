@@ -11,6 +11,10 @@
  * page lookup kernel found phy）量大且逐次缺页都打，默认关闭；排查时打开。 */
 #define DEBUG 1
 
+/* 【必须在 page_fault_handle 之前定义】早期内核 fault 分支要读它判断"页表是否
+ * 已建好"（NULL ⇒ page_create 期间，映射无处可做 ⇒ 打印后停机，不再无限重试）。 */
+void *kernel_page_dir = NULL;
+
 // in user mode
 void page_error_exit() {
   log_debug("page erro exit ^_^!!\n");
@@ -201,12 +205,18 @@ void* page_fault_handle(interrupt_context_t *ic) {
       }
     }
   } else {
+    if (kernel_page_dir == NULL) {
+      /* 【早期内核 fault】内核页表还没建好（page_create 期间）就出 kernel
+       * fault：page_map 无处可映射，直接返回会让故障指令无限重试刷屏。
+       * 把 fault 地址打出来并停机 —— 把"静默死循环"变成一条可诊断信息。 */
+      log_error("early kernel fault at %lx (kernel page tables not ready)\n",
+                fault_addr);
+      cpu_halt();
+    }
     page_map(fault_addr, fault_addr, PAGE_KERNEL);
   }
   return ic;
 }
-
-void *kernel_page_dir = NULL;
 
 void page_map(vaddr_t virtualaddr, vaddr_t physaddr, u32 flags) {
 #ifdef VM_ENABLE

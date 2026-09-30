@@ -19,6 +19,19 @@ void puts(char* text) {
   }
 }
 
+/* bring-up 用：直写串口的十六进制打印（和 puts 同通路，绕过 io 通道/日志锁）。
+ * 用途：在 kprintf 通路可疑时把关键指针/寄存器值打出来。 */
+void puthex(unsigned long v) {
+  static const char hx[] = "0123456789abcdef";
+  int started = 0;
+  for (int i = 60; i >= 0; i -= 4) {
+    unsigned d = (unsigned)((v >> i) & 0xf);
+    if (!started && d == 0 && i != 0) continue;
+    started = 1;
+    putch(hx[d]);
+  }
+}
+
 void display_init() {
   puts("Hello,YiYiYa OS\n\r");
   puts("display init\n\r");

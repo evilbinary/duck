@@ -90,13 +90,24 @@ extern int (*page_put_page)(void* pa);
 #define PAGE_SIZE 0x1000
 #endif
 
+/* 【字段顺序 = 对齐要求，不能随便调】packed 结构体没有填充：AArch64 上
+ * size_t/指针是 8 字节，若 u32 type 夹在中间，后面的 8 字节成员就落在
+ * 4 字节偏移上 ⇒ 对它们的读写是【非对齐访问】。内核早期 MMU 未开、内存是
+ * Device-nGnRnE，非对齐访问在真机（A76）上直接卡死（QEMU 不检查；armv7-a
+ * 上 size_t 是 4 字节、全对齐，所以只在 64 位真机暴露）。
+ * 规则：所有 8 字节成员排前面，u32 放最后。
+ * 【pad 不能删】sizeof 必须是 8 的倍数：块的数据区从 addr+sizeof 开始，而
+ * 堆头 block_t 含 8 字节字段 —— 数据区不 8 对齐时，page_create 的第一次
+ * 堆分配就会非对齐访问 ⇒ 对齐异常死循环（真机实测：kernel_page_dir is null
+ * 刷屏）。 */ 
 typedef struct mem_block {
   uintptr_t addr;
-  u32 type;
   size_t size;
   size_t origin_size;
   uintptr_t origin_addr;
   struct mem_block* next;
+  u32 type;
+  u32 pad;
 } __attribute__((packed)) mem_block_t;
 
 typedef struct block {

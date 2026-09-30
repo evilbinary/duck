@@ -213,6 +213,10 @@ void* sync_handler(interrupt_context_t* ic) {
 // C support functions
 // ============================================================
 
+/* display.c 的直写串口输出（绕过 io 通道/日志锁）—— bring-up 标记用 */
+extern void puts(char* text);
+extern void puthex(unsigned long v);
+
 void interrupt_init(int cpu) {
   kprintf("interrupt init cpu %d\n", cpu);
 
@@ -223,7 +227,7 @@ void interrupt_init(int cpu) {
     for (int i = 0; i < IDT_NUMBER; i++) {
       interrutp_handlers[i] = NULL;
     }
-    boot_info->idt_base = (void*)exception_vectors;
+    boot_info->idt_base = (void*)exception_vectors; /* 若 boot_info 是野指针 ⇒ 这里 abort */
     boot_info->idt_number = IDT_NUMBER;
   }
 }
@@ -238,6 +242,22 @@ void exception_info(interrupt_context_t* ic) {
     "IRQ",  "UNDEF", "OTHER", "PREF ABORT", "PERMISSION"
   };
   int cpu = cpu_get_id();
+  /* 【直写串口报错】早期 fault 时 kprintf 本身可能有问题（打印锁/缓冲/栈），
+   * 所以先用 puts/puthex 直写（与 display_init 同一可靠通路），保证 fault 的
+   * 类型、ESR/FAR/ELR 一定出得来 —— 这是"静默死"变"可诊断"的关键。 */
+  puts("[EXC] cpu=");
+  puthex((unsigned long)cpu);
+  puts(" no=");
+  puthex(ic->no);
+  puts(" esr=");
+  puthex(read_esr());
+  puts(" far=");
+  puthex(read_far());
+  puts(" elr=");
+  puthex(ic->pc);
+  puts(" psr=");
+  puthex(ic->psr);
+  puts("\n");
   if (ic->no < sizeof(msgs) / sizeof(msgs[0])) {
     kprintf("exception cpu %d no %d: %s\n", cpu, ic->no, msgs[ic->no]);
   } else {

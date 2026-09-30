@@ -26,7 +26,7 @@ void serial_printf(char* fmt, ...) {
   char buf[1024];
   va_list args;
   va_start(args, fmt);
-  i = kvsnprintf(buf, sizeof(buf), fmt, args); /* 有界：以前无界写 1024 字节栈缓冲 */
+  i = kvsnprintf(buf, sizeof(buf), fmt, &args); /* 有界：以前无界写 1024 字节栈缓冲 */
   va_end(args);
   for (int j = 0; j < i; j++) {
     serial_write(buf[j]);

@@ -34,9 +34,23 @@ static void delay_cycles(int n) {
   }
 }
 
-// Raspberry Pi 5 UART0 (PL011), clock is 50MHz.
+/* 【控制台初始化】真机 DTB 权威结论：
+ *   /chosen stdout-path = serial10
+ *   /soc@107c000000/serial@7d001000  ⇒ CPU 侧 = 0x107D001000（UART10_* 宏）
+ * 固件（config.txt enable_uart=1 + overlay）已把引脚复用/上下拉/波特率分频
+ * 全部配好，BL31 就是在这条口上打印的（实测 boot 阶段打 "AAA" 证实）。
+ * ⇒ Pi5 这里【只做幂等重设】：LCRH=8N1+FIFO、CR=UARTEN|TXE|RXE；
+ *    不动 IBRD/FBRD（波特率保持固件的值），
+ *    【一个 legacy GPIO 寄存器都不碰】——GPFSEL1 / GPPUD / GPPUDCLK0 /
+ *    GPIO_PUP_PDN_CNTRL_REG0 是 BCM2711 的，Pi5 上不存在（RP1 是另一套
+ *    IO_BANK0/PADS），读写它们会拿 UR → 同步外部中止（boot 阶段最初的死因）。 */
 static void uart_init(void) {
-  // GPIO14/15 -> ALT0 (TXD0/RXD0)
+#ifdef RASPI5
+  io_write32(UART10_LCRH, (3u << 5) | (1u << 4)); /* 8N1 + FIFO enable */
+  io_write32(UART10_CR, 0x301);                   /* UARTEN|TXE|RXE */
+  return;
+#endif
+  // 以下为 raspi2/3 的 legacy BCM2837 路径（GPIO14/15 -> ALT0 + 分频）
   u32 r = io_read32(GPFSEL1);
   r &= ~((7u << 12) | (7u << 15));
   r |= (4u << 12) | (4u << 15);
@@ -530,27 +544,41 @@ void boot_probe(void) {
 void boot_probe2(void) {}
 
 void uart_send(u8 c) {
-  // 先写 RP1 UART0（40-pin GPIO14/15 —— 固件日志所在的口，USB-TTL 就接这里，
-  // config.txt 的 enable_uart=1 配的也是它）。放在最前：万一另一个口的地址在
-  // 本板无效导致访问中止，至少这个口已经先出去了。
-  while (io_read32(UART0_FR) & 0x20) {
+  /* 【LF 补 CR】内核文本只带 '\n'；终端对纯 LF 只下移不复位列 ⇒ 输出呈阶梯状
+   * 缩进、难以阅读。这里遇 '\n' 先发一个 '\r'（递归一层；'\r' 不会再进这个
+   * 分支）。boot 阶段自己写的就是 \n\r，走独立通路不受影响。 */
+  if (c == '\n') {
+    uart_send('\r');
   }
-  io_write32(UART0_DR, c);
-  // 再写 SoC 的 UART10（DTB chosen/stdout-path = serial10 的调试口）
-  while (io_read32(UART10_FR) & 0x20) {
+  /* 【已确认的控制台：SoC UART10 = serial10 = 0x107D001000】
+   * 真机 DTB：/chosen stdout-path=serial10，/soc@107c000000/serial@7d001000
+   * ⇒ CPU 侧 0x107D001000（旧代码漏了父节点 0x1_00000000 前缀，写进了 DRAM）。
+   * 实测串口先打出 "AAA" 证实就是它。对它做【有界 FR 等待】+ 写 DR：
+   * 16 字节 FIFO 不做流控会被连续写入冲爆（实测"前 ~30 字符正常、之后乱码"）；
+   * 它是真实设备，读 FR 安全。上限 ~20 万次（无时钟时也不能卡死）。 */
+  /* 【上限别太大】MMU 还没开时这次读是 Device-nGnRnE 强序访问，一次可能几百微秒；
+   * 原来 20 万次 ⇒ 单个字符最坏 ~0.4 秒，21 字符的输出行要好几秒，看起来像卡死。
+   * FIFO 排空一个字符只要 ~87µs（115200 波特），2000 次足够。 */
+  for (int t = 0; t < 2000; t++) {
+    if ((io_read32(UART10_FR) & 0x20) == 0) {
+      break;
+    }
   }
   io_write32(UART10_DR, c);
+  /* 【只写 serial10】boot 阶段的自检已经证明：只有 serial10（0x107D001000）
+   * 是活控制台（打出 "AAA"；RP1 两个候选窗口一个字母都没出）。
+   * 以前往 0x1C00030000 / 0x1F00030000 兜底写的代码删掉了 —— 每个字符多两次
+   * posted 总线写没有意义。若将来换线到 RP1 的 UART0（GPIO14/15），
+   * 再按 gpio.h 的 RP1_UART0 说明加回来。 */
 }
 
 unsigned int uart_receive(void) {
-  // 两个口都轮询（用户到底接在哪个口上 bring-up 阶段无法确定）：
-  // FR 的 RXFE(bit4) 为 0 表示接收 FIFO 非空。
+  /* 只轮询【已确认】的 serial10（0x107D001000）。不再读 RP1 窗口的 UART0_FR：
+   * 那里有没有设备还没定论，读错 PCIe 地址会拿 UR 把 CPU 打死。
+   * FR 的 RXFE(bit4) 为 0 表示接收 FIFO 非空。 */
   for (;;) {
     if ((io_read32(UART10_FR) & 0x10) == 0) {
       return io_read32(UART10_DR) & 0xFF;
-    }
-    if ((io_read32(UART0_FR) & 0x10) == 0) {
-      return io_read32(UART0_DR) & 0xFF;
     }
   }
 }
@@ -609,8 +637,19 @@ void timer_end(void) {
   }
 }
 
+extern void exception_vectors(void);
+
 void platform_init(void) {
-  // uart_init();
+  /* 【异常向量必须尽早装上】否则任何 fault 都会跳到陈旧/垃圾向量 ⇒ 静默死、
+   * 一点线索都没有。实测：内核早期 kprintf 里出问题时正是这种"没有任何输出"。
+   * 这里在第一次 kprintf（platform_init 之后 cpu_init 里）之前就把 VBAR 装好。 */
+  asm volatile("msr vbar_el1, %0" : : "r"((u64)exception_vectors) : "memory");
+  asm volatile("isb");
+
+  /* 打开调用：现在 Pi5 分支只对已确认的 serial10（0x107D001000）幂等重设
+   * LCRH/CR，不碰任何 legacy GPIO，也不动波特率 ⇒ 安全（boot 阶段同款操作
+   * 已实测可用）。作用是万一固件交接时 TX 被关，内核也能自己把控制台拉起来。 */
+  uart_init();
   io_add_write_channel(uart_send);
 }
 
@@ -622,6 +661,15 @@ void platform_map(void) {
   // 【必须用 64 位】0x1F00000000 截断成 u32 会变成 0 —— 那样会把低 16MB
   // （内核恒等映射、异常向量、页表所在处）按 Device 重映射。
   for (u64 addr = RP1_WINDOW_BASE; addr < RP1_WINDOW_BASE + RP1_WINDOW_LENGTH;
+       addr += 0x1000) {
+    page_map((vaddr_t)addr, (vaddr_t)addr, PAGE_DEV);
+  }
+
+  /* 【RP1 的另一个窗口（非预取 BAR0）也要映射】DTB 推出来的 RP1 UART0 是
+   * 0x1F00030000，而固件日志/ gpio.h 用的是 0x1C00030000 —— 哪个是活的还没
+   * 定论（boot 阶段现在是只写广播到三处）。内核 uart_send 也要广播，
+   * 所以这里把 0x1F 窗口的前 1MB 一并按设备映射，避免写它时翻译错误。 */
+  for (u64 addr = 0x1F00000000ULL; addr < 0x1F00000000ULL + RP1_WINDOW_LENGTH;
        addr += 0x1000) {
     page_map((vaddr_t)addr, (vaddr_t)addr, PAGE_DEV);
   }

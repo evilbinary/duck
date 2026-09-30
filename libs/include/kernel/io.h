@@ -11,6 +11,9 @@
 
 int kprintf(const char* format, ...);
 
+/* 逐字符写控制台（跳过打印锁/缓冲）—— bring-up 诊断与底层输出用 */
+void print_char(u8 ch);
+
 typedef void (*write_channel_fn)(u8 ch);
 void io_add_write_channel(write_channel_fn fn);
 

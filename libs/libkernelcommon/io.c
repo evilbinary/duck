@@ -124,7 +124,7 @@ int kprintf(const char* fmt, ...) {
   /* 【有界格式化】必须用 kvsnprintf：以前这里是 kvsprintf，格式化结果超长时会
    * 写穿 KPRINT_BUF。而本缓冲区紧邻 print_lock（实测相距正好 2048），一旦踩过去
    * 打印锁就永久卡住、整机日志全停 —— 所以这里的界不是"锦上添花"，是必需品。 */
-  i = kvsnprintf(buf, KPRINT_BUF, fmt, args);
+  i = kvsnprintf(buf, KPRINT_BUF, fmt, &args);
   va_end(args);
 
   int len = kstrlen(buf);

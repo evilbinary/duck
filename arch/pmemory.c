@@ -26,6 +26,12 @@
 
 static u32 count = 0;
 const size_t align_to = 16;
+
+/* 【块尾哨兵占位必须按 8 字节算】堆块布局 [block_t 头][数据(size)][END]：
+ * END 只写 4 字节 int，但占位留 8 字节 —— 否则下一个块头落在 4 mod 8 的
+ * 地址上，AArch64 上 block_t 的 8 字节字段就是非对齐访问（MMU 未开 ⇒ 对齐
+ * 异常；实测 page_create 第一次堆分配就死循环刷 kernel_page_dir is null）。 */
+#define YA_END_SIZE 8
 extern boot_info_t* boot_info;
 
 #define ALIGN(x, a) (x + (a - 1)) & ~(a - 1)
@@ -212,7 +218,10 @@ void* ya_sbrk(size_t size) {
 }
 
 block_t* ya_new_block(size_t size) {
-  block_t* block = ya_sbrk(size + sizeof(block_t) + +sizeof(int));
+  block_t* block = ya_sbrk(size + sizeof(block_t) + YA_END_SIZE);
+  /* 【对齐铁律】block_t 含 8 字节字段（AArch64）：块头必须 8 字节对齐。
+   * 不满足时在 MMU 未开阶段会直接对齐异常（不是能容错的问题），所以断言。 */
+  kassert(((uintptr_t)block & 7) == 0);
   block->free = BLOCK_USED;
   block->next = NULL;
   block->prev = NULL;
@@ -303,12 +312,12 @@ static block_t* ya_find_block_by_header(block_t* hdr) {
 }
 
 /* block 之后紧邻的物理块（没有则 NULL）。
- * 块布局：[block_t header][data(size)][int MAGIC_END]
- * ⇒ 下一个 header 地址 = data + size + sizeof(int)。
+ * 块布局：[block_t header][data(size)][END(占 8 字节，YA_END_SIZE)]
+ * ⇒ 下一个 header 地址 = data + size + YA_END_SIZE。
  * 必须用链表核对这个地址确实是登记过的块，否则会把越界地址当块用。 */
 static block_t* ya_phys_next(block_t* block) {
   return ya_find_block_by_header(
-      (block_t*)((u8*)ya_block_addr(block) + block->size + sizeof(int)));
+      (block_t*)((u8*)ya_block_addr(block) + block->size + YA_END_SIZE));
 }
 
 /* block 之前紧邻的物理块（没有则 NULL） */
@@ -322,7 +331,7 @@ static block_t* ya_phys_prev(block_t* block) {
       if (b == block) {
         continue;
       }
-      if ((block_t*)((u8*)ya_block_addr(b) + b->size + sizeof(int)) == block) {
+      if ((block_t*)((u8*)ya_block_addr(b) + b->size + YA_END_SIZE) == block) {
         return b;
       }
     }
@@ -374,9 +383,9 @@ void* ya_alloc(size_t size) {
   /* 【大块切分】相邻合并之后，空闲块可能远大于本次请求。若整块给出，这个块
    * 就再也不能服务同尺寸的小请求（下一次又得 carve 新内存），"合并"反而会
    * 加剧碎片。所以余量足够时把尾部切出来还回空闲链，只留 size 给调用方。 */
-  if (block->size >= size + sizeof(block_t) + sizeof(int) + align_to) {
-    block_t* rest = (block_t*)((u8*)ya_block_addr(block) + size + sizeof(int));
-    rest->size = block->size - size - sizeof(block_t) - sizeof(int);
+  if (block->size >= size + sizeof(block_t) + YA_END_SIZE + align_to) {
+    block_t* rest = (block_t*)((u8*)ya_block_addr(block) + size + YA_END_SIZE);
+    rest->size = block->size - size - sizeof(block_t) - YA_END_SIZE;
     rest->free = BLOCK_FREE;
     rest->count = 0;
     rest->no = 0;
@@ -553,15 +562,15 @@ void ya_free(void* ptr) {
   ya_list_unlink(&mmt.g_block_list, &mmt.g_block_list_last, block);
 
   /* 【向后合并】把紧跟在后面的空闲块并进来（原先 merge 整段被注释掉）。
-   * 块布局 [header][data(size)][int END] ⇒ 跨过下一个块 = sizeof(block_t)+its
-   * size+sizeof(int)。合并后数据区变大，末尾哨兵仍是原邻居的 END。 */
+   * 块布局 [header][data(size)][END] ⇒ 跨过下一个块 = sizeof(block_t)+its
+   * size+YA_END_SIZE。合并后数据区变大，末尾哨兵仍是原邻居的 END。 */
   for (;;) {
     block_t* nxt = ya_phys_next(block);
     if (nxt == NULL || nxt->free != BLOCK_FREE) {
       break;
     }
     ya_list_unlink(&mmt.g_block_free, &mmt.g_block_free_last, nxt);
-    block->size += sizeof(block_t) + nxt->size + sizeof(int);
+    block->size += sizeof(block_t) + nxt->size + YA_END_SIZE;
     /* 被吸收的 header 作废：magic 置 0 ⇒ 以后误释放它会被 ya_free 的
      * "invalid block" 分支挡下（清晰报错），而不是把堆链改坏。 */
     nxt->magic = 0;
@@ -578,7 +587,7 @@ void ya_free(void* ptr) {
       break;
     }
     ya_list_unlink(&mmt.g_block_free, &mmt.g_block_free_last, prv);
-    prv->size += sizeof(block_t) + block->size + sizeof(int);
+    prv->size += sizeof(block_t) + block->size + YA_END_SIZE;
     block->magic = 0;
     block->free = 0;
     block->size = 0;

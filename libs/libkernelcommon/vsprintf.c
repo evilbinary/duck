@@ -183,7 +183,9 @@ static char *number32(char *str, unsigned int num, int base, int size,
  * 关键点：判据必须基于"剩余空间"，不能用固定预留值 —— 小缓冲区会因此输出空串。
  * 为什么需要它：kprintf 的 2KB 缓冲是所有 CPU 共用的，格式化结果超长就会踩掉紧邻的
  * print_lock（实测两符号地址相距正好 2048 = KPRINT_BUF），打印锁一卡整机日志全停。 */
-int kvsnprintf(char *buf, size_t size, const char *fmt, va_list args) {
+extern void print_char(u8 ch); /* 【bring-up 临时探针】 */
+
+int kvsnprintf(char *buf, size_t size, const char *fmt, va_list *args) {
   int len;
   int i;
   char *str;
@@ -235,7 +237,7 @@ int kvsnprintf(char *buf, size_t size, const char *fmt, va_list args) {
       field_width = skip_atoi(&fmt);
     else if (*fmt == '*') {
       /* it's the next argument */
-      field_width = va_arg(args, int);
+      field_width = va_arg(*args, int);
       if (field_width < 0) {
         field_width = -field_width;
         flags |= LEFT;
@@ -256,7 +258,7 @@ int kvsnprintf(char *buf, size_t size, const char *fmt, va_list args) {
         precision = skip_atoi(&fmt);
       else if (*fmt == '*') {
         /* it's the next argument */
-        precision = va_arg(args, int);
+        precision = va_arg(*args, int);
       }
       if (precision < 0) precision = 0;
     }
@@ -299,12 +301,12 @@ int kvsnprintf(char *buf, size_t size, const char *fmt, va_list args) {
       case 'c':
         if (!(flags & LEFT))
           while (--field_width > 0) *str++ = ' ';
-        *str++ = (unsigned char)va_arg(args, int);
+        *str++ = (unsigned char)va_arg(*args, int);
         while (--field_width > 0) *str++ = ' ';
         break;
 
       case 's':
-        s = va_arg(args, char *);
+        s = va_arg(*args, char *);
         len = kstrlen(s);
         if (precision < 0)
           precision = len;
@@ -327,13 +329,13 @@ int kvsnprintf(char *buf, size_t size, const char *fmt, va_list args) {
 
       case 'o':
         if (qualifier == 'L') {
-          str = number(str, va_arg(args, unsigned long long), 8, field_width,
+          str = number(str, va_arg(*args, unsigned long long), 8, field_width,
                        precision, flags);
         } else if (qualifier == 'l') {
-          str = number32(str, va_arg(args, unsigned long), 8, field_width,
+          str = number32(str, va_arg(*args, unsigned long), 8, field_width,
                          precision, flags);
         } else {
-          str = number32(str, va_arg(args, unsigned int), 8, field_width,
+          str = number32(str, va_arg(*args, unsigned int), 8, field_width,
                          precision, flags);
         }
         break;
@@ -343,7 +345,7 @@ int kvsnprintf(char *buf, size_t size, const char *fmt, va_list args) {
           field_width = 16;   // ARM64: 64-bit pointer = 16 hex chars
           flags |= ZEROPAD;
         }
-        str = number(str, (unsigned long long)(uintptr_t)va_arg(args, void *),
+        str = number(str, (unsigned long long)(uintptr_t)va_arg(*args, void *),
                      16, field_width, precision, flags);
         break;
 
@@ -352,13 +354,13 @@ int kvsnprintf(char *buf, size_t size, const char *fmt, va_list args) {
         // fall through
       case 'X':
         if (qualifier == 'L') {
-          str = number(str, va_arg(args, unsigned long long), 16, field_width,
+          str = number(str, va_arg(*args, unsigned long long), 16, field_width,
                        precision, flags);
         } else if (qualifier == 'l') {
-          str = number32(str, va_arg(args, unsigned long), 16, field_width,
+          str = number32(str, va_arg(*args, unsigned long), 16, field_width,
                          precision, flags);
         } else {
-          str = number32(str, va_arg(args, unsigned int), 16, field_width,
+          str = number32(str, va_arg(*args, unsigned int), 16, field_width,
                          precision, flags);
         }
         break;
@@ -369,20 +371,20 @@ int kvsnprintf(char *buf, size_t size, const char *fmt, va_list args) {
         // fall through
       case 'u':
         if (qualifier == 'L') {
-          num = va_arg(args, unsigned long long);
+          num = va_arg(*args, unsigned long long);
           if (flags & SIGN) num = (long long)num;
           str = number(str, num, 10, field_width, precision, flags);
         } else if (qualifier == 'l') {
-          unsigned int num32 = va_arg(args, unsigned long);
+          unsigned int num32 = va_arg(*args, unsigned long);
           str = number32(str, num32, 10, field_width, precision, flags);
         } else {
-          unsigned int num32 = va_arg(args, unsigned int);
+          unsigned int num32 = va_arg(*args, unsigned int);
           str = number32(str, num32, 10, field_width, precision, flags);
         }
         break;
 
       case 'n':
-        ip = va_arg(args, int *);
+        ip = va_arg(*args, int *);
         *ip = (str - buf);
         break;
 
@@ -407,7 +409,7 @@ int kvsnprintf(char *buf, size_t size, const char *fmt, va_list args) {
  * 新代码请优先用 kvsnprintf() 并把缓冲容量传进来。 */
 #define KVSPRINTF_UNBOUNDED ((size_t)0x40000000) /* 1GB：远大于任何真实缓冲区 */
 
-int kvsprintf(char *buf, const char *fmt, va_list args) {
+int kvsprintf(char *buf, const char *fmt, va_list *args) {
   return kvsnprintf(buf, KVSPRINTF_UNBOUNDED, fmt, args);
 }
 
@@ -417,7 +419,7 @@ int ksnprintf(char *buf, size_t size, const char *fmt, ...) {
   va_list args;
   int r;
   va_start(args, fmt);
-  r = kvsnprintf(buf, size, fmt, args);
+  r = kvsnprintf(buf, size, fmt, &args);
   va_end(args);
   return r;
 }
@@ -426,6 +428,6 @@ void sprintf(char *buf, const char *fmt, ...) {
   int i;
   va_list args;
   va_start(args, fmt);
-  i = kvsprintf(buf, fmt, args);
+  i = kvsprintf(buf, fmt, &args);
   va_end(args);
 }

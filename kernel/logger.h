@@ -27,7 +27,9 @@ enum { LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR };
 #define LOG_MIN_LEVEL LOG_DEBUG
 #endif
 
-typedef void (*log_format_fn)(int tag, const char* message, va_list args);
+/* 【va_list 必须传指针】理由见 kernel/string.h：按值传会生成 128 位 SIMD 拷贝，
+ * MMU 未开时在真机上卡死。 */
+typedef void (*log_format_fn)(int tag, const char* message, va_list *args);
 
 typedef struct log {
   int fd;

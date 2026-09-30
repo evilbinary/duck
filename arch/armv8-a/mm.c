@@ -10,6 +10,7 @@
 #include "kernel/memory.h"
 #include "kernel/page_ref.h"
 #include "libs/include/kernel/common.h"
+#include "libs/include/kernel/io.h" /* io_print_lock_set_atomic：打印锁原子开关 */
 
 extern boot_info_t* boot_info;
 
@@ -245,6 +246,13 @@ void mm_page_enable(u64 page_dir) {
   asm volatile("msr sctlr_el1, %0" : : "r"(sctlr));
   asm volatile("dsb sy");
   asm volatile("isb");
+
+  /* 【打印锁切回原子实现】MMU 一开，内存就按 MAIR/TCR 的正常属性走
+   * （Normal memory，即便 D-cache 关着也是 Normal Non-cacheable），
+   * 独占指令(ldaxr/stxr)才有定义。开 MMU 之前是 Device-nGnRnE，
+   * 独占访问会卡死/中止（Pi5 实测：内核第一句 kprintf 就没输出）。
+   * arch_init 用 cpu_page_enabled() 的返回值初始化该开关，这里跟着真实状态翻转。 */
+  io_print_lock_set_atomic(1);
 
   kprintf("VMSAv8-64 MMU enabled at %lx\n", p_pgd);
 }

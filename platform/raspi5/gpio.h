@@ -37,16 +37,25 @@
 //     IO_BANK0   = +0x0D0000   (rp1/gpio@d0000 第 1 段：功能选择/状态)
 //     RIO        = +0x0E0000   (第 2 段：输出/使能，含 SET/CLR 别名)
 //     PADS_BANK0 = +0x0F0000   (第 3 段：电气特性/上下拉)
-//   SoC 侧外设窗口 0x7C000000-0x80000000：
-//     UART10 = 0x7D001000      (serial@7d001000，DTB chosen/stdout-path=serial10)
-//     GIC-400 = 0x7FFF9000     (compatible = "arm,gic-400")
+//   SoC 侧（父节点 /soc@107c000000，CPU 基址 0x107C000000）：
+//     UART10 = 0x107D001000    (serial@7d001000，DTB chosen/stdout-path=serial10)
+//     GIC-400 = 0x107FFF9000   (compatible = "arm,gic-400")
+//   【注意】DTB 节点里的 reg 是"父节点内偏移"，必须加父节点基址才是 CPU 地址；
+//   旧注释里的 0x7D001000 / 0x7FFF9000 都漏了 0x10_ 前缀。
 #define RP1_UART0_BASE      0x1C030000ULL
 #define RP1_IO_BANK0_BASE   0x1C0D0000ULL
 #define RP1_RIO_BASE        0x1C0E0000ULL
 #define RP1_PADS_BANK0_BASE 0x1C0F0000ULL
 #define RP1_WINDOW_BASE     0x1C00000000ULL
 #define RP1_WINDOW_LENGTH   0x00100000ULL /* 1MB：覆盖上面 4 个块 */
-#define SOC_UART10_BASE     0x7D001000ULL
+/* 【CPU 侧地址 = 父节点 /soc@107c000000 的基址 + 节点内偏移】
+ * 真机 DTB（bcm2712-rpi-5-b.dtb）实测：
+ *   /chosen                    stdout-path = serial10:115200n8   ← 固件控制台
+ *   /soc@107c000000/serial@7d001000  reg = <0x7d001000 0x200>   ← 节点内偏移
+ * ⇒ CPU 侧 = 0x107C000000 + 0x7D001000 = 0x107D001000
+ * 旧值 0x7D001000 漏了父节点 0x10_0000_0000 前缀 ⇒ 写进了 DRAM，
+ * 所以"固件日志能看到、内核一个字节都不出"（固件就是在这个地址上打印的）。 */
+#define SOC_UART10_BASE     0x107D001000ULL
 #define SOC_UART10_LENGTH   0x00001000ULL
 #define SOC_GIC_LENGTH      0x00007000ULL /* GICD 0x7FFF9000 → 0x80000000 */
 #endif
@@ -118,8 +127,12 @@
 //     reg = <0x7fff9000 0x1000  0x7fffa000 0x2000
 //            0x7fffc000 0x2000  0x7fffe000 0x2000>; }
 // 原来的 0x1FFF90000 / 0x1FFFA0000 是抄错了一位（0x7FFF9000 vs 0x1FFF90000）。
-#define GICD_BASE       0x7FFF9000ULL
-#define GICC_BASE       0x7FFFA000ULL
+/* 【同样要加父节点前缀】DTB：/soc@107c000000/interrupt-controller@7fff9000
+ * ⇒ CPU 侧 = 0x107C000000 + 0x7FFF9000 = 0x107FFF9000（GICC = +0x1000）。
+ * 旧值 0x7FFF9000 落在 1GB DRAM 之外、也不是外设 ⇒ 写进去全被丢掉（posted），
+ * 中断从来没工作过（文档里 raspi5 的 irq_chip_register 计数为 0 与此吻合）。 */
+#define GICD_BASE       0x107FFF9000ULL
+#define GICC_BASE       0x107FFFA000ULL
 
 #define GICD_CTLR       ((volatile unsigned int*)(GICD_BASE + 0x000))
 #define GICD_ISENABLER  ((volatile unsigned int*)(GICD_BASE + 0x100))

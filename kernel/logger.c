@@ -33,7 +33,7 @@ static size_t log_write(u32 fd, void* buf, size_t nbytes) {
   return ret;
 }
 
-void log_default(int tag, const char* message, va_list args) {
+void log_default(int tag, const char* message, va_list *args) {
   int ticks = 0;
   int tid = 0;
   // 仅在系统初始化完成后才获取 tick 和线程信息
@@ -62,7 +62,7 @@ void log_default(int tag, const char* message, va_list args) {
     kprintf("%s", logger_buf);
   } else {
     kmemset(logger_buf, 0, LOG_MSG_BUF);
-    kvsnprintf(logger_buf, LOG_MSG_BUF, "[%08d] tid: %d %s: ", ticks, tid,
+    ksnprintf(logger_buf, LOG_MSG_BUF, "[%08d] tid: %d %s: ", ticks, tid,
                tag_msg);
     log_write(log_info_mod.fd, logger_buf, kstrlen(logger_buf));
     kmemset(logger_buf, 0, LOG_MSG_BUF);
@@ -81,7 +81,7 @@ void log_default(int tag, const char* message, va_list args) {
   }
 }
 
-void log_default_color(int tag, const char* message, va_list args) {
+void log_default_color(int tag, const char* message, va_list *args) {
   int ticks = 0;
   int tid = 0;
   // 仅在系统初始化完成后才获取 tick 和线程信息
@@ -108,7 +108,7 @@ void log_default_color(int tag, const char* message, va_list args) {
   } else {
     kmemset(logger_buf, 0, LOG_MSG_BUF);
     int size =
-        kvsnprintf(logger_buf, LOG_MSG_BUF, "%s[%08d] %stid:%d %s%-5s %s", LOG_GRAY, ticks,
+        ksnprintf(logger_buf, LOG_MSG_BUF, "%s[%08d] %stid:%d %s%-5s %s", LOG_GRAY, ticks,
                  LOG_WHITE_BOLD, tid, tag_color, tag_msg, LOG_NONE);
     if (size > LOG_MSG_BUF) {
       kprintf("log overflow %d\n",size);
@@ -123,7 +123,7 @@ void log_default_color(int tag, const char* message, va_list args) {
   }
 }
 
-void log_format(int tag, const char* message, va_list args) {
+void log_format(int tag, const char* message, va_list *args) {
   if (tag < LOG_MIN_LEVEL) return;
   // 早期启动阶段：日志系统未初始化，直接回退到 kprintf
   if (log_info_mod.logger_size == 0) {
@@ -135,6 +135,8 @@ void log_format(int tag, const char* message, va_list args) {
     kprintf("%s", buf);
     return;
   }
+  /* 【注意】args 现在是指针：多个 logger 会共享同一份 va_list，只有第一个能取到参数。
+   * 实际只注册一个 logger（见 log_init）；若将来要多路输出，先各自 va_copy。 */
   for (int i = 0; i < log_info_mod.logger_size; i++) {
     log_info_mod.loggers[i](tag, message, args);
   }
@@ -143,28 +145,28 @@ void log_format(int tag, const char* message, va_list args) {
 void log_info(const char* fmt, ...) {
   va_list args;
   va_start(args, fmt);
-  log_format(LOG_INFO, fmt, args);
+  log_format(LOG_INFO, fmt, &args);
   va_end(args);
 }
 
 void log_debug(const char* fmt, ...) {
   va_list args;
   va_start(args, fmt);
-  log_format(LOG_DEBUG, fmt, args);
+  log_format(LOG_DEBUG, fmt, &args);
   va_end(args);
 }
 
 void log_warn(const char* fmt, ...) {
   va_list args;
   va_start(args, fmt);
-  log_format(LOG_WARN, fmt, args);
+  log_format(LOG_WARN, fmt, &args);
   va_end(args);
 }
 
 void log_error(const char* fmt, ...) {
   va_list args;
   va_start(args, fmt);
-  log_format(LOG_ERROR, fmt, args);
+  log_format(LOG_ERROR, fmt, &args);
   va_end(args);
 }
 
