@@ -475,6 +475,11 @@ static void gic_cpu_init(int cpu) {
   // Enable virtual timer PPI (banked in GICD_ISENABLER0 for SGI/PPI)
   dp->isenable[GIC_PPI_CNTVIRQ / 32] = 1u << (GIC_PPI_CNTVIRQ % 32);
 
+  // SGI0 = IPI 收端。GICD_ISENABLER0 对 SGI/PPI 是 banked per-core —— 必须
+  // 每个核在【自己的上下文】写一次才生效（mp_init 在主核代写对 AP 无效）。
+  // 本函数由每核的 timer_init 调用 ⇒ 主核/AP 各自使能，AP 才收得到 IPI。
+  dp->isenable[0] = 1u;
+
   /* Give PPI27 a reasonable priority（GICD_IPRIORITYR 每个中断 1 字节，
    * 而结构体把 0x400 建模成 u32[128] ⇒ 必须按字节索引，不能用 ipriority[27]） */
   ((volatile u8 *)dp->ipriority)[GIC_PPI_CNTVIRQ] = 0xA0;
@@ -605,24 +610,41 @@ void ipi_enable(int cpu) {
   gic_irq_enable(0);
 }
 
-// Pi 5 firmware parks secondary cores polling a spin-table at 0xd8+8*cpu.
-// Writing the AP entry address there releases the core.
+// Pi5：AP 由 armstub(BL31/EL3) 接管，DTB enable-method="psci" —— 老固件的
+// spin-table(0xd8) 在此【无人轮询】，必须用 PSCI CPU_ON (SMC64) 启动。
+// entry 固定用 apu_entry（与原 spin-table 目标一致；mp_init 传的 entry 恒为 0）。
 void lcpu_send_start(u32 cpu, u64 entry) {
   (void)entry;
   if (cpu <= 0 || cpu >= MAX_CPU) return;
-  /* 【bring-up 单核验证】raspi3(QEMU) 能跑而 raspi5 卡死：先排除多核并发的干扰
-   * （AP 的启动路径/mm_page_enable/调度器都没有锁保护；日志里 [irq] 出现两次
-   * 就是并发征兆）。单核验证通过后再删掉 #if 0 恢复。 */
-  static int once = 0;
-  if (!once) {
-    once = 1;
-    kprintf("[mp] single-core bring-up: AP release disabled\n");
+
+  /* 【cache 一致性 — AP 启动窗口】AP 被 PSCI 拉起时 MMU/D-cache 是关的
+   * （TF-A 恢复 EL1 冷态），以 non-cacheable 视角读 DRAM；而主核的共享页表
+   * (kernel_page_dir)、调度结构等都是 D-cache on 时写的，可能还没写回 DRAM。
+   * ⇒ 释放前把内核低端 RAM clean 到 PoC（内核 image/数据/堆/页表都落在
+   * 0x80000 起的这段，0-128MB 全是 RAM 无 MMIO）。窗口内主核只 busy-delay
+   * 不再写共享数据；AP 开 MMU 后进入 inner-shareable 域，此后硬件自动一致。 */
+  for (u64 a = 0x80000UL; a < 0x80000UL + 128UL * 1024 * 1024; a += 64) {
+    asm volatile("dc civac, %0" :: "r"(a) : "memory");
   }
-  return;
-#if 0
-  volatile u64* rel = (volatile u64*)(SPIN_RELEASE_BASE + 8 * cpu);
-  *rel = (u64)&apu_entry;
-#endif
+  asm volatile("dsb sy" ::: "memory");
+
+  /* PSCI_CPU_ON (SMC64 0xC4000003)：x1=target MPIDR affinity(=cpu id，
+   * 与 mpidr&0xF 同源)，x2=entry 物理地址(=链接地址)，x3=context_id。
+   * 返回：0=SUCCESS，-3=ALREADY_ON(幂等无害)，其余=失败(打日志暴露，
+   * 如 BL31 不支持=-1、affinity 不对=-2)。SMC 通路已实测可用
+   * （PSCI SYSTEM_RESET 复位成功过）。 */
+  register u64 x0 asm("x0") = 0xC4000003UL;
+  register u64 x1 asm("x1") = cpu;
+  register u64 x2 asm("x2") = (u64)&apu_entry;
+  register u64 x3 asm("x3") = 0;
+  asm volatile("smc #0"
+               : "+r"(x0), "+r"(x1), "+r"(x2), "+r"(x3)
+               :
+               : "memory", "cc", "x4", "x5", "x6", "x7", "x8", "x9", "x10",
+                 "x11", "x12", "x13", "x14", "x15", "x16", "x17");
+  if (x0 != 0 && x0 != (u64)-3) {
+    kprintf("[mp] psci cpu_on(%u) fail: %d\n", cpu, (int)x0);
+  }
   dsb();
   asm volatile("sev" ::: "memory");
 }

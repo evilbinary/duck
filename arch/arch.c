@@ -94,6 +94,12 @@ void arch_init(boot_info_t* boot, int cpu) {
     platform_end();
   } else {
 #ifdef MP_ENABLE
+    /* 【打印锁原子开关跟着本核 MMU 走】AP 是被 PSCI 拉起来的冷态（MMU/cache
+     * 关）—— 若沿用主核留下的"原子实现"（swpa/ldaxr），会在 Non-cacheable
+     * 内存上执行独占访问，Pi5 真机直接卡死（见 mm.c 的 D-cache 注释）。
+     * 这里读本核硬件状态 ⇒ AP 得到 0（非原子实现），开 MMU 后由
+     * cpu_enable_page() 翻回 1。与 cpu==0 分支开头的同一调用对称。 */
+    io_print_lock_set_atomic(cpu_page_enabled());
     ap_init(cpu);
 #endif
   }
