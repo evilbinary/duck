@@ -30,7 +30,7 @@ void exception_vectors(void) {
     ".align 7\n"
     "b exception_sp0_fiq\n"
     ".align 7\n"
-    "b .\n"
+    "b exception_sp0_serror\n"     // 0x180: SError（原 b . 死循环 ⇒ 黑屏元凶之一）
 
     // Group 1: Current EL with SP_ELx (kernel exceptions)
     ".align 7\n"
@@ -40,7 +40,7 @@ void exception_vectors(void) {
     ".align 7\n"
     "b exception_current_fiq\n"    // 0x300: kernel FIQ
     ".align 7\n"
-    "b .\n"                        // 0x380: SError (halt)
+    "b exception_current_serror\n" // 0x380: kernel SError（原 b . 死循环 = v41/v36 黑屏元凶）
 
     // Group 2: Lower EL AArch64 (user → EL1)
     ".align 7\n"
@@ -50,7 +50,7 @@ void exception_vectors(void) {
     ".align 7\n"
     "b exception_lower_fiq\n"      // 0x500: user FIQ
     ".align 7\n"
-    "b .\n"                        // 0x580: SError (halt)
+    "b exception_lower_serror\n"   // 0x580: user SError（原 b . 死循环）
 
     // Group 3: Lower EL AArch32 (unsupported)
     ".align 7\n"
@@ -160,6 +160,33 @@ void exception_lower_fiq(void) {
 }
 
 // ============================================================
+// SError slots (v43): 原来是 "b ." 死循环 —— boot/MMU 期一旦积累 pending
+// SError（imprecise 异步错误），任何 A=0 的 eret 落地即焊死在 0x380，
+// 黑屏且零输出（v36/v41 的真凶）。现在走 probe 打印 ESR/ISR 后正常 eret，
+// 既消费 pending SError 又把来源暴露出来。
+// ============================================================
+INTERRUPT_SERVICE
+void exception_sp0_serror(void) {
+  __asm__ volatile(
+      "msr spsel, #1\n"
+      "b exception_current_serror");
+}
+
+INTERRUPT_SERVICE
+void exception_current_serror(void) {
+  interrupt_entering_code(EX_OTHER, 0, 0);
+  interrupt_process(serror_probe);
+  interrupt_exit_ret();
+}
+
+INTERRUPT_SERVICE
+void exception_lower_serror(void) {
+  interrupt_entering_code(EX_OTHER, 0, 0);
+  interrupt_process(serror_probe);
+  interrupt_exit();
+}
+
+// ============================================================
 // C-level synchronous exception dispatch.
 //
 // Design mirrors armv7-a: just set ic->no to the right exception
@@ -220,6 +247,23 @@ void* sync_handler(interrupt_context_t* ic) {
 /* display.c 的直写串口输出（绕过 io 通道/日志锁）—— bring-up 标记用 */
 extern void puts(char* text);
 extern void puthex(unsigned long v);
+
+/* SError 探针（v43 转正）：boot 期存在一个尚未定位的周期性异步错误源（每轮开机
+ * 积累一次 pending SError，esr=0xbe000411），保留此低频 [SR] 打印用于未来诊断；
+ * 返回 ic 正常 eret —— 消费掉 pending SError。 */
+void* serror_probe(interrupt_context_t* ic) {
+  u64 esr, isr;
+  asm volatile("mrs %0, esr_el1" : "=r"(esr));
+  asm volatile("mrs %0, isr_el1" : "=r"(isr));
+  puts("[SR] esr=");
+  puthex((unsigned long)esr);
+  puts(" isr=");
+  puthex((unsigned long)isr);
+  puts(" pc=");
+  puthex((unsigned long)ic->pc);
+  puts("\n");
+  return ic;
+}
 
 void interrupt_init(int cpu) {
   kprintf("interrupt init cpu %d\n", cpu);

@@ -60,7 +60,7 @@ int context_init(context_t* context, u64 ksp_top, u64 usp_top, u64 entry,
     pstate = 0x004;
   } else {
     kprintf("context_init: unsupported level %d\n", level);
-    pstate = 0x3C5;
+    pstate = 0x3C5; /* EL1h + DAIF 全屏蔽 */
   }
 
   // ARM64 SP must be 16-byte aligned. Round ksp_top down before placing ic.

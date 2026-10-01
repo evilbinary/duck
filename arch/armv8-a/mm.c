@@ -220,9 +220,6 @@ void page_destroy(u64* upage) {
   kfree_alignment(upage);
 }
 
-/* 【bring-up 临时】直写串口探针（绕过 kprintf 的锁/缓冲） */
-extern void puts(char* text);
-
 void mm_page_enable(u64 page_dir) {
   u64 mair = (0xFFUL << 0) | (0x04UL << 8) | (0x44UL << 16);
   asm volatile("msr mair_el1, %0" : : "r"(mair));
@@ -236,13 +233,9 @@ void mm_page_enable(u64 page_dir) {
   asm volatile("msr ttbr0_el1, %0" : : "r"(p_pgd));
   asm volatile("isb");
 
-  puts("[e1]\n"); /* 【bring-up 临时】TTBR0 写完（MMU 仍未开） */
-
   asm volatile("tlbi vmalle1is");
   asm volatile("dsb sy");
   asm volatile("isb");
-
-  puts("[e2]\n"); /* 【bring-up 临时】TLBI/DSB 完成（MMU 仍未开） */
 
   u64 sctlr;
   asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
@@ -259,8 +252,6 @@ void mm_page_enable(u64 page_dir) {
   asm volatile("dsb sy");
   asm volatile("isb");
 
-  puts("[e3]\n"); /* 【bring-up 临时】MMU 已开后的第一句输出（验证映射/UART） */
-
   /* 【打印锁切回原子实现】开 MMU 之前是 Device-nGnRnE，独占访问会卡死/中止
    * （Pi5 实测：内核第一句 kprintf 就没输出）。现在 MMU + D-cache 都开了，
    * 内存按 MAIR 走真正的 Normal WB（可缓存）——独占/原子指令此时才有定义。
@@ -269,11 +260,7 @@ void mm_page_enable(u64 page_dir) {
    * arch_init 用 cpu_page_enabled() 的返回值初始化该开关，这里跟着真实状态翻转。 */
   io_print_lock_set_atomic(1);
 
-  puts("[e4]\n"); /* 【bring-up 临时】打印锁已切原子 */
-
   kprintf("VMSAv8-64 MMU enabled at %lx\n", p_pgd);
-
-  puts("[e5]\n"); /* 【bring-up 临时】MMU enabled 打印完成 */
 }
 
 void mm_init_default(void) {

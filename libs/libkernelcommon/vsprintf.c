@@ -183,7 +183,7 @@ static char *number32(char *str, unsigned int num, int base, int size,
  * 关键点：判据必须基于"剩余空间"，不能用固定预留值 —— 小缓冲区会因此输出空串。
  * 为什么需要它：kprintf 的 2KB 缓冲是所有 CPU 共用的，格式化结果超长就会踩掉紧邻的
  * print_lock（实测两符号地址相距正好 2048 = KPRINT_BUF），打印锁一卡整机日志全停。 */
-extern void print_char(u8 ch); /* 【bring-up 临时探针】 */
+extern void print_char(u8 ch);
 
 int kvsnprintf(char *buf, size_t size, const char *fmt, va_list *args) {
   int len;
