@@ -107,6 +107,9 @@ void thread_sleep(thread_t* thread, u32 count);
 
 void thread_wake(thread_t* thread);
 
+void thread_bind_cpu(thread_t* thread, int cpu);
+/* 调度切走之后调用：把已经不该留在 from_cpu 上的线程挂到它的 cpu_id。 */
+void thread_bind_finish(thread_t* thread, int from_cpu);
 void thread_add(thread_t* thread);
 
 void thread_remove(thread_t* thread);

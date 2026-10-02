@@ -509,11 +509,83 @@ void thread_reset_user_stack(thread_t* thread, u32* ustack) {
   // todo
 }
 
+static int thread_dequeue(thread_t* thread, int cpu) {
+  thread_t* prev = NULL;
+  thread_t* v = schedulable_head_thread[cpu];
+  while (v != NULL) {
+    if (v == thread) {
+      if (prev == NULL) {
+        schedulable_head_thread[cpu] = v->next;
+      } else {
+        prev->next = v->next;
+      }
+      if (schedulable_tail_thread[cpu] == thread) {
+        schedulable_tail_thread[cpu] = prev;
+      }
+      v->next = NULL;
+      return 1;
+    }
+    prev = v;
+    v = v->next;
+  }
+  return 0;
+}
+
+static void thread_enqueue(thread_t* thread, int cpu) {
+  thread->next = NULL;
+  if (schedulable_head_thread[cpu] == NULL) {
+    schedulable_head_thread[cpu] = thread;
+    schedulable_tail_thread[cpu] = thread;
+  } else {
+    schedulable_tail_thread[cpu]->next = thread;
+    schedulable_tail_thread[cpu] = thread;
+  }
+  if (current_threads[cpu] == NULL) {
+    current_threads[cpu] = thread;
+  }
+}
+
+void thread_bind_cpu(thread_t* thread, int cpu) {
+  if (thread == NULL || cpu < 0 || cpu >= MAX_CPU) return;
+  int old = (int)thread->cpu_id;
+  if (old == cpu) return;
+
+  int on_queue = thread->state == THREAD_RUNNING ||
+                 thread->state == THREAD_RUNABLE ||
+                 thread->state == THREAD_WAITING ||
+                 thread->state == THREAD_SLEEP;
+  /* 还没进队列，或者正在那颗核上跑：只改 cpu_id。
+   * 正在跑的核要等下一次调度把上下文存进线程，再由 thread_bind_finish 挪队列。
+   * 此刻就摘走的话，两颗核会同时用同一份没保存的上下文。 */
+  if (!on_queue || old < 0 || old >= MAX_CPU ||
+      current_threads[old] == thread) {
+    thread->cpu_id = (u32)cpu;
+    return;
+  }
+  if (!thread_dequeue(thread, old)) {
+    thread->cpu_id = (u32)cpu;
+    return;
+  }
+  thread->cpu_id = (u32)cpu;
+  thread_enqueue(thread, cpu);
+}
+
+void thread_bind_finish(thread_t* thread, int from_cpu) {
+  if (thread == NULL || from_cpu < 0 || from_cpu >= MAX_CPU) return;
+  int dest = (int)thread->cpu_id;
+  if (dest == from_cpu || dest < 0 || dest >= MAX_CPU) return;
+  if (!thread_dequeue(thread, from_cpu)) return;
+  thread_enqueue(thread, dest);
+}
+
 void thread_add(thread_t* thread) {
   // lock_acquire(&thread_lock);
 
-  // 内核需要物理地址
-  int cpu_id = cpu_get_id();
+  // 挂到 thread_bind_cpu 指定的核；没绑过就是创建时的当前核。
+  int cpu_id = (int)thread->cpu_id;
+  if (cpu_id >= MAX_CPU) {
+    cpu_id = cpu_get_id();
+  }
   if (schedulable_head_thread[cpu_id] == NULL) {
     schedulable_head_thread[cpu_id] = thread;
     schedulable_tail_thread[cpu_id] = thread;
