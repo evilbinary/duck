@@ -221,6 +221,8 @@ void page_destroy(u64* upage) {
 }
 
 void mm_page_enable(u64 page_dir) {
+  cpu_enable_smp_mode();
+
   u64 mair = (0xFFUL << 0) | (0x04UL << 8) | (0x44UL << 16);
   asm volatile("msr mair_el1, %0" : : "r"(mair));
 

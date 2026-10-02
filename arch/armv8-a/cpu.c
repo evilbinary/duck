@@ -119,9 +119,15 @@ void cpu_set_page(u64 page_table) {
   isb();
 }
 
-/* Pi 5 在 EL1 读/写 CPUECTLR（S3_0_C15_C1_4）会卡死在 page enable。
- * 一致性位由固件在进内核前设置，这里不要再碰。 */
-void cpu_enable_smp_mode(void) {}
+/* 和 ewokos 一样：开 MMU 之前把 ACTLR_EL1 bit6 置上。
+ * 不要写 CPUECTLR（S3_0_C15_C1_4），EL1 访问那个寄存器会卡在 page enable。 */
+void cpu_enable_smp_mode(void) {
+  u64 actlr;
+  asm volatile("mrs %0, actlr_el1" : "=r"(actlr));
+  actlr |= (1UL << 6);
+  asm volatile("msr actlr_el1, %0" :: "r"(actlr) : "memory");
+  isb();
+}
 
 /* 【分页(MMU)是否已开】覆盖 arch.c 里的弱符号（接口见 arch/cpu.h）。
  * SCTLR_EL1.M（bit0）就是 MMU 使能位。
