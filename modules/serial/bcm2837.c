@@ -11,11 +11,22 @@
 void serial_write(char a) { uart_send(a); }
 
 char serial_read() {
+#if defined(RASPI5)
+  /* 控制台是 SoC UART10（0x107D001000），与 uart_send 同一只。
+   * 不要走 io_read32：它的参数是 32 位 uint，会把 UART0_FR
+   * （0x1C00030018）截成 0x30018，用户态读 stdin 时直接 fault 把 init 打死。
+   * RXFE（FR bit4）置位表示 FIFO 空，保持非阻塞。 */
+  if ((*UART10_FR) & 0x10) {
+    return 0;
+  }
+  return (char)((*UART10_DR) & 0xFF);
+#else
   if (io_read32(UART0_FR) & 0x10) {
     return 0;
   }
   char c = io_read32(UART0_DR);
   return c;
+#endif
 }
 
 void serial_printf(char* fmt, ...) {
