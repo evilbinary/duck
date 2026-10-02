@@ -539,6 +539,48 @@ static uint32_t emmc_set_clock(const uint32_t target_clock) {
   BCM2835_EMMC->CONTROL1 = control1;
   udelay(BCM2835_EMMC_WRITE_DELAY);
 
+#if defined(RASPI5)
+  /* Pi5 (bcm2712) 专属：SDIO cfg block（host 基址 +0x400 = 0x1000FFF400）的
+   * SD_PIN_SEL(+0x44)，bit1=路由到 SD 卡槽引脚、bit0=eMMC。raspi2/3 的老
+   * Arasan 控制器没有此 mux（直连），故同一份代码在老平台可跑；Pi5 不设置
+   * 则卡槽收不到 CLK/CMD/DAT → 命令序列不启动、INTERRUPT 恒 0（CMD0 TIMEOUT）。
+   * 跟随 Linux sdhci_bcm2712_set_clock()：每次设钟都读改写，且必须在 SDCLK
+   * 已关闭时改（上面刚清了 CLK_EN）。 */
+  {
+    volatile uint32_t *cfg =
+        (volatile uint32_t *)((BCM2835_EMMC_BASE & ~0xfffUL) + 0x400UL);
+    /* SD_PIN_SEL(+0x44)：bit1=路由到 SD 卡槽 */
+    uint32_t v = cfg[0x44 / 4];
+    v = (v & ~0x3UL) | 0x2UL; /* SDIO_CFG_SD_PIN_SEL_SD */
+    cfg[0x44 / 4] = v;
+    /* SDIO_CFG_CTRL(+0x0)：bit31 SDCD_N_TEST_EN=1、bit30 LEV=0 → 测试模式
+     * 强制"卡在位"（跟随 Linux cfginit_2712；防 CD 异常触发自动时钟门控）。 */
+    uint32_t c = cfg[0];
+    c = (c & ~(1UL << 30)) | (1UL << 31);
+    cfg[0] = c;
+
+    /* POWER_CONTROL 在 host 块 0x29（CONTROL0 的 byte1），不在 cfg。
+     * Software Reset For All 会把它清回 0。bcm2712 在总线电源关闭时硬件
+     * 门控 SDCLK：命令被接受（CMD_INHIBIT 置位、CMDTM 回读 0）但超时计数
+     * 也不走，INTERRUPT 一直是 0。实测 c0=0x00800000 就是 0x29==0。
+     * 必须在重新打开 SDCLK 之前上电。
+     * 0x0F = SDHCI_POWER_330(0x0E, bits[3:1]=111) | POWER_ON(bit0)。
+     * 0x07 是错的：电压选择是 3 位不是 2 位，0x07 落在保留编码。
+     * 用 32 位读改写，保住 0x2A 的复位值（实测 byte2=0x80）。 */
+    uint32_t c0 = BCM2835_EMMC->CONTROL0;
+    if ((c0 & 0x0000ff00u) != 0x00000f00u) {
+      c0 = (c0 & ~0x0000ff00u) | 0x00000f00u;
+      BCM2835_EMMC->CONTROL0 = c0;
+      dsb();
+      /* 卡槽 VCC 由固件经 AON GPIO4 保持（regulator-boot-on）；这里等的是
+       * 主机侧电源位打开后 SDCLK 门控释放。 */
+      udelay(2000);
+    } else {
+      udelay(BCM2835_EMMC_WRITE_DELAY);
+    }
+  }
+#endif
+
   // Write the new divider
   control1 &= ~0xffe0;  // Clear old setting + clock generator select
   control1 |= divider;
@@ -571,6 +613,9 @@ static uint32_t emmc_reset(void) {
   BCM2835_EMMC->CONTROL0 = (uint32_t)0;
   BCM2835_EMMC->CONTROL2 = (uint32_t)0;
 
+  /* Pi5 的总线电源不能在这里打开：下面的 Software Reset For All 会把
+   * POWER_CONTROL 清回 0。上电放在 emmc_set_clock() 里、打开 SDCLK 之前。 */
+
   // Send reset host controller and wait for complete.
   uint32_t control1 = BCM2835_EMMC->CONTROL1;
   control1 |= BCM2835_EMMC_CONTROL1_SRST_HC;
@@ -596,7 +641,13 @@ static uint32_t emmc_reset(void) {
              BCM2835_EMMC->CONTROL0, BCM2835_EMMC->CONTROL1,
              BCM2835_EMMC->CONTROL2);
 
+  /* Pi5 基频 200MHz。SD_CLOCK_ID(4MHz) 经 2 的幂分频实际约 3.125MHz，
+   * 超出识别阶段 400kHz 上限；卡不响应时控制器仍会置 CMD 超时，但先按规范走。 */
+#if defined(RASPI5)
+  if (emmc_set_clock(MIN_FREQ) < 0) {
+#else
   if (emmc_set_clock(SD_CLOCK_ID) < 0) {
+#endif
     return -1;
   }
 
@@ -1207,7 +1258,14 @@ int sd_card_init(void) {
     return SD_ERROR;
   }
 
+#if defined(RASPI5)
+  /* bcm2712 clk_emmc2 = 固定 200MHz（bcm2712.dtsi 的 fixed-clock，权威值）。
+   * Pi5 不走 VC property mailbox 取时钟 —— mailbox 地址与老平台不同
+   * （0x107c013880 vs 0x3f00b880）且该查询接口在 Pi5 固件上未验证。 */
+  base_clock = 200000000;
+#else
   base_clock = bcm2835_vc_get_clock_rate(BCM2835_VC_CLOCK_ID_EMMC);
+#endif
 
   SD_TRACE("base_clock = %d", base_clock);
 

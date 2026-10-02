@@ -31,6 +31,11 @@
 
 #if defined ( RASPI2 ) || defined (RASPI3)
 #define BCM2835_PERI_BASE		0x3F000000	///<
+#elif defined ( RASPI5 )
+/* Pi5：外设窗口 bus 0x7c000000 经 dtsi ranges <0x7c000000 0x10 0x7c000000>
+ * 映射到 CPU 0x10_7c000000（system timer 0x107c003000、mailbox 0x107c013880
+ * …）。uart/GIC 等在平台头里各自独立定义，这里只服务 ST/EMMC 这类老基址宏。 */
+#define BCM2835_PERI_BASE		0x107c000000UL	///<
 #else
 #define BCM2835_PERI_BASE		0x20000000	///<
 #endif
@@ -104,7 +109,16 @@
 #define BCM2835_UART1_BASE		(BCM2835_PERI_BASE + 0x215000)	///< Base Physical Address of the AUX_UART1 registers
 #define BCM2835_SPI1_BASE		(BCM2835_PERI_BASE + 0x215080)	///< Base Physical Address of the AUX_SPI1 registers
 #define BCM2835_SPI2_BASE		(BCM2835_PERI_BASE + 0x2150C0)	///< Base Physical Address of the AUX_SPI2 registers
+#if defined ( RASPI5 )
+/* bcm2712 sdio1（microSD 槽）host 寄存器：dtsi mmc@fff000 reg=<0x10 0x00fff000>
+ * ⇒ (0x10<<32)|0x00fff000 = 0x1000FFF000（64GB+16MB，axi 直通窗口低端）。
+ * 注意只有一位 hex 的 1000 —— 曾多写一个 0 成 0x10000FFF000(1TB)，超出
+ * TCR T0SZ=25 的 512GB TTBR0 范围 ⇒ 硬件 translation fault 死循环
+ * （实测 page fault at 10000fff0fc；同窗口 GIC 0x107fff9000=66GB 没超所以正常）。 */
+#define BCM2835_EMMC_BASE		0x1000FFF000UL	///< Base Physical Address of the EMMC registers
+#else
 #define BCM2835_EMMC_BASE		(BCM2835_PERI_BASE + 0x300000)	///< Base Physical Address of the EMMC registers
+#endif
 #define BCM2835_BSC1_BASE		(BCM2835_PERI_BASE + 0x804000)	///< Base Physical Address of the BSC1 registers
 #define BCM2835_BSC2_BASE		(BCM2835_PERI_BASE + 0x805000)	///< Base Physical Address of the BSC2 registers
 #define	BCM2835_USB_BASE		(BCM2835_PERI_BASE + 0x980000)	///<

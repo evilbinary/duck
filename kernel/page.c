@@ -88,11 +88,19 @@ void* page_fault_handle(interrupt_context_t *ic) {
          *   - 其余（kuser helper 页 0xffff0000、内核映像等）→ PAGE_USER。
          * FB 有自己的 VMA（MEMORY_FB），不会走这个分支。 */
         u32 attr;
-        if (fault_addr < (vaddr_t)EXEC_ADDR) {
-          attr = PAGE_DEV;
-        } else {
-          attr = PAGE_USER;
-        }
+        /* 统一判据（无 #ifdef）：VA < EXEC_ADDR（老平台 MMIO 在低址：raspi3
+         * 0x3F300000、t113 0x01C00000…）‖ phys ≥64GB（Pi5 MMIO 直通窗口
+         * SDHCI=0x1000FFF000=64GB+16MB、GIC=0x107fff9000=66GB，高于 EXEC_ADDR
+         * 使 VA 魔数失效；Pi5 RAM ≤16GB → ≥64GB 必是 MMIO）。
+         * 非 Pi5 平台 phys 恒 <64GB（32 位 phy ≤4GB），右条件恒假 ⇒ 与原
+         * EXEC_ADDR 判据逐位一致。Pi5 仅剩低址(<1GB) RAM 的异常访问会判 DEV
+         * （Device 访 RAM 能完成只是慢，且都在野指针异常路径上）。
+         * 属性根源是"从内核页表镜像已验证的映射"；更彻底的统一是直接读内核
+         * PTE 的 attr 复用（零魔数），需动 walk 层，暂不做。 */
+        attr = (fault_addr < (vaddr_t)EXEC_ADDR ||
+                (u64)phy >= 0x1000000000UL)
+                   ? PAGE_DEV
+                   : PAGE_USER;
         page_map_on((u64*)current->vm->upage, fault_addr, (u64)phy, attr);
       } else {
         if (current->fault_count < 1) {
@@ -107,8 +115,10 @@ void* page_fault_handle(interrupt_context_t *ic) {
             extern void sys_trace_dump(void);
             sys_trace_dump();
           }
-          void* pte_page = (void*)((u32)fault_addr & ~(PAGE_SIZE - 1));
-          void* pte_prev = (void*)((u32)pte_page - PAGE_SIZE);
+          /* vaddr_t：平台无关位宽（aarch64=u64 不截断高地址，32 位=u32），
+           * 原遗留 (u32) 会把 0x1000FFF0FC 截成 0xFFF0FC 对齐错位。 */
+          void* pte_page = (void*)((vaddr_t)fault_addr & ~(PAGE_SIZE - 1));
+          void* pte_prev = (void*)((vaddr_t)pte_page - PAGE_SIZE);
           log_debug("pte %x -> %x\n", pte_page,
                     page_v2p((u64*)current->vm->upage, pte_page));
           log_debug("pte %x -> %x\n", pte_prev,

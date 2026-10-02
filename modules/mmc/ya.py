@@ -29,6 +29,12 @@ plat_source={
         'bcm2836.c',
         'bcm2835_vc.c',
     ],
+    'raspi5':[
+        # bcm2712 sdio1（microSD）= 标准 SDHCI 布局：复用 bcm2836.c。
+        # 不编 bcm2835_vc.c：Pi5 的 base_clock 在 sd_card_init 里走 RASPI5
+        # 分支直接取 clk_emmc2=200MHz（dtsi fixed-clock），不碰 VC mailbox。
+        'bcm2836.c',
+    ],
     'rk3128':[
         'rk3128.c'
     ],

@@ -332,8 +332,9 @@ int kvsnprintf(char *buf, size_t size, const char *fmt, va_list *args) {
           str = number(str, va_arg(*args, unsigned long long), 8, field_width,
                        precision, flags);
         } else if (qualifier == 'l') {
-          str = number32(str, va_arg(*args, unsigned long), 8, field_width,
-                         precision, flags);
+          /* 同 %lx：aarch64 的 unsigned long=64 位，走 number 防截断 */
+          str = number(str, (unsigned long long)va_arg(*args, unsigned long),
+                       8, field_width, precision, flags);
         } else {
           str = number32(str, va_arg(*args, unsigned int), 8, field_width,
                          precision, flags);
@@ -357,8 +358,12 @@ int kvsnprintf(char *buf, size_t size, const char *fmt, va_list *args) {
           str = number(str, va_arg(*args, unsigned long long), 16, field_width,
                        precision, flags);
         } else if (qualifier == 'l') {
-          str = number32(str, va_arg(*args, unsigned long), 16, field_width,
-                         precision, flags);
+          /* %lx 必须走 number(64位)：aarch64 的 unsigned long 是 64 位，
+           * 原先走 number32 把高 32 位打没了（实测 Pi5：fault 地址
+           * 0x10000fff0fc 在日志里只显示 fff0fc，地址谜团全因此而起）。
+           * 32 位平台 unsigned long=32 位，值经 ULL 扩展后输出不变。 */
+          str = number(str, (unsigned long long)va_arg(*args, unsigned long),
+                       16, field_width, precision, flags);
         } else {
           str = number32(str, va_arg(*args, unsigned int), 16, field_width,
                          precision, flags);
@@ -375,8 +380,9 @@ int kvsnprintf(char *buf, size_t size, const char *fmt, va_list *args) {
           if (flags & SIGN) num = (long long)num;
           str = number(str, num, 10, field_width, precision, flags);
         } else if (qualifier == 'l') {
-          unsigned int num32 = va_arg(*args, unsigned long);
-          str = number32(str, num32, 10, field_width, precision, flags);
+          /* 同 %lx：aarch64 的 unsigned long=64 位，走 number 防截断 */
+          str = number(str, (unsigned long long)va_arg(*args, unsigned long),
+                       10, field_width, precision, flags);
         } else {
           unsigned int num32 = va_arg(*args, unsigned int);
           str = number32(str, num32, 10, field_width, precision, flags);

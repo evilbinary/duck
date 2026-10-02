@@ -630,9 +630,9 @@ void lcpu_send_start(u32 cpu, u64 entry) {
 
   /* PSCI_CPU_ON (SMC64 0xC4000003)：x1=target MPIDR affinity(=cpu id，
    * 与 mpidr&0xF 同源)，x2=entry 物理地址(=链接地址)，x3=context_id。
-   * 返回：0=SUCCESS，-3=ALREADY_ON(幂等无害)，其余=失败(打日志暴露，
-   * 如 BL31 不支持=-1、affinity 不对=-2)。SMC 通路已实测可用
-   * （PSCI SYSTEM_RESET 复位成功过）。 */
+   * 返回：0=SUCCESS；负值=PSCI 标准错误码：-1=NOT_SUPPORTED、-2=INVALID_PARAM、
+   * -3=DENIED、-4=ALREADY_ON(核已被 armstub 拉起——Pi5 实测就是 -4，
+   * 见下 spin-table 兜底)。SMC 通路已实测可用（SYSTEM_RESET 复位成功过）。 */
   register u64 x0 asm("x0") = 0xC4000003UL;
   register u64 x1 asm("x1") = cpu;
   register u64 x2 asm("x2") = (u64)&apu_entry;
@@ -642,8 +642,22 @@ void lcpu_send_start(u32 cpu, u64 entry) {
                :
                : "memory", "cc", "x4", "x5", "x6", "x7", "x8", "x9", "x10",
                  "x11", "x12", "x13", "x14", "x15", "x16", "x17");
-  if (x0 != 0 && x0 != (u64)-3) {
+  if (x0 != 0 && x0 != (u64)-4) {
     kprintf("[mp] psci cpu_on(%u) fail: %d\n", cpu, (int)x0);
+  }
+  if (x0 != 0) {
+    /* PSCI 没把核拉进我们的代码：
+     *  - -4=ALREADY_ON：核已 ON 却没跑 apu_entry ⇒ 它们停在 armstub 的
+     *    spin-table 轮询循环里（stub 早把 secondary 拉起来了，BL31 视角
+     *    "已经在跑"，CPU_ON 进不去）；
+     *  - 其他错误码：BL31 拒绝 ⇒ stub 循环可能仍是唯一入口。
+     * 兜底写 armstub spin-table 槽再 sev 唤醒。官方 armstub8.S 真实布局：
+     *   .org 0xd8 spin_cpu0 / 0xe0 spin_cpu1 / 0xe8 spin_cpu2 / 0xf0 spin_cpu3
+     *   secondary: adr x5,spin_cpu0; ldr x4,[x5, x6 lsl #3] (x6=MPIDR&3);
+     *             cbz x4,loop; mov x0,#0; b boot_kernel → br x4
+     * ⇒ 槽位 = 0xd8 + cpu*8（曾误写死 0xd8=cpu0 槽，cpu1-3 根本不看它）。
+     * PSCI 成功(x0==0)时无人读它；0x0-0x80000 是 stub 区 boot 后闲置，无害。 */
+    *(volatile u64 *)(0xd8UL + (u64)cpu * 8) = (u64)&apu_entry;
   }
   dsb();
   asm volatile("sev" ::: "memory");
