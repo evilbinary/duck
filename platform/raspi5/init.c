@@ -610,56 +610,81 @@ void ipi_enable(int cpu) {
   gic_irq_enable(0);
 }
 
-// Pi5：AP 由 armstub(BL31/EL3) 接管，DTB enable-method="psci" —— 老固件的
-// spin-table(0xd8) 在此【无人轮询】，必须用 PSCI CPU_ON (SMC64) 启动。
-// entry 固定用 apu_entry（与原 spin-table 目标一致；mp_init 传的 entry 恒为 0）。
-void lcpu_send_start(u32 cpu, u64 entry) {
-  (void)entry;
-  if (cpu <= 0 || cpu >= MAX_CPU) return;
-
-  /* 【cache 一致性 — AP 启动窗口】AP 被 PSCI 拉起时 MMU/D-cache 是关的
-   * （TF-A 恢复 EL1 冷态），以 non-cacheable 视角读 DRAM；而主核的共享页表
-   * (kernel_page_dir)、调度结构等都是 D-cache on 时写的，可能还没写回 DRAM。
-   * ⇒ 释放前把内核低端 RAM clean 到 PoC（内核 image/数据/堆/页表都落在
-   * 0x80000 起的这段，0-128MB 全是 RAM 无 MMIO）。窗口内主核只 busy-delay
-   * 不再写共享数据；AP 开 MMU 后进入 inner-shareable 域，此后硬件自动一致。 */
-  for (u64 a = 0x80000UL; a < 0x80000UL + 128UL * 1024 * 1024; a += 64) {
-    asm volatile("dc civac, %0" :: "r"(a) : "memory");
-  }
-  asm volatile("dsb sy" ::: "memory");
-
-  /* PSCI_CPU_ON (SMC64 0xC4000003)：x1=target MPIDR affinity(=cpu id，
-   * 与 mpidr&0xF 同源)，x2=entry 物理地址(=链接地址)，x3=context_id。
-   * 返回：0=SUCCESS；负值=PSCI 标准错误码：-1=NOT_SUPPORTED、-2=INVALID_PARAM、
-   * -3=DENIED、-4=ALREADY_ON(核已被 armstub 拉起——Pi5 实测就是 -4，
-   * 见下 spin-table 兜底)。SMC 通路已实测可用（SYSTEM_RESET 复位成功过）。 */
-  register u64 x0 asm("x0") = 0xC4000003UL;
-  register u64 x1 asm("x1") = cpu;
-  register u64 x2 asm("x2") = (u64)&apu_entry;
-  register u64 x3 asm("x3") = 0;
+/* PSCI SMC. 返回值按规范是有符号错误码：0 成功，-1 不支持，-2 参数非法，
+ * -4 ALREADY_ON。 */
+static u64 psci_call(u64 fn, u64 arg1, u64 arg2, u64 arg3) {
+  register u64 x0 asm("x0") = fn;
+  register u64 x1 asm("x1") = arg1;
+  register u64 x2 asm("x2") = arg2;
+  register u64 x3 asm("x3") = arg3;
   asm volatile("smc #0"
                : "+r"(x0), "+r"(x1), "+r"(x2), "+r"(x3)
                :
                : "memory", "cc", "x4", "x5", "x6", "x7", "x8", "x9", "x10",
                  "x11", "x12", "x13", "x14", "x15", "x16", "x17");
-  if (x0 != 0 && x0 != (u64)-4) {
-    kprintf("[mp] psci cpu_on(%u) fail: %d\n", cpu, (int)x0);
+  return x0;
+}
+
+static void cache_clean_u64(u64 addr) {
+  asm volatile("dc cvac, %0" ::"r"(addr) : "memory");
+}
+
+static void publish_u64(u64 addr, u64 val) {
+  *(volatile u64 *)addr = val;
+  cache_clean_u64(addr);
+}
+
+/* AP 起来时 MMU/cache 是关的，只看得到 DRAM。主核开着 D-cache，页表和
+ * apu_entry 可能还在 cache 里。只做一次，三颗从核共用。 */
+static void publish_low_ram(void) {
+  static u8 done;
+  if (done) {
+    return;
   }
-  if (x0 != 0) {
-    /* PSCI 没把核拉进我们的代码：
-     *  - -4=ALREADY_ON：核已 ON 却没跑 apu_entry ⇒ 它们停在 armstub 的
-     *    spin-table 轮询循环里（stub 早把 secondary 拉起来了，BL31 视角
-     *    "已经在跑"，CPU_ON 进不去）；
-     *  - 其他错误码：BL31 拒绝 ⇒ stub 循环可能仍是唯一入口。
-     * 兜底写 armstub spin-table 槽再 sev 唤醒。官方 armstub8.S 真实布局：
-     *   .org 0xd8 spin_cpu0 / 0xe0 spin_cpu1 / 0xe8 spin_cpu2 / 0xf0 spin_cpu3
-     *   secondary: adr x5,spin_cpu0; ldr x4,[x5, x6 lsl #3] (x6=MPIDR&3);
-     *             cbz x4,loop; mov x0,#0; b boot_kernel → br x4
-     * ⇒ 槽位 = 0xd8 + cpu*8（曾误写死 0xd8=cpu0 槽，cpu1-3 根本不看它）。
-     * PSCI 成功(x0==0)时无人读它；0x0-0x80000 是 stub 区 boot 后闲置，无害。 */
-    *(volatile u64 *)(0xd8UL + (u64)cpu * 8) = (u64)&apu_entry;
+  done = 1;
+  for (u64 a = 0x80000UL; a < 0x80000UL + 128UL * 1024 * 1024; a += 64) {
+    asm volatile("dc civac, %0" ::"r"(a) : "memory");
   }
-  dsb();
+  asm volatile("dsb sy" ::: "memory");
+}
+
+/* 两套停车点都写上，固件版本不一样看的地方不一样：
+ * - TF-A：入口在 0x100，每核 hold 在 0x108+n*8，值 1 表示 GO，然后 br 到入口；
+ * - 老 armstub：每核槽 0xd8+n*8 直接就是跳转地址。
+ * 从核非缓存读这些字，写完必须 clean 到 PoC。 */
+static void park_release(u32 cpu, u64 entry) {
+  publish_u64(0x100, entry);
+  publish_u64(0x108UL + (u64)cpu * 8, 1);
+  publish_u64(0xd8UL + (u64)cpu * 8, entry);
+  asm volatile("dsb sy" ::: "memory");
+  asm volatile("sev" ::: "memory");
+}
+
+// Pi5：DT enable-method="psci"。CPU_ON 的目标是 MPIDR affinity，
+// BCM2712 上是 Aff1：cpu1=0x100、cpu2=0x200、cpu3=0x300。传 1/2/3 会
+// INVALID_PARAMETERS，从核一直停在 BL31。入口用 apu_entry（链接地址即物理地址）。
+void lcpu_send_start(u32 cpu, u64 entry) {
+  (void)entry;
+  if (cpu <= 0 || cpu >= MAX_CPU) return;
+
+  u64 ep = (u64)&apu_entry;
+  u64 aff = (u64)cpu << 8;
+
+  publish_low_ram();
+  park_release(cpu, ep);
+
+  u64 rc = psci_call(0xC4000003UL, aff, ep, 0);
+  if (rc == (u64)-1) {
+    rc = psci_call(0x84000003UL, aff, ep, 0);
+  }
+  if (rc == (u64)-2) {
+    rc = psci_call(0xC4000003UL, cpu, ep, 0);
+  }
+  if (rc != 0 && rc != (u64)-4) {
+    kprintf("[mp] psci cpu_on(%u) aff %lx = %d\n", cpu, aff, (int)rc);
+  }
+  /* ALREADY_ON：核已在停车环里，上面的 mailbox + sev 才是真正的唤醒。 */
+  asm volatile("dsb sy" ::: "memory");
   asm volatile("sev" ::: "memory");
 }
 

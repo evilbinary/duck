@@ -168,11 +168,18 @@ int cpu_get_number(void) {
   return boot_info->tss_number; 
 }
 
-// Get current CPU ID
+// Get current CPU ID.
+// Pi 3: core id is Aff0. Pi 5 (BCM2712): Aff0 is 0 on every core and the
+// core id is Aff1 (0x000 / 0x100 / 0x200 / 0x300). Masking only Aff0 makes
+// every Pi 5 core report 0 and re-enter kmain.
 u32 cpu_get_id(void) {
   u64 mpidr;
   asm volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
-  return mpidr & 0xF;
+  u32 aff0 = (u32)(mpidr & 0xff);
+  if (aff0 != 0) {
+    return aff0 & 0xf;
+  }
+  return (u32)((mpidr >> 8) & 0xff);
 }
 
 // Get CPU index
