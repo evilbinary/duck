@@ -99,7 +99,9 @@ extern int (*page_put_page)(void* pa);
  * 【pad 不能删】sizeof 必须是 8 的倍数：块的数据区从 addr+sizeof 开始，而
  * 堆头 block_t 含 8 字节字段 —— 数据区不 8 对齐时，page_create 的第一次
  * 堆分配就会非对齐访问 ⇒ 对齐异常死循环（真机实测：kernel_page_dir is null
- * 刷屏）。 */ 
+ * 刷屏）。
+ * 64 位：5 个指针 + type/pad = 48。32 位再补一个 pad32 才是 32；只留一个
+ * pad 时 sizeof=28，raspi2 堆从 0x1c 起，ya_new_block 的 8 字节断言直接失败。 */
 typedef struct mem_block {
   uintptr_t addr;
   size_t size;
@@ -108,6 +110,9 @@ typedef struct mem_block {
   struct mem_block* next;
   u32 type;
   u32 pad;
+#ifndef __LP64__
+  u32 pad32;
+#endif
 } __attribute__((packed)) mem_block_t;
 
 typedef struct block {
