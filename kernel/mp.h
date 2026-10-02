@@ -14,6 +14,8 @@
 
 
 void mp_init();
+/* 第 index 个逻辑核的 cpu id，与 cpu_get_id() / 调度队列下标一致。 */
+int mp_cpu(int index);
 
 
 #endif

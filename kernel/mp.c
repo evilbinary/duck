@@ -1,6 +1,9 @@
 #include "config.h"
 #include "mp.h"
 extern boot_info_t* boot_info;
+extern int cpu_get_index(int idx);
+
+int mp_cpu(int index) { return cpu_get_index(index); }
 
 // muti process init
 void mp_init() {

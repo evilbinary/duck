@@ -119,12 +119,9 @@ void cpu_set_page(u64 page_table) {
   isb();
 }
 
-// Enable SMP mode (for cache coherency)
-void cpu_enable_smp_mode(void) {
-  // Enable SMP mode for cache coherency
-  // On ARM64, this is done via ACTLR_EL3 or similar
-  // For simplicity, we assume firmware has set this up
-}
+/* Pi 5 在 EL1 读/写 CPUECTLR（S3_0_C15_C1_4）会卡死在 page enable。
+ * 一致性位由固件在进内核前设置，这里不要再碰。 */
+void cpu_enable_smp_mode(void) {}
 
 /* 【分页(MMU)是否已开】覆盖 arch.c 里的弱符号（接口见 arch/cpu.h）。
  * SCTLR_EL1.M（bit0）就是 MMU 使能位。

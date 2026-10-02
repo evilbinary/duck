@@ -31,6 +31,10 @@ static u32 io_read64(volatile u64 addr) {
 extern char apu_entry __attribute__((weak));
 
 static u64 cntfrq[MAX_CPU] = {0};
+/* 和 raspi3 一样：从核先进来等着，mp_init 再放行。
+ * 否则从核会在 GIC 分发器打开前就 timer_init，PPI27 写不进去，tick 永远不来。
+ * 主核此时 D-cache 已开，从核还关着，标志必须刷到内存。 */
+static volatile u32 ap_release[MAX_CPU];
 
 static void delay_cycles(int n) {
   for (volatile int i = 0; i < n; i++) {
@@ -670,6 +674,11 @@ void lcpu_send_start(u32 cpu, u64 entry) {
   u64 ep = (u64)&apu_entry;
   u64 aff = (u64)cpu << 8;
 
+  ap_release[cpu] = 1;
+  cache_clean_u64((u64)&ap_release[cpu]);
+  asm volatile("dsb sy" ::: "memory");
+  asm volatile("sev" ::: "memory");
+
   publish_low_ram();
   park_release(cpu, ep);
 
@@ -689,8 +698,10 @@ void lcpu_send_start(u32 cpu, u64 entry) {
 }
 
 void lcpu_wait_start(int cpu) {
-  // APs enter via the firmware spin-table directly into apu_entry,
-  // no in-kernel wait loop is needed on Pi 5.
+  if (cpu <= 0 || cpu >= MAX_CPU) return;
+  while (!ap_release[cpu]) {
+    asm volatile("wfe" ::: "memory");
+  }
 }
 
 void ipi_send(int cpu, int vec) {

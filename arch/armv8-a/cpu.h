@@ -265,6 +265,7 @@ int cpu_tas(volatile int* addr, int newval);
 void cpu_set_page(u64 page_table);
 void cpu_invalid_tlb(void);
 void cp15_invalidate_icache(void);
+void cpu_enable_smp_mode(void);
 void cpu_enable_page(void);
 u64 cpu_get_fault(void);
 u64 cpu_read_ttbr0(void);
