@@ -11,13 +11,6 @@
 
 void kernel_init() {
   int cpu = cpu_get_id();
-#ifndef MP_ENABLE
-  if (cpu != 0) {
-    for (;;) {
-      cpu_wait();
-    }
-  }
-#endif
   if (cpu == 0) {
     log_init();
     /* 【版本戳·无条件一行】确认"烧的是哪一次编译"，并打印本架构内核内存实际
