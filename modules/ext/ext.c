@@ -23,6 +23,7 @@
 #define EXT_INCOMPAT_RECOVER 0x0004
 #define EXT_INCOMPAT_64BIT 0x0080
 #define EXT_EXTENTS_FL 0x00080000
+#define EXT_INDEX_FL 0x00001000
 #define EXT_MAX_BLOCK (64 * 1024)
 #define EXT_LINK_MAX 8
 
@@ -58,6 +59,7 @@ typedef struct ext_node {
   u32 iblock[15];
   u32 dir_index;
   u64 dir_byte;
+  u32 dx_lblock;
 } ext_node_t;
 
 typedef struct ext_part {
@@ -70,6 +72,17 @@ typedef struct ext_part {
 static ext_part_t ext_parts[4];
 static int ext_part_count;
 
+/* 只够定位一次 ls。打完就停，避免每个文件名都刷串口。 */
+static int ext_dbg_left = 48;
+
+static int ext_dbg_ok(void) {
+  if (ext_dbg_left <= 0) {
+    return 0;
+  }
+  ext_dbg_left--;
+  return 1;
+}
+
 static u16 r16(const u8 *p) { return (u16)p[0] | ((u16)p[1] << 8); }
 
 static u32 r32(const u8 *p) {
@@ -77,15 +90,29 @@ static u32 r32(const u8 *p) {
 }
 
 static int ext_dev_read(device_t *dev, u64 off, void *buf, u32 len) {
-  size_t n;
+  u8 *p = buf;
   if (dev == NULL || dev->read == NULL || buf == NULL || len == 0) {
     return -1;
   }
-  if (dev->ioctl != NULL) {
-    dev->ioctl(dev, EXT_IOC_WRITE_OFFSET64, off);
+  /* 整块 4096 直接读会失败，挂载用的小读却是好的。按扇区拆开。 */
+  while (len > 0) {
+    u32 chunk = len > 512 ? 512 : len;
+    size_t n;
+    if (dev->ioctl != NULL) {
+      dev->ioctl(dev, EXT_IOC_WRITE_OFFSET64, off);
+    }
+    n = dev->read(dev, p, chunk);
+    if (n != (size_t)chunk) {
+      if (ext_dbg_ok()) {
+        log_info("ext: read off=%x chunk=%u got=%x\n", (u32)off, chunk, (u32)n);
+      }
+      return -1;
+    }
+    p += chunk;
+    off += chunk;
+    len -= chunk;
   }
-  n = dev->read(dev, buf, len);
-  return n == (size_t)len ? 0 : -1;
+  return 0;
 }
 
 static int ext_extent_find(ext_fs_t *fs, u8 *hdr, u32 limit, u32 lblock,
@@ -100,7 +127,8 @@ static int ext_extent_find(ext_fs_t *fs, u8 *hdr, u32 limit, u32 lblock,
   }
   magic = r16(hdr);
   entries = r16(hdr + 2);
-  depth = r16(hdr + 4);
+  /* eh_max 在 +4，eh_depth 在 +6。之前把 max 当成了深度。 */
+  depth = r16(hdr + 6);
   if (magic != 0xF30A) {
     return -1;
   }
@@ -275,6 +303,7 @@ static int ext_read_inode(ext_fs_t *fs, u32 ino, ext_node_t *n) {
   n->mode = mode;
   n->flags = r32(fs->ino + 0x20);
   n->size = r32(fs->ino + 4);
+  n->dx_lblock = 0xffffffffu;
   if (fs->inode_size >= 0x70 && S_ISREG(mode)) {
     n->size |= (u64)r32(fs->ino + 0x6C) << 32;
   }
@@ -341,68 +370,368 @@ static u32 ext_pread(ext_node_t *n, u64 off, void *buf, u32 len) {
   return done;
 }
 
+static void ext_dbg_bytes(const char *tag, const u8 *p, u32 n) {
+  char line[80];
+  u32 i;
+  int pos = 0;
+  if (!ext_dbg_ok() || p == NULL) {
+    return;
+  }
+  if (n > 16) {
+    n = 16;
+  }
+  for (i = 0; i < n && pos < (int)sizeof(line) - 4; i++) {
+    pos += ksnprintf(line + pos, sizeof(line) - (u32)pos, "%02x ", p[i]);
+  }
+  log_info("ext: %s %s\n", tag, line);
+}
+
+static int ext_load_lblock(ext_node_t *dir, u32 lblock, u8 *dst) {
+  u64 pb;
+  int map;
+  if (dir == NULL || dir->fs == NULL || dst == NULL) {
+    return -1;
+  }
+  map = ext_bmap(dir, lblock, &pb);
+  if (map <= 0 || pb == 0) {
+    if (ext_dbg_ok()) {
+      log_info("ext: load ino=%u lblock=%x map=%d pb=%x\n", dir->ino, lblock,
+               map, (u32)pb);
+    }
+    return -1;
+  }
+  if (ext_dev_read(dir->fs->dev, pb * dir->fs->block_size, dst,
+                   dir->fs->block_size) != 0) {
+    if (ext_dbg_ok()) {
+      log_info("ext: read ino=%u lblock=%x pb=%x len=%u failed\n", dir->ino,
+               lblock, (u32)pb, dir->fs->block_size);
+    }
+    return -1;
+  }
+  if (ext_dbg_left > 40) {
+    if (ext_dbg_ok()) {
+      log_info("ext: load ino=%u lblock=%x pb=%x\n", dir->ino, lblock, (u32)pb);
+    }
+    ext_dbg_bytes("head", dst, 16);
+  }
+  return 0;
+}
+
+/* 解析一条目录项。reclen 写出。名字对不上时换另一种 name_len 宽度再试。 */
+static int ext_parse_dirent(ext_fs_t *fs, u8 *e, u32 off, u32 bs, u32 *ino,
+                            u32 *nlen, u8 *ft, u16 *reclen) {
+  u16 rl;
+  u32 n;
+  u8 type;
+  int wide;
+  if (off + 8 > bs) {
+    return -1;
+  }
+  rl = r16(e + 4);
+  if (rl < 8 || off + rl > bs) {
+    return -1;
+  }
+  *ino = r32(e);
+  wide = fs->filetype ? 0 : 1;
+  for (;;) {
+    if (wide) {
+      n = r16(e + 6);
+      type = 0;
+    } else {
+      n = e[6];
+      type = e[7];
+    }
+    if (n <= (u32)rl - 8) {
+      *nlen = n;
+      if (ft != NULL) {
+        *ft = type;
+      }
+      *reclen = rl;
+      return 0;
+    }
+    if (wide == (fs->filetype ? 0 : 1)) {
+      wide = !wide;
+      continue;
+    }
+    return -1;
+  }
+}
+
+/* which 从 0 起。返回 1 找到，0 没有第 which 个叶子，-2 这不是 htree。 */
+static int ext_dx_nth_leaf(ext_node_t *dir, u32 lblock, int is_root, int levels,
+                           u32 *which, u32 *out) {
+  u8 *blk;
+  u32 bs;
+  u32 ent;
+  u16 count;
+  u32 i;
+  int rc;
+  if (dir == NULL || which == NULL || out == NULL || dir->fs == NULL) {
+    return -2;
+  }
+  bs = dir->fs->block_size;
+  if (bs < 64 || levels > 3) {
+    return -2;
+  }
+  blk = kmalloc(bs, KERNEL_TYPE);
+  if (blk == NULL) {
+    return -1;
+  }
+  if (ext_load_lblock(dir, lblock, blk) != 0) {
+    kfree(blk);
+    return -1;
+  }
+  if (is_root) {
+    u16 dot;
+    u8 info_len;
+    if (r32(blk) == 0 || blk[8] != '.') {
+      if (ext_dbg_ok()) {
+        log_info("ext: htree reject ino=%u b0=%x b8=%x\n", dir->ino, r32(blk),
+                 blk[8]);
+      }
+      kfree(blk);
+      return -2;
+    }
+    dot = r16(blk + 4);
+    if (dot < 12 || (u32)dot + 16 >= bs) {
+      if (ext_dbg_ok()) {
+        log_info("ext: htree dot reclen=%x bs=%u\n", dot, bs);
+      }
+      kfree(blk);
+      return -2;
+    }
+    /* dot 之后是 dotdot（12 字节），再是 dx_root_info。 */
+    if (blk[dot + 12 + 5] != 8) {
+      if (ext_dbg_ok()) {
+        log_info("ext: htree info_len=%x at %x\n", blk[dot + 12 + 5],
+                 (u32)dot + 12);
+      }
+      kfree(blk);
+      return -2;
+    }
+    info_len = blk[dot + 12 + 5];
+    levels = blk[dot + 12 + 6];
+    if (levels > 3) {
+      kfree(blk);
+      return -2;
+    }
+    ent = (u32)dot + 12 + info_len;
+  } else {
+    ent = 8;
+  }
+  if (ent + 8 > bs) {
+    kfree(blk);
+    return -2;
+  }
+  count = r16(blk + ent + 2);
+  if (count < 2 || ent + (u32)count * 8u > bs) {
+    if (ext_dbg_ok()) {
+      log_info("ext: htree count=%u ent=%x bs=%u\n", count, ent, bs);
+    }
+    kfree(blk);
+    return -2;
+  }
+  if (is_root && *which == 0 && ext_dbg_ok()) {
+    log_info("ext: htree ino=%u levels=%u count=%u ent=%x\n", dir->ino, levels,
+             count, ent);
+  }
+  rc = 0;
+  for (i = 1; i < count; i++) {
+    u32 child = r32(blk + ent + i * 8u + 4);
+    if (levels == 0) {
+      if (*which == 0) {
+        *out = child;
+        rc = 1;
+        break;
+      }
+      (*which)--;
+    } else {
+      rc = ext_dx_nth_leaf(dir, child, 0, levels - 1, which, out);
+      if (rc != 0) {
+        break;
+      }
+    }
+  }
+  kfree(blk);
+  return rc;
+}
+
+static int ext_htree_next(ext_node_t *dir, u64 *pos, u32 *ino, char *name,
+                          u32 namemax, u8 *ft) {
+  ext_fs_t *fs;
+  u32 bs;
+  u32 leaf_i;
+  u32 off;
+  u32 guard;
+  fs = dir->fs;
+  bs = fs->block_size;
+  if (*pos == ~0ull) {
+    return 0;
+  }
+  leaf_i = (u32)(*pos >> 32);
+  off = (u32)*pos;
+  for (guard = 0; guard < 4096; guard++) {
+    u32 nth = leaf_i;
+    u32 lblock = dir->dx_lblock;
+    u8 *e;
+    u16 reclen = 0;
+    u32 nlen = 0;
+    u32 next_off;
+    int got = 1;
+    /* 同一次列举里，叶子块还在缓存中就不用再走索引。查找会改掉 fs->blk。 */
+    if (off == 0 || fs->blk_lba != lblock || lblock == 0xffffffffu) {
+      got = ext_dx_nth_leaf(dir, 0, 1, 0, &nth, &lblock);
+      if (got == -2) {
+        return -2;
+      }
+      if (got != 1) {
+        *pos = ~0ull;
+        return 0;
+      }
+    }
+    if (fs->blk_lba != lblock) {
+      if (ext_load_lblock(dir, lblock, fs->blk) != 0) {
+        leaf_i++;
+        off = 0;
+        dir->dx_lblock = 0xffffffffu;
+        continue;
+      }
+      fs->blk_lba = lblock;
+      dir->dx_lblock = lblock;
+    }
+    if (off >= bs || off + 8 > bs) {
+      leaf_i++;
+      off = 0;
+      continue;
+    }
+    e = fs->blk + off;
+    if (ext_parse_dirent(fs, e, off, bs, ino, &nlen, ft, &reclen) != 0) {
+      leaf_i++;
+      off = 0;
+      continue;
+    }
+    next_off = off + reclen;
+    if (next_off < off || next_off >= bs) {
+      leaf_i++;
+      next_off = 0;
+    }
+    *pos = ((u64)leaf_i << 32) | next_off;
+    if (nlen >= namemax) {
+      nlen = namemax - 1;
+    }
+    if (*ino != 0 && nlen > 0) {
+      kmemcpy(name, e + 8, nlen);
+      name[nlen] = 0;
+      if (ext_dbg_ok()) {
+        log_info("ext: ent ino=%u name=%s\n", *ino, name);
+      }
+    } else {
+      name[0] = 0;
+    }
+    return 1;
+  }
+  *pos = ~0ull;
+  return 0;
+}
+
 /* 返回 1 有条目，0 目录结束，-1 出错。inode 0 的条目也算 1，调用方跳过。 */
 static int ext_dir_next(ext_node_t *dir, u64 *pos, u32 *ino, char *name,
                         u32 namemax, u8 *ft) {
   ext_fs_t *fs;
   u32 bs;
-  u32 off;
-  u16 reclen;
-  u32 nlen;
-  u8 *e;
-  u64 pb;
   if (dir == NULL || pos == NULL || dir->fs == NULL || namemax == 0) {
     return -1;
   }
   fs = dir->fs;
   bs = fs->block_size;
-  if (*pos >= dir->size || bs == 0) {
-    return 0;
-  }
-  off = (u32)(*pos % bs);
-  if (fs->blk_lba != *pos / bs) {
-    if (ext_bmap(dir, *pos / bs, &pb) <= 0 || pb == 0) {
-      return -1;
-    }
-    if (ext_dev_read(fs->dev, pb * bs, fs->blk, bs) != 0) {
-      return -1;
-    }
-    fs->blk_lba = *pos / bs;
-  }
-  if (off + 8 > bs) {
+  if (bs == 0) {
     return -1;
   }
-  e = fs->blk + off;
-  reclen = r16(e + 4);
-  if (reclen < 8 || off + reclen > bs) {
-    return -1;
-  }
-  *ino = r32(e);
-  if (fs->filetype) {
-    nlen = e[6];
-    if (ft != NULL) {
-      *ft = e[7];
+  /* 索引目录的文件名在叶子块里。块 0 只有 . 和 ..，线性扫会看成空目录。 */
+  if ((dir->flags & EXT_INDEX_FL) != 0) {
+    int rc;
+    if (*pos == 0 && ext_dbg_ok()) {
+      log_info("ext: dir ino=%u indexed size=%x flags=%x\n", dir->ino,
+               (u32)dir->size, dir->flags);
     }
-  } else {
-    nlen = r16(e + 6);
-    if (ft != NULL) {
-      *ft = 0;
+    rc = ext_htree_next(dir, pos, ino, name, namemax, ft);
+    if (rc != -2) {
+      return rc;
     }
+    if (ext_dbg_ok()) {
+      log_info("ext: ino=%u htree fallback linear\n", dir->ino);
+    }
+    dir->flags &= ~EXT_INDEX_FL;
+    *pos = 0;
+    fs->blk_lba = ~0ull;
+  } else if (*pos == 0 && ext_dbg_ok()) {
+    log_info("ext: dir ino=%u linear size=%x flags=%x\n", dir->ino,
+             (u32)dir->size, dir->flags);
   }
-  if (nlen > reclen - 8) {
-    return -1;
+  while (*pos < dir->size) {
+    u32 off;
+    u16 reclen = 0;
+    u32 nlen = 0;
+    u8 *e;
+    u64 pb;
+    u64 block = *pos / bs;
+    off = (u32)(*pos % bs);
+    if (off + 8 > bs) {
+      *pos = (block + 1) * bs;
+      continue;
+    }
+    if (fs->blk_lba != block) {
+      int map = ext_bmap(dir, block, &pb);
+      if (map <= 0 || pb == 0) {
+        if (ext_dbg_ok()) {
+          log_info("ext: bmap ino=%u block=%x map=%d pb=%x\n", dir->ino,
+                   (u32)block, map, (u32)pb);
+        }
+        *pos = (block + 1) * bs;
+        continue;
+      }
+      if (ext_dev_read(fs->dev, pb * bs, fs->blk, bs) != 0) {
+        if (ext_dbg_ok()) {
+          log_info("ext: dir block read ino=%u block=%x pb=%x\n", dir->ino,
+                   (u32)block, (u32)pb);
+        }
+        *pos = (block + 1) * bs;
+        continue;
+      }
+      fs->blk_lba = block;
+      if (off == 0) {
+        ext_dbg_bytes("dir", fs->blk, 16);
+      }
+    }
+    e = fs->blk + off;
+    if (ext_parse_dirent(fs, e, off, bs, ino, &nlen, ft, &reclen) != 0) {
+      if (ext_dbg_ok()) {
+        log_info("ext: bad ent ino=%u off=%x\n", dir->ino, off);
+      }
+      ext_dbg_bytes("bad", e, 16);
+      *pos = (block + 1) * bs;
+      continue;
+    }
+    if (nlen >= namemax) {
+      nlen = namemax - 1;
+    }
+    if (*ino != 0 && nlen > 0) {
+      kmemcpy(name, e + 8, nlen);
+      name[nlen] = 0;
+      if (ext_dbg_ok()) {
+        log_info("ext: ent ino=%u name=%s\n", *ino, name);
+      }
+    } else {
+      name[0] = 0;
+    }
+    *pos += reclen;
+    return 1;
   }
-  if (nlen >= namemax) {
-    nlen = namemax - 1;
+  if (ext_dbg_ok()) {
+    log_info("ext: dir ino=%u linear end pos=%x size=%x\n", dir->ino, (u32)*pos,
+             (u32)dir->size);
   }
-  if (*ino != 0 && nlen > 0) {
-    kmemcpy(name, e + 8, nlen);
-    name[nlen] = 0;
-  } else {
-    name[0] = 0;
-  }
-  *pos += reclen;
-  return 1;
+  return 0;
 }
 
 static int ext_lookup_one(ext_fs_t *fs, u32 dir_ino, const char *name,
@@ -615,7 +944,19 @@ static uint ext_op_readdir(vnode_t *node, struct vdirent *dirent, u32 *offset,
   }
   n = ext_ensure(node);
   if (n == NULL || !S_ISDIR(n->mode)) {
+    if (ext_dbg_ok()) {
+      log_info("ext: readdir no node %s mode=%x\n",
+               node != NULL && node->name != NULL ? node->name : "?",
+               n != NULL ? n->mode : 0);
+    }
     return 0;
+  }
+  if (*offset == 0 && ext_dbg_ok()) {
+    log_info("ext: readdir %s ino=%u size=%x flags=%x mode=%x bs=%u ft=%d\n",
+             node->name != NULL ? node->name : "?", n->ino, (u32)n->size,
+             n->flags, n->mode, n->fs->block_size, n->fs->filetype);
+    log_info("ext: extent block=%x len=%x start=%x%08x\n", n->iblock[3],
+             n->iblock[4] & 0xffff, (n->iblock[4] >> 16) & 0xffff, n->iblock[5]);
   }
   start = *offset;
   byte = 0;
