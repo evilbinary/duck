@@ -6,6 +6,7 @@
 #include "kernel/stat.h"
 #include "posix/sysfn.h"
 #include "rtc/rtc.h"
+#include "modules/sysconf/sysconf.h"
 
 // Select the block-device IOCTL encoding that matches the active block driver.
 // ARM32/ARM64 use SDHCI (magic 's'); non-ARM platforms typically use AHCI (magic 'a').
@@ -14,10 +15,6 @@
 #else
 #include "ahci/ahci.h"
 #endif
-
-#define VOLUME _T("1:")
-
-#define VOLUME_ROOT _T("1:/")
 
 #define MAX_FILE_PATH 256
 
@@ -54,9 +51,25 @@ typedef struct file_info {
    * 避免每次都 close+open+从头重扫（见 fat_op_read_dir 的性能注释）。 */
   int dir_pos;
   char fat_path[MAX_FILE_PATH];
+  /* FatFs 卷号，例如 "0:"。多分区时每个节点自己的卷，不再共用全局 "1:"。 */
+  char vol[4];
 } file_info_t;
 
 vnode_t *default_node = NULL;
+
+/* FatFs 卷号对应的块设备。分区偏移由 partition 模块的设备自己加。 */
+static device_t *fat_pdrv_dev[4];
+
+typedef struct fat_vol {
+  vnode_t *node;
+  char name[8];
+  int mounted;
+} fat_vol_t;
+
+static fat_vol_t fat_vols[4];
+static int fat_vol_count;
+
+extern vnode_t *devfs_create_device(device_t *dev);
 
 static int fat_join_path(const char *parent_path, const char *name, char *out,
                          size_t outsz) {
@@ -84,11 +97,37 @@ static int fat_join_path(const char *parent_path, const char *name, char *out,
   return 0;
 }
 
+static const char *fat_vol_prefix(const file_info_t *file_info) {
+  if (file_info != NULL && file_info->vol[1] == ':') {
+    return file_info->vol;
+  }
+  if (default_node != NULL && default_node->data != NULL) {
+    file_info_t *d = default_node->data;
+    if (d->vol[1] == ':') {
+      return d->vol;
+    }
+  }
+  return "0:";
+}
+
+static void fat_copy_vol(file_info_t *dst, const file_info_t *src) {
+  const char *vol;
+  if (dst == NULL) {
+    return;
+  }
+  vol = fat_vol_prefix(src);
+  dst->vol[0] = vol[0];
+  dst->vol[1] = ':';
+  dst->vol[2] = '\0';
+}
+
 static int fat_volume_path(const file_info_t *file_info, char *buf) {
+  const char *vol;
   if (file_info == NULL || file_info->fat_path[0] == '\0') {
     return -1;
   }
-  kstrcpy(buf, VOLUME);
+  vol = fat_vol_prefix(file_info);
+  kstrcpy(buf, vol);
   kstrcpy(buf + 2, file_info->fat_path);
   return 0;
 }
@@ -112,11 +151,12 @@ static void fat_init_file_info_from_node(vnode_t *node, file_info_t *file_info,
     return;
   }
   file_info->fs = super_file_info->fs;
+  fat_copy_vol(file_info, super_file_info);
   if (file_info->fat_path[0] != '\0') {
     return;
   }
-  if (node->name != NULL && kstrcmp(node->name, "/") == 0 &&
-      super_file_info->fat_path[0] != '\0') {
+  /* 挂载点（/ 或 /mnt/sdb）本身就是该卷的根。 */
+  if (node->super != NULL && super_file_info->fat_path[0] != '\0') {
     kstrcpy(file_info->fat_path, super_file_info->fat_path);
   }
 }
@@ -197,51 +237,62 @@ int MMC_disk_initialize() {
 
 int MMC_disk_status() { return RES_OK; }
 
-int MMC_disk_read(char *buffer, LBA_t sector, int count) {
-  //log_debug("MMC_disk_read sector=%d count=%d buffer=%x\n", sector, count, buffer);
+int MMC_disk_read(BYTE pdrv, char *buffer, LBA_t sector, int count) {
+  device_t *dev;
+  uint offset;
+  uint length;
+  uint ret;
 
-  uint offset = sector * FF_MIN_SS;
-  uint length = count * FF_MIN_SS;
-  
-  if (default_node == NULL) {
-    log_error("MMC_disk_read: default_node is NULL\n");
+  dev = (pdrv < 4) ? fat_pdrv_dev[pdrv] : NULL;
+  if (dev == NULL || dev->read == NULL) {
+    log_error("MMC_disk_read: bad drive %d\n", pdrv);
     return RES_ERROR;
   }
-  
-  //log_debug("MMC_disk_read: default_node=%x device=%x\n", default_node, default_node->device);
-  
-  uint ret = fat_device_read(default_node, offset, length, buffer);
+  if ((u64)sector * FF_MIN_SS > 0xffffffffull) {
+    return RES_PARERR;
+  }
+  offset = (uint)sector * FF_MIN_SS;
+  length = (uint)count * FF_MIN_SS;
+  if (dev->ioctl != NULL) {
+    dev->ioctl(dev, IOC_WRITE_OFFSET, offset);
+  }
+  ret = dev->read(dev, buffer, length);
   if (ret != length) {
-    log_error("MMC_disk_read: read failed at sector %d, expected %d bytes, got %d\n", 
-              sector, length, ret);
+    log_error("MMC_disk_read: read failed at sector %d, expected %d bytes, got %d\n",
+              (u32)sector, length, ret);
     return RES_ERROR;
   }
-  //log_debug("MMC_disk_read end sector=%d\n", sector);
   return RES_OK;
 }
 
-int MMC_disk_write(char *buffer, LBA_t sector, int count) {
-  if (sector < 0 || count < 0) {
+int MMC_disk_write(BYTE pdrv, const char *buffer, LBA_t sector, int count) {
+  device_t *dev;
+  uint offset;
+  uint length;
+  uint ret;
+
+  if (count < 0) {
     return RES_PARERR;
   }
-  
-  if (default_node == NULL) {
-    log_error("MMC_disk_write: default_node is NULL\n");
+  dev = (pdrv < 4) ? fat_pdrv_dev[pdrv] : NULL;
+  if (dev == NULL || dev->write == NULL) {
+    log_error("MMC_disk_write: bad drive %d\n", pdrv);
     return RES_ERROR;
   }
-  
-  uint offset = sector * FF_MIN_SS;
-  uint length = count * FF_MIN_SS;
-
-  // log_debug("MMC_disk_write %x %d buffer %x\n", sector, count, buffer);
-
-  uint ret = fat_device_write(default_node, offset, length, buffer);
+  if ((u64)sector * FF_MIN_SS > 0xffffffffull) {
+    return RES_PARERR;
+  }
+  offset = (uint)sector * FF_MIN_SS;
+  length = (uint)count * FF_MIN_SS;
+  if (dev->ioctl != NULL) {
+    dev->ioctl(dev, IOC_WRITE_OFFSET, offset);
+  }
+  ret = dev->write(dev, (void *)buffer, length);
   if (ret != length) {
-    log_error("MMC_disk_write: write failed at sector %d, expected %d bytes, got %d\n", 
-              sector, length, ret);
+    log_error("MMC_disk_write: write failed at sector %d, expected %d bytes, got %d\n",
+              (u32)sector, length, ret);
     return RES_ERROR;
   }
-
   return RES_OK;
 }
 
@@ -250,10 +301,20 @@ int MMC_disk_ioctl(u8 pdrv, u8 cmd, void *buff) {
   DWORD *pdword = NULL;
   WORD *pword = NULL;
   switch (cmd) {
-    case GET_SECTOR_COUNT:
+    case GET_SECTOR_COUNT: {
+      dstat_t st;
       pdword = (DWORD *)buff;
       *pdword = 9999999 + 1;
+      if (pdrv < 4 && fat_pdrv_dev[pdrv] != NULL &&
+          fat_pdrv_dev[pdrv]->stat != NULL) {
+        kmemset(&st, 0, sizeof(st));
+        fat_pdrv_dev[pdrv]->stat(fat_pdrv_dev[pdrv], &st);
+        if (st.size >= FF_MIN_SS) {
+          *pdword = (DWORD)(st.size / FF_MIN_SS);
+        }
+      }
       return RES_OK;
+    }
 
     case GET_SECTOR_SIZE:
       pword = (WORD *)buff;
@@ -486,7 +547,11 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
   uint res = -1;
   char buf[MAX_FILE_PATH];
   if ((node->flags & V_BLOCKDEVICE) == V_BLOCKDEVICE) {
-    res = f_opendir(&dir, VOLUME_ROOT);
+    if (file_info == NULL || fat_volume_path(file_info, buf) < 0) {
+      log_error("fat find %s missing volume root\n", name);
+      return NULL;
+    }
+    res = f_opendir(&dir, buf);
   } else {
     if (file_info == NULL || fat_volume_path(file_info, buf) < 0) {
       log_error("fat find %s in %s missing dir path\n", name, node->name);
@@ -514,6 +579,7 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
   if (file_info != NULL) {
     new_file_info->fs = file_info->fs;
   }
+  fat_copy_vol(new_file_info, file_info != NULL ? file_info : NULL);
   kmemcpy(&new_file_info->file, &find_file, sizeof(FILINFO));
 
   const char *parent_fat_path = "/";
@@ -719,83 +785,251 @@ voperator_t fat_op = {
 
 void fat_init_op(vnode_t *node) { node->op = &fat_op; }
 
-void fat_init(void) {
-  log_info("fatfs init\n");
+static int fat_publish(device_t *dev, const char *name, int index) {
+  vnode_t *node;
+  char *ncopy;
+  if (dev == NULL || name == NULL || index < 0 || index >= 4) {
+    return -1;
+  }
+  node = devfs_create_device(dev);
+  if (node == NULL) {
+    log_error("fatfs: devfs_create_device failed for %s\n", name);
+    return -1;
+  }
+  ncopy = kmalloc(8, KERNEL_TYPE);
+  if (ncopy == NULL) {
+    return -1;
+  }
+  kmemset(ncopy, 0, 8);
+  kstrncpy(ncopy, name, 7);
+  node->name = ncopy;
+  vfs_mount(NULL, "/dev", node);
+  fat_vols[index].node = node;
+  kmemset(fat_vols[index].name, 0, sizeof(fat_vols[index].name));
+  kstrncpy(fat_vols[index].name, ncopy, 7);
+  fat_vols[index].mounted = 0;
+  fat_pdrv_dev[index] = dev;
+  return 0;
+}
 
-  char *name;
-  vnode_t *root_super = NULL;
-  for (int i = 0; i < 3; i++) {
-    device_t *dev = device_find(DEVICE_SATA + i);
+static int fat_bind(int index) {
+  file_info_t *fi;
+  char path[4];
+  FRESULT res;
+  if (index < 0 || index >= fat_vol_count || fat_vols[index].node == NULL) {
+    return -1;
+  }
+  if (fat_vols[index].mounted) {
+    return 0;
+  }
+  fi = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
+  if (fi == NULL) {
+    return -1;
+  }
+  kmemset(fi, 0, sizeof(file_info_t));
+  path[0] = (char)('0' + index);
+  path[1] = ':';
+  path[2] = 0;
+  fi->vol[0] = path[0];
+  fi->vol[1] = ':';
+  fi->vol[2] = 0;
+  kstrcpy(fi->fat_path, "/");
+  fat_pdrv_dev[index] = fat_vols[index].node->device;
+  res = f_mount(&fi->fs, path, 1);
+  if (res != FR_OK) {
+    log_error("fatfs: mount %s failed %d\n", fat_vols[index].name, res);
+    f_mount(0, path, 0);
+    kfree(fi);
+    return -1;
+  }
+  fat_vols[index].node->data = fi;
+  fat_init_op(fat_vols[index].node);
+  fat_vols[index].mounted = 1;
+  log_info("fatfs: %s volume %s\n", fat_vols[index].name, path);
+  return 0;
+}
+
+static int fat_split_parent(const char *path, char *parent, char *leaf) {
+  int i;
+  int slash = -1;
+  int len;
+  if (path == NULL || path[0] != '/') {
+    return -1;
+  }
+  len = (int)kstrlen(path);
+  if (len < 2 || len >= 96) {
+    return -1;
+  }
+  for (i = 0; i < len; i++) {
+    if (path[i] == '/') {
+      slash = i;
+    }
+  }
+  if (slash <= 0) {
+    parent[0] = '/';
+    parent[1] = 0;
+    kmemset(leaf, 0, 32);
+    kstrncpy(leaf, path + 1, 31);
+    return 0;
+  }
+  kmemset(parent, 0, 96);
+  kstrncpy(parent, path, (size_t)slash);
+  parent[slash] = 0;
+  if (path[slash + 1] == 0) {
+    return -1;
+  }
+  kmemset(leaf, 0, 32);
+  kstrncpy(leaf, path + slash + 1, 31);
+  return 0;
+}
+
+static vnode_t *fat_ensure_dir(const char *path) {
+  vnode_t *found;
+  vnode_t *dir;
+  char parent[96];
+  char leaf[32];
+  if (path == NULL) {
+    return NULL;
+  }
+  if (path[0] == '/' && path[1] == 0) {
+    return vfs_find(NULL, "/");
+  }
+  found = vfs_find(NULL, (u8 *)path);
+  if (found != NULL) {
+    return found;
+  }
+  if (fat_split_parent(path, parent, leaf) != 0) {
+    return NULL;
+  }
+  if (fat_ensure_dir(parent) == NULL) {
+    return NULL;
+  }
+  dir = vfs_create_node((u8 *)leaf, V_DIRECTORY);
+  vfs_mount(NULL, (u8 *)parent, dir);
+  return vfs_find(NULL, (u8 *)path);
+}
+
+static int fat_mount_at(int index, const char *path) {
+  vnode_t *exist;
+  vnode_t *mp;
+  char parent[96];
+  char leaf[32];
+  if (index <= 0 || index >= fat_vol_count) {
+    return -1;
+  }
+  if (path == NULL || path[0] != '/' || path[1] == 0) {
+    return -1;
+  }
+  if (kstrncmp(path, "/dev", 4) == 0 && (path[4] == 0 || path[4] == '/')) {
+    return -1;
+  }
+  if (fat_bind(index) != 0) {
+    return -1;
+  }
+  exist = vfs_find(NULL, (u8 *)path);
+  if (exist != NULL) {
+    if ((exist->flags & V_DIRECTORY) == 0) {
+      log_warn("fatfs: %s is not a directory\n", path);
+      return -1;
+    }
+    exist->super = fat_vols[index].node;
+    log_info("fatfs: mount %s on %s\n", fat_vols[index].name, path);
+    return 0;
+  }
+  if (fat_split_parent(path, parent, leaf) != 0) {
+    return -1;
+  }
+  if (fat_ensure_dir(parent) == NULL) {
+    return -1;
+  }
+  mp = vfs_create_node((u8 *)leaf, V_DIRECTORY);
+  if (mp == NULL) {
+    return -1;
+  }
+  mp->super = fat_vols[index].node;
+  vfs_mount(NULL, (u8 *)parent, mp);
+  log_info("fatfs: mount %s on %s\n", fat_vols[index].name, path);
+  return 0;
+}
+
+static int fat_mount_cb(const char *key, const char *val, void *user) {
+  int i;
+  (void)user;
+  if (key == NULL || val == NULL || val[0] == 0) {
+    return 1;
+  }
+  if (kstrcmp(key, "sda") == 0) {
+    return 1;
+  }
+  for (i = 1; i < fat_vol_count; i++) {
+    if (kstrcmp(fat_vols[i].name, key) == 0) {
+      if (fat_mount_at(i, val) != 0) {
+        log_warn("fatfs: mount %s on %s failed\n", key, val);
+      }
+      return 1;
+    }
+  }
+  log_warn("fatfs: unknown partition %s\n", key);
+  return 1;
+}
+
+static void fat_mount_apply(void) {
+  int i;
+  int n;
+  n = sysconf_foreach("mount", fat_mount_cb, NULL);
+  if (n > 0) {
+    return;
+  }
+  if (fat_ensure_dir("/mnt") == NULL) {
+    log_warn("fatfs: cannot create /mnt\n");
+    return;
+  }
+  for (i = 1; i < fat_vol_count; i++) {
+    char path[16];
+    kstrcpy(path, "/mnt/");
+    kstrcat(path, fat_vols[i].name);
+    if (fat_mount_at(i, path) != 0) {
+      log_warn("fatfs: auto mount %s failed\n", fat_vols[i].name);
+    }
+  }
+}
+
+void fat_init(void) {
+  int i;
+  int n = 0;
+  vnode_t *root;
+  log_info("fatfs init\n");
+  for (i = 0; i < 4; i++) {
+    device_t *dev = device_find(DEVICE_SATA0 + i);
+    const char *name;
     if (dev == NULL) {
-      continue;
-    }
-    name = kmalloc(4, KERNEL_TYPE);
-    name[0] = 's';
-    name[1] = 'd';
-    name[2] = 0x61 + i;
-    name[3] = 0;
-    vnode_t *node_sda = devfs_create_device(dev);
-    if (node_sda == NULL) {
-      log_error("fatfs: devfs_create_device failed for dev %d\n", dev->id);
-      continue;
-    }
-    node_sda->name = name;
-    vfs_mount(NULL, "/dev", node_sda);
-    if (root_super == NULL) {
-      root_super = node_sda;
       break;
     }
-  }
-
-  if (root_super == NULL) {
-    log_error("fatfs: no block device found (DEVICE_SATA..)\n");
-    return;
-  }
-
-  // auto mount first dev as root
-  vnode_t *root = vfs_find(NULL, "/");
-  root->super = root_super;
-
-  vnode_t *node = vfs_find(NULL, "/dev/sda");
-  default_node = node;
-  if (node == NULL) {
-    log_error("not found sda\n");
-    return;
-  }
-  fat_init_op(node);
-
-  file_info_t *file_info = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
-  kmemset(file_info, 0, sizeof(file_info_t));
-
-  int res = f_mount(&file_info->fs, VOLUME, 0);
-  if (res != FR_OK) {
-    log_error("mount fs error code %d\n", res);
-  } else {
-    log_info("mount fs success\n");
-  }
-  
-#ifdef TEST
-  // Test reading root directory
-  DIR test_dir;
-  res = f_opendir(&test_dir, VOLUME_ROOT);
-  if (res != FR_OK) {
-    log_error("f_opendir root failed code %d\n", res);
-  } else {
-    log_info("f_opendir root success\n");
-    FILINFO fno;
-    int count = 0;
-    while (count < 10) {
-      res = f_readdir(&test_dir, &fno);
-      if (res != FR_OK || fno.fname[0] == 0) break;
-      log_info("  file: %s\n", fno.fname);
-      count++;
+    name = (dev->name != NULL) ? dev->name : "sda";
+    if (fat_publish(dev, name, n) == 0) {
+      n++;
     }
-    f_closedir(&test_dir);
   }
-#endif
-
-  kstrcpy(file_info->fat_path, "/");
-  node->data = file_info;
+  if (n == 0) {
+    device_t *dev = device_find(DEVICE_SATA);
+    if (dev != NULL && fat_publish(dev, "sda", 0) == 0) {
+      n = 1;
+    }
+  }
+  fat_vol_count = n;
+  if (n == 0) {
+    log_error("fatfs: no block device found\n");
+    return;
+  }
+  root = vfs_find(NULL, "/");
+  if (fat_bind(0) == 0 && root != NULL) {
+    root->super = fat_vols[0].node;
+    default_node = fat_vols[0].node;
+    log_info("fatfs: mount %s on /\n", fat_vols[0].name);
+  } else {
+    log_error("fatfs: mount %s on / failed\n", fat_vols[0].name);
+  }
+  sysconf_on_ready(fat_mount_apply);
   log_info("fatfs init end\n");
 }
 
