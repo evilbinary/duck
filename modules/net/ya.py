@@ -35,6 +35,9 @@ plat_source={
     'v3s':[
         'v3s.c',
     ],
+    'raspi5':[
+        'rp1_gem.c',
+    ],
 }
 
 # Architecture-specific drivers

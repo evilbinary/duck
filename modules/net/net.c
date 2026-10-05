@@ -10,6 +10,7 @@
 // raspi2/raspi3: net_init_device() in bcm2837.c
 // x86/qemu: net_init_device() in e1000.c
 // v3s: net_init_device() in v3s.c（片上 EMAC + 内置 10/100M PHY）
+// raspi5: net_init_device() in rp1_gem.c（RP1 Cadence GEM）
 //
 // 【注意不要在这里放 weak 默认实现】本模块是静态库：一旦 net_module 被引用，链接器
 // 就会拉入 net.o，此时若本文件里有 weak 的 net_init_device，引用就被"满足"了，
