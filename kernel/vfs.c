@@ -351,11 +351,9 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
   while (token != NULL) {
     // 处理 .. 返回上一级
     if (kstrcmp(token, "..") == 0) {
-      if (parent->parent != NULL) {
+      /* 不以 parent 为空为界，停在这次查找的根上，避免进程根被 .. 走出去。 */
+      if (parent != root && parent->parent != NULL) {
         parent = parent->parent;
-      } else {
-        // 已经是根目录，保持不变
-        parent = root;
       }
       token = kstrtok(NULL, split);
       continue;
@@ -735,7 +733,7 @@ vnode_t *vfs_find_relative(vnode_t *root, vnode_t *pwd, const char *path) {
     if (kstrcmp(token, "..") == 0) {
       log_debug("vfs_find_relative: found .., current=%x parent=%x root=%x\n",
                 current, current->parent, root);
-      if (vfs_node_is_valid(current->parent)) {
+      if (current != root && vfs_node_is_valid(current->parent)) {
         current = current->parent;
         log_debug("vfs_find_relative: move to parent %x\n", current);
       } else {
@@ -766,6 +764,63 @@ vnode_t *vfs_find_relative(vnode_t *root, vnode_t *pwd, const char *path) {
 
   vfs_unlock();
   return current;
+}
+
+int vfs_chroot_mount(const char *path) {
+  thread_t *t = thread_current();
+  vnode_t *node;
+  vnode_t *p;
+  vnode_t *mount = NULL;
+  vfs_t *owned;
+  int inside;
+
+  if (t == NULL || t->vfs == NULL || path == NULL || path[0] == '\0') {
+    return 0;
+  }
+  /* 和 open 一样：./yes 从当前目录找。只认绝对路径会漏掉挂载点，
+   * 解释器就还在 FAT 根上找 /lib。 */
+  node = vfs_find_relative(t->vfs->root != NULL ? t->vfs->root : root_node,
+                           t->vfs->pwd, path);
+  if (!vfs_node_is_valid(node)) {
+    return 0;
+  }
+  /* 文件自己没有 super。往上走到挂载点（/mnt/sda2 这种）为止。
+   * 根上的 FAT 只有根节点有 super，这里会在根停下，不改。 */
+  for (p = node; p != NULL && p != root_node; p = p->parent) {
+    if (p->super != NULL) {
+      mount = p;
+      break;
+    }
+  }
+  if (mount == NULL) {
+    return 0;
+  }
+  /* fork 和父进程共用同一份 vfs。先拆开，再改根，shell 不受影响。 */
+  if (t->vfs->users > 1) {
+    owned = kmalloc(sizeof(vfs_t), KERNEL_TYPE);
+    if (owned == NULL) {
+      return -1;
+    }
+    owned->root = t->vfs->root;
+    owned->pwd = t->vfs->pwd;
+    owned->users = 1;
+    t->vfs->users--;
+    t->vfs = owned;
+  }
+  inside = 0;
+  for (p = t->vfs->pwd; p != NULL; p = p->parent) {
+    if (p == mount) {
+      inside = 1;
+      break;
+    }
+  }
+  if (!inside) {
+    t->vfs->pwd = mount;
+  }
+  t->vfs->root = mount;
+  log_info("vfs: root %s for %s\n",
+           mount->name != NULL ? mount->name : "?", path);
+  return 1;
 }
 
 int vfs_init() {

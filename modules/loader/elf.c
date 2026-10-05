@@ -201,10 +201,11 @@ static int elf32_scan_load_range(const Elf32_Ehdr* ehdr, const Elf32_Phdr* phdr,
   return found ? 0 : -1;
 }
 
-static u32 elf32_locate_phdr(const Elf32_Ehdr* ehdr, const Elf32_Phdr* phdr) {
+static u32 elf32_locate_phdr(const Elf32_Ehdr* ehdr, const Elf32_Phdr* phdr,
+                             u32 bias) {
   for (int i = 0; i < ehdr->e_phnum; i++) {
     if (phdr[i].p_type == PT_PHDR) {
-      return phdr[i].p_vaddr;
+      return bias + phdr[i].p_vaddr;
     }
   }
   for (int i = 0; i < ehdr->e_phnum; i++) {
@@ -215,10 +216,30 @@ static u32 elf32_locate_phdr(const Elf32_Ehdr* ehdr, const Elf32_Phdr* phdr) {
     u32 end = phdr[i].p_offset + phdr[i].p_filesz;
     if (ehdr->e_phoff >= start &&
         (ehdr->e_phoff + ehdr->e_phnum * ehdr->e_phentsize) <= end) {
-      return phdr[i].p_vaddr + (ehdr->e_phoff - phdr[i].p_offset);
+      return bias + phdr[i].p_vaddr + (ehdr->e_phoff - phdr[i].p_offset);
     }
   }
   return 0;
+}
+
+/* ET_DYN（解释器、PIE）不能按文件里的虚拟地址装。在可执行区往后排一块。 */
+static u32 elf32_reserve_bias(u32 min_vaddr, u32 max_vaddr) {
+  vmemory_area_t* exec =
+      vmemory_area_find_flag(thread_current()->vm->vma, MEMORY_EXEC);
+  u32 min_page;
+  u32 max_page;
+  u32 span;
+  u32 load_base;
+  if (exec == NULL) {
+    return 0;
+  }
+  min_page = elf32_align_down(min_vaddr, PAGE_SIZE);
+  max_page = elf32_align_up(max_vaddr, PAGE_SIZE);
+  span = max_page - min_page;
+  load_base = elf32_align_up(exec->alloc_addr, PAGE_SIZE);
+  exec->alloc_addr = load_base + span;
+  exec->alloc_size += span;
+  return load_base - min_page;
 }
 
 static void elf32_capture_interp(int fd, const Elf32_Phdr* ph, char* out) {
@@ -286,17 +307,18 @@ static int elf32_map_segment(int fd, const Elf32_Phdr* ph) {
 }
 
 static int elf32_load_image_fd(int fd, const Elf32_Ehdr* ehdr,
-                               elf32_image_info_t* image) {
+                               elf32_image_info_t* image, int force_dyn_bias) {
   Elf32_Phdr phdr[MAX_PHDR];
   u32 min_vaddr = 0;
   u32 max_vaddr = 0;
+  u32 bias = 0;
 
   if (ehdr->e_phnum > MAX_PHDR || ehdr->e_phentsize != sizeof(Elf32_Phdr)) {
     elf32_log_error("bad elf32 phdr table phnum=%d entsize=%d\n", ehdr->e_phnum,
                     ehdr->e_phentsize);
     return -1;
   }
-  if (ehdr->e_type != ET_EXEC) {
+  if (ehdr->e_type != ET_EXEC && ehdr->e_type != ET_DYN) {
     elf32_log_error("elf32 unsupported type %d\n", ehdr->e_type);
     return -1;
   }
@@ -310,26 +332,33 @@ static int elf32_load_image_fd(int fd, const Elf32_Ehdr* ehdr,
     return -1;
   }
 
+  if (force_dyn_bias || ehdr->e_type == ET_DYN) {
+    bias = elf32_reserve_bias(min_vaddr, max_vaddr);
+  }
+
   kmemset(image, 0, sizeof(*image));
-  image->base = 0;
-  image->entry = ehdr->e_entry;
+  image->base = bias;
+  image->entry = bias + ehdr->e_entry;
   image->phent = ehdr->e_phentsize;
   image->phnum = ehdr->e_phnum;
-  image->phdr = elf32_locate_phdr(ehdr, phdr);
+  image->phdr = elf32_locate_phdr(ehdr, phdr, bias);
   kmemcpy(image->phdrs, phdr, sizeof(Elf32_Phdr) * ehdr->e_phnum);
 
   for (int i = 0; i < ehdr->e_phnum; i++) {
     switch (phdr[i].p_type) {
-      case PT_LOAD:
-        if (elf32_map_segment(fd, &phdr[i]) < 0) {
+      case PT_LOAD: {
+        Elf32_Phdr load = phdr[i];
+        load.p_vaddr += bias;
+        if (elf32_map_segment(fd, &load) < 0) {
           return -1;
         }
         break;
+      }
       case PT_INTERP:
         elf32_capture_interp(fd, &phdr[i], image->interp_path);
         break;
       case PT_TLS:
-        image->tls_vaddr = phdr[i].p_vaddr;
+        image->tls_vaddr = bias + phdr[i].p_vaddr;
         image->tls_filesz = phdr[i].p_filesz;
         image->tls_memsz = phdr[i].p_memsz;
         image->tls_align = phdr[i].p_align;
@@ -339,13 +368,9 @@ static int elf32_load_image_fd(int fd, const Elf32_Ehdr* ehdr,
     }
   }
 
-  if (image->interp_path[0] != '\0') {
-    elf32_log_error("elf32 PT_INTERP not supported yet: %s\n", image->interp_path);
-    return -1;
-  }
   if (image->phdr == 0) {
     u32 phdr_bytes = ehdr->e_phnum * ehdr->e_phentsize;
-    u32 phdr_vaddr = elf32_align_up(max_vaddr, PAGE_SIZE);
+    u32 phdr_vaddr = elf32_align_up(max_vaddr + bias, PAGE_SIZE);
     if (phdr_bytes == 0 ||
         valloc((void*)phdr_vaddr, PAGE_SIZE) == NULL) {
       elf32_log_error("elf32 install phdr failed bytes=%x vaddr=%x\n",
@@ -364,7 +389,8 @@ static int elf32_load_image_fd(int fd, const Elf32_Ehdr* ehdr,
   return 0;
 }
 
-static int elf32_open_and_load(const char* path, elf32_image_info_t* image) {
+static int elf32_open_and_load(const char* path, elf32_image_info_t* image,
+                               int force_dyn_bias) {
   Elf32_Ehdr ehdr;
   int fd = (int)sys_open_kernel(path, 0);
   if (fd < 0) {
@@ -380,13 +406,13 @@ static int elf32_open_and_load(const char* path, elf32_image_info_t* image) {
     sys_close(fd);
     return -1;
   }
-  int ret = elf32_load_image_fd(fd, &ehdr, image);
+  int ret = elf32_load_image_fd(fd, &ehdr, image, force_dyn_bias);
   sys_close(fd);
   return ret;
 }
 
-/* 【exec 预检】只读校验：能打开、ELF 头合法、phdr 表可读、有 PT_LOAD、
- * 无 PT_INTERP（本 loader 不支持）。不分配、不映射任何东西。
+/* 【exec 预检】只读校验：能打开、ELF 头合法、phdr 表可读、有 PT_LOAD。
+ * ET_DYN 和 PT_INTERP 留到真正加载。不分配、不映射任何东西。
  * run_elf_thread 必须先过预检、再回收旧地址空间 —— 预检失败保持调用者
  * 内存原样（exec 失败不动调用者，POSIX 语义；错误返回后调用者还要继续跑）。 */
 static int elf32_precheck(const char* path) {
@@ -405,8 +431,8 @@ static int elf32_precheck(const char* path) {
     elf32_log_error("elf32 precheck bad header %s\n", path);
     return -1;
   }
-  if (ehdr.e_type != ET_EXEC || ehdr.e_phnum > MAX_PHDR ||
-      ehdr.e_phentsize != sizeof(Elf32_Phdr)) {
+  if ((ehdr.e_type != ET_EXEC && ehdr.e_type != ET_DYN) ||
+      ehdr.e_phnum > MAX_PHDR || ehdr.e_phentsize != sizeof(Elf32_Phdr)) {
     sys_close(fd);
     elf32_log_error("elf32 precheck bad phdr table %s\n", path);
     return -1;
@@ -421,19 +447,13 @@ static int elf32_precheck(const char* path) {
     elf32_log_error("elf32 precheck no PT_LOAD %s\n", path);
     return -1;
   }
-  for (int i = 0; i < ehdr.e_phnum; i++) {
-    if (phdr[i].p_type == PT_INTERP) {
-      sys_close(fd);
-      elf32_log_error("elf32 precheck PT_INTERP unsupported %s\n", path);
-      return -1;
-    }
-  }
   sys_close(fd);
   return 0;
 }
 
 static int elf32_build_initial_stack(thread_t* current, const exec_params_t* exec,
                                      const elf32_image_info_t* image,
+                                     u32 interp_base,
                                      exec_stack_layout_t* layout) {
   const int auxc = 20;
   u32 top = current->ctx->usp;
@@ -558,7 +578,7 @@ static int elf32_build_initial_stack(thread_t* current, const exec_params_t* exe
     elf32_auxv_put(aux_pairs, &aux_idx, AT_PHDR, phdr_addr);
     elf32_auxv_put(aux_pairs, &aux_idx, AT_PHENT, image->phent);
     elf32_auxv_put(aux_pairs, &aux_idx, AT_PHNUM, image->phnum);
-    elf32_auxv_put(aux_pairs, &aux_idx, AT_BASE, 0);
+    elf32_auxv_put(aux_pairs, &aux_idx, AT_BASE, interp_base);
     elf32_auxv_put(aux_pairs, &aux_idx, AT_FLAGS, 0);
     elf32_auxv_put(aux_pairs, &aux_idx, AT_ENTRY, image->entry);
     elf32_auxv_put(aux_pairs, &aux_idx, AT_NOTELF, 0);
@@ -650,7 +670,7 @@ static int elf32_build_initial_stack(thread_t* current, const exec_params_t* exe
   return 0;
 }
 
-static void elf32_enter_user(thread_t* current, const elf32_image_info_t* image,
+static void elf32_enter_user(thread_t* current, u32 entry,
                              const exec_stack_layout_t* layout) {
   if (layout->stack_top > layout->sp) {
     elf32_user_cache_sync((void*)(uintptr_t)layout->sp,
@@ -665,7 +685,7 @@ static void elf32_enter_user(thread_t* current, const elf32_image_info_t* image,
    * 3) 故在最终进入用户态前无条件失效一次 I-cache（统一接口，跨架构可用）。 */
   cpu_invalidate_icache();
 
-  thread_reset_user_context(current, (void*)(uintptr_t)image->entry,
+  thread_reset_user_context(current, (void*)(uintptr_t)entry,
                             (void*)(uintptr_t)layout->sp);
   if (current->ctx->ic != NULL && current->ctx->ksp != NULL) {
     kmemmove(current->ctx->ic, current->ctx->ksp, sizeof(interrupt_context_t));
@@ -683,8 +703,12 @@ int run_elf_thread(long* p) {
 
   exec_params_t* exec = current->exec;
   elf32_image_info_t image;
+  elf32_image_info_t interp;
   exec_stack_layout_t layout;
+  u32 interp_base = 0;
+  u32 start_entry;
   kmemset(&image, 0, sizeof(image));
+  kmemset(&interp, 0, sizeof(interp));
   kmemset(&layout, 0, sizeof(layout));
 
   /* 【顺序不能反】先只读预检（失败 ⇒ 调用者内存原样，可继续执行）；
@@ -697,19 +721,33 @@ int run_elf_thread(long* p) {
   }
   vmemory_release_user_space(current->vm);
 
-  if (elf32_open_and_load(exec->filename, &image) < 0) {
+  if (elf32_open_and_load(exec->filename, &image, 0) < 0) {
     elf32_log_debug("elf32 open and load failed\n");
     return -1;
   }
-  if (elf32_build_initial_stack(current, exec, &image, &layout) < 0) {
+  /* 主程序已经按真实路径加载完。解释器和它之后打开的 /lib
+   * 用这个进程自己的根，shell 的根不动。 */
+  vfs_chroot_mount(exec->filename);
+  start_entry = image.entry;
+  if (image.interp_path[0] != '\0') {
+    if (elf32_open_and_load(image.interp_path, &interp, 1) < 0) {
+      elf32_log_error("elf32 load interp failed %s\n", image.interp_path);
+      return -1;
+    }
+    interp_base = interp.base;
+    start_entry = interp.entry;
+  }
+  if (elf32_build_initial_stack(current, exec, &image, interp_base, &layout) <
+      0) {
     elf32_log_debug("elf32 build initial stack failed\n");
     return -1;
   }
 
-  elf32_log_debug("elf32 start entry=%x sp=%x phdr=%x phnum=%d file=%s\n",
-                  image.entry, layout.sp, image.phdr, image.phnum,
-                  exec->filename);
-  elf32_enter_user(current, &image, &layout);
+  elf32_log_debug(
+      "elf32 start=%x main=%x interp=%x sp=%x phdr=%x phnum=%d file=%s\n",
+      start_entry, image.entry, interp_base, layout.sp, image.phdr, image.phnum,
+      exec->filename);
+  elf32_enter_user(current, start_entry, &layout);
   return 0;
 }
 

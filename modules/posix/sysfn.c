@@ -612,14 +612,71 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
   // 内存大小 对齐 16 page-aligned
   length = ALIGN(length, PAGE_SIZE);
 
-  if (fd > 0) {
+  /* 匿名映射忽略 fd。其余 fd>=0 是文件映射，ld.so 靠它装 libc。
+   * aarch64 的偏移是字节；arm 的 mmap2 偏移是页。 */
+  if ((flags & MAP_ANON) == 0 && fd >= 0) {
     fd_t* f = thread_find_fd_id(current, fd);
-    if (f == NULL) {
-      log_error("map file not found fd %d tid %d\n", fd, current->id);
-      return 0;
+    vnode_t* node;
+    void* map_at;
+    u64 off;
+    u32 done;
+    u32 filled = 0;
+    if (f == NULL || f->data == NULL) {
+      log_error("mmap file not found fd %d tid %d\n", fd, current->id);
+      return MAP_FAILED;
     }
-    log_error("map file %s %d faild not support\n", f->name, fd);
-    return MAP_FAILED;
+    node = (vnode_t*)f->data;
+#if defined(ARM64) || defined(__aarch64__)
+    off = (u64)pgoffset;
+#else
+    off = (u64)pgoffset * PAGE_SIZE;
+#endif
+    if ((flags & MAP_FIXED) == MAP_FIXED) {
+      if (addr == NULL ||
+          vmemory_area_find(current->vm->vma, addr, length) == NULL) {
+        log_error("mmap file fixed %x out of range\n", addr);
+        return MAP_FAILED;
+      }
+      map_at = addr;
+    } else {
+      map_at = sys_mmap_pick_anon_addr(current, vm, length);
+      if (map_at == NULL) {
+        log_error("mmap file: no free region len=%x\n", length);
+        return MAP_FAILED;
+      }
+    }
+    if (valloc(map_at, length) == NULL) {
+      log_error("mmap file valloc failed addr=%x len=%x\n", map_at, length);
+      return MAP_FAILED;
+    }
+    kmemset(map_at, 0, length);
+    while (filled < (u32)length) {
+      u32 chunk = (u32)length - filled;
+      if (chunk > 4096) {
+        chunk = 4096;
+      }
+      if (off + filled > 0xffffffffull) {
+        break;
+      }
+      done = vread(node, (u32)(off + filled), chunk, (u8*)map_at + filled);
+      if (done == 0) {
+        break;
+      }
+      filled += done;
+      if (done < chunk) {
+        break;
+      }
+    }
+    if (filled == 0 && node->length > (u32)off) {
+      log_error("mmap file read 0 %s off=%x len=%x\n",
+                f->name != NULL ? f->name : "", (u32)off, (u32)length);
+      return MAP_FAILED;
+    }
+    if (sys_mmap_install_area(vm, map_at, length) < 0) {
+      log_error("mmap file install failed addr=%x\n", map_at);
+      return MAP_FAILED;
+    }
+    return map_at;
   }
 
   if ((flags & MAP_FIXED) == MAP_FIXED) {
@@ -889,8 +946,11 @@ int sys_munmap(void* addr, size_t size) {
 }
 
 int sys_mprotect(const void* start, size_t len, int prot) {
-  log_debug("sys mprotect not impl\n");
-  return -ENOSYS;
+  (void)start;
+  (void)len;
+  (void)prot;
+  /* 页并不按读/写/执行分开。直接成功，避免 ld.so 做只读重定位时退出。 */
+  return 0;
 }
 
 int sys_rt_sigprocmask(int h, void* set, void* old_set) {

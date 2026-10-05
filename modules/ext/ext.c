@@ -105,7 +105,7 @@ static int ext_dev_read(device_t *dev, u64 off, void *buf, u32 len) {
     n = dev->read(dev, p, chunk);
     if (n != (size_t)chunk) {
       if (ext_dbg_ok()) {
-        log_info("ext: read off=%x chunk=%u got=%x\n", (u32)off, chunk, (u32)n);
+        log_debug("ext: read off=%x chunk=%u got=%x\n", (u32)off, chunk, (u32)n);
       }
       return -1;
     }
@@ -384,7 +384,7 @@ static void ext_dbg_bytes(const char *tag, const u8 *p, u32 n) {
   for (i = 0; i < n && pos < (int)sizeof(line) - 4; i++) {
     pos += ksnprintf(line + pos, sizeof(line) - (u32)pos, "%02x ", p[i]);
   }
-  log_info("ext: %s %s\n", tag, line);
+  log_debug("ext: %s %s\n", tag, line);
 }
 
 static int ext_load_lblock(ext_node_t *dir, u32 lblock, u8 *dst) {
@@ -396,7 +396,7 @@ static int ext_load_lblock(ext_node_t *dir, u32 lblock, u8 *dst) {
   map = ext_bmap(dir, lblock, &pb);
   if (map <= 0 || pb == 0) {
     if (ext_dbg_ok()) {
-      log_info("ext: load ino=%u lblock=%x map=%d pb=%x\n", dir->ino, lblock,
+      log_debug("ext: load ino=%u lblock=%x map=%d pb=%x\n", dir->ino, lblock,
                map, (u32)pb);
     }
     return -1;
@@ -404,14 +404,14 @@ static int ext_load_lblock(ext_node_t *dir, u32 lblock, u8 *dst) {
   if (ext_dev_read(dir->fs->dev, pb * dir->fs->block_size, dst,
                    dir->fs->block_size) != 0) {
     if (ext_dbg_ok()) {
-      log_info("ext: read ino=%u lblock=%x pb=%x len=%u failed\n", dir->ino,
+      log_debug("ext: read ino=%u lblock=%x pb=%x len=%u failed\n", dir->ino,
                lblock, (u32)pb, dir->fs->block_size);
     }
     return -1;
   }
   if (ext_dbg_left > 40) {
     if (ext_dbg_ok()) {
-      log_info("ext: load ino=%u lblock=%x pb=%x\n", dir->ino, lblock, (u32)pb);
+      log_debug("ext: load ino=%u lblock=%x pb=%x\n", dir->ino, lblock, (u32)pb);
     }
     ext_dbg_bytes("head", dst, 16);
   }
@@ -487,7 +487,7 @@ static int ext_dx_nth_leaf(ext_node_t *dir, u32 lblock, int is_root, int levels,
     u8 info_len;
     if (r32(blk) == 0 || blk[8] != '.') {
       if (ext_dbg_ok()) {
-        log_info("ext: htree reject ino=%u b0=%x b8=%x\n", dir->ino, r32(blk),
+        log_debug("ext: htree reject ino=%u b0=%x b8=%x\n", dir->ino, r32(blk),
                  blk[8]);
       }
       kfree(blk);
@@ -496,7 +496,7 @@ static int ext_dx_nth_leaf(ext_node_t *dir, u32 lblock, int is_root, int levels,
     dot = r16(blk + 4);
     if (dot < 12 || (u32)dot + 16 >= bs) {
       if (ext_dbg_ok()) {
-        log_info("ext: htree dot reclen=%x bs=%u\n", dot, bs);
+        log_debug("ext: htree dot reclen=%x bs=%u\n", dot, bs);
       }
       kfree(blk);
       return -2;
@@ -504,7 +504,7 @@ static int ext_dx_nth_leaf(ext_node_t *dir, u32 lblock, int is_root, int levels,
     /* dot 之后是 dotdot（12 字节），再是 dx_root_info。 */
     if (blk[dot + 12 + 5] != 8) {
       if (ext_dbg_ok()) {
-        log_info("ext: htree info_len=%x at %x\n", blk[dot + 12 + 5],
+        log_debug("ext: htree info_len=%x at %x\n", blk[dot + 12 + 5],
                  (u32)dot + 12);
       }
       kfree(blk);
@@ -527,13 +527,13 @@ static int ext_dx_nth_leaf(ext_node_t *dir, u32 lblock, int is_root, int levels,
   count = r16(blk + ent + 2);
   if (count < 2 || ent + (u32)count * 8u > bs) {
     if (ext_dbg_ok()) {
-      log_info("ext: htree count=%u ent=%x bs=%u\n", count, ent, bs);
+      log_debug("ext: htree count=%u ent=%x bs=%u\n", count, ent, bs);
     }
     kfree(blk);
     return -2;
   }
   if (is_root && *which == 0 && ext_dbg_ok()) {
-    log_info("ext: htree ino=%u levels=%u count=%u ent=%x\n", dir->ino, levels,
+    log_debug("ext: htree ino=%u levels=%u count=%u ent=%x\n", dir->ino, levels,
              count, ent);
   }
   rc = 0;
@@ -626,7 +626,7 @@ static int ext_htree_next(ext_node_t *dir, u64 *pos, u32 *ino, char *name,
       kmemcpy(name, e + 8, nlen);
       name[nlen] = 0;
       if (ext_dbg_ok()) {
-        log_info("ext: ent ino=%u name=%s\n", *ino, name);
+        log_debug("ext: ent ino=%u name=%s\n", *ino, name);
       }
     } else {
       name[0] = 0;
@@ -654,7 +654,7 @@ static int ext_dir_next(ext_node_t *dir, u64 *pos, u32 *ino, char *name,
   if ((dir->flags & EXT_INDEX_FL) != 0) {
     int rc;
     if (*pos == 0 && ext_dbg_ok()) {
-      log_info("ext: dir ino=%u indexed size=%x flags=%x\n", dir->ino,
+      log_debug("ext: dir ino=%u indexed size=%x flags=%x\n", dir->ino,
                (u32)dir->size, dir->flags);
     }
     rc = ext_htree_next(dir, pos, ino, name, namemax, ft);
@@ -662,14 +662,14 @@ static int ext_dir_next(ext_node_t *dir, u64 *pos, u32 *ino, char *name,
       return rc;
     }
     if (ext_dbg_ok()) {
-      log_info("ext: ino=%u htree fallback linear\n", dir->ino);
+      log_debug("ext: ino=%u htree fallback linear\n", dir->ino);
     }
     dir->flags &= ~EXT_INDEX_FL;
     *pos = 0;
     fs->blk_lba = ~0ull;
     fs->blk_ino = 0;
   } else if (*pos == 0 && ext_dbg_ok()) {
-    log_info("ext: dir ino=%u linear size=%x flags=%x\n", dir->ino,
+    log_debug("ext: dir ino=%u linear size=%x flags=%x\n", dir->ino,
              (u32)dir->size, dir->flags);
   }
   while (*pos < dir->size) {
@@ -688,7 +688,7 @@ static int ext_dir_next(ext_node_t *dir, u64 *pos, u32 *ino, char *name,
       int map = ext_bmap(dir, block, &pb);
       if (map <= 0 || pb == 0) {
         if (ext_dbg_ok()) {
-          log_info("ext: bmap ino=%u block=%x map=%d pb=%x\n", dir->ino,
+          log_debug("ext: bmap ino=%u block=%x map=%d pb=%x\n", dir->ino,
                    (u32)block, map, (u32)pb);
         }
         *pos = (block + 1) * bs;
@@ -696,7 +696,7 @@ static int ext_dir_next(ext_node_t *dir, u64 *pos, u32 *ino, char *name,
       }
       if (ext_dev_read(fs->dev, pb * bs, fs->blk, bs) != 0) {
         if (ext_dbg_ok()) {
-          log_info("ext: dir block read ino=%u block=%x pb=%x\n", dir->ino,
+          log_debug("ext: dir block read ino=%u block=%x pb=%x\n", dir->ino,
                    (u32)block, (u32)pb);
         }
         *pos = (block + 1) * bs;
@@ -711,7 +711,7 @@ static int ext_dir_next(ext_node_t *dir, u64 *pos, u32 *ino, char *name,
     e = fs->blk + off;
     if (ext_parse_dirent(fs, e, off, bs, ino, &nlen, ft, &reclen) != 0) {
       if (ext_dbg_ok()) {
-        log_info("ext: bad ent ino=%u off=%x\n", dir->ino, off);
+        log_debug("ext: bad ent ino=%u off=%x\n", dir->ino, off);
       }
       ext_dbg_bytes("bad", e, 16);
       *pos = (block + 1) * bs;
@@ -724,7 +724,7 @@ static int ext_dir_next(ext_node_t *dir, u64 *pos, u32 *ino, char *name,
       kmemcpy(name, e + 8, nlen);
       name[nlen] = 0;
       if (ext_dbg_ok()) {
-        log_info("ext: ent ino=%u name=%s\n", *ino, name);
+        log_debug("ext: ent ino=%u name=%s\n", *ino, name);
       }
     } else {
       name[0] = 0;
@@ -733,7 +733,7 @@ static int ext_dir_next(ext_node_t *dir, u64 *pos, u32 *ino, char *name,
     return 1;
   }
   if (ext_dbg_ok()) {
-    log_info("ext: dir ino=%u linear end pos=%x size=%x\n", dir->ino, (u32)*pos,
+    log_debug("ext: dir ino=%u linear end pos=%x size=%x\n", dir->ino, (u32)*pos,
              (u32)dir->size);
   }
   return 0;
@@ -950,17 +950,17 @@ static uint ext_op_readdir(vnode_t *node, struct vdirent *dirent, u32 *offset,
   n = ext_ensure(node);
   if (n == NULL || !S_ISDIR(n->mode)) {
     if (ext_dbg_ok()) {
-      log_info("ext: readdir no node %s mode=%x\n",
+      log_debug("ext: readdir no node %s mode=%x\n",
                node != NULL && node->name != NULL ? node->name : "?",
                n != NULL ? n->mode : 0);
     }
     return 0;
   }
   if (*offset == 0 && ext_dbg_ok()) {
-    log_info("ext: readdir %s ino=%u size=%x flags=%x mode=%x bs=%u ft=%d\n",
+    log_debug("ext: readdir %s ino=%u size=%x flags=%x mode=%x bs=%u ft=%d\n",
              node->name != NULL ? node->name : "?", n->ino, (u32)n->size,
              n->flags, n->mode, n->fs->block_size, n->fs->filetype);
-    log_info("ext: extent block=%x len=%x start=%x%08x\n", n->iblock[3],
+    log_debug("ext: extent block=%x len=%x start=%x%08x\n", n->iblock[3],
              n->iblock[4] & 0xffff, (n->iblock[4] >> 16) & 0xffff, n->iblock[5]);
   }
   start = *offset;
@@ -1143,7 +1143,7 @@ static vnode_t *ext_probe(device_t *dev) {
   if (fs->incompat & EXT_INCOMPAT_RECOVER) {
     log_warn("ext: %s journal needs recovery, read-only\n", dev->name);
   }
-  log_info("ext: %s superblock bs=%u inode=%u\n", dev->name, fs->block_size,
+  log_debug("ext: %s superblock bs=%u inode=%u\n", dev->name, fs->block_size,
            fs->inode_size);
   root = kmalloc(sizeof(*root), KERNEL_TYPE);
   if (root == NULL || ext_read_inode(fs, 2, root) != 0 || !S_ISDIR(root->mode)) {
@@ -1251,7 +1251,7 @@ static int ext_mount_at(int index, const char *path) {
     }
     exist->super = ext_parts[index].root;
     ext_parts[index].mounted = 1;
-    log_info("ext: mount %s on %s (read-only)\n", ext_parts[index].name, path);
+    log_debug("ext: mount %s on %s (read-only)\n", ext_parts[index].name, path);
     return 0;
   }
   if (ext_split_parent(path, parent, leaf) != 0) {
@@ -1267,7 +1267,7 @@ static int ext_mount_at(int index, const char *path) {
   mp->super = ext_parts[index].root;
   vfs_mount(NULL, (u8 *)parent, mp);
   ext_parts[index].mounted = 1;
-  log_info("ext: mount %s on %s (read-only)\n", ext_parts[index].name, path);
+  log_debug("ext: mount %s on %s (read-only)\n", ext_parts[index].name, path);
   return 0;
 }
 
@@ -1338,7 +1338,7 @@ static void ext_init(void) {
     if (root != NULL && root->super == NULL) {
       root->super = ext_parts[0].root;
       ext_parts[0].mounted = 1;
-      log_info("ext: mount %s on / (read-only)\n", ext_parts[0].name);
+      log_debug("ext: mount %s on / (read-only)\n", ext_parts[0].name);
     }
   }
   sysconf_on_ready(ext_mount_apply);

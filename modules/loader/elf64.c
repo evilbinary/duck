@@ -583,6 +583,9 @@ int run_elf64_thread(long* p) {
   if (elf64_open_and_load(exec->filename, &main_image, 0) < 0) {
     return -1;
   }
+  /* 主程序已经按真实路径加载完。解释器和它之后打开的 /lib、/usr
+   * 用这个进程自己的根，shell 的根不动。 */
+  vfs_chroot_mount(exec->filename);
 
   start_entry = main_image.entry;
   if (main_image.interp_path[0] != '\0') {
