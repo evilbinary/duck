@@ -29,6 +29,9 @@ static u32 io_read64(volatile u64 addr) {
 // AP entry stub in boot-armv8-a.s (firmware spin-table target).
 // Weak so non single-kernel builds still link (then SMP release is disabled).
 extern char apu_entry __attribute__((weak));
+/* 【实验】主核发给从核的 MMU 配置（boot-armv8-a.s 的 .data，64B 对齐）：
+ * {ttbr0_el1, mair_el1, tcr_el1}，放行前写好并清缓存，之后不再重写。 */
+extern volatile u64 ap_ttbr[3];
 
 static u64 cntfrq[MAX_CPU] = {0};
 /* 和 raspi3 一样：从核先进来等着，mp_init 再放行。
@@ -493,7 +496,17 @@ void timer_init(int hz) {
   int cpu = cpu_get_id();
   kprintf("cpu %d timer init\n", cpu);
 
-  cntfrq[cpu] = read_cntfrq() / hz;
+  /* 【Pi5 真机】CNTFRQ_EL0 是每核 system register，PSCI 拉起的 AP 那份
+   * 没有被固件初始化（实测 AP 读出 0xffffdeff 这类垃圾，主核读出 54000000）。
+   * 直接拿去算周期会得到 4.29M 的错误重装值 ⇒ CNTV 几十秒都不来一个点、
+   * tick 永远不派发（表现为 AP 的 timer_ticks 恒 0）。按量级校验：非法时
+   * 沿用主核在 cpu0 阶段算好的每 tick 值（主核 schedule_init 必先于 mp_init）。 */
+  u64 frq_hz = read_cntfrq();
+  if (frq_hz < 1000000u || frq_hz > 1000000000u) {
+    cntfrq[cpu] = (cntfrq[0] != 0) ? cntfrq[0] : 1;
+  } else {
+    cntfrq[cpu] = frq_hz / hz;
+  }
   if (cntfrq[cpu] == 0) {
     cntfrq[cpu] = 1;
   }
@@ -638,8 +651,9 @@ static void publish_u64(u64 addr, u64 val) {
   cache_clean_u64(addr);
 }
 
-/* AP 起来时 MMU/cache 是关的，只看得到 DRAM。主核开着 D-cache，页表和
- * apu_entry 可能还在 cache 里。只做一次，三颗从核共用。 */
+/* 从核看不到主核 D-cache 里的新写入，只能读 DRAM。页表和 boot_info
+ * 不够，.data/.bss 也必须落到内存，否则从核起不来。
+ * 128MB 覆盖内核镜像和堆。这不是核间侦听，只让从核能把启动数据读出来。 */
 static void publish_low_ram(void) {
   static u8 done;
   if (done) {
@@ -652,14 +666,19 @@ static void publish_low_ram(void) {
   asm volatile("dsb sy" ::: "memory");
 }
 
-/* 两套停车点都写上，固件版本不一样看的地方不一样：
- * - TF-A：入口在 0x100，每核 hold 在 0x108+n*8，值 1 表示 GO，然后 br 到入口；
- * - 老 armstub：每核槽 0xd8+n*8 直接就是跳转地址。
- * 从核非缓存读这些字，写完必须 clean 到 PoC。 */
+/* 【本轮实验】信箱两套停车点（TF-A 0x100/0x108、老 armstub 0xd8）都不再写。
+ * 放行完全交给 PSCI CPU_ON：TF-A 持有 ENTRYPOINT（bl31_warm_entrypoint），
+ * 我们 SMC 传的 entry（apu_entry）由它恢复上下文后 ERET 到 EL1。 */
+/* 【实验】不再直接写 BL31 的可信信箱（0x100=ENTRYPOINT、0x108+n*8=hold）。
+ * 此前我们先写 GO 再发 SMC：停车核被我们的 GO 唤醒后从 EL3 直接 br 进
+ * apu_entry，完全绕过 TF-A 的 CPU_ON 热启动路径（psci 上下文恢复 + 按我们
+ * SMC 传入的 entry ERET 回 EL1）。已知能跑的系统（Linux/Urthr）都只发 SMC、
+ * 从不碰信箱；我们是目前唯一的旁路者。本轮纯 PSCI：rpi5_pwr_domain_on 自己
+ * 写 GO，停车核经 bl31_warm_entrypoint 恢复上下文后 ERET 到 apu_entry。
+ * 判读：分裂消失 ⇒ 根因是信箱旁路；AP 根本不出现 ⇒ 看 [mp] rc 的返回码。 */
 static void park_release(u32 cpu, u64 entry) {
-  publish_u64(0x100, entry);
-  publish_u64(0x108UL + (u64)cpu * 8, 1);
-  publish_u64(0xd8UL + (u64)cpu * 8, entry);
+  (void)cpu;
+  (void)entry;
   asm volatile("dsb sy" ::: "memory");
   asm volatile("sev" ::: "memory");
 }
@@ -673,6 +692,26 @@ void lcpu_send_start(u32 cpu, u64 entry) {
 
   u64 ep = (u64)&apu_entry;
   u64 aff = (u64)cpu << 8;
+
+  /* 【实验】从核进门先非缓存读 ap_ttbr（一条 64B 行装着 ttbr0/mair/tcr，
+   * 见 boot-armv8-a.s ap_el1_ready），然后在汇编里直接开 MMU+cache 才进
+   * C——避免从核以 M=C=0 跑启动 C 代码时把主核已缓存的行拆出侦听域。
+   * 这里放行前用主核当前寄存器值写好并清缓存，之后不再重写。 */
+  {
+    static u8 pub;
+    if (!pub) {
+      u64 v;
+      pub = 1;
+      asm volatile("mrs %0, ttbr0_el1" : "=r"(v));
+      ap_ttbr[0] = v;
+      asm volatile("mrs %0, mair_el1" : "=r"(v));
+      ap_ttbr[1] = v;
+      asm volatile("mrs %0, tcr_el1" : "=r"(v));
+      ap_ttbr[2] = v;
+      cache_clean_u64((u64)ap_ttbr);
+      asm volatile("dsb sy" ::: "memory");
+    }
+  }
 
   ap_release[cpu] = 1;
   cache_clean_u64((u64)&ap_release[cpu]);
@@ -689,10 +728,6 @@ void lcpu_send_start(u32 cpu, u64 entry) {
   if (rc == (u64)-2) {
     rc = psci_call(0xC4000003UL, cpu, ep, 0);
   }
-  if (rc != 0 && rc != (u64)-4) {
-    kprintf("[mp] psci cpu_on(%u) aff %lx = %d\n", cpu, aff, (int)rc);
-  }
-  /* ALREADY_ON：核已在停车环里，上面的 mailbox + sev 才是真正的唤醒。 */
   asm volatile("dsb sy" ::: "memory");
   asm volatile("sev" ::: "memory");
 }

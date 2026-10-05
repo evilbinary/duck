@@ -253,9 +253,12 @@ extern void puthex(unsigned long v);
  * 返回 ic 正常 eret —— 消费掉 pending SError。 */
 void* serror_probe(interrupt_context_t* ic) {
   u64 esr, isr;
+  int cpu = cpu_get_id();
   asm volatile("mrs %0, esr_el1" : "=r"(esr));
   asm volatile("mrs %0, isr_el1" : "=r"(isr));
-  puts("[SR] esr=");
+  puts("[SR] c");
+  puthex(cpu);
+  puts(" esr=");
   puthex((unsigned long)esr);
   puts(" isr=");
   puthex((unsigned long)isr);

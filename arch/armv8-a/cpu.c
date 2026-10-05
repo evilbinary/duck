@@ -297,6 +297,17 @@ void cpu_delay(int n) {
 }
 
 void cpu_delay_usec(uint64_t count) {
+  /* 【Pi5】AP 核读全局 counter（cntvct/cntpct）必挂死（SMP 实测：三核并发、
+   * 单核独读皆挂，cpu0 独读正常；MRS 挂住 ⇒ 核停、异常/SGI 全不进，总线
+   * 超时上报每核一条 SError be000411）。AP 侧改纯软件空转：迭代数按
+   * A76 ~2.4GHz、~4ns/迭代粗估，只保证不挂死、量级正确（偏短）；
+   * 时序敏感路径后续再校准。cpu0 保留 counter 精确延时。 */
+  if (cpu_get_id() != 0) {
+    volatile u32 n = (u32)(count * 250u); /* ~4ns/迭代 */
+    while (n-- > 0) {
+    }
+    return;
+  }
   u64 freq = read_cntfrq();
   u64 cycles = (freq * count) / 1000000ULL;
   u64 start = read_cntvct();

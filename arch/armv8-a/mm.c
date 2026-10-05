@@ -254,6 +254,9 @@ void mm_page_enable(u64 page_dir) {
   asm volatile("dsb sy");
   asm volatile("isb");
 
+  /* 【上一轮实验已撤】从核进门就在汇编里开了 MMU+cache（ap_ttbr），不再
+   * 存在"M=C=0 跑 C 代码"的窗口，这里不需要再做 128MB civac。 */
+
   /* 【打印锁切回原子实现】开 MMU 之前是 Device-nGnRnE，独占访问会卡死/中止
    * （Pi5 实测：内核第一句 kprintf 就没输出）。现在 MMU + D-cache 都开了，
    * 内存按 MAIR 走真正的 Normal WB（可缓存）——独占/原子指令此时才有定义。
