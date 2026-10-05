@@ -11,6 +11,8 @@
 #include "kernel/string.h"
 #include "modules/sysconf/sysconf.h"
 
+#define log_debug
+
 #if defined(ARM) || defined(ARM64) || defined(__aarch64__)
 #define EXT_IOC_MAGIC 's'
 #else
