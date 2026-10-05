@@ -11,6 +11,10 @@ add_deps(
     'kernel'
 )
 
+add_includedirs(
+    '../net',
+)
+
 
 add_files(
     './*.c'

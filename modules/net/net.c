@@ -5,6 +5,9 @@
  ********************************************************************/
 #include "kernel/kernel.h"
 #include "dev/devfs.h"
+#ifdef NET_DRIVER
+#include "lwip_port.h"
+#endif
 
 // 平台特定的初始化函数由各个驱动文件实现
 // raspi2/raspi3: net_init_device() in bcm2837.c
@@ -19,6 +22,30 @@
 // 只有真的有网卡驱动的平台才注册 net 模块（见根 ya.py 与 app/init/module.c）。
 extern int net_init_device(device_t* dev);
 
+#ifdef NET_DRIVER
+static int net_name_is(fd_t* fd, const char* s) {
+  const char* n;
+  if (fd == NULL || fd->name == NULL || s == NULL) return 0;
+  n = (const char*)fd->name;
+  while (*s != 0 && *n != 0 && *s == *n) {
+    s++;
+    n++;
+  }
+  return *s == 0 && *n == 0;
+}
+
+/* socket 的 data 是 kmalloc 出来的标记，不是 vnode。 */
+static int net_fd_on_close(fd_t* fd) {
+  if (!net_name_is(fd, "socket")) return 0;
+  lwip_port_close_lwfd((int)fd->offset);
+  if (fd->data != NULL) {
+    kfree(fd->data);
+    fd->data = NULL;
+  }
+  return 1;
+}
+#endif
+
 int net_init(void) {
   kprintf("net init\n");
   device_t* dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
@@ -32,6 +59,11 @@ int net_init(void) {
   
   // 调用平台特定的初始化函数
   net_init_device(dev);
+#ifdef NET_DRIVER
+  /* 协议栈在驱动之上。失败只少一张网卡，socket 调用会返回错误。 */
+  fd_close_listen(net_fd_on_close);
+  lwip_port_init();
+#endif
 
   // Create /dev/net device node
   vnode_t *net = vfs_create_node("net", V_FILE | V_BLOCKDEVICE);

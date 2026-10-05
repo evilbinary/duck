@@ -10,6 +10,49 @@
 #include "kernel/kernel.h"
 #include "kernel/thread.h"
 #include "kernel/vfs.h"
+#ifdef NET_DRIVER
+#include "lwip_port.h"
+
+static int os_lwfd(int osfd) {
+  thread_t* current = thread_current();
+  fd_t* fd = thread_find_fd_id(current, (u32)osfd);
+  if (fd == NULL) return -9; /* EBADF */
+  if (fd->name == NULL || kstrcmp((char*)fd->name, "socket") != 0) {
+    return -88; /* ENOTSOCK */
+  }
+  return (int)fd->offset;
+}
+
+/* lwIP fd 从 0 起，不能塞进 fd->data（fd_open 拒绝 NULL，0 也会被当成空）。
+ * data 只是一个非空标记，真正的 lwIP fd 记在 offset。 */
+static int lwip_os_attach(int lwfd) {
+  u32* mark;
+  fd_t* fd;
+  thread_t* current;
+  int id;
+  if (lwfd < 0) return lwfd;
+  mark = (u32*)kmalloc(sizeof(u32), DEFAULT_TYPE);
+  if (mark == NULL) {
+    lwip_port_close_lwfd(lwfd);
+    return -12; /* ENOMEM */
+  }
+  *mark = (u32)lwfd;
+  fd = fd_open(mark, DEVICE_TYPE_NET, "socket");
+  if (fd == NULL) {
+    lwip_port_close_lwfd(lwfd);
+    kfree(mark);
+    return -12;
+  }
+  fd->offset = (u32)lwfd;
+  current = thread_current();
+  id = thread_add_fd(current, fd);
+  if (id < 0) {
+    fd_close(fd);
+    return -12;
+  }
+  return id;
+}
+#endif
 
 // Socket management
 #define MAX_SOCKETS 64
@@ -57,6 +100,10 @@ static void socket_free(socket_t* sock) {
 }
 
 int sys_socket(int domain, int type, int protocol) {
+#ifdef NET_DRIVER
+  int lwfd = lwip_port_socket(domain, type, protocol);
+  return lwip_os_attach(lwfd);
+#endif
   log_debug("sys_socket domain=%d type=%d protocol=%d\n", domain, type, protocol);
 
   // Validate parameters
@@ -104,6 +151,13 @@ int sys_socket(int domain, int type, int protocol) {
 }
 
 int sys_socketpair(int domain, int type, int protocol, int sv[2]) {
+#ifdef NET_DRIVER
+  (void)domain;
+  (void)type;
+  (void)protocol;
+  (void)sv;
+  return -95; /* EOPNOTSUPP */
+#endif
   log_debug("sys_socketpair domain=%d type=%d\n", domain, type);
 
   // Create two connected sockets
@@ -125,6 +179,11 @@ int sys_socketpair(int domain, int type, int protocol, int sv[2]) {
 }
 
 int sys_bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
+#ifdef NET_DRIVER
+  int lwfd = os_lwfd(sockfd);
+  if (lwfd < 0) return lwfd;
+  return lwip_port_bind(lwfd, addr, addrlen);
+#endif
   log_debug("sys_bind sockfd=%d\n", sockfd);
 
   thread_t* current = thread_current();
@@ -156,6 +215,11 @@ int sys_bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
 }
 
 int sys_listen(int sockfd, int backlog) {
+#ifdef NET_DRIVER
+  int lwfd = os_lwfd(sockfd);
+  if (lwfd < 0) return lwfd;
+  return lwip_port_listen(lwfd, backlog);
+#endif
   log_debug("sys_listen sockfd=%d backlog=%d\n", sockfd, backlog);
 
   thread_t* current = thread_current();
@@ -183,6 +247,17 @@ int sys_listen(int sockfd, int backlog) {
 }
 
 int sys_accept(int sockfd, struct sockaddr* addr, socklen_t* addrlen) {
+#ifdef NET_DRIVER
+  int lwfd = os_lwfd(sockfd);
+  int nfd;
+  unsigned long alen = 0;
+  if (lwfd < 0) return lwfd;
+  if (addrlen != NULL) alen = *addrlen;
+  nfd = lwip_port_accept(lwfd, addr, addrlen != NULL ? &alen : NULL);
+  if (addrlen != NULL) *addrlen = (socklen_t)alen;
+  if (nfd < 0) return nfd;
+  return lwip_os_attach(nfd);
+#endif
   log_debug("sys_accept sockfd=%d\n", sockfd);
 
   thread_t* current = thread_current();
@@ -225,6 +300,11 @@ int sys_accept4(int sockfd, struct sockaddr* addr, socklen_t* addrlen, int flags
 }
 
 int sys_connect(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
+#ifdef NET_DRIVER
+  int lwfd = os_lwfd(sockfd);
+  if (lwfd < 0) return lwfd;
+  return lwip_port_connect(lwfd, addr, addrlen);
+#endif
   log_debug("sys_connect sockfd=%d\n", sockfd);
 
   thread_t* current = thread_current();
@@ -259,6 +339,16 @@ int sys_connect(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
 }
 
 int sys_getsockname(int sockfd, struct sockaddr* addr, socklen_t* addrlen) {
+#ifdef NET_DRIVER
+  int lwfd = os_lwfd(sockfd);
+  unsigned long alen = 0;
+  int rc;
+  if (lwfd < 0) return lwfd;
+  if (addrlen != NULL) alen = *addrlen;
+  rc = lwip_port_getsockname(lwfd, addr, addrlen != NULL ? &alen : NULL);
+  if (addrlen != NULL) *addrlen = (socklen_t)alen;
+  return rc;
+#endif
   log_debug("sys_getsockname sockfd=%d\n", sockfd);
 
   thread_t* current = thread_current();
@@ -283,6 +373,16 @@ int sys_getsockname(int sockfd, struct sockaddr* addr, socklen_t* addrlen) {
 }
 
 int sys_getpeername(int sockfd, struct sockaddr* addr, socklen_t* addrlen) {
+#ifdef NET_DRIVER
+  int lwfd = os_lwfd(sockfd);
+  unsigned long alen = 0;
+  int rc;
+  if (lwfd < 0) return lwfd;
+  if (addrlen != NULL) alen = *addrlen;
+  rc = lwip_port_getpeername(lwfd, addr, addrlen != NULL ? &alen : NULL);
+  if (addrlen != NULL) *addrlen = (socklen_t)alen;
+  return rc;
+#endif
   log_debug("sys_getpeername sockfd=%d\n", sockfd);
 
   thread_t* current = thread_current();
@@ -313,6 +413,11 @@ int sys_getpeername(int sockfd, struct sockaddr* addr, socklen_t* addrlen) {
 
 ssize_t sys_sendto(int sockfd, const void* buf, size_t len, int flags,
                    const struct sockaddr* dest_addr, socklen_t addrlen) {
+#ifdef NET_DRIVER
+  int lwfd = os_lwfd(sockfd);
+  if (lwfd < 0) return lwfd;
+  return (ssize_t)lwip_port_sendto(lwfd, buf, len, flags, dest_addr, addrlen);
+#endif
   log_debug("sys_sendto sockfd=%d len=%d flags=%d\n", sockfd, len, flags);
 
   thread_t* current = thread_current();
@@ -348,6 +453,17 @@ ssize_t sys_sendto(int sockfd, const void* buf, size_t len, int flags,
 
 ssize_t sys_recvfrom(int sockfd, void* buf, size_t len, int flags,
                      struct sockaddr* src_addr, socklen_t* addrlen) {
+#ifdef NET_DRIVER
+  int lwfd = os_lwfd(sockfd);
+  unsigned long alen = 0;
+  long n;
+  if (lwfd < 0) return lwfd;
+  if (addrlen != NULL) alen = *addrlen;
+  n = lwip_port_recvfrom(lwfd, buf, len, flags, src_addr,
+                         addrlen != NULL ? &alen : NULL);
+  if (addrlen != NULL) *addrlen = (socklen_t)alen;
+  return (ssize_t)n;
+#endif
   log_debug("sys_recvfrom sockfd=%d len=%d flags=%d\n", sockfd, len, flags);
 
   thread_t* current = thread_current();
@@ -384,6 +500,11 @@ ssize_t sys_recvfrom(int sockfd, void* buf, size_t len, int flags,
 
 int sys_setsockopt(int sockfd, int level, int optname, const void* optval,
                    socklen_t optlen) {
+#ifdef NET_DRIVER
+  int lwfd = os_lwfd(sockfd);
+  if (lwfd < 0) return lwfd;
+  return lwip_port_setsockopt(lwfd, level, optname, optval, optlen);
+#endif
   log_debug("sys_setsockopt sockfd=%d level=%d optname=%d\n", sockfd, level, optname);
 
   thread_t* current = thread_current();
@@ -431,6 +552,16 @@ int sys_setsockopt(int sockfd, int level, int optname, const void* optval,
 
 int sys_getsockopt(int sockfd, int level, int optname, void* optval,
                    socklen_t* optlen) {
+#ifdef NET_DRIVER
+  int lwfd = os_lwfd(sockfd);
+  unsigned long ol = 0;
+  int rc;
+  if (lwfd < 0) return lwfd;
+  if (optlen != NULL) ol = *optlen;
+  rc = lwip_port_getsockopt(lwfd, level, optname, optval, optlen != NULL ? &ol : NULL);
+  if (optlen != NULL) *optlen = (socklen_t)ol;
+  return rc;
+#endif
   log_debug("sys_getsockopt sockfd=%d level=%d optname=%d\n", sockfd, level, optname);
 
   thread_t* current = thread_current();
@@ -488,6 +619,11 @@ int sys_getsockopt(int sockfd, int level, int optname, void* optval,
 }
 
 int sys_shutdown(int sockfd, int how) {
+#ifdef NET_DRIVER
+  int lwfd = os_lwfd(sockfd);
+  if (lwfd < 0) return lwfd;
+  return lwip_port_shutdown(lwfd, how);
+#endif
   log_debug("sys_shutdown sockfd=%d how=%d\n", sockfd, how);
 
   thread_t* current = thread_current();

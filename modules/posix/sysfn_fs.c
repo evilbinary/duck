@@ -10,6 +10,9 @@
 #include "kernel/thread.h"
 #include "kernel/vfs.h"
 #include "sysfn.h"
+#ifdef NET_DRIVER
+#include "lwip_port.h"
+#endif
 
 #define log_debug 
 
@@ -756,6 +759,11 @@ size_t sys_write(u32 fd, void* buf, size_t nbytes) {
     log_error("write not found fd %d name: %s tid %d\n", fd,f->name, current->id);
     return 0;
   }
+#ifdef NET_DRIVER
+  if (f->name != NULL && kstrcmp((char*)f->name, "socket") == 0) {
+    return (size_t)lwip_port_sendto((int)f->offset, buf, nbytes, 0, NULL, 0);
+  }
+#endif
   vnode_t* node = f->data;
   if (node == NULL) {
     log_error("sys write node is null tid %d \n", current->id);
@@ -804,6 +812,11 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
     log_error("read not found fd %d tid %d\n", fd, current->id);
     return 0;
   }
+#ifdef NET_DRIVER
+  if (f->name != NULL && kstrcmp((char*)f->name, "socket") == 0) {
+    return (size_t)lwip_port_recvfrom((int)f->offset, buf, nbytes, 0, NULL, NULL);
+  }
+#endif
   vnode_t* node = f->data;
   if (node == NULL) {
     if (fd <= STDERR) {
