@@ -65,8 +65,10 @@
 #define NCFGR_GBE (1u << 10)
 #define NCFGR_CLK_SHIFT 18
 #define NCFGR_CLK_DIV96 5u
+#define NCFGR_DBW_SHIFT 21
 #define DMACFG_FBLDO_16 16u
 #define DMACFG_RXBMS_FULL (3u << 8)
+#define DMACFG_TXPBMS (1u << 10)
 #define DMACFG_RXBS_SHIFT 16
 #define DMACFG_ADDR64 (1u << 30)
 #define DCFG6_DAW64 (1u << 23)
@@ -161,6 +163,9 @@ static void gem_map(u64 base, u32 size) {
 
 static void gem_clock_on(u32 ctrl, u32 div, u32 sel) {
   u32 c = clk_read(ctrl);
+  /* CLK_ETH 没有标准父时钟。aux0 是 pll_sys_sec，125MHz。
+   * RP1 要求 tx_clk 一直是 125MHz，100M 由 GEM 自己分频。
+   * SEL 的 bit0 选中 aux，AUXSRC 保持 0。 */
   clk_write(div, 1);
   clk_write(sel, 1);
   c &= ~(0x1fu << CLK_CTRL_AUXSRC_SHIFT);
@@ -231,17 +236,54 @@ static void phy_poll(void) {
     gem.link_up = 0;
     gem.speed = 0;
   } else {
-    mdio_read(gem.phy, MII_STAT1000, &gstat);
-    mdio_read(gem.phy, MII_BMCR, &bmcr);
+    /* BCM54213 协商结果在辅助状态 0x19 的 [10:8]，不是 BMCR。
+     * 自动协商时 BMCR 的速率位保持 0，之前被当成 10M，MAC 和 PHY 对不上。 */
+    mdio_read(gem.phy, 0x19, &bmcr);
     gem.link_up = 1;
-    gem.duplex = 1;
-    if (gstat & (LPA_1000FULL | LPA_1000HALF)) {
-      gem.speed = 1000;
-      gem.duplex = (gstat & LPA_1000FULL) ? 1 : 0;
-    } else if (bmcr & (1u << 13)) {
-      gem.speed = 100;
-    } else {
-      gem.speed = 10;
+    switch ((bmcr >> 8) & 7) {
+      case 7:
+        gem.speed = 1000;
+        gem.duplex = 1;
+        break;
+      case 6:
+        gem.speed = 1000;
+        gem.duplex = 0;
+        break;
+      case 5:
+        gem.speed = 100;
+        gem.duplex = 1;
+        break;
+      case 3:
+        gem.speed = 100;
+        gem.duplex = 0;
+        break;
+      case 2:
+        gem.speed = 10;
+        gem.duplex = 1;
+        break;
+      case 1:
+        gem.speed = 10;
+        gem.duplex = 0;
+        break;
+      default:
+        mdio_read(gem.phy, MII_STAT1000, &gstat);
+        mdio_read(gem.phy, 5, &bmcr);
+        gem.duplex = 1;
+        if (gstat & LPA_1000FULL) {
+          gem.speed = 1000;
+        } else if (gstat & LPA_1000HALF) {
+          gem.speed = 1000;
+          gem.duplex = 0;
+        } else if (bmcr & 0x0100) {
+          gem.speed = 100;
+        } else if (bmcr & 0x0080) {
+          gem.speed = 100;
+          gem.duplex = 0;
+        } else {
+          gem.speed = 10;
+          gem.duplex = (bmcr & 0x0040) ? 1 : 0;
+        }
+        break;
     }
   }
   if (gem.ready && (gem.link_up != prev_link || gem.speed != prev_speed ||
@@ -250,15 +292,27 @@ static void phy_poll(void) {
   }
 }
 
+/* DCFG1 的总线宽度：4=128 位，2=64 位。配成 32 位时，描述符回写只留下
+ * 占用位，状态字保持 0。 */
+static u32 gem_ncfgr_dbw(void) {
+  u32 def = (gem_read(GEM_DCFG1) >> 25) & 7u;
+  if (def == 4) return 2u << NCFGR_DBW_SHIFT;
+  if (def == 2) return 1u << NCFGR_DBW_SHIFT;
+  return 0;
+}
+
 static void gem_apply_link(void) {
-  u32 cfg = (NCFGR_CLK_DIV96 << NCFGR_CLK_SHIFT) | NCFGR_CAF;
+  u32 ncr = gem_read(GEM_NCR);
+  u32 cfg = (NCFGR_CLK_DIV96 << NCFGR_CLK_SHIFT) | NCFGR_CAF | gem_ncfgr_dbw();
   if (gem.duplex) cfg |= NCFGR_FD;
   if (gem.speed == 1000) {
     cfg |= NCFGR_GBE;
   } else if (gem.speed == 100) {
     cfg |= NCFGR_SPD;
   }
+  if (ncr & (NCR_RE | NCR_TE)) gem_write(GEM_NCR, ncr & ~(NCR_RE | NCR_TE));
   gem_write(GEM_NCFGR, cfg);
+  if (ncr & (NCR_RE | NCR_TE)) gem_write(GEM_NCR, ncr);
 }
 
 static u32 gem_phys_lo(void* p) {
@@ -316,7 +370,7 @@ static void gem_rings_init(void) {
   }
 }
 
-/* pcie2 根复合体。窗口和 BAR 写法对齐 ewokos machines/raspi5 rp1.c。 */
+/* pcie2 根复合体。窗口和 BAR 写法对齐 raspi5 rp1.c。 */
 #define PCIE2_BASE 0x1000120000ULL
 #define PCIE_MISC_CTRL 0x4008u
 #define PCIE_MEM_WIN0_LO 0x400cu
@@ -378,6 +432,24 @@ static u32 ibar_size(u64 size) {
   return 0;
 }
 
+/* 对齐 ewokos train_link：BAR2 在放 PERST 之前写，remap 只或上 ACCESS_EN。
+ * 不写 remap 的高字。出站窗口仍覆盖到 GEM（PCI +0x100000）。 */
+static void pcie_dma_window(void) {
+  rc_update(PCIE_MISC_CTRL, 0x00303400u,
+            (1u << 12) | (1u << 13) | (1u << 20) | (1u << 10));
+  rc_update(PCIE_UBUS_CTRL, 0, (1u << 13) | (1u << 19));
+  rc_write(PCIE_AXI_READ_ERROR, 0xffffffffu);
+  rc_write(PCIE_MEM_WIN0_LO, 0);
+  rc_write(PCIE_MEM_WIN0_HI, 0);
+  rc_write(PCIE_WIN0_BASE_LIMIT, 0xfff00000u);
+  rc_write(PCIE_WIN0_BASE_HI, 0x1f);
+  rc_write(PCIE_WIN0_LIMIT_HI, 0x1f);
+  rc_write(PCIE_RC_BAR2_LO, ibar_size(0x1000000000ULL));
+  rc_write(PCIE_RC_BAR2_HI, 0x10);
+  rc_update(PCIE_UBUS_BAR2_REMAP, 0, 1);
+  rc_update(PCIE_MISC_CTRL, 0xf8000000u, 21u << 27);
+}
+
 extern void cpu_delay_usec(unsigned long long count);
 
 #define RESCAL_PAGE 0x1000119000ULL
@@ -399,7 +471,7 @@ static int pcie_mdio_write(u8 reg, u16 data) {
   return -1;
 }
 
-/* 链路没起来时按 ewokos train_link：rescal、桥复位、PLL，最后再放 PERST。 */
+/* 链路没起来时按  train_link：rescal、桥复位、PLL，最后再放 PERST。 */
 static int pcie_train(void) {
   static const u8 regs[] = {0x16, 0x17, 0x18, 0x19, 0x1b, 0x1c, 0x1e};
   static const u16 data[] = {0x50b9, 0xbda1, 0x0094, 0x97b4, 0x5030, 0x5030, 0x0007};
@@ -441,6 +513,7 @@ static int pcie_train(void) {
   rc_write(0x40a8, 0x0b2d0000u);
   rc_write(0x405c, 0x0aba0000u);
   rc_write(0x403c, 0);
+  pcie_dma_window();
   rc_update(0x4064, 1u << 2, 1u << 2);
   cpu_delay_usec(100000);
   for (i = 0; i < 900 && !pcie_link_up(); i++) cpu_delay_usec(1000);
@@ -457,20 +530,7 @@ static int rp1_pcie_enable(void) {
     kprintf("gem: pcie2 train %d status %08x\n", trained, status);
     if (trained != 0) return -1;
   }
-  rc_update(PCIE_MISC_CTRL, 0x00303400u,
-            (1u << 12) | (1u << 13) | (1u << 20) | (1u << 10));
-  rc_update(PCIE_UBUS_CTRL, 0, (1u << 13) | (1u << 19));
-  rc_write(PCIE_AXI_READ_ERROR, 0xffffffffu);
-  rc_write(PCIE_MEM_WIN0_LO, 0);
-  rc_write(PCIE_MEM_WIN0_HI, 0);
-  rc_write(PCIE_WIN0_BASE_LIMIT, 0xfff00000u);
-  rc_write(PCIE_WIN0_BASE_HI, 0x1f);
-  rc_write(PCIE_WIN0_LIMIT_HI, 0x1f);
-  rc_write(PCIE_RC_BAR2_LO, ibar_size(0x1000000000ULL));
-  rc_write(PCIE_RC_BAR2_HI, 0x10);
-  rc_write(PCIE_UBUS_BAR2_REMAP, 1);
-  rc_write(PCIE_UBUS_BAR2_REMAP_HI, 0);
-  rc_update(PCIE_MISC_CTRL, 0xf8000000u, 21u << 27);
+  pcie_dma_window();
   rc_write8(0x0c, 16);
   rc_write8(0x19, 1);
   rc_write8(0x1a, 1);
@@ -528,7 +588,7 @@ static int gem_hw_init(void) {
 
   gem_write(GEM_NCR, 0);
   gem_write(GEM_IDR, 0xffffffffu);
-  gem_write(GEM_NCFGR, NCFGR_CLK_DIV96 << NCFGR_CLK_SHIFT);
+  gem_write(GEM_NCFGR, (NCFGR_CLK_DIV96 << NCFGR_CLK_SHIFT) | gem_ncfgr_dbw());
   gem_write(GEM_USRIO, USRIO_RGMII);
   ncr = NCR_MPE | NCR_MIIONRGMII;
   gem_write(GEM_NCR, ncr);
@@ -559,36 +619,64 @@ static int gem_hw_init(void) {
                           ((u32)gem.mac[2] << 16) | ((u32)gem.mac[3] << 24));
   gem_write(GEM_SA1T, gem.mac[4] | ((u32)gem.mac[5] << 8));
   gem_apply_link();
-  gem_rings_init();
-
-  dma = DMACFG_FBLDO_16 | DMACFG_RXBMS_FULL | ((GEM_MTU / 64) << DMACFG_RXBS_SHIFT);
+  dma = DMACFG_FBLDO_16 | DMACFG_RXBMS_FULL | DMACFG_TXPBMS |
+        ((GEM_MTU / 64) << DMACFG_RXBS_SHIFT);
   if (gem.dma64) dma |= DMACFG_ADDR64;
   gem_write(GEM_DMACFG, dma);
+  gem_rings_init();
   gem_write(GEM_RSR, 0xffffffffu);
   gem_write(GEM_TSR, 0xffffffffu);
   gem_write(GEM_NCR, ncr | NCR_RE | NCR_TE);
+  if (gem.dma64) {
+    gem_write(GEM_RBQPH, gem_phys_hi(rx_desc));
+    gem_write(GEM_TBQPH, gem_phys_hi(tx_desc));
+  }
+  kprintf("gem: dma %08x%08x bar2 %08x %08x remap %08x q %08x %08x\n",
+          gem_phys_hi(tx_desc), gem_phys_lo(tx_desc), rc_read(PCIE_RC_BAR2_LO),
+          rc_read(PCIE_RC_BAR2_HI), rc_read(PCIE_UBUS_BAR2_REMAP),
+          gem_read(GEM_TBQP), gem_read(GEM_TBQPH));
   gem.ready = 1;
+  return 0;
+}
+
+static int gem_rx_find(gem_desc_t* d, u32* flen) {
+  u32 w[3];
+  u32 i;
+  w[0] = d->ctrl;
+  w[1] = d->addrh;
+  w[2] = d->rsvd;
+  for (i = 0; i < 3; i++) {
+    if ((w[i] & RX_SOF) != 0 && (w[i] & RX_EOF) != 0) {
+      *flen = w[i] & 0x1fffu;
+      if (*flen >= 14 && *flen <= GEM_MTU) return 1;
+    }
+  }
   return 0;
 }
 
 static size_t gem_net_read(device_t* dev, void* buf, size_t len) {
   u32 n;
+  static u32 rx_logged;
   (void)dev;
   if (!gem.ready || buf == NULL || len == 0) return 0;
   phy_poll();
   if (!gem.link_up) return 0;
+  /* REC/BNA 是写 1 清除。不清的话环一满就不再收。 */
+  gem_write(GEM_RSR, 0xffffffffu);
   for (n = 0; n < RX_NUM; n++) {
     u32 idx = gem.rx_next;
     gem_desc_t* d = &rx_desc[idx];
-    u32 addr, ctrl, flen;
+    u32 addr, flen;
     cpu_invalidate_dcache_range((unsigned long)d, (unsigned long)d + sizeof(*d));
     addr = d->addr;
     if ((addr & RX_USED) == 0) return 0;
-    ctrl = d->ctrl;
+    if (!gem_rx_find(d, &flen)) {
+      gem_udelay(20);
+      cpu_invalidate_dcache_range((unsigned long)d, (unsigned long)d + sizeof(*d));
+      addr = d->addr;
+    }
     gem.rx_next = (idx + 1) % RX_NUM;
-    if ((ctrl & RX_SOF) != 0 && (ctrl & RX_EOF) != 0) {
-      flen = ctrl & 0x1fffu;
-      if (flen > GEM_MTU) flen = GEM_MTU;
+    if (gem_rx_find(d, &flen)) {
       cpu_invalidate_dcache_range((unsigned long)rx_buf[idx],
                                   (unsigned long)rx_buf[idx] + flen);
       if (flen > len) flen = (u32)len;
@@ -597,6 +685,11 @@ static size_t gem_net_read(device_t* dev, void* buf, size_t len) {
       d->addr = addr & ~RX_USED;
       cpu_flush_dcache_range((unsigned long)d, (unsigned long)d + sizeof(*d));
       return flen;
+    }
+    if (!rx_logged) {
+      rx_logged = 1;
+      kprintf("gem: rx drop %08x %08x %08x %08x\n", d->addr, d->ctrl, d->addrh,
+              d->rsvd);
     }
     gem.rx_errors++;
     d->addr = addr & ~RX_USED;
@@ -617,7 +710,19 @@ static size_t gem_net_write(device_t* dev, const void* buf, size_t len) {
   d = &tx_desc[gem.tx_next];
   cpu_invalidate_dcache_range((unsigned long)d, (unsigned long)d + sizeof(*d));
   if ((d->ctrl & TX_USED) == 0) {
+    u32 spin;
+    for (spin = 0; spin < 500 && (d->ctrl & TX_USED) == 0; spin++) {
+      gem_udelay(20);
+      cpu_invalidate_dcache_range((unsigned long)d, (unsigned long)d + sizeof(*d));
+    }
+  }
+  if ((d->ctrl & TX_USED) == 0) {
     gem.tx_busy++;
+    if (gem.tx_busy == 1) {
+      kprintf("gem: tx stall tsr %08x rsr %08x ncr %08x cfg %08x dma %08x desc %08x\n",
+              gem_read(GEM_TSR), gem_read(GEM_RSR), gem_read(GEM_NCR),
+              gem_read(GEM_NCFGR), gem_read(GEM_DMACFG), d->ctrl);
+    }
     return 0;
   }
   n = gem.tx_next;
