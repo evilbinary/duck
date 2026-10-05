@@ -657,49 +657,21 @@ int sys_shutdown(int sockfd, int how) {
   return 0;
 }
 
-// Network syscall registration
+/* SYS_SOCKET 这些是 sysfn_no.h 里的枚举，不是宏，#ifdef 永远为假，
+ * 注册会被整段跳过，用户态 socket() 就会落到 syscall 198 not found。 */
 void sys_fn_net_init(void** syscall_table) {
-  // Network syscalls
-#ifdef SYS_SOCKET
   syscall_table[SYS_SOCKET] = &sys_socket;
-#endif
-#ifdef SYS_SOCKETPAIR
   syscall_table[SYS_SOCKETPAIR] = &sys_socketpair;
-#endif
-#ifdef SYS_BIND
   syscall_table[SYS_BIND] = &sys_bind;
-#endif
-#ifdef SYS_LISTEN
   syscall_table[SYS_LISTEN] = &sys_listen;
-#endif
-#ifdef SYS_ACCEPT
   syscall_table[SYS_ACCEPT] = &sys_accept;
-#endif
-#ifdef SYS_ACCEPT4
   syscall_table[SYS_ACCEPT4] = &sys_accept4;
-#endif
-#ifdef SYS_CONNECT
   syscall_table[SYS_CONNECT] = &sys_connect;
-#endif
-#ifdef SYS_GETSOCKNAME
   syscall_table[SYS_GETSOCKNAME] = &sys_getsockname;
-#endif
-#ifdef SYS_GETPEERNAME
   syscall_table[SYS_GETPEERNAME] = &sys_getpeername;
-#endif
-#ifdef SYS_SENDTO
   syscall_table[SYS_SENDTO] = &sys_sendto;
-#endif
-#ifdef SYS_RECVFROM
   syscall_table[SYS_RECVFROM] = &sys_recvfrom;
-#endif
-#ifdef SYS_SETSOCKOPT
   syscall_table[SYS_SETSOCKOPT] = &sys_setsockopt;
-#endif
-#ifdef SYS_GETSOCKOPT
   syscall_table[SYS_GETSOCKOPT] = &sys_getsockopt;
-#endif
-#ifdef SYS_SHUTDOWN
   syscall_table[SYS_SHUTDOWN] = &sys_shutdown;
-#endif
 }
