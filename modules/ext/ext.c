@@ -46,6 +46,7 @@ typedef struct ext_fs {
   int filetype;
   u8 *blk;
   u64 blk_lba;
+  u32 blk_ino;
   u8 *map;
   u8 *ino;
 } ext_fs_t;
@@ -579,7 +580,8 @@ static int ext_htree_next(ext_node_t *dir, u64 *pos, u32 *ino, char *name,
     u32 next_off;
     int got = 1;
     /* 同一次列举里，叶子块还在缓存中就不用再走索引。查找会改掉 fs->blk。 */
-    if (off == 0 || fs->blk_lba != lblock || lblock == 0xffffffffu) {
+    if (off == 0 || fs->blk_ino != dir->ino || fs->blk_lba != lblock ||
+        lblock == 0xffffffffu) {
       got = ext_dx_nth_leaf(dir, 0, 1, 0, &nth, &lblock);
       if (got == -2) {
         return -2;
@@ -589,7 +591,7 @@ static int ext_htree_next(ext_node_t *dir, u64 *pos, u32 *ino, char *name,
         return 0;
       }
     }
-    if (fs->blk_lba != lblock) {
+    if (fs->blk_ino != dir->ino || fs->blk_lba != lblock) {
       if (ext_load_lblock(dir, lblock, fs->blk) != 0) {
         leaf_i++;
         off = 0;
@@ -597,6 +599,7 @@ static int ext_htree_next(ext_node_t *dir, u64 *pos, u32 *ino, char *name,
         continue;
       }
       fs->blk_lba = lblock;
+      fs->blk_ino = dir->ino;
       dir->dx_lblock = lblock;
     }
     if (off >= bs || off + 8 > bs) {
@@ -664,6 +667,7 @@ static int ext_dir_next(ext_node_t *dir, u64 *pos, u32 *ino, char *name,
     dir->flags &= ~EXT_INDEX_FL;
     *pos = 0;
     fs->blk_lba = ~0ull;
+    fs->blk_ino = 0;
   } else if (*pos == 0 && ext_dbg_ok()) {
     log_info("ext: dir ino=%u linear size=%x flags=%x\n", dir->ino,
              (u32)dir->size, dir->flags);
@@ -680,7 +684,7 @@ static int ext_dir_next(ext_node_t *dir, u64 *pos, u32 *ino, char *name,
       *pos = (block + 1) * bs;
       continue;
     }
-    if (fs->blk_lba != block) {
+    if (fs->blk_ino != dir->ino || fs->blk_lba != block) {
       int map = ext_bmap(dir, block, &pb);
       if (map <= 0 || pb == 0) {
         if (ext_dbg_ok()) {
@@ -699,6 +703,7 @@ static int ext_dir_next(ext_node_t *dir, u64 *pos, u32 *ino, char *name,
         continue;
       }
       fs->blk_lba = block;
+      fs->blk_ino = dir->ino;
       if (off == 0) {
         ext_dbg_bytes("dir", fs->blk, 16);
       }
