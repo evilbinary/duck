@@ -117,6 +117,33 @@ int fd_ensure_stdio() {
 int fd_std_init() {
   return fd_ensure_stdio();
 }
+#define FD_CLOSE_LISTEN_MAX 4
+
+static fd_close_fn fd_close_fns[FD_CLOSE_LISTEN_MAX];
+
+int fd_close_listen(fd_close_fn fn) {
+  int i;
+  if (fn == NULL) return -1;
+  for (i = 0; i < FD_CLOSE_LISTEN_MAX; i++) {
+    if (fd_close_fns[i] == fn) return 0;
+  }
+  for (i = 0; i < FD_CLOSE_LISTEN_MAX; i++) {
+    if (fd_close_fns[i] == NULL) {
+      fd_close_fns[i] = fn;
+      return 0;
+    }
+  }
+  return -1;
+}
+
+static int fd_close_notify(fd_t* fd) {
+  int i;
+  for (i = 0; i < FD_CLOSE_LISTEN_MAX; i++) {
+    if (fd_close_fns[i] != NULL && fd_close_fns[i](fd)) return 1;
+  }
+  return 0;
+}
+
 int fd_close(fd_t* fd) {
   if (fd == NULL) {
     kprintf("fd close is null\n");
@@ -130,9 +157,12 @@ int fd_close(fd_t* fd) {
     fd->use_count--;
   }
   if (fd->use_count == 0) {
-    vnode_t* file = (vnode_t*)fd->data;
-    if (file != NULL) {
-      vclose(file);
+    /* 监听者返回非 0 时，data 不是 vnode，不能 vclose。 */
+    if (!fd_close_notify(fd)) {
+      vnode_t* file = (vnode_t*)fd->data;
+      if (file != NULL) {
+        vclose(file);
+      }
     }
     fd->data = NULL;
     if (fd->name != NULL) {

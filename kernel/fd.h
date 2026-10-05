@@ -46,9 +46,13 @@ typedef struct fd {
 } fd_t;
 
 
+/* 最后一次关闭时调用。返回非 0 表示 data 已由监听者释放，fd_close 不再 vclose。 */
+typedef int (*fd_close_fn)(fd_t* fd);
+
 fd_t* fd_open(u32* file, u32 type, char* name);
 fd_t* fd_find(u32 fd);
 int fd_close(fd_t* fd);
+int fd_close_listen(fd_close_fn fn);
 int fd_init();
 int fd_std_init();
 int fd_ensure_stdio();
