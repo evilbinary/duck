@@ -1786,8 +1786,8 @@ void sdhci_dev_prob(sdhci_device_t *sdhci_dev) { sd_card_init(); }
 
 int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, char *buf, uint len) {
   uint ret = 0;
-  uint bno = sdhci_dev->offsetl / BYTE_PER_SECTOR;
-  uint boffset = sdhci_dev->offsetl % BYTE_PER_SECTOR;
+  uint bno = (u32)(sdhci_byte_off(sdhci_dev) / BYTE_PER_SECTOR);
+  uint boffset = (u32)(sdhci_byte_off(sdhci_dev) % BYTE_PER_SECTOR);
   uint bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
   uint bsize = bcount * BYTE_PER_SECTOR;
 
@@ -1822,8 +1822,8 @@ static int bcm2836_hw_read(void *ctx, u32 lba, u32 nsec, void *buf) {
 }
 
 int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, uint len) {
-  uint bno = sdhci_dev->offsetl / BYTE_PER_SECTOR;
-  uint boffset = sdhci_dev->offsetl % BYTE_PER_SECTOR;
+  uint bno = (u32)(sdhci_byte_off(sdhci_dev) / BYTE_PER_SECTOR);
+  uint boffset = (u32)(sdhci_byte_off(sdhci_dev) % BYTE_PER_SECTOR);
 
   if (mmc_cache_read(sdhci_dev, bno, boffset, len, buf, bcm2836_hw_read,
                      sdhci_dev) >= 0) {

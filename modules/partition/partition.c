@@ -17,6 +17,7 @@
 #endif
 #define PART_IOC_READ_OFFSET _IOW(PART_IOC_MAGIC, 3, int)
 #define PART_IOC_WRITE_OFFSET _IOW(PART_IOC_MAGIC, 4, int)
+#define PART_IOC_WRITE_OFFSET64 _IOW(PART_IOC_MAGIC, 5, long)
 
 #define PART_MAX 4
 #define PART_SS 512
@@ -25,7 +26,7 @@ typedef struct part_priv {
   device_t *disk;
   u32 start;
   u32 count;
-  u32 pos;
+  u64 pos;
 } part_priv_t;
 
 static part_priv_t privs[PART_MAX];
@@ -55,7 +56,7 @@ static int disk_read_lba(device_t *disk, u32 lba, void *buf) {
   return 0;
 }
 
-static int part_abs(part_priv_t *p, size_t len, u32 *off) {
+static int part_abs(part_priv_t *p, size_t len, u64 *off) {
   u64 base;
   u64 end;
   if (p == NULL || p->disk == NULL || len == 0 || off == NULL) {
@@ -69,16 +70,17 @@ static int part_abs(part_priv_t *p, size_t len, u32 *off) {
   }
   base = (u64)p->start * PART_SS + (u64)p->pos;
   end = base + (u64)len;
-  if (base > 0xffffffffull || end < base || (end - 1) > 0xffffffffull) {
+  if (end < base || (base / PART_SS) > 0xffffffffull ||
+      ((end - 1) / PART_SS) > 0xffffffffull) {
     return -1;
   }
-  *off = (u32)base;
+  *off = base;
   return 0;
 }
 
 static size_t part_read(device_t *dev, void *buf, size_t len) {
   part_priv_t *p = dev->data;
-  u32 off;
+  u64 off;
   if (p == NULL || p->disk == NULL || p->disk->read == NULL || buf == NULL) {
     return 0;
   }
@@ -86,14 +88,14 @@ static size_t part_read(device_t *dev, void *buf, size_t len) {
     return 0;
   }
   if (p->disk->ioctl != NULL) {
-    p->disk->ioctl(p->disk, PART_IOC_WRITE_OFFSET, off);
+    p->disk->ioctl(p->disk, PART_IOC_WRITE_OFFSET64, off);
   }
   return p->disk->read(p->disk, buf, len);
 }
 
 static size_t part_write(device_t *dev, const void *buf, size_t len) {
   part_priv_t *p = dev->data;
-  u32 off;
+  u64 off;
   if (p == NULL || p->disk == NULL || p->disk->write == NULL || buf == NULL) {
     return 0;
   }
@@ -101,7 +103,7 @@ static size_t part_write(device_t *dev, const void *buf, size_t len) {
     return 0;
   }
   if (p->disk->ioctl != NULL) {
-    p->disk->ioctl(p->disk, PART_IOC_WRITE_OFFSET, off);
+    p->disk->ioctl(p->disk, PART_IOC_WRITE_OFFSET64, off);
   }
   return p->disk->write(p->disk, buf, len);
 }
@@ -109,19 +111,25 @@ static size_t part_write(device_t *dev, const void *buf, size_t len) {
 static size_t part_ioctl(device_t *dev, u32 cmd, ...) {
   part_priv_t *p = dev->data;
   va_list ap;
-  uint offset;
   if (p == NULL) {
     return 0;
   }
   va_start(ap, cmd);
-  offset = va_arg(ap, uint);
-  va_end(ap);
-  if (cmd == PART_IOC_WRITE_OFFSET) {
-    p->pos = offset;
+  if (cmd == PART_IOC_WRITE_OFFSET64) {
+    p->pos = va_arg(ap, u64);
+    va_end(ap);
     return 0;
   }
-  if (cmd == PART_IOC_READ_OFFSET) {
-    return p->pos;
+  {
+    uint offset = va_arg(ap, uint);
+    va_end(ap);
+    if (cmd == PART_IOC_WRITE_OFFSET) {
+      p->pos = offset;
+      return 0;
+    }
+    if (cmd == PART_IOC_READ_OFFSET) {
+      return (size_t)p->pos;
+    }
   }
   return 0;
 }

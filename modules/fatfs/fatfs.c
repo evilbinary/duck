@@ -837,9 +837,13 @@ static int fat_bind(int index) {
   fat_pdrv_dev[index] = fat_vols[index].node->device;
   res = f_mount(&fi->fs, path, 1);
   if (res != FR_OK) {
-    log_error("fatfs: mount %s failed %d\n", fat_vols[index].name, res);
     f_mount(0, path, 0);
     kfree(fi);
+    if (res == FR_NO_FILESYSTEM) {
+      log_info("fatfs: %s is not fat\n", fat_vols[index].name);
+      return -2;
+    }
+    log_error("fatfs: mount %s failed %d\n", fat_vols[index].name, res);
     return -1;
   }
   fat_vols[index].node->data = fi;
@@ -923,8 +927,11 @@ static int fat_mount_at(int index, const char *path) {
   if (kstrncmp(path, "/dev", 4) == 0 && (path[4] == 0 || path[4] == '/')) {
     return -1;
   }
-  if (fat_bind(index) != 0) {
-    return -1;
+  {
+    int rc = fat_bind(index);
+    if (rc != 0) {
+      return rc;
+    }
   }
   exist = vfs_find(NULL, (u8 *)path);
   if (exist != NULL) {
@@ -963,7 +970,8 @@ static int fat_mount_cb(const char *key, const char *val, void *user) {
   }
   for (i = 1; i < fat_vol_count; i++) {
     if (kstrcmp(fat_vols[i].name, key) == 0) {
-      if (fat_mount_at(i, val) != 0) {
+      int rc = fat_mount_at(i, val);
+      if (rc != 0 && rc != -2) {
         log_warn("fatfs: mount %s on %s failed\n", key, val);
       }
       return 1;
@@ -988,8 +996,11 @@ static void fat_mount_apply(void) {
     char path[16];
     kstrcpy(path, "/mnt/");
     kstrcat(path, fat_vols[i].name);
-    if (fat_mount_at(i, path) != 0) {
-      log_warn("fatfs: auto mount %s failed\n", fat_vols[i].name);
+    {
+      int rc = fat_mount_at(i, path);
+      if (rc != 0 && rc != -2) {
+        log_warn("fatfs: auto mount %s failed\n", fat_vols[i].name);
+      }
     }
   }
 }

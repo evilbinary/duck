@@ -36,16 +36,24 @@ static size_t sdhci_ioctl(device_t* dev, uint cmd, ...) {
     return ret;
   }
   va_list ap;
+  uint type;
+  uint nr;
   va_start(ap, cmd);
-  uint offset = va_arg(ap, uint);
-  // Decode ioctl by (type,nr) instead of raw compare: more tolerant across arches/encodings.
-  uint type = ioc_type(cmd);
-  uint nr = ioc_nr(cmd);
+  type = ioc_type(cmd);
+  nr = ioc_nr(cmd);
 
-  if (type == (uint)IOC_SDHCI_MAGIC && nr == 3) {  // IOC_READ_OFFSET
-    ret = sdhci_dev->offsetl;
-  } else if (type == (uint)IOC_SDHCI_MAGIC && nr == 4) {  // IOC_WRITE_OFFSET
-    sdhci_dev->offsetl = offset;
+  if (type == (uint)IOC_SDHCI_MAGIC && nr == 5) {
+    u64 off = va_arg(ap, u64);
+    sdhci_dev->offsetl = (uint)off;
+    sdhci_dev->offseth = (uint)(off >> 32);
+  } else {
+    uint offset = va_arg(ap, uint);
+    if (type == (uint)IOC_SDHCI_MAGIC && nr == 3) {
+      ret = sdhci_dev->offsetl;
+    } else if (type == (uint)IOC_SDHCI_MAGIC && nr == 4) {
+      sdhci_dev->offsetl = offset;
+      sdhci_dev->offseth = 0;
+    }
   }
   va_end(ap);
 

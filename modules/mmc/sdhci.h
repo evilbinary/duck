@@ -11,6 +11,8 @@
 #define IOC_SDHCI_MAGIC 's'
 #define IOC_READ_OFFSET _IOW(IOC_SDHCI_MAGIC, 3, int)
 #define IOC_WRITE_OFFSET _IOW(IOC_SDHCI_MAGIC, 4, int)
+/* 字节偏移的高 32 位在 offseth，低 32 位在 offsetl。nr 5 一次写入 64 位。 */
+#define IOC_WRITE_OFFSET64 _IOW(IOC_SDHCI_MAGIC, 5, long)
 
 #define BYTE_PER_SECTOR 512
 
@@ -56,6 +58,10 @@ typedef struct sdhci_device {
   u8* read_buf;
   u8* write_buf;
 } sdhci_device_t;
+
+static inline u64 sdhci_byte_off(sdhci_device_t *dev) {
+  return ((u64)dev->offseth << 32) | (u64)dev->offsetl;
+}
 
 typedef struct sector {
   uint startl;

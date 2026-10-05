@@ -74,8 +74,8 @@ void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
 int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
   u32 ret = 0;
 
-  u32 bno = sdhci_dev->offsetl / BYTE_PER_SECTOR;
-  u32 boffset = sdhci_dev->offsetl % BYTE_PER_SECTOR;
+  u32 bno = (u32)(sdhci_byte_off(sdhci_dev) / BYTE_PER_SECTOR);
+  u32 boffset = (u32)(sdhci_byte_off(sdhci_dev) % BYTE_PER_SECTOR);
   u32 bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
   u32 bsize = bcount * BYTE_PER_SECTOR;
 
@@ -106,8 +106,8 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
 
 int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
   u32 ret = 0;
-  u32 bno = sdhci_dev->offsetl / BYTE_PER_SECTOR;
-  u32 boffset = sdhci_dev->offsetl % BYTE_PER_SECTOR;
+  u32 bno = (u32)(sdhci_byte_off(sdhci_dev) / BYTE_PER_SECTOR);
+  u32 boffset = (u32)(sdhci_byte_off(sdhci_dev) % BYTE_PER_SECTOR);
   u32 bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
   u32 bsize = bcount * BYTE_PER_SECTOR;
 
