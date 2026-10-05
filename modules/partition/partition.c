@@ -3,12 +3,13 @@
  * 作者: evilbinary on 01/01/20
  * 邮箱: rootdebug@163.com
  *
- * 读整卡（DEVICE_SATA），按 MBR / GPT / 超级软盘切出最多 4 个分区，
- * 注册成 DEVICE_SATA0 起的块设备（sda、sdb、…）。
- * 设备读到的扇区 0 就是该分区自己的 VBR；偏移留在这里，不放进 fatfs。
+ * 读整卡（DEVICE_SATA），按 MBR / GPT / 超级软盘切出最多 4 个分区。
+ * 第 0 张卡是 sda，分区 sda1、sda2…；第 1 张卡是 sdb、sdb1、sdb2。
+ * /dev/sda 的读只返回这段分区表文字。分区设备的扇区 0 是它自己的 VBR。
  ********************************************************************/
 #include "kernel/device.h"
 #include "kernel/string.h"
+#include "kernel/vfs.h"
 
 #if defined(ARM) || defined(ARM64) || defined(__aarch64__)
 #define PART_IOC_MAGIC 's'
@@ -30,9 +31,21 @@ typedef struct part_priv {
 } part_priv_t;
 
 static part_priv_t privs[PART_MAX];
-static char names[PART_MAX][4];
+static char names[PART_MAX][8];
 static int part_count;
 static int part_skip_logged;
+
+/* 一张卡一份。name 是整卡节点（sda），text 是 cat /dev/sda 读到的分区表。 */
+#define DISK_MAX 2
+typedef struct part_disk {
+  char name[8];
+  char text[256];
+  u32 text_len;
+  int parts;
+  device_t *dev;
+} part_disk_t;
+
+static part_disk_t disks[DISK_MAX];
 
 static u16 ld16(const u8 *p) { return (u16)p[0] | ((u16)p[1] << 8); }
 
@@ -146,8 +159,44 @@ static size_t part_stat(device_t *dev, dstat_t *st) {
   return 0;
 }
 
-static void part_add(device_t *disk, u32 start, u32 count) {
+static void text_add(part_disk_t *d, const char *name, int type, u32 start,
+                     u32 count) {
+  char line[80];
+  int n;
+  int room;
+  if (d == NULL || name == NULL) {
+    return;
+  }
+  if (type >= 0) {
+    n = ksnprintf(line, sizeof(line), "%s type=%x start=%x count=%x\n", name,
+                  type, start, count);
+  } else {
+    n = ksnprintf(line, sizeof(line), "%s start=%x count=%x\n", name, start,
+                  count);
+  }
+  if (n <= 0) {
+    return;
+  }
+  room = (int)sizeof(d->text) - 1 - (int)d->text_len;
+  if (n > room) {
+    n = room;
+  }
+  if (n <= 0) {
+    return;
+  }
+  kmemcpy(d->text + d->text_len, line, (size_t)n);
+  d->text_len += (u32)n;
+  d->text[d->text_len] = 0;
+}
+
+static void part_add(device_t *disk, int di, u32 start, u32 count, int type) {
   device_t *dev;
+  part_disk_t *d;
+  int n;
+  if (di < 0 || di >= DISK_MAX) {
+    return;
+  }
+  d = &disks[di];
   if (part_count >= PART_MAX) {
     if (!part_skip_logged) {
       log_info("partition: more than %d, skip rest\n", PART_MAX);
@@ -159,10 +208,15 @@ static void part_add(device_t *disk, u32 start, u32 count) {
     log_info("partition: skip start=%x (offset overflow)\n", start);
     return;
   }
+  n = d->parts;
+  if (n >= 9) {
+    return;
+  }
   names[part_count][0] = 's';
   names[part_count][1] = 'd';
-  names[part_count][2] = (char)('a' + part_count);
-  names[part_count][3] = 0;
+  names[part_count][2] = d->name[2];
+  names[part_count][3] = (char)('1' + n);
+  names[part_count][4] = 0;
   privs[part_count].disk = disk;
   privs[part_count].start = start;
   privs[part_count].count = count;
@@ -178,7 +232,9 @@ static void part_add(device_t *disk, u32 start, u32 count) {
   dev->stat = part_stat;
   dev->data = &privs[part_count];
   device_add(dev);
+  text_add(d, names[part_count], type, start, count);
   log_info("partition: %s start=%x count=%x\n", names[part_count], start, count);
+  d->parts++;
   part_count++;
 }
 
@@ -213,7 +269,7 @@ static int mbr_has_part(const u8 *sec) {
   return 0;
 }
 
-static void scan_mbr(device_t *disk, const u8 *sec) {
+static void scan_mbr(device_t *disk, int di, const u8 *sec) {
   int i;
   log_info("partition: mbr\n");
   for (i = 0; i < 4; i++) {
@@ -224,11 +280,11 @@ static void scan_mbr(device_t *disk, const u8 *sec) {
     if (type == 0 || type == 0x05 || type == 0x0F || start == 0 || count == 0) {
       continue;
     }
-    part_add(disk, start, count);
+    part_add(disk, di, start, count, type);
   }
 }
 
-static void scan_gpt(device_t *disk, u8 *sec) {
+static void scan_gpt(device_t *disk, int di, u8 *sec) {
   u64 pt_lba;
   u32 pt_num;
   u32 pt_esz;
@@ -308,49 +364,106 @@ static void scan_gpt(device_t *disk, u8 *sec) {
       if (cnt > 0xffffffffull) {
         continue;
       }
-      part_add(disk, (u32)first, (u32)cnt);
+      part_add(disk, di, (u32)first, (u32)cnt, -1);
     }
   }
 }
 
-static void partition_init(void) {
-  device_t *disk;
-  u8 *sec;
-  u32 count;
-  disk = device_find(DEVICE_SATA);
-  if (disk == NULL || disk->read == NULL) {
+static u32 part_info_read(vnode_t *node, u32 offset, u32 nbytes, u8 *buf) {
+  part_disk_t *d;
+  u32 left;
+  if (node == NULL || buf == NULL || nbytes == 0) {
+    return 0;
+  }
+  d = node->data;
+  if (d == NULL || offset >= d->text_len) {
+    return 0;
+  }
+  left = d->text_len - offset;
+  if (nbytes > left) {
+    nbytes = left;
+  }
+  kmemcpy(buf, d->text + offset, nbytes);
+  return nbytes;
+}
+
+static voperator_t part_info_op = {
+    .read = part_info_read,
+};
+
+static void publish_disk(int di) {
+  vnode_t *node;
+  part_disk_t *d = &disks[di];
+  if (d->name[0] == 0) {
     return;
   }
+  node = vfs_create_node((u8 *)d->name, V_FILE | V_BLOCKDEVICE);
+  if (node == NULL) {
+    return;
+  }
+  node->op = &part_info_op;
+  node->data = d;
+  node->device = d->dev;
+  node->length = d->text_len;
+  vfs_mount(NULL, (u8 *)"/dev", node);
+  log_info("partition: %s\n", d->name);
+}
+
+/* 第 di 张卡。0 → sda/sda1/sda2，1 → sdb/sdb1/sdb2。 */
+static void scan_one(device_t *disk, int di) {
+  u8 *sec;
+  u32 count;
+  int before;
+  part_disk_t *d;
+  if (disk == NULL || disk->read == NULL || di < 0 || di >= DISK_MAX) {
+    return;
+  }
+  d = &disks[di];
+  kmemset(d, 0, sizeof(*d));
+  d->dev = disk;
+  d->name[0] = 's';
+  d->name[1] = 'd';
+  d->name[2] = (char)('a' + di);
+  d->name[3] = 0;
   sec = kmalloc(PART_SS, KERNEL_TYPE);
   if (sec == NULL) {
     return;
   }
+  before = part_count;
   if (disk_read_lba(disk, 0, sec) != 0) {
     log_info("partition: cannot read sector 0\n");
     kfree(sec);
     return;
   }
   if (sec[510] == 0x55 && sec[511] == 0xAA && sec[446 + 4] == 0xEE) {
-    scan_gpt(disk, sec);
+    scan_gpt(disk, di, sec);
   } else if (sec[510] == 0x55 && sec[511] == 0xAA && mbr_has_part(sec)) {
     /* 有有效分区项就是 MBR。FAT 引导扇区的分区表是空的，不会走到这里。 */
-    scan_mbr(disk, sec);
+    scan_mbr(disk, di, sec);
   } else if (looks_like_fat(sec)) {
     count = ld16(sec + 19);
     if (count == 0) {
       count = ld32(sec + 32);
     }
     log_info("partition: whole disk\n");
-    part_add(disk, 0, count);
+    part_add(disk, di, 0, count, -1);
   } else {
     log_info("partition: whole disk\n");
-    part_add(disk, 0, 0);
+    part_add(disk, di, 0, 0, -1);
   }
-  if (part_count == 0) {
+  if (part_count == before) {
     log_info("partition: whole disk\n");
-    part_add(disk, 0, 0);
+    part_add(disk, di, 0, 0, -1);
   }
   kfree(sec);
+  publish_disk(di);
+}
+
+static void partition_init(void) {
+  device_t *disk;
+  /* 现在只有一张卡（DEVICE_SATA）→ sda。下一张卡接在这里，di=1 就是 sdb。 */
+  disk = device_find(DEVICE_SATA);
+  scan_one(disk, 0);
 }
 
 static void partition_exit(void) { log_info("partition exit\n"); }

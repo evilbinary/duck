@@ -928,7 +928,12 @@ static int ext_mount_at(int index, const char *path) {
 static int ext_mount_cb(const char *key, const char *val, void *user) {
   int i;
   (void)user;
-  if (key == NULL || val == NULL || val[0] == 0 || kstrcmp(key, "sda") == 0) {
+  if (key == NULL || val == NULL || val[0] == 0 || kstrcmp(key, "sda") == 0 ||
+      kstrcmp(key, "sdb") == 0) {
+    return 1;
+  }
+  if (ext_part_count > 0 && ext_parts[0].mounted &&
+      kstrcmp(key, ext_parts[0].name) == 0) {
     return 1;
   }
   for (i = 0; i < ext_part_count; i++) {

@@ -965,7 +965,11 @@ static int fat_mount_cb(const char *key, const char *val, void *user) {
   if (key == NULL || val == NULL || val[0] == 0) {
     return 1;
   }
-  if (kstrcmp(key, "sda") == 0) {
+  /* sda/sdb 是整卡，cat 用来看分区表，不挂成目录。sda1 已经在 /。 */
+  if (kstrcmp(key, "sda") == 0 || kstrcmp(key, "sdb") == 0) {
+    return 1;
+  }
+  if (fat_vol_count > 0 && kstrcmp(key, fat_vols[0].name) == 0) {
     return 1;
   }
   for (i = 1; i < fat_vol_count; i++) {
