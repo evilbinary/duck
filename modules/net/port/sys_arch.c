@@ -213,6 +213,14 @@ u32_t sys_arch_mbox_fetch(sys_mbox_t* mbox, void** msg, u32_t timeout) {
     if (timeout == 0 && lwip_in_user_syscall()) {
       thread_t* t = thread_current();
       ethernetif_pump();
+      /* 这一拍里可能已经把对端的数据放进邮箱。先取走再返回，
+       * 否则 VNC 的协议头会留在邮箱里，用户态只看到 EAGAIN。 */
+      spin_lock(&mbox->lock);
+      if (mbox_pop(mbox, msg) == 0) {
+        spin_unlock(&mbox->lock);
+        return sys_now() - start;
+      }
+      spin_unlock(&mbox->lock);
       if (t != NULL) thread_sleep(t, 2);
       return SYS_ARCH_TIMEOUT;
     }

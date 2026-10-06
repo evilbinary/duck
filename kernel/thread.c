@@ -810,6 +810,18 @@ thread_t* thread_head() { return schedulable_head_thread[cpu_get_id()]; }
 
 void thread_exit(thread_t* thread, int code) {
   if (thread == NULL) return;
+  /* 只在退出线程自己的上下文里关 fd。fork 后父子各持一份 use_count，
+   * 这里减到 0 才会 lwip_close，监听端口才能放开。回收阶段再关会卡在调度里。 */
+  if (thread == thread_current() && thread->fds != NULL) {
+    u32 i;
+    for (i = 0; i < thread->fd_number; i++) {
+      if (thread->fds[i] != NULL) {
+        fd_t* f = thread->fds[i];
+        thread->fds[i] = NULL;
+        fd_close(f);
+      }
+    }
+  }
   thread->code = code;
   u32 parent_id = thread->pid;
   thread_stop(thread);

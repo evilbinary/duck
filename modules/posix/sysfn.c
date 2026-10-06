@@ -7,6 +7,7 @@
 
 #include "kernel/devfn.h"
 #include "kernel/elf.h"
+#include "kernel/error.h"
 #include "kernel/event.h"
 #include "kernel/fd.h"
 #include "kernel/kernel.h"
@@ -1491,9 +1492,10 @@ pid_t sys_waitpid(pid_t pid, int* wstatus, int options) {
       return ret;
     }
     if (!thread_child_exists((int)current->id, (int)pid)) {
-      /* 【诊断·可删】waitpid 走 ECHILD 分支（父/子 id 不匹配时会到这里） */
-      // log_info("waitpid tid=%d pid=%d ECHILD\n", current->id, (int)pid);
-      return -1; /* ECHILD */
+      /* 还没有子进程。WNOHANG 必须返回 0：返回 -1 时 musl 会把 errno
+       * 设成 EPERM，把前面 accept 的 EAGAIN 盖掉，test-vnc 就退出了。 */
+      if (options & WNOHANG) return 0;
+      return -ECHILD;
     }
     if (options & WNOHANG) {
       return 0;
