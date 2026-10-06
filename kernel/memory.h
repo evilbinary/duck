@@ -85,7 +85,8 @@ typedef struct vmemory_area {
   vaddr_t vend;
   vaddr_t size;
   u8 flags;
-  u8 attr;  /* 页表映射属性(PAGE_DEV/PAGE_FB/PAGE_USER/PAGE_SHARED...)，0=按 flags 推导 */
+  u32 attr; /* 页表映射属性(PAGE_DEV/PAGE_FB/PAGE_USER/PAGE_SHARED...)。
+              * arm64 的 PAGE_DEV 含 bit8 的 shareability，u8 会截掉。 */
   vaddr_t alloc_addr;
   vaddr_t alloc_size;
   struct vmemory_area* next;
@@ -147,7 +148,7 @@ vmemory_area_t* vmemory_area_create(void* addr, vaddr_t size, u8 flags);
 
 /* 同上，但显式指定该 VMA 的页表映射属性（0 = 按 flags 推导）。 */
 vmemory_area_t* vmemory_area_create_attr(void* addr, vaddr_t size, u8 flags,
-                                         u8 attr);
+                                         u32 attr);
 
 /* 【设备/帧缓冲一步登记】物理页已存在的区域（MMIO 寄存器窗口、显存）：
  * 一次调用同时 1) 映射进内核页表（内核驱动可直接访问）；2) 记入默认 VMA
@@ -155,7 +156,7 @@ vmemory_area_t* vmemory_area_create_attr(void* addr, vaddr_t size, u8 flags,
  * attr 镜像）。paddr==0 表示恒等映射(vaddr)。
  * 这样就不用手写 create + add + page_map 三处。 */
 void vmemory_map_phys(vaddr_t vaddr, vaddr_t paddr, vaddr_t size, u8 flags,
-                      u8 attr);
+                      u32 attr);
 vmemory_area_t* vmemory_area_destroy(vmemory_area_t* area);
 
 vmemory_area_t* vmemory_area_alloc(vmemory_area_t* areas, void* addr, vaddr_t size);

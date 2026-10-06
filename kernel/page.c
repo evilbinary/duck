@@ -101,7 +101,15 @@ void* page_fault_handle(interrupt_context_t *ic) {
                 (u64)phy >= 0x1000000000UL)
                    ? PAGE_DEV
                    : PAGE_USER;
+        kprintf("pf3 map_on %lx\n", (unsigned long)fault_addr);
         page_map_on((u64*)current->vm->upage, fault_addr, (u64)phy, attr);
+        kprintf("pf4 map done v2p=%p\n",
+                page_v2p((u64*)current->vm->upage, (void*)fault_addr));
+        {
+          /* gem_read 看到 1 才打印 pf5。若一直停在 pf4，就是这条 MMIO 读没回来。 */
+          extern int gem_pf_trace;
+          gem_pf_trace = 1;
+        }
       } else {
         if (current->fault_count < 1) {
           log_error("%s memory fault at %lx pc=%lx lr=%lx sp=%lx\n",

@@ -92,12 +92,19 @@ static void drain(struct netif* netif) {
 }
 
 void ethernetif_pump(void) {
+  extern int gem_pf_trace;
   if (!lwip_netif_ready) return;
   if (__sync_lock_test_and_set(&pumping, 1)) return;
   LOCK_TCPIP_CORE();
   poll_link(&lwip_netif);
+  if (gem_pf_trace == 2) kprintf("pf6 link\n");
   drain(&lwip_netif);
+  if (gem_pf_trace == 2) kprintf("pf7 drain\n");
   sys_check_timeouts();
+  if (gem_pf_trace == 2) {
+    kprintf("pf8 tmo\n");
+    gem_pf_trace = 3;
+  }
   UNLOCK_TCPIP_CORE();
   __sync_lock_release(&pumping);
 }

@@ -40,10 +40,13 @@ typedef struct exec_params exec_params_t;
 #define VM_COW 1 << 6  // copy on write
 
 #define THREAD_NEW (VM_CLONE)
-#define THREAD_FORK (VM_CLONE_ALL)
+/* fork/vfork 必须带上已打开的 fd。musl 的 fork 是 clone(SIGCHLD, 0)，
+ * stack 为空时走 THREAD_VFORK。不带 FS_CLONE 的话子进程只有 0/1/2，
+ * accept(3) 立刻失败，close 也找不到这个 fd。 */
+#define THREAD_FORK (VM_CLONE_ALL | FS_CLONE)
 /* pthread: share address space + fd table (see CLONE_VM in sys_clone). */
 #define THREAD_CLONE (VM_SAME | FS_CLONE)
-#define THREAD_VFORK (VM_CLONE_ALL)
+#define THREAD_VFORK (VM_CLONE_ALL | FS_CLONE)
 
 #define DUMP_DEFAULT 1
 #define DUMP_CONTEXT 2

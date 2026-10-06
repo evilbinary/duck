@@ -12,6 +12,7 @@
  */
 #include "arch/cpu.h"
 #include "kernel/kernel.h"
+#include "kernel/memory.h"
 #include "kernel/page.h"
 
 #define RP1_CPU_BASE 0x1F00000000ULL
@@ -130,8 +131,15 @@ static gem_desc_t tx_desc[TX_NUM] __attribute__((aligned(64)));
 static u8 rx_buf[RX_NUM][GEM_MTU] __attribute__((aligned(64)));
 static u8 tx_buf[TX_NUM][GEM_MTU] __attribute__((aligned(64)));
 
+int gem_pf_trace;
+
 static inline u32 gem_read(u32 off) {
-  return *(volatile u32*)(uintptr_t)(GEM_BASE + off);
+  u32 v = *(volatile u32*)(uintptr_t)(GEM_BASE + off);
+  if (gem_pf_trace == 1) {
+    gem_pf_trace = 2;
+    kprintf("pf5 read off=%x val=%x\n", off, v);
+  }
+  return v;
 }
 static inline void gem_write(u32 off, u32 val) {
   *(volatile u32*)(uintptr_t)(GEM_BASE + off) = val;
@@ -555,6 +563,10 @@ static int gem_hw_init(void) {
   if (rp1_pcie_enable() != 0) return -1;
   gem_map(CLK_BASE, 0x1000);
   gem_map(GEM_BASE, GEM_SIZE);
+  /* 进程页表是启动时从内核页表复制的，这里后映射的寄存器不在里面。
+   * 登记成设备区后，shell fork 出去的进程缺页会按 MEMORY_DEV 补上这一页。 */
+  vmemory_map_phys((vaddr_t)GEM_BASE, (vaddr_t)GEM_BASE, (vaddr_t)GEM_SIZE,
+                   MEMORY_DEV, PAGE_DEV);
   id = clk_read(CLK_ETH_CTRL);
   if (id == 0xdeaddeadu || id == 0xffffffffu) {
     kprintf("gem: rp1 %lx clk %08x\n", (unsigned long)RP1_CPU_BASE, id);

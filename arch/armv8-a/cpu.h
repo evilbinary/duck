@@ -42,11 +42,22 @@ typedef struct pstate {
 typedef u64 (*sys_call_fn)(u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5,
                            u64 arg6);
 
+/* 返回 int 的系统调用在 aarch64 上只写 w0，高 32 位是 0。
+ * musl 只把大于 -4096UL 的值当 -errno。-EBADF 若停在 0xFFFFFFF7，
+ * 用户态看到的是负数但 errno 仍是 0，perror 变成 "No error information"。
+ * 高 32 位已是符号扩展的（返回 long 的调用）不动。 */
+static inline u64 sys_widen_ret(u64 r) {
+  if ((r >> 32) == 0 && (r & 0x80000000u)) {
+    return (u64)(i64)(i32)r;
+  }
+  return r;
+}
+
 #define sys_fn_call(duck_interrupt_context, fn)                               \
-  duck_interrupt_context->x0 = ((                                             \
-      sys_call_fn)fn)(duck_interrupt_context->x0, duck_interrupt_context->x1, \
-                      duck_interrupt_context->x2, duck_interrupt_context->x3, \
-                      duck_interrupt_context->x4, duck_interrupt_context->x5);
+  ((duck_interrupt_context)->x0 = sys_widen_ret(((sys_call_fn)(fn))(          \
+      (duck_interrupt_context)->x0, (duck_interrupt_context)->x1,             \
+      (duck_interrupt_context)->x2, (duck_interrupt_context)->x3,             \
+      (duck_interrupt_context)->x4, (duck_interrupt_context)->x5)))
 
 // ARM64 interrupt disable/enable
 #define cpu_cli() asm volatile("msr daifset, #0xF" : : : "memory")

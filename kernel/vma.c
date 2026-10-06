@@ -60,7 +60,7 @@ vmemory_area_t* vmemory_area_create(void* addr, vaddr_t size, u8 flags) {
 }
 
 vmemory_area_t* vmemory_area_create_attr(void* addr, vaddr_t size, u8 flags,
-                                         u8 attr) {
+                                         u32 attr) {
   vmemory_area_t* area = vmemory_area_create(addr, size, flags);
   if (attr) {
     area->attr = attr;
@@ -73,8 +73,26 @@ vmemory_area_t* vmemory_area_create_attr(void* addr, vaddr_t size, u8 flags,
  * 直接复用 vmemory_area_t 作模板链，不另造结构体。 */
 static vmemory_area_t* s_phys_vma = NULL;
 
+/* 驱动 init 时 init 进程已经在跑。只写模板的话，之后 fork 出去的 shell
+ * 拿不到这块区域。补到每个已有地址空间上；同一条 VMA 链只加一次。 */
+static void vmemory_attach_live(vaddr_t vaddr, vaddr_t size, u8 flags, u32 attr) {
+  for (thread_t* t = thread_head(); t != NULL; t = t->next) {
+    vmemory_t* vm = t->vm;
+    if (vm == NULL || vm->vma == NULL) {
+      continue;
+    }
+    if (vmemory_area_find(vm->vma, (void*)vaddr, 1) != NULL) {
+      continue;
+    }
+    vmemory_area_t* n = vmemory_area_create_attr((void*)vaddr, size, flags, attr);
+    n->alloc_addr = vaddr;
+    n->alloc_size = size;
+    vmemory_area_add(vm->vma, n);
+  }
+}
+
 void vmemory_map_phys(vaddr_t vaddr, vaddr_t paddr, vaddr_t size, u8 flags,
-                      u8 attr) {
+                      u32 attr) {
   if (size == 0) {
     return;
   }
@@ -110,6 +128,7 @@ void vmemory_map_phys(vaddr_t vaddr, vaddr_t paddr, vaddr_t size, u8 flags,
   for (vaddr_t off = 0; off < size; off += PAGE_SIZE) {
     page_map(vaddr + off, paddr + off, a->attr);
   }
+  vmemory_attach_live(vaddr, size, flags, attr);
 }
 
 void vmemory_area_add(vmemory_area_t* areas, vmemory_area_t* area) {

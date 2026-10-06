@@ -11,6 +11,7 @@ extern void thread_set_arg(thread_t* thread, void* arg);
 void ethernetif_pump(void);
 
 extern void cpu_delay_usec(unsigned long long count);
+extern int kprintf(const char* fmt, ...);
 
 static int lwip_me(void) {
   thread_t* t = thread_current();
@@ -26,12 +27,27 @@ static void spin_lock(volatile int* lock) {
 
 static void spin_unlock(volatile int* lock) { __sync_lock_release(lock); }
 
+/* 用户态系统调用从进入到 eret 都关着中断。在里面空转的话时钟打不进来，
+ * shell 和键盘都停。共享内核栈又不能在调用中途被换出后再接着跑，
+ * 把 PC 退回 SVC 重入会把 x0 弄成栈地址或 -EBADF。
+ * 阻塞的 socket 调用收一次包、睡两拍，然后带着 EAGAIN 正常返回。
+ * tcpip 线程不是系统调用，仍然在 lwip_wait_slice 里睡。 */
+static int lwip_in_user_syscall(void) {
+  thread_t* t = thread_current();
+  if (t == NULL || t->ctx == NULL || t->ctx->ic == NULL) return 0;
+  return t->ctx->ic->no == EX_SYS_CALL;
+}
+
 /* 不能 schedule_switch：那会丢掉当前内核调用链。
- * 置 SLEEP 后继续跑一小段，时钟中断再把线程换出。aarch64 的系统调用
- * 栈在每线程的内核栈上，这样换出是安全的。单核且 SVC 里不能抢占时，
- * 下面的延时只是让出总线，收包仍由本线程的 ethernetif_pump 完成。 */
+ * thread_sleep 只把状态改成 SLEEP，线程还会继续跑，直到时钟中断才换出。
+ * 若换出前又进了 ethernetif_pump，锁还在 tcpip 手里，setsockopt 只能在
+ * 这段睡眠里跑，永远拿不到 lock_tcpip_core。已经 SLEEP 时只延时，不再收包。 */
 static void lwip_wait_slice(void) {
   thread_t* t = thread_current();
+  if (t != NULL && t->state == THREAD_SLEEP) {
+    cpu_delay_usec(200);
+    return;
+  }
   ethernetif_pump();
   if (t != NULL) {
     thread_sleep(t, 10);
@@ -190,6 +206,14 @@ u32_t sys_arch_mbox_fetch(sys_mbox_t* mbox, void** msg, u32_t timeout) {
     spin_unlock(&mbox->lock);
     if (timeout != 0 && (sys_now() - start) >= timeout) {
       if (msg) *msg = NULL;
+      return SYS_ARCH_TIMEOUT;
+    }
+    /* 无限等的 accept/recv。收一拍包后按超时返回，用户态看到 EAGAIN 再重试。
+     * 不能在这里 schedule_switch：那会丢掉这次调用的寄存器。 */
+    if (timeout == 0 && lwip_in_user_syscall()) {
+      thread_t* t = thread_current();
+      ethernetif_pump();
+      if (t != NULL) thread_sleep(t, 2);
       return SYS_ARCH_TIMEOUT;
     }
     lwip_wait_slice();
