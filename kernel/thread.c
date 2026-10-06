@@ -205,6 +205,16 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
 
   u64 kstack_size = thread->ctx->ksp_size;
   u64 ustack_size = thread->ctx->usp_size;
+  /* 正常内核栈是 KERNEL_THREAD_STACK_SIZE（ARM64 上 32KB）。
+   * test-vnc 连接时这个字段被写成用户栈地址 0x700ffd00，kmalloc 向
+   * ya_sbrk 要 1.8GB，原始块不够就在 pmemory.c 断言停机。这里直接拒绝。 */
+  if (kstack_size == 0 || kstack_size > (u64)KERNEL_THREAD_STACK_SIZE) {
+    log_error("thread copy bad ksp_size %lx tid %d\n", kstack_size,
+              thread->id);
+    kfree(ctx);
+    kfree(copy);
+    return NULL;
+  }
 
   u64 ksp = (u64)kmalloc(kstack_size, KERNEL_TYPE);
   ctx->ksp_start = ksp;

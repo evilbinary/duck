@@ -394,6 +394,10 @@ int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
   // 如果 stack 为 NULL，按 fork 方式处理（vfork 会这样调用）
   if (stack == NULL) {
     thread_t* copy_thread = thread_copy(current, THREAD_VFORK);
+    if (copy_thread == NULL) {
+      log_error("sys_clone: thread_copy failed\n");
+      return -1;
+    }
     thread_set_ret(copy_thread, 0);  // 子进程返回 0
 
 #ifdef LOG_DEBUG
@@ -480,6 +484,10 @@ int sys_vfork() {
     return -1;
   }
   thread_t* copy_thread = thread_copy(current, THREAD_VFORK);
+  if (copy_thread == NULL) {
+    log_error("sys_vfork: thread_copy failed\n");
+    return -1;
+  }
   thread_set_ret(copy_thread, 0);  // 子进程返回 0
 
 #ifdef LOG_DEBUG
