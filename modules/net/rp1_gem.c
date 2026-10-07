@@ -131,14 +131,9 @@ static gem_desc_t tx_desc[TX_NUM] __attribute__((aligned(64)));
 static u8 rx_buf[RX_NUM][GEM_MTU] __attribute__((aligned(64)));
 static u8 tx_buf[TX_NUM][GEM_MTU] __attribute__((aligned(64)));
 
-int gem_pf_trace;
 
 static inline u32 gem_read(u32 off) {
   u32 v = *(volatile u32*)(uintptr_t)(GEM_BASE + off);
-  if (gem_pf_trace == 1) {
-    gem_pf_trace = 2;
-    kprintf("pf5 read off=%x val=%x\n", off, v);
-  }
   return v;
 }
 static inline void gem_write(u32 off, u32 val) {
