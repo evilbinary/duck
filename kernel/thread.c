@@ -80,7 +80,7 @@ void thread_init_default(thread_t* thread, u32 level, u32* entry, void* data) {
   thread->level = level;
   thread->exec = NULL;
   thread->cpu_id = cpu_get_id();
-  thread->fd_size = 40;
+  thread->fd_size = THREAD_MAX_FD_NUMBER;
   thread->fd_number = 0;
   thread->data = data;
   thread->mem = 0;
@@ -991,7 +991,9 @@ fd_t* thread_find_fd_id(thread_t* thread, u32 fd) {
     return NULL;
   }
   if (fd >= thread->fd_size) {
-    log_error("thread find fd limit %d >= size %d\n", fd, thread->fd_size);
+    /* fd 是 u32，负错误码（如 os_lwfd 返回的 -9）会变成巨大的无符号数；
+     * 打印有符号值更直观，一眼看出是"错误码被当 fd 用"。 */
+    log_error("thread find fd limit %d >= size %d\n", (int)fd, thread->fd_size);
     return NULL;
   }
   if (thread->fds[fd] == NULL) {

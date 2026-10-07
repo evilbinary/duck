@@ -11,6 +11,9 @@
 #if defined(ARM64) || defined(__aarch64__)
 
 #define MAX_FD_NUMBER 64
+/* 每个线程的 fd 表大小（fd_size）。ARM64 上应用（如 VNC/网络服务）会同时
+ * 打开较多 socket/文件，40 不够，默认给到 80。必须 <= fd_list 全局上限。 */
+#define THREAD_MAX_FD_NUMBER 80
 #define MAX_PHDR 12
 #define MAX_SHDR 25
 
@@ -30,6 +33,7 @@
 #elif defined(X86)
 
 #define MAX_FD_NUMBER 200
+#define THREAD_MAX_FD_NUMBER 80
 #define MAX_PHDR 16
 #define MAX_SHDR 28
 
@@ -50,6 +54,7 @@
 #elif defined(ARMV7)
 
 #define MAX_FD_NUMBER 50
+#define THREAD_MAX_FD_NUMBER 50
 #define MAX_PHDR 10
 #define MAX_SHDR 20
 
@@ -71,6 +76,7 @@
 #elif defined(GENERAL)
 
 #define MAX_FD_NUMBER 64
+#define THREAD_MAX_FD_NUMBER 64
 #define MAX_PHDR 12
 #define MAX_SHDR 25
 
@@ -89,6 +95,7 @@
 #elif defined(RISCV_VIRT)
 
 #define MAX_FD_NUMBER 64
+#define THREAD_MAX_FD_NUMBER 64
 #define MAX_PHDR 12
 #define MAX_SHDR 25
 
@@ -107,6 +114,7 @@
 #elif defined(ESP32)
 
 #define MAX_FD_NUMBER 64
+#define THREAD_MAX_FD_NUMBER 40
 #define MAX_PHDR 12
 #define MAX_SHDR 25
 
@@ -125,6 +133,7 @@
 #else
 
 #define MAX_FD_NUMBER 256
+#define THREAD_MAX_FD_NUMBER 80
 #define MAX_PHDR 25
 #define MAX_SHDR 25
 
@@ -141,6 +150,15 @@
 #define PAGE_SIZE 0x1000
 #define VM_ENABLE 1 //虚拟内存映射开启
 
+#endif
+
+/* 兜底：未显式配置的架构用 40。每个线程 fd 表不能超过全局 fd_list 上限。 */
+#ifndef THREAD_MAX_FD_NUMBER
+#define THREAD_MAX_FD_NUMBER 40
+#endif
+#if THREAD_MAX_FD_NUMBER > MAX_FD_NUMBER
+#undef THREAD_MAX_FD_NUMBER
+#define THREAD_MAX_FD_NUMBER MAX_FD_NUMBER
 #endif
 
 #define SCHEDULE_FREQUENCY 1000
