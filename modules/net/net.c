@@ -45,8 +45,18 @@ static u32 socket_node_read(vnode_t* node, u32 offset, u32 size, u8* buffer) {
 }
 
 static u32 socket_node_write(vnode_t* node, u32 offset, u32 size, u8* buffer) {
-  long n = lwip_port_sendto(socket_node_lwfd(node), buffer, size, 0, NULL, 0);
+  long n;
+  static u32 wcnt = 0;
+  if (wcnt < 20) {
+    kprintf("sock w enter #%u lwfd=%d size=%d\n", wcnt, socket_node_lwfd(node),
+            (int)size);
+  }
+  n = lwip_port_sendto(socket_node_lwfd(node), buffer, size, 0, NULL, 0);
   (void)offset;
+  if (wcnt < 20) {
+    kprintf("sock w ret #%u n=%d\n", wcnt, (int)n);
+  }
+  wcnt++;
   return (u32)n;
 }
 

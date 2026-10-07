@@ -3,6 +3,7 @@
 #include "lwip/errno.h"
 #include "lwip/sockets.h"
 
+
 /* Linux aarch64 sockaddr_in，和 musl 一致。 */
 struct lin_sin {
   unsigned short family;
@@ -75,7 +76,18 @@ int lwip_port_init(void) {
 }
 
 int lwip_port_socket(int domain, int type, int protocol) {
-  return lwip_err(lwip_socket(domain, type, protocol));
+  int s = lwip_socket(domain, type, protocol);
+  if (s < 0) return lwip_err(s);
+  /* 【必须非阻塞】socket 的 read/write 是在用户态系统调用上下文（中断关）
+   * 里跑到 lwIP 的。若 socket 是阻塞模式，lwip_send 在 TCP 发送缓冲满时会
+   * 走 netconn 的 mbox 等待 —— 而此时时钟打不进来，tcpip 线程无法推进，
+   * 于是永久死锁（实测：发首帧 12 字节即卡死、shell 也卡死）。
+   * 设成非阻塞后表现即"返回 EAGAIN，由用户态重试"。 */
+  {
+    int nb = 1;
+    lwip_ioctl(s, FIONBIO, &nb);
+  }
+  return lwip_err(s);
 }
 
 int lwip_port_bind(int lwfd, const void* addr, unsigned long len) {
@@ -93,6 +105,14 @@ int lwip_port_accept(int lwfd, void* addr, unsigned long* addrlen) {
   socklen_t sl = sizeof(in);
   int fd = lwip_accept(lwfd, (struct sockaddr*)&in, &sl);
   if (fd < 0) return lwip_err(fd);
+  /* 【新连接也必须非阻塞】lwip_port_socket 只对监听 socket 设了非阻塞；
+   * accept 出来的连接 socket 默认仍是阻塞的。若漏设，大包 lwip_send 会在
+   * syscall（中断关）里等 mbox → tcpip 线程无法推进 → 永久死锁
+   * （实测：发首帧 16KB 块时卡死）。这里对新 fd 一并设非阻塞。 */
+  {
+    int nb = 1;
+    lwip_ioctl(fd, FIONBIO, &nb);
+  }
   export_sin(addr, addrlen, &in);
   return fd;
 }
@@ -129,12 +149,18 @@ long lwip_port_sendto(int lwfd, const void* buf, unsigned long len, int flags,
                       const void* addr, unsigned long addrlen) {
   int fl = to_lwip_flags(flags);
   int n;
+  static unsigned pcnt = 0;
+  if (pcnt < 20) kprintf("lw_sendto enter #%u lwfd=%d len=%d fl=%x\n", pcnt, lwfd, (int)len, fl);
   if (addr != NULL) {
     struct sockaddr_in in;
     if (fill_lwip_sin(&in, addr, addrlen) != 0) return -EINVAL;
     n = lwip_sendto(lwfd, buf, len, fl, (struct sockaddr*)&in, sizeof(in));
   } else {
     n = lwip_send(lwfd, buf, len, fl);
+  }
+  if (pcnt < 20) {
+    kprintf("lw_sendto ret #%u n=%d\n", pcnt, n);
+    pcnt++;
   }
   return lwip_err(n);
 }

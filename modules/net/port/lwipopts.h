@@ -33,22 +33,26 @@
 #define LWIP_SO_SNDTIMEO                1
 
 #define MEM_ALIGNMENT                   8
-#define MEM_SIZE                        (32 * 1024)
-#define MEMP_NUM_PBUF                   16
+#define MEM_SIZE                        (128 * 1024)
+#define MEMP_NUM_PBUF                   32
 #define MEMP_NUM_UDP_PCB                4
 #define MEMP_NUM_TCP_PCB                8
 #define MEMP_NUM_TCP_PCB_LISTEN         4
-#define MEMP_NUM_TCP_SEG                32
+#define MEMP_NUM_TCP_SEG                128
 #define MEMP_NUM_NETBUF                 8
 #define MEMP_NUM_NETCONN                8
 #define MEMP_NUM_TCPIP_MSG_API          8
 #define MEMP_NUM_TCPIP_MSG_INPKT        8
-#define PBUF_POOL_SIZE                  16
+#define PBUF_POOL_SIZE                  64
 
 #define TCP_MSS                         1460
-#define TCP_WND                         (4 * TCP_MSS)
-#define TCP_SND_BUF                     (4 * TCP_MSS)
-#define TCP_SND_QUEUELEN                16
+/* 【发送缓冲/窗口加大】VNC 首帧一次性写 1.2MB，默认 TCP_SND_BUF=4*MSS(~5.7KB)
+ * 会让 lwip_send 每次只能塞几 KB，剩下全靠用户态 EAGAIN+usleep 重试，
+ * 1.2MB 要几秒（实测每 16KB 约 60 次重试）。加大到 16*MSS(~23KB) 并同步
+ * 放大 pbuf 池/段数，让单次 send 尽量多写，显著减少重试轮数。 */
+#define TCP_WND                         (16 * TCP_MSS)
+#define TCP_SND_BUF                     (16 * TCP_MSS)
+#define TCP_SND_QUEUELEN                64
 #define TCP_LISTEN_BACKLOG              1
 
 #define TCPIP_THREAD_STACKSIZE          8192
