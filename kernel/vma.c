@@ -152,6 +152,11 @@ vmemory_area_t* vmemory_area_find(vmemory_area_t* areas, void* addr,
                                   vaddr_t size) {
   vmemory_area_t* p = areas;
   vaddr_t a = (vaddr_t)addr;
+  /* a+size 回绕时不能当成落在低地址 VMA 里。MAP_FIXED(-PAGE_SIZE)
+   * 以前因此被判进堆区，mmap 返回成功。 */
+  if (size != 0 && a > (vaddr_t)-1 - size) {
+    return NULL;
+  }
   for (; p != NULL; p = p->next) {
     if ((a >= p->vaddr) && ((a + size) <= p->vend)) {
       return p;
