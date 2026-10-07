@@ -10,9 +10,10 @@
 
 #if defined(ARM64) || defined(__aarch64__)
 
-#define MAX_FD_NUMBER 64
+/* 全局 fd_list 上限必须 >= 每线程 fd 表大小（下面兜底会把 fd_size 钳到这里）。 */
+#define MAX_FD_NUMBER 128
 /* 每个线程的 fd 表大小（fd_size）。ARM64 上应用（如 VNC/网络服务）会同时
- * 打开较多 socket/文件，40 不够，默认给到 80。必须 <= fd_list 全局上限。 */
+ * 打开较多 socket/文件，40 不够，默认给到 80。 */
 #define THREAD_MAX_FD_NUMBER 80
 #define MAX_PHDR 12
 #define MAX_SHDR 25

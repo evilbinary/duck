@@ -15,35 +15,55 @@
 
 static int os_lwfd(int osfd) {
   thread_t* current = thread_current();
-  fd_t* fd = thread_find_fd_id(current, (u32)osfd);
+  fd_t* fd;
+  /* 【诊断】非法 fd 时打印调用方返回地址+线程名，定位是谁把 -9 当 fd 用。
+   * 只在 osfd<0 时打，且限流，避免 2ms 循环刷屏淹没日志。 */
+  if ((u32)osfd >= 0xFFFFF000u) {
+    static u32 last_ra = 0;
+    u32 ra = (u32)(uintptr_t)__builtin_return_address(0);
+    if (ra != last_ra) {
+      last_ra = ra;
+      log_error("os_lwfd bad fd %d tid %d name %s caller %x\n", osfd,
+                current != NULL ? current->id : -1,
+                (current != NULL && current->name != NULL) ? current->name : "?",
+                ra);
+    }
+  }
+  fd = thread_find_fd_id(current, (u32)osfd);
   if (fd == NULL) return -9; /* EBADF */
-  if (fd->name == NULL || kstrcmp((char*)fd->name, "socket") != 0) {
+  if (fd->type != DEVICE_TYPE_NET) {
     return -88; /* ENOTSOCK */
   }
+  /* 方案 A：lwip fd 记在 fd->offset（fd_open 时同步写入），快路径直接取。 */
   return (int)fd->offset;
 }
 
-/* lwIP fd 从 0 起，不能塞进 fd->data（fd_open 拒绝 NULL，0 也会被当成空）。
- * data 只是一个非空标记，真正的 lwIP fd 记在 offset。 */
+/* 方案 A：socket 也走统一 vnode+op 抽象。每个连接建一个 vnode，
+ * lwip fd 存 node->data，fd->data = 该 vnode（合法 vnode！）。
+ * sys_read/sys_write 走 vread/vwrite → socket_operator，不再特判。 */
+extern const voperator_t socket_operator;
+
 static int lwip_os_attach(int lwfd) {
-  u32* mark;
+  vnode_t* node;
   fd_t* fd;
   thread_t* current;
   int id;
   if (lwfd < 0) return lwfd;
-  mark = (u32*)kmalloc(sizeof(u32), DEFAULT_TYPE);
-  if (mark == NULL) {
+  node = vfs_create_node("socket", V_FILE);
+  if (node == NULL) {
     lwip_port_close_lwfd(lwfd);
     return -12; /* ENOMEM */
   }
-  *mark = (u32)lwfd;
-  fd = fd_open(mark, DEVICE_TYPE_NET, "socket");
+  node->data = (void*)(uintptr_t)(u32)lwfd;   /* 连接 id */
+  node->device = device_find(DEVICE_NET);
+  node->op = &socket_operator;
+  fd = fd_open((u32*)node, DEVICE_TYPE_NET, "socket");
   if (fd == NULL) {
     lwip_port_close_lwfd(lwfd);
-    kfree(mark);
+    kfree(node);
     return -12;
   }
-  fd->offset = (u32)lwfd;
+  fd->offset = (u32)lwfd;   /* 仍记 lwip fd，os_lwfd 快路径可用 */
   current = thread_current();
   id = thread_add_fd(current, fd);
   if (id < 0) {

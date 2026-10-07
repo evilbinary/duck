@@ -23,27 +23,61 @@
 extern int net_init_device(device_t* dev);
 
 #ifdef NET_DRIVER
-static int net_name_is(fd_t* fd, const char* s) {
-  const char* n;
-  if (fd == NULL || fd->name == NULL || s == NULL) return 0;
-  n = (const char*)fd->name;
-  while (*s != 0 && *n != 0 && *s == *n) {
-    s++;
-    n++;
-  }
-  return *s == 0 && *n == 0;
+/* ---- socket 的 vnode 操作表 ----
+ * 方案 A：socket 也走统一 vnode+op 抽象，和串口/键盘一致。
+ * 每个连接一个 vnode，lwip fd 存进 node->data（u32）。
+ * 好处：fd->data 恒为合法 vnode ⇒ sys_read/sys_write 统一走 vread/vwrite，
+ * 不再需要 type/name 特判（消除"把标记当 vnode 跳野地址"的 bug）。
+ * 注意：vread/vwrite 会持 vfs 全局锁调用本 op，所以此处必须非阻塞
+ * （lwip 无数据返回 EAGAIN，由用户态重试），不能长阻塞。 */
+static int socket_node_lwfd(vnode_t* node) {
+  if (node == NULL) return -1;
+  return (int)(uintptr_t)node->data;
 }
 
-/* socket 的 data 是 kmalloc 出来的标记，不是 vnode。 */
-static int net_fd_on_close(fd_t* fd) {
-  if (!net_name_is(fd, "socket")) return 0;
-  lwip_port_close_lwfd((int)fd->offset);
-  if (fd->data != NULL) {
-    kfree(fd->data);
-    fd->data = NULL;
-  }
-  return 1;
+static u32 socket_node_read(vnode_t* node, u32 offset, u32 size, u8* buffer) {
+  long n = lwip_port_recvfrom(socket_node_lwfd(node), buffer, size, 0, NULL, NULL);
+  (void)offset;
+  /* 保留负错误码语义：负值强转 u32 是巨大值，musl __syscall_ret 会识别为
+   * error（r > -4096）并转成 -1+errno。EAGAIN(-11) 才能让用户态正确重试，
+   * 不能吞成 0（0 会被当 EOF 退出读取循环）。 */
+  return (u32)n;
 }
+
+static u32 socket_node_write(vnode_t* node, u32 offset, u32 size, u8* buffer) {
+  long n = lwip_port_sendto(socket_node_lwfd(node), buffer, size, 0, NULL, 0);
+  (void)offset;
+  return (u32)n;
+}
+
+static u32 socket_node_ioctl(vnode_t* node, u32 cmd, void* args) {
+  (void)node;
+  (void)cmd;
+  (void)args;
+  return 0;
+}
+
+static u32 socket_node_close(vnode_t* node) {
+  if (node == NULL) return 0;
+  if (node->data != NULL) {
+    lwip_port_close_lwfd((int)(uintptr_t)node->data);
+    node->data = NULL;
+  }
+  /* vfs_create_node 分配了 node->name，需一并归还，避免每次连接泄漏。 */
+  if (node->name != NULL) {
+    kfree(node->name);
+    node->name = NULL;
+  }
+  kfree(node);
+  return 0;
+}
+
+const voperator_t socket_operator = {
+    .read = socket_node_read,
+    .write = socket_node_write,
+    .close = socket_node_close,
+    .ioctl = socket_node_ioctl,
+};
 #endif
 
 int net_init(void) {
@@ -60,8 +94,9 @@ int net_init(void) {
   // 调用平台特定的初始化函数
   net_init_device(dev);
 #ifdef NET_DRIVER
-  /* 协议栈在驱动之上。失败只少一张网卡，socket 调用会返回错误。 */
-  fd_close_listen(net_fd_on_close);
+  /* 协议栈在驱动之上。失败只少一张网卡，socket 调用会返回错误。
+   * socket 的关闭由 vnode 的 socket_operator.close 完成（见 fd_close →
+   * vclose），不再需要 fd_close_listen 回调。 */
   lwip_port_init();
 #endif
 

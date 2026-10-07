@@ -759,11 +759,8 @@ size_t sys_write(u32 fd, void* buf, size_t nbytes) {
     log_error("write not found fd %d name: %s tid %d\n", fd,f->name, current->id);
     return 0;
   }
-#ifdef NET_DRIVER
-  if (f->name != NULL && kstrcmp((char*)f->name, "socket") == 0) {
-    return (size_t)lwip_port_sendto((int)f->offset, buf, nbytes, 0, NULL, 0);
-  }
-#endif
+  /* 方案 A：socket 的 fd->data 现在也是合法 vnode（socket_operator），
+   * 统一走下面的 vwrite，无需特判。 */
   vnode_t* node = f->data;
   if (node == NULL) {
     log_error("sys write node is null tid %d \n", current->id);
@@ -812,11 +809,8 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
     log_error("read not found fd %d tid %d\n", fd, current->id);
     return 0;
   }
-#ifdef NET_DRIVER
-  if (f->name != NULL && kstrcmp((char*)f->name, "socket") == 0) {
-    return (size_t)lwip_port_recvfrom((int)f->offset, buf, nbytes, 0, NULL, NULL);
-  }
-#endif
+  /* 方案 A：socket 的 fd->data 现在也是合法 vnode（socket_operator），
+   * 统一走下面的 vread，无需特判。 */
   vnode_t* node = f->data;
   if (node == NULL) {
     if (fd <= STDERR) {
