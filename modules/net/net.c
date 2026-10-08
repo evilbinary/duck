@@ -72,6 +72,7 @@ static u32 socket_node_ioctl(vnode_t* node, u32 cmd, void* args) {
 static u32 socket_node_close(vnode_t* node) {
   if (node == NULL) return 0;
   if (node->data != NULL) {
+    kprintf("sock close lwfd=%d\n", (int)(uintptr_t)node->data);
     lwip_port_close_lwfd((int)(uintptr_t)node->data);
     node->data = NULL;
   }

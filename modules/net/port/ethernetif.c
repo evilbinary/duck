@@ -82,7 +82,17 @@ static void drain(struct netif* netif) {
     if (n < 14) break;
     if (n > 1600) n = 1600;
     p = pbuf_alloc(PBUF_RAW, (u16_t)n, PBUF_POOL);
-    if (p == NULL) break;
+    if (p == NULL) {
+      /* 【诊断】收包 pbuf 池耗尽：Rx 帧拿不到 pbuf 只能丢，导致对端 ACK
+       * 丢失 → 发送缓冲永不释放。若这条持续刷说明 pbuf 泄漏。 */
+      static unsigned fc = 0;
+      if ((fc & 0xff) == 0) {
+        extern int kprintf(const char* fmt, ...);
+        kprintf("drain pbuf_alloc FAIL count=%u\n", fc);
+      }
+      fc++;
+      break;
+    }
     if (pbuf_take(p, frame, (u16_t)n) != ERR_OK) {
       pbuf_free(p);
       break;

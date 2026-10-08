@@ -46,13 +46,12 @@
 #define PBUF_POOL_SIZE                  64
 
 #define TCP_MSS                         1460
-/* 【发送缓冲/窗口加大】VNC 首帧一次性写 1.2MB，默认 TCP_SND_BUF=4*MSS(~5.7KB)
- * 会让 lwip_send 每次只能塞几 KB，剩下全靠用户态 EAGAIN+usleep 重试，
- * 1.2MB 要几秒（实测每 16KB 约 60 次重试）。加大到 16*MSS(~23KB) 并同步
- * 放大 pbuf 池/段数，让单次 send 尽量多写，显著减少重试轮数。 */
-#define TCP_WND                         (16 * TCP_MSS)
-#define TCP_SND_BUF                     (16 * TCP_MSS)
-#define TCP_SND_QUEUELEN                64
+/* 【窗口/发送缓冲取中等值】16*MSS(~23KB) 在大块连续发送时依赖对端 ACK 及时
+ * 回填窗口，实测连发若干帧后会出现"窗口卡死不回填、EAGAIN 无限重试"。这里
+ * 收到 8*MSS(~11.7KB)：单次仍能吞一个 16KB 块的大部分，窗口回填压力更小。 */
+#define TCP_WND                         (8 * TCP_MSS)
+#define TCP_SND_BUF                     (8 * TCP_MSS)
+#define TCP_SND_QUEUELEN                32
 #define TCP_LISTEN_BACKLOG              1
 
 #define TCPIP_THREAD_STACKSIZE          8192
