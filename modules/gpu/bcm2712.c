@@ -239,29 +239,20 @@ static int bcm2712_alloc_fb_one(vga_device_t* vga, int index) {
     }
   }
 
-  /* 【固件实际给的是多少 bpp？—— 用 GET_PITCH 反推】
+  /* 【固件实际给的是多少 bpp？—— 用 GET_PITCH 反推，并【据此申报格式】】
    *
    * 实测（Pi5 真机）：请求 SET_DEPTH=32，但固件 GET_PITCH 回 1920×2=3840、
-   * ALLOCATE_BUFFER 的 size 也是 1920×1080×2。两个独立来源一致指向 **16bpp**，
-   * 而 GET_DEPTH 回 32（那是固件回显请求值，不代表分配格式）。
+   * ALLOCATE_BUFFER 的 size 也是 1920×1080×2。两个独立来源一致指向 **16bpp**；
+   * GET_DEPTH 回 32 只是固件回显请求值，不代表实际分配格式。
    *
-   * 【为什么这个必须搞对】xwin/libgui 的绘图/blit 全按 u32（32bpp）逐像素
-   * 操作（见 duck/modules/xwin/xgraphics.c）。若 fb 实际是 16bpp 却按 32bpp
-   * 写，每行会溢出到下一行 ⇒ 画面横向撕裂/颜色错乱/只显示一部分。
+   * 【分工】驱动只负责"如实申报" fb 的真实几何 + 格式；把 32bpp 画布转成
+   * 硬件色深这件事由【用户态 libgui/screen】完成（那里已有 rgb2nv12 的先例，
+   * 见 eggs/libgui/screen.c 的 screen_flush）。
    *
-   * 【开关】BCM2712_FORCE_32BPP：置 1 时不反推、坚持按 32bpp 用 fb
-   * （用于对照实验——若固件其实支持 32bpp 而 GET_PITCH 语义不同）。
-   * 默认 0：以固件 pitch 为准。 */
-#ifndef BCM2712_FORCE_32BPP
-/* 【默认不反推、坚持 32bpp】实测证据：infones 声明 argb8888 且能跑 60fps，
- * 说明整条链路（应用 + xwin/libgui）按 32bpp 工作是可行的；而 GET_PITCH
- * 返回的 3840 显然不是"32bpp 的行宽"（应为 7680）—— 它在 Pi5 上语义存疑
- * （可能是 16 位单位、显示器 pitch、或别的）。
- * 若哪天发现画面确实按 16bpp 才对，把这里改成 0 让它按 pitch 反推。 */
-#define BCM2712_FORCE_32BPP 1
-#endif
-
-#if !BCM2712_FORCE_32BPP
+   * 【格式取值】16bpp 申报 VGA_FMT_RGB565（值 2）：
+   *   · 不能用 VGA_FMT_RGB555（值 1）—— libgui/SDL 里 `format==1` 是老的
+   *     "NV12" 约定（screen.c 会据此做 rgb2nv12），数值撞车会误触发转换。
+   *   · 固件默认像素序是 RGB565（SET_PIXEL_ORDER=0）。 */
   if (vga->width > 0 && pitch >= vga->width) {
     u32 real_bpp = (u32)((u64)pitch / vga->width) * 8;
     if (real_bpp == 16 || real_bpp == 24 || real_bpp == 32) {
@@ -272,9 +263,16 @@ static int bcm2712_alloc_fb_one(vga_device_t* vga, int index) {
       vga->bpp = real_bpp;
     }
   }
-#else
-  log_info("bcm2712: hdmi%d FORCE 32bpp (ignore pitch=%u)\n", index, pitch);
-#endif
+  /* 申报格式（用户态据此决定画布与转换方式）。 */
+  if (vga->bpp == 16) {
+    vga->format = VGA_FMT_RGB565;
+  } else if (vga->bpp == 24) {
+    vga->format = VGA_FMT_RGB888;
+  } else {
+    vga->format = VGA_FMT_ARGB8888;
+  }
+  log_info("bcm2712: hdmi%d format=%u (bpp=%u pitch=%u)\n", index, vga->format,
+           vga->bpp, pitch);
 
   /* 【让这一路 HDMI 显示本块显存】SET_VIRT_OFFSET(0,0)。
    * 每屏显示自己的 fb、offset 归零 —— 这是"两屏独立"的关键：不能省。 */
