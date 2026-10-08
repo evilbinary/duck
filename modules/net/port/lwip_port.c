@@ -3,8 +3,8 @@
 #include "lwip/errno.h"
 #include "lwip/sockets.h"
 
-
-/* Linux aarch64 sockaddr_in，和 musl 一致。 */
+/* 诊断用：本文件属 lwip 端口层，不便拉入内核头，直接声明。 */
+int kprintf(const char* fmt, ...);
 struct lin_sin {
   unsigned short family;
   unsigned short port;
@@ -149,8 +149,11 @@ long lwip_port_sendto(int lwfd, const void* buf, unsigned long len, int flags,
                       const void* addr, unsigned long addrlen) {
   int fl = to_lwip_flags(flags);
   int n;
-  static unsigned pcnt = 0;
-  if (pcnt < 20) kprintf("lw_sendto enter #%u lwfd=%d len=%d fl=%x\n", pcnt, lwfd, (int)len, fl);
+  static unsigned sc = 0;
+  int is_big = (len > 4096);
+  if (is_big && sc < 3) {
+    kprintf("lw_send enter lwfd=%d len=%d\n", lwfd, (int)len);
+  }
   if (addr != NULL) {
     struct sockaddr_in in;
     if (fill_lwip_sin(&in, addr, addrlen) != 0) return -EINVAL;
@@ -158,9 +161,9 @@ long lwip_port_sendto(int lwfd, const void* buf, unsigned long len, int flags,
   } else {
     n = lwip_send(lwfd, buf, len, fl);
   }
-  if (pcnt < 20) {
-    kprintf("lw_sendto ret #%u n=%d\n", pcnt, n);
-    pcnt++;
+  if (is_big && sc < 3) {
+    kprintf("lw_send ret n=%d\n", n);
+    sc++;
   }
   return lwip_err(n);
 }

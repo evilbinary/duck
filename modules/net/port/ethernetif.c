@@ -94,11 +94,24 @@ static void drain(struct netif* netif) {
 void ethernetif_pump(void) {
   if (!lwip_netif_ready) return;
   if (__sync_lock_test_and_set(&pumping, 1)) return;
-  LOCK_TCPIP_CORE();
-  poll_link(&lwip_netif);
-  drain(&lwip_netif);
-  sys_check_timeouts();
-  UNLOCK_TCPIP_CORE();
+  {
+    /* 【诊断】pump 进出打点：确认 EAGAIN 路径确实 pump 到了、且能走完。 */
+    static unsigned pc = 0;
+    if (pc < 6) {
+      extern int kprintf(const char* fmt, ...);
+      kprintf("pump enter #%u\n", pc);
+    }
+    LOCK_TCPIP_CORE();
+    poll_link(&lwip_netif);
+    drain(&lwip_netif);
+    sys_check_timeouts();
+    UNLOCK_TCPIP_CORE();
+    if (pc < 6) {
+      extern int kprintf(const char* fmt, ...);
+      kprintf("pump exit #%u\n", pc);
+      pc++;
+    }
+  }
   __sync_lock_release(&pumping);
 }
 

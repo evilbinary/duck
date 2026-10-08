@@ -44,19 +44,21 @@ static u32 socket_node_read(vnode_t* node, u32 offset, u32 size, u8* buffer) {
   return (u32)n;
 }
 
+extern void ethernetif_pump(void);
+
 static u32 socket_node_write(vnode_t* node, u32 offset, u32 size, u8* buffer) {
   long n;
-  static u32 wcnt = 0;
-  if (wcnt < 20) {
-    kprintf("sock w enter #%u lwfd=%d size=%d\n", wcnt, socket_node_lwfd(node),
-            (int)size);
-  }
   n = lwip_port_sendto(socket_node_lwfd(node), buffer, size, 0, NULL, 0);
   (void)offset;
-  if (wcnt < 20) {
-    kprintf("sock w ret #%u n=%d\n", wcnt, (int)n);
+  /* 【EAGAIN 必须主动收包】发送缓冲满后要等对端 ACK 才能腾出空间，而 ACK
+   * 处理靠 tcpip 线程收包。socket 写在系统调用上下文（SVC 屏蔽 IRQ）里，
+   * 用户态 usleep 重试期间 tcpip 得不到调度 ⇒ 缓冲永不释放、无限 EAGAIN
+   * （实测 off 卡死在 9896 不动）。这里 EAGAIN 时 pump 一拍收 ACK。
+   * pump 里 LOCK_TCPIP_CORE 若被 tcpip 持有，spin_lock 的 daifclr 会放行
+   * （sys_arch.c），不会像以前那样死等。 */
+  if (n < 0) {
+    ethernetif_pump();
   }
-  wcnt++;
   return (u32)n;
 }
 

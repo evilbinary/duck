@@ -19,13 +19,42 @@ static int lwip_me(void) {
   return (int)t->id + 1;
 }
 
+/* 【持锁禁抢占，等待放抢占】这套锁的持锁段都极短（sem 计数/mbox 队列/mutex
+ * owner 字段），除了 lock_tcpip_core 会横跨整个 lwip 操作。此前的问题：
+ *  1) tcpip 线程（中断开）持锁时被 tick 抢占换出 ⇒ 锁被"冻结"，等锁者自旋
+ *     永远等不到（实测 spin stuck lock=167ec0 tid=7 st=1 数千万次）；
+ *  2) socket 的 send 在 SVC（硬件屏蔽 IRQ）里等锁，持锁者永远得不到 CPU。
+ * 修法：拿到锁立刻 preempt_disable（持锁期间 tick 不能换出 ⇒ 锁必然被
+ * 释放）；等待时 preempt_enable + daifclr 窗口，让时钟把持锁者调度上来。 */
 static void spin_lock(volatile int* lock) {
+  unsigned spins = 0;
+  preempt_disable();
   while (__sync_lock_test_and_set(lock, 1)) {
-    cpu_delay_usec(1);
+    preempt_enable();
+#if defined(ARM64) || defined(__aarch64__)
+    if ((++spins & 0x3f) == 0) {
+      __asm__ volatile("msr daifclr, #2" ::: "memory");
+      cpu_delay_usec(100);
+      __asm__ volatile("msr daifset, #2" ::: "memory");
+      if ((spins & 0xffff) == 0) {
+        thread_t* t = thread_current();
+        kprintf("lwip spin stuck lock=%x spins=%u tid=%d st=%d\n",
+                (unsigned)(unsigned long)lock, spins, t != NULL ? t->id : -1,
+                t != NULL ? (int)t->state : -1);
+      }
+    } else
+#endif
+    {
+      cpu_delay_usec(1);
+    }
+    preempt_disable();
   }
 }
 
-static void spin_unlock(volatile int* lock) { __sync_lock_release(lock); }
+static void spin_unlock(volatile int* lock) {
+  __sync_lock_release(lock);
+  preempt_enable();
+}
 
 /* 用户态系统调用从进入到 eret 都关着中断。在里面空转的话时钟打不进来，
  * shell 和键盘都停。共享内核栈又不能在调用中途被换出后再接着跑，

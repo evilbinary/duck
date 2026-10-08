@@ -772,7 +772,12 @@ size_t sys_write(u32 fd, void* buf, size_t nbytes) {
 
   u8* write_buf = (u8*)buf;
   u8* tmp_buf = NULL;
-  if ((u32)buf >= PAGE_SIZE && !sys_buf_in_kernel(buf, nbytes)) {
+  /* 【socket 大写不要 kmalloc+copy】每发一块 16KB 都 kmalloc/kfree，反复
+   * 大块分配会把内核堆/memory_lock 打挂（实测发首帧 1.2MB 时卡死在
+   * kmalloc，整机连 ps 都没响应）。socket 的 op 是 lwip：NETCONN_COPY
+   * 由 lwip 自己拷贝数据，直接把用户 buf 传下去即可，双重拷贝也省了。 */
+  if (f->type != DEVICE_TYPE_NET && (u32)buf >= PAGE_SIZE &&
+      !sys_buf_in_kernel(buf, nbytes)) {
     tmp_buf = (u8*)kmalloc(nbytes, KERNEL_TYPE);
     if (tmp_buf == NULL) {
       return -1;
@@ -782,14 +787,6 @@ size_t sys_write(u32 fd, void* buf, size_t nbytes) {
       return -1;
     }
     write_buf = tmp_buf;
-    // if (current != NULL && current->id > 1 && fd == 1 && nbytes > 0) {
-    //   char dbg[65];
-    //   size_t n = nbytes < 64 ? nbytes : 64;
-    //   kmemcpy(dbg, tmp_buf, n);
-    //   dbg[n] = '\0';
-    //   kprintf("sys_write stdout tid=%d nbytes=%u text='%s'\n", current->id,
-    //           nbytes, dbg);
-    // }
   }
 
   u32 ret = vwrite(node, f->offset, nbytes, write_buf);
