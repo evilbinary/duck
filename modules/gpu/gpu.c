@@ -162,10 +162,25 @@ static device_t* gpu_create_display(int index, const char* node_name,
   dev->index = index;        /* 同一 device id 下区分第几块屏 */
   device_add(dev);
 
-  /* 【默认显示模式】用 1920x1080x32（HDMI 最通用）；若 /conf/system.conf 的
-   * [hdmi] 段配了分辨率，sysconf 就绪后 bcm2712 会重新申请并覆盖。
-   * 要改内置默认在这里换 VGA_MODE_*。 */
-  if (gpu_init_mode_at(vga, VGA_MODE_1920x1080x32, index) < 0) {
+  /* 【默认显示模式】先按历史的 1024x768x32 初始化 —— 这是各平台驱动都实现的
+   * 档位（如 bcm2836.c 的模式表里没有 1920x1080，硬用它会让 raspi3 等 init
+   * 失败、frambuffer 留 0、xwin 报 "lcd va=0" 起不来）。
+   * 【能自动识别的驱动】（如 Pi5 的 bcm2712，提供 gpu_mode_auto_detect）：
+   * 初始化前先问一次真实分辨率，避免先按默认申请一块、配置回调又申请一块
+   * （重复申请会丢掉一块显存）。自动识别失败就沿用默认。
+   * 【注意】识别到非标准分辨率时把 mode 置 0，让驱动"按当前 width/height
+   * 申请"，不要再用 mode 去查表把几何覆盖回默认档。 */
+  {
+    vga_device_t* tmp = vga;
+    tmp->mode = VGA_MODE_1024x768x32;
+    if (gpu_mode_auto_detect != NULL) {
+      if (gpu_mode_auto_detect(tmp, index) == 0 &&
+          tmp->width > 0 && tmp->height > 0) {
+        tmp->mode = 0; /* 0 = 用当前 width/height，不走模式表 */
+      }
+    }
+  }
+  if (gpu_init_mode_at(vga, (int)vga->mode, index) < 0) {
     log_error("gpu: display %d init failed\n", index);
     /* 不返回 NULL：device 已登记，至少让 ioctl 返回 0 而不是崩。 */
   }

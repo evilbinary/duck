@@ -427,9 +427,17 @@ int gpu_init_mode_index(vga_device_t* vga, int mode, int index) {
     return -1;
   }
 
-  /* 分辨率/色深。 */
-  bcm2712_mode_to_wh(mode, &vga->width, &vga->height, &vga->bpp);
-  vga->mode = mode;
+  /* 分辨率/色深。
+   * 【mode == 0】表示"用调用方已经设好的 width/height/bpp"，不查模式表 ——
+   * 自动识别（gpu_mode_auto_detect）就是这条路径：它已把真实分辨率写进 vga，
+   * 这里不能再按默认 mode 覆盖回去。 */
+  if (mode != 0) {
+    bcm2712_mode_to_wh(mode, &vga->width, &vga->height, &vga->bpp);
+    vga->mode = mode;
+  } else {
+    log_info("bcm2712: hdmi%d use preset %ux%u@%u\n", index, vga->width,
+             vga->height, vga->bpp);
+  }
   vga->format = VGA_FMT_UNKNOWN;   /* 由 bpp 推断 */
   vga->rotate = VGA_ROT_0;
   vga->write = NULL;
