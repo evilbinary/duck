@@ -19,6 +19,7 @@ device_t* device_create(u8* name, u32 id, u32 type) {
   dev->ioctl = NULL;
   dev->id = id;
   dev->type = type;
+  dev->index = 0; /* 新增字段：单设备默认 0（多屏由驱动显式覆盖） */
   return dev;
 }
 

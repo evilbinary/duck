@@ -38,6 +38,12 @@ plat_source={
         'bcm2836.c',
         'mailbox.c',
     ],
+    # 【raspi5：BCM2712 + 双 HDMI】走固件 mailbox 路线（与 raspi2/3 同 IP，
+    # 只是 mbox 基址挪到 0x107c013880）。mailbox.c 由 mod-bcm 提供，这里只编
+    # bcm2712.c（它导出 gpu_init_mode_index 支持 /dev/fb0、/dev/fb1 双屏）。
+    'raspi5':[
+        'bcm2712.c',
+    ],
     'rk3128':[
         'rk3128.c'
     ],
@@ -92,3 +98,8 @@ add_includedirs(
 
 add_defines(def_arch)
 add_defines(def_arch_type)
+
+# 【双屏】raspi5 有两路 HDMI（hdmi0@7c701400 / hdmi1@7c706400，DTB 实测），
+# 注册 /dev/fb0 与 /dev/fb1 两个节点。其它平台保持单屏（/dev/fb）。
+if plat == 'raspi5':
+    add_defines('GPU_DISPLAY_COUNT=2')

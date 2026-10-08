@@ -45,7 +45,16 @@
 #define GPU_UNCACHED_BASE		0xC0000000	///<
 
 #if defined ( RASPI2 ) || defined (RASPI3)
+/* Pi2/3：VideoCore 的总线地址 = 物理地址 | 0xC0000000（uncached 别名）。
+ * 发给 mailbox 的 mailbuffer 地址必须是 GPU 总线视图，所以要加这个前缀。 */
 #define GPU_MEM_BASE	GPU_UNCACHED_BASE
+#elif defined ( RASPI5 )
+/* 【Pi5：mailbox 传的是 CPU 物理地址，不加 GPU 总线偏移】
+ * Pi5 的 firmware mailbox 直接与 ARM 侧共享内存，属性通道里填的是 buffer 的
+ * 物理地址（<4GB，VideoCore 只有 32 位总线）。实测参照上游 Linux
+ * bcm2835-mbox/firmware 驱动：Pi4/5 不做 0xC0000000 别名转换。
+ * 因此这里取 0，表示"直接用物理地址"。 */
+#define GPU_MEM_BASE	0
 #else
 #define GPU_MEM_BASE	GPU_CACHED_BASE
 #endif
@@ -98,7 +107,21 @@
 #define	BCM2835_DMA5_BASE		(BCM2835_PERI_BASE + 0x007500)	///<
 #define	BCM2835_DMA6_BASE		(BCM2835_PERI_BASE + 0x007600)	///<
 #define BCM2835_IRQ_BASE		(BCM2835_PERI_BASE + 0x00B200)	///<
+#if defined(RASPI5)
+/* 【Pi5 的 mailbox 偏移与 Pi2/3 不同，必须用 DTB 实测值】
+ * 真机 DTB（bcm2712d0-rpi-5-b.dtb）：
+ *   /soc@107c000000/mailbox@7c013880 {
+ *     compatible = "brcm,bcm2835-mbox";   ← 与 Pi2/3 同一个 IP
+ *     reg = <0x7c013880 0x40>;            ← 节点内偏移
+ *   };
+ * CPU 侧 = 0x107C000000 + 0x7C013880 = 0x107C013880。
+ * 【为什么不能沿用 PERI+0xB880】那样算出来是 0x107c00b880，比真实地址少 0x8000
+ * （Pi4/Pi5 把 mbox 从 0xB880 挪到了 0x13880）。写错地址在 Pi5 上会拿同步外部
+ * 中止（UR）→ 内核静默死，和 init.c 里记录的老坑（碰 legacy GPIO 拿 UR）同款。*/
+#define BCM2835_MAILBOX_BASE	0x107c013880UL	///< Pi5 mailbox（DTB mailbox@7c013880）
+#else
 #define BCM2835_MAILBOX_BASE	(BCM2835_PERI_BASE + 0x00B880)	///<
+#endif
 #define BCM2835_PM_WDOG_BASE	(BCM2835_PERI_BASE + 0x100000)	///<
 #define BCM2835_HW_RNG_BASE		(BCM2835_PERI_BASE + 0x104000)	///<
 #define BCM2835_GPIO_BASE		(BCM2835_PERI_BASE + 0x200000)	///<

@@ -21,7 +21,13 @@ enum VGA_MODE {
   VGA_MODE_480x272x18,
   VGA_MODE_640x480x24,
   VGA_MODE_640x480x32,
-  VGA_MODE_1024x768x32
+  VGA_MODE_1024x768x32,
+  /* 【HDMI 常用模式】Pi5 走固件 mailbox 时，请求的分辨率最好与显示器
+   * （EDID）一致，否则固件可能做居中/留边，画面看似"只占了屏幕一部分"。 */
+  VGA_MODE_1280x720x32,
+  VGA_MODE_1280x800x32,
+  VGA_MODE_1920x1080x32,
+  VGA_MODE_1024x600x32
 };
 
 #define VGA_IOC_MAGIC 'v'

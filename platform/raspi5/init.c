@@ -592,6 +592,17 @@ void platform_map(void) {
            PAGE_DEV);
   page_map((vaddr_t)GICC_BASE & ~0xFFFULL, (vaddr_t)GICC_BASE & ~0xFFFULL,
            PAGE_DEV);
+
+  /* 【Pi5 firmware mailbox】DTB: /soc@107c000000/mailbox@7c013880
+   * compatible="brcm,bcm2835-mbox" reg=<0x7c013880 0x40>
+   * ⇒ CPU 侧 0x107c013880（见 bcm2835.h 的 RASPI5 分支说明：Pi4/5 把 mbox
+   * 从 Pi2/3 的 +0xB880 挪到了 +0x13880）。显示驱动（bcm2712.c）要用它向
+   * 固件申请 framebuffer；这里提前把它按 Device 映射好，避免驱动里再依赖
+   * page_map 的时序。0x40 大小跨到 0x107c014000，映射覆盖 0x107c013000 整页。 */
+  {
+    u64 mb = 0x107c013880ULL & ~0xFFFULL;
+    page_map((vaddr_t)mb, (vaddr_t)mb, PAGE_DEV);
+  }
 }
 
 int interrupt_get_source(u32 no) {

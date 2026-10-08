@@ -75,6 +75,11 @@ typedef struct device {
   dev_ioctl_fn ioctl;
   dev_stat_fn stat;
   void* data;  // data
+  /* 【新字段必须追加在末尾】本构建系统不跟踪头文件依赖：若插在中间，
+   * 其它模块（xwin 等）仍按旧偏移读 data ⇒ 会把 data 读成垃圾。
+   * index：同一 id 下区分"第几块同类设备"（如 /dev/fb0、/dev/fb1 两块显示
+   * 都是 DEVICE_VGA）。单设备默认 0。 */
+  u32 index;
 } device_t;
 
 
