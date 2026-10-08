@@ -36,12 +36,6 @@ static void spin_lock(volatile int* lock) {
       __asm__ volatile("msr daifclr, #2" ::: "memory");
       cpu_delay_usec(100);
       __asm__ volatile("msr daifset, #2" ::: "memory");
-      if ((spins & 0xffff) == 0) {
-        thread_t* t = thread_current();
-        kprintf("lwip spin stuck lock=%x spins=%u tid=%d st=%d\n",
-                (unsigned)(unsigned long)lock, spins, t != NULL ? t->id : -1,
-                t != NULL ? (int)t->state : -1);
-      }
     } else
 #endif
     {

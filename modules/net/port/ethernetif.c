@@ -83,14 +83,7 @@ static void drain(struct netif* netif) {
     if (n > 1600) n = 1600;
     p = pbuf_alloc(PBUF_RAW, (u16_t)n, PBUF_POOL);
     if (p == NULL) {
-      /* 【诊断】收包 pbuf 池耗尽：Rx 帧拿不到 pbuf 只能丢，导致对端 ACK
-       * 丢失 → 发送缓冲永不释放。若这条持续刷说明 pbuf 泄漏。 */
-      static unsigned fc = 0;
-      if ((fc & 0xff) == 0) {
-        extern int kprintf(const char* fmt, ...);
-        kprintf("drain pbuf_alloc FAIL count=%u\n", fc);
-      }
-      fc++;
+      /* 收包 pbuf 池耗尽：Rx 帧拿不到 pbuf 只能丢，对端 ACK 会丢。 */
       break;
     }
     if (pbuf_take(p, frame, (u16_t)n) != ERR_OK) {
@@ -104,24 +97,11 @@ static void drain(struct netif* netif) {
 void ethernetif_pump(void) {
   if (!lwip_netif_ready) return;
   if (__sync_lock_test_and_set(&pumping, 1)) return;
-  {
-    /* 【诊断】pump 进出打点：确认 EAGAIN 路径确实 pump 到了、且能走完。 */
-    static unsigned pc = 0;
-    if (pc < 6) {
-      extern int kprintf(const char* fmt, ...);
-      kprintf("pump enter #%u\n", pc);
-    }
-    LOCK_TCPIP_CORE();
-    poll_link(&lwip_netif);
-    drain(&lwip_netif);
-    sys_check_timeouts();
-    UNLOCK_TCPIP_CORE();
-    if (pc < 6) {
-      extern int kprintf(const char* fmt, ...);
-      kprintf("pump exit #%u\n", pc);
-      pc++;
-    }
-  }
+  LOCK_TCPIP_CORE();
+  poll_link(&lwip_netif);
+  drain(&lwip_netif);
+  sys_check_timeouts();
+  UNLOCK_TCPIP_CORE();
   __sync_lock_release(&pumping);
 }
 

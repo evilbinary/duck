@@ -2,9 +2,6 @@
 
 #include "lwip/errno.h"
 #include "lwip/sockets.h"
-
-/* 诊断用：本文件属 lwip 端口层，不便拉入内核头，直接声明。 */
-int kprintf(const char* fmt, ...);
 struct lin_sin {
   unsigned short family;
   unsigned short port;
@@ -149,21 +146,12 @@ long lwip_port_sendto(int lwfd, const void* buf, unsigned long len, int flags,
                       const void* addr, unsigned long addrlen) {
   int fl = to_lwip_flags(flags);
   int n;
-  static unsigned sc = 0;
-  int is_big = (len > 4096);
-  if (is_big && sc < 3) {
-    kprintf("lw_send enter lwfd=%d len=%d\n", lwfd, (int)len);
-  }
   if (addr != NULL) {
     struct sockaddr_in in;
     if (fill_lwip_sin(&in, addr, addrlen) != 0) return -EINVAL;
     n = lwip_sendto(lwfd, buf, len, fl, (struct sockaddr*)&in, sizeof(in));
   } else {
     n = lwip_send(lwfd, buf, len, fl);
-  }
-  if (is_big && sc < 3) {
-    kprintf("lw_send ret n=%d\n", n);
-    sc++;
   }
   return lwip_err(n);
 }
