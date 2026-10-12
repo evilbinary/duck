@@ -23,6 +23,9 @@ plat_source={
     'raspi2':[
         'bcm2836.c',
     ],
+    'raspi5':[
+        'rp1.c',
+    ],
     'rk3128':[
         'rk3128.c'
     ],

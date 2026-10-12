@@ -27,13 +27,12 @@
 #include "kernel/page.h"
 #include "dev/devfs.h"
 #include "bcm/mailbox.h"
+#include "gpio/gpio.h" /* GPIO_FUNC_* GPIO_PULL_*，rp1.c 实现 */
 
-/* ---- RP1 窗口内的块偏移 ------------------------------------------- */
+/* ---- RP1 窗口内的块偏移（GPIO 部分已抽到 modules/gpio/rp1.c） ------- */
 #define RP1_BASE            0x1F00000000ULL
 #define RP1_PWM1_OFF        0x9C000
 #define RP1_CLOCKS_OFF      0x18000
-#define RP1_IO_BANK_OFF     0xD0000
-#define RP1_PADS_BANK_OFF   0xF0000
 
 /* PWM1（偏移取自 pwm-rp1.c） */
 #define PWM_GLB_CTRL        0x000
@@ -67,17 +66,6 @@
 
 #define FAN_LEVEL_MAX       10
 #define FAN_LEVEL_DEFAULT   5
-
-/* GPIO45 寄存器地址（RP1 三段式布局：每区 3 个 bank，步进 0x4000；
- * bank2 = GPIO34-53。IO_BANK 每脚 8 字节、CTRL 在 +4；PADS 每脚 4 字节） */
-#define GPIO_BANK(pin)      ((pin) < 28 ? 0 : ((pin) < 34 ? 1 : 2))
-#define GPIO_BANK_PIN(pin)  ((pin) < 28 ? (pin) : ((pin) < 34 ? (pin)-28 : (pin)-34))
-
-/* PADS 位域：bit7 OUT_DISABLE、bit6 IN_ENABLE、bit3:2 PULL（01=下拉） */
-#define PAD_OUT_DISABLE     0x80u
-#define PAD_IN_ENABLE       0x40u
-#define PAD_PULL_MASK       0x0Cu
-#define PAD_PULL_DOWN       (1u << 2)
 
 /* 根复合体（SoC 内部，恒解码）。偏移取自 Linux pcie-brcmstb.c，
  * 与 platform/raspi5/init.c 诊断代码一致 */
@@ -139,23 +127,11 @@ static void fan_clk_init(void) {
   rp1_wr(RP1_CLOCKS_OFF + CLK_PWM1_CTRL, ctrl | CLK_CTRL_ENABLE);
 }
 
-/* GPIO45 -> PWM1 (funcsel 0) + 下拉。RP1 的方向/复用语义见
- * gpio.c：先把 pad 放行（IN_ENABLE、清 OUT_DISABLE），再写 CTRL 的
- * FUNCSEL，OUTOVER/OEOVER 取 PERI（0）。 */
+/* GPIO45 -> PWM1：funcsel 0(ALTF0) + 下拉。GPIO 寄存器操作已抽到 gpio 模块
+ * （modules/gpio/rp1.c，pin 用全局 GPIO 号），fan 只声明"要什么"不碰寄存器 */
 static void fan_gpio_init(void) {
-  u32 bank = GPIO_BANK(FAN_PWM_GPIO);
-  u32 bpin = GPIO_BANK_PIN(FAN_PWM_GPIO);
-  u32 ctrl_off = RP1_IO_BANK_OFF + bank * 0x4000 + bpin * 8 + 0x04;
-  u32 pad_off = RP1_PADS_BANK_OFF + bank * 0x4000 + 0x04 + bpin * 4;
-
-  u32 pad = rp1_rd(pad_off);
-  pad &= ~(PAD_OUT_DISABLE | PAD_PULL_MASK);
-  pad |= PAD_IN_ENABLE | PAD_PULL_DOWN;
-  rp1_wr(pad_off, pad);
-
-  u32 ctrl = rp1_rd(ctrl_off);
-  ctrl &= ~0x1Fu; /* 清 FUNCSEL，OUTOVER/OEOVER 本来就是 0(PERI) */
-  rp1_wr(ctrl_off, ctrl);
+  gpio_config(0, FAN_PWM_GPIO, GPIO_FUNC_ALTF0);
+  gpio_pull(0, FAN_PWM_GPIO, GPIO_PULL_DOWN);
 }
 
 static void fan_hw_init(void) {

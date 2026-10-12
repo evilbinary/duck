@@ -12,6 +12,7 @@ add_deps(
     'kernel',
     'mod-devfs',
     'mod-bcm',
+    'mod-gpio',
 )
 
 arch=get_arch()
