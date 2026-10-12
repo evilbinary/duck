@@ -603,6 +603,30 @@ void platform_map(void) {
     u64 mb = 0x107c013880ULL & ~0xFFFULL;
     page_map((vaddr_t)mb, (vaddr_t)mb, PAGE_DEV);
   }
+
+  /* 【PCIe2 根复合体（RC）寄存器窗口】DTB: /soc@107c000000/pcie@1000120000
+   * reg = <0x10 0x120000 0x00 0x9310> ⇒ CPU 侧 (0x10<<32)+0x120000 =
+   * 0x1000120000（64GB+1.2MB）。fan 模块（modules/fan）训练链路/读
+   * PCIE_STATUS(+0x4068) 用。
+   * 【为什么必须在这里映射，模块里不能自己 page_map】真机实测：模块运行期
+   * 对"新 L1 项"（64GB 区间 boot 期从没建过表）做 page_map 会建 L2/L3 失败，
+   * 访问时 translation fault L3（ESR 96000007, pte->0）直接把内核线程打死；
+   * 而同在 64GB+ 区间的 mailbox 之所以能用，正是因为在本函数（MMU 开启前）
+   * 就写好了页表。设备地址一律走这条路径。
+   * 【偏移陷阱】0x4068 > 0x1000 跨到第 4 页（真机只映射 1 页时 pte 124000->0
+   * 照样崩）；这里映射 10 页覆盖完整 reg 0x9310 + 扩展配置窗口 0x8000/0x9000
+   * （链路训练时访问 LNKCAP/MDIO/BAR 寄存器到 0x4304、RP1 配置空间走
+   * 0x9000(EXT_CFG_INDEX)+0x8000(EXT_CFG_DATA)，见 ewokos rp1.c）。 */
+  for (u64 rc = 0x1000120000ULL; rc < 0x100012A000ULL; rc += 0x1000) {
+    page_map((vaddr_t)rc, (vaddr_t)rc, PAGE_DEV);
+  }
+
+  /* 【PCIe2 链路训练的两个控制页】ewokos hw_arch.h 同值：
+   *   RESCAL（模拟复位）：0x1000119000，操作偏移 +0x500/+0x508
+   *   RESET 控制器：     0x1001504000，操作偏移 +0x318+0x18(SET/CLEAR)
+   * 都落在 RC 同一个 L1[0x40] 项下，逐页映射即可。 */
+  page_map((vaddr_t)0x1000119000ULL, (vaddr_t)0x1000119000ULL, PAGE_DEV);
+  page_map((vaddr_t)0x1001504000ULL, (vaddr_t)0x1001504000ULL, PAGE_DEV);
 }
 
 int interrupt_get_source(u32 no) {
