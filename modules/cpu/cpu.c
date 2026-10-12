@@ -40,6 +40,9 @@ typedef struct __attribute__((aligned(16))) {
 
 /* Pi5：mailbox 传 CPU 物理地址（<4GB）。kmalloc 出来的若是高地址就报错 ——
  * bcm2712.c 同款约束（VideoCore 只有 32 位总线） */
+/* 【必须用 kfree_alignment】kmalloc_alignment 返回的是对齐切出来的指针，
+ * ya 堆块头在原始指针 p2[-1] 上；kfree() 会把对齐指针当块数据解析
+ * → magic 错乱（真机实测 ya_real_size invalid block / mfree error）。 */
 static int cpu_read_temp(int* milli_celsius) {
   mbox_temp_msg_t* msg =
       kmalloc_alignment(sizeof(mbox_temp_msg_t), 16, DEVICE_TYPE);
@@ -57,7 +60,7 @@ static int cpu_read_temp(int* milli_celsius) {
   int ret = -1;
   if (((uintptr_t)msg & 0xFFFFFFFF00000000ULL) != 0) {
     kprintf("cpu: temp buffer above 4GB, skip\n");
-    kfree(msg);
+    kfree_alignment(msg);
     return -1;
   }
 
@@ -65,18 +68,29 @@ static int cpu_read_temp(int* milli_celsius) {
   if (pa == NULL) pa = msg; /* 已在物理直映射区 */
   u32 phys = (u32)(uintptr_t)pa;
 
-  /* 固件是另一个 master：发送前 clean，接收后 invalidate（同 bcm2712.c） */
+  /* 固件是另一个 cache master：发送前 clean（civac）让请求落到 DRAM；
+   * 接收后必须【仅 invalidate】（ivac）—— 若再用 clean+invalidate 会把
+   * CPU cache 里的旧内容写回 DRAM，覆盖固件刚写的响应，读回来还是请求前
+   * 的旧值（真机实测 temperature read failed 的根因）。 */
   cpu_flush_dcache_range((unsigned long)msg,
                          (unsigned long)msg + sizeof(mbox_temp_msg_t));
   mailbox_write_read(BCM2835_MAILBOX_PROP_CHANNEL, phys);
-  cpu_flush_dcache_range((unsigned long)msg,
-                         (unsigned long)msg + sizeof(mbox_temp_msg_t));
+  cpu_invalidate_dcache_range((unsigned long)msg,
+                              (unsigned long)msg + sizeof(mbox_temp_msg_t));
 
-  if (msg->req_code == BCM2835_MAILBOX_SUCCESS && msg->data_size == 4) {
+  /* 【响应格式】req_code 位31=1 表示固件成功；data_size 位31=1 表示"已填充"，
+   * 低 31 位是有效字节数（真机实测 0x80000008：头 4 + 值 4）。
+   * 之前按 data_size == 4 判断，把正常的 0x80000008 当失败 —— 温度其实
+   * 一直在 msg->value 里（真机 36730 = 36.73°C）。 */
+  if (msg->req_code == BCM2835_MAILBOX_SUCCESS &&
+      (msg->data_size & 0x80000000u)) {
     *milli_celsius = (int)msg->value;
     ret = 0;
+  } else {
+    kprintf("cpu: mbox resp req=%08x data_size=%08x val=%d\n", msg->req_code,
+            msg->data_size, msg->value);
   }
-  kfree(msg);
+  kfree_alignment(msg);
   return ret;
 }
 
@@ -92,6 +106,14 @@ static size_t cpu_read(device_t* dev, void* buf, size_t len) {
 /* 【函数名不能用 cpu_init】duck/arch 下已有同名的 arch 层初始化函数，
  * 链接期会 conflicting types；模块实现统一加 _temp 前缀 */
 int cpu_temp_init(void) {
+  /* 启动即读一次，验证 mailbox 温度链路通不通（读数应为室温 30-50°C） */
+  int mc = 0;
+  if (cpu_read_temp(&mc) == 0) {
+    kprintf("cpu: temperature %d.%d c\n", mc / 1000, (mc % 1000) / 100);
+  } else {
+    kprintf("cpu: temperature read failed (mailbox)\n");
+  }
+
   device_t* cpu_dev = kmalloc(sizeof(device_t), DEFAULT_TYPE);
   cpu_dev->name = "cpu";
   cpu_dev->read = cpu_read;

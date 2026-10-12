@@ -26,6 +26,7 @@
 #include "kernel/memory.h"
 #include "kernel/page.h"
 #include "dev/devfs.h"
+#include "bcm/mailbox.h"
 
 /* ---- RP1 窗口内的块偏移 ------------------------------------------- */
 #define RP1_BASE            0x1F00000000ULL
@@ -403,6 +404,112 @@ static int rp1_link_up(void) {
          (PCIE_STATUS_PHY_LINK_UP | PCIE_STATUS_DL_ACTIVE);
 }
 
+/* ---- 温控 governor（内核线程：读温度 -> 查表 -> 调 level） ----------
+ * 温度源与 /dev/cpu 同一条路（firmware mailbox GET_TEMPERATURE），
+ * 在此自包含一份（模块间不做内部 API 依赖，与 ewokos fand/cpud 解耦同思路）。
+ * 策略：2 秒一档；查表取目标 level；用户手动 write /dev/fan 后 governor
+ * 让位（fan_manual），重启恢复自动。 */
+#define VC_TAG_GET_TEMPERATURE 0x00030006
+
+typedef struct __attribute__((aligned(16))) {
+  u32 size;
+  u32 req_code;
+  u32 tag;
+  u32 buf_size;
+  u32 data_size;
+  u32 dev_id;
+  u32 value;
+  u32 end;
+} mbox_temp_msg_t;
+
+static int fan_read_temp_mc(int* milli_celsius) {
+  mbox_temp_msg_t* msg =
+      kmalloc_alignment(sizeof(mbox_temp_msg_t), 16, DEVICE_TYPE);
+  if (msg == NULL) return -1;
+
+  msg->size = sizeof(mbox_temp_msg_t);
+  msg->req_code = 0;
+  msg->tag = VC_TAG_GET_TEMPERATURE;
+  msg->buf_size = 8;
+  msg->data_size = 4;
+  msg->dev_id = 0;
+  msg->value = 0;
+  msg->end = 0;
+
+  int ret = -1;
+  if (((uintptr_t)msg & 0xFFFFFFFF00000000ULL) != 0) {
+    kfree_alignment(msg);
+    return -1; /* VideoCore 只有 32 位总线，buffer 必须在 4GB 内 */
+  }
+  void* pa = kpage_v2p(msg, 0);
+  if (pa == NULL) pa = msg;
+  /* 发送前 clean（civac）、接收后仅 invalidate（ivac）：接收侧若用
+   * clean+invalidate 会把 cache 旧内容写回 DRAM 覆盖固件响应（同 cpu.c） */
+  cpu_flush_dcache_range((unsigned long)msg,
+                         (unsigned long)msg + sizeof(mbox_temp_msg_t));
+  mailbox_write_read(BCM2835_MAILBOX_PROP_CHANNEL, (u32)(uintptr_t)pa);
+  cpu_invalidate_dcache_range((unsigned long)msg,
+                              (unsigned long)msg + sizeof(mbox_temp_msg_t));
+  /* 响应 data_size 位31=1 表示"已填充"（真机 0x80000008），见 cpu.c 注释 */
+  if (msg->req_code == BCM2835_MAILBOX_SUCCESS &&
+      (msg->data_size & 0x80000000u)) {
+    *milli_celsius = (int)msg->value;
+    ret = 0;
+  }
+  kfree_alignment(msg);
+  return ret;
+}
+
+/* 阈值表（毫摄氏度）：>= from 取 level。档距 10°C 天然滞回；
+ * 45°C 以下保底 level 2（低速不停转，风扇不转时 M-core 的 TACH 也不计数） */
+typedef struct {
+  int from_mc;
+  u8 level;
+} gov_step_t;
+static const gov_step_t gov_table[] = {
+    {75000, 10}, {65000, 8}, {55000, 6}, {45000, 4}, {0, 2},
+};
+
+#define GOV_PERIOD_TICKS (2 * SCHEDULE_FREQUENCY) /* 1 tick = 1ms -> 2 秒 */
+
+static int fan_manual; /* 用户手动写过 /dev/fan 后 governor 让位 */
+static int fan_rpm_seen; /* TACH 首次非零只打一次 */
+
+/* 【RPM 读取】RP1 M-core 固件数 TACH 脉冲发布在通道 2 PHASE 寄存器；
+ * 风扇转起来几秒后才有非零读数（fan_init 时读到的 0 是启动瞬间） */
+static u32 fan_read_rpm(void) {
+  if (!fan_ready) return 0;
+  return rp1_rd(RP1_PWM1_OFF + PWM_RPM_REG);
+}
+
+static void fan_governor(void* data) {
+  (void)data;
+  for (;;) {
+    int mc = 0;
+    if (!fan_manual && fan_read_temp_mc(&mc) == 0) {
+      u8 want = gov_table[sizeof(gov_table) / sizeof(gov_table[0]) - 1].level;
+      for (unsigned i = 0; i < sizeof(gov_table) / sizeof(gov_table[0]); i++) {
+        if (mc >= gov_table[i].from_mc) {
+          want = gov_table[i].level;
+          break;
+        }
+      }
+      if (want != (u8)fan_level) {
+        fan_set_level(want);
+        kprintf("fan: gov %d.%d c -> level %d (rpm %d)\n", mc / 1000,
+                (mc % 1000) / 100, want, (int)fan_read_rpm());
+      }
+    }
+    /* TACH 链路验证：首次读到非零转速时报告一次 */
+    u32 rpm = fan_read_rpm();
+    if (rpm != 0 && !fan_rpm_seen) {
+      fan_rpm_seen = 1;
+      kprintf("fan: tach alive, rpm %d\n", rpm);
+    }
+    schedule_sleep(GOV_PERIOD_TICKS);
+  }
+}
+
 /* ---- 设备接口 ------------------------------------------------------- */
 
 /* /dev/fan：write 1 字节 = level(0-10)；read 1 字节 = 当前 level */
@@ -414,6 +521,7 @@ static size_t fan_read(device_t* dev, void* buf, size_t len) {
 
 static size_t fan_write(device_t* dev, const void* buf, size_t len) {
   if (len < 1) return 0;
+  fan_manual = 1; /* 手动接管，governor 让位（重启恢复） */
   fan_set_level(((const u8*)buf)[0]);
   return 1;
 }
@@ -442,6 +550,9 @@ int fan_init(void) {
     kprintf("fan: RP1 PWM1 ch%d %d Hz inverted, level %d/%d rpm %d\n",
             FAN_PWM_CHAN, 1000000000 / FAN_PWM_PERIOD_NS, fan_level,
             FAN_LEVEL_MAX, (int)rp1_rd(RP1_PWM1_OFF + PWM_RPM_REG));
+    /* 自动温控（默认 level 5 起步，第一次采样后按温度表收敛） */
+    fan_manual = 0;
+    thread_create_name("fand", fan_governor, NULL);
   } else {
     kprintf("fan: pcie2 link down, /dev/fan disabled\n");
   }
