@@ -195,8 +195,16 @@ void page_destroy(u64* upage) {
           continue;
         }
         pte[k] = 0;
-        /* 【引用计数闸】COW 共享页（ref>1）不放 —— 另一个进程还在用。 */
-        mm_free_page(pg);
+        /* 【引用计数闸】COW 共享页（ref>1）不放 —— 另一个进程还在用。
+         * armv5/armv7-a 一直有这道闸（page_put_page 回调，ref 归零才放）；
+         * armv8-a 之前注释写了但代码漏了 ⇒ fork 后父进程退出时把父子共享
+         * 的 EXEC/HEAP COW 页直接还进空闲链（空闲链指针就写在页头），
+         * 下一个进程（如 ls）分配到并覆写 ⇒ 踩 test-http 这类 fork 子进程
+         * 正在用的内存（真机：ls 一执行 test-http 子进程的 fd 变 -9/-11）。
+         * 与 kernel/memory.c vfree 路径同款：hook 未注册则直接放。 */
+        if (page_put_page == NULL || page_put_page(pg) == 0) {
+          mm_free_page(pg);
+        }
       }
       pmd[j] = 0;
       kfree_alignment(pte);
