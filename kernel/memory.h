@@ -58,20 +58,26 @@
 #define MEMORY_FB 9
 
 #define MEMORY_STACK_SIZE 1024 * 1024   // 1m
-/* 【别把堆区改大】实测把这里改成 1GB（其它一行不动）后，shell 起来就卡死、
- * 键盘无响应。1GB 会让用户堆区跨过 0x80000000（2GB）——内核里还有一批
- * 32 位/有符号假设（sys_brk 返回 int、sys_mmap_pick_anon_addr 的 u32 try、
- * page_destroy 的扫描上界等），逐一排查收益为零：即使 VA 修好，1GB 物理内存
- * 也装不下 810MB 模型映射 + 107MB KV cache。需要大模型请用 4GB/8GB 机型，
- * 并在 boot/arm64/init-armv8-a.c 的 RASPI5 分支调高 RAM 上限。 */
-#define MEMORY_HEAP_SIZE 1024 * 1024 * 100  // 100m
+/* 【2026-10 扩窗实验·根因已定位】最初 1GB 窗口 shell 即卡死，曾误归因于
+ * int sys_brk/u32 try/page_destroy 上界（已顺手修对），真根因有二：
+ * 1) 内核线程 VMA 区（HEAP_ADDR+KERNEL_OFFSET=0x90100000）与扩大的用户
+ *    窗口重叠 512MB ⇒ 用户高地址映射踩内核结构。已修：vma.c 内核线程
+ *    VMA 搬到 USER_VA_END 之上（koffset=USER_VA_END）。
+ * 2) 非用户线程 kmalloc(DEFAULT_TYPE) 走 vm_alloc()，从内核线程堆 VMA 里
+ *    bump 出幽灵地址（0x90100040/0x130100000，从未映射，靠 QEMU/硬件
+ *    静默吞写侥幸可用）⇒ /dev/stdout 的 vnode->device 变垃圾 ⇒ write 恒
+ *    返 0 ⇒ musl stdio 无限重试 writev ⇒ /bin/config 自旋吃满 CPU ⇒
+ *    shell 假死。已修：memory.c kmalloc 非用户线程统一 phy_alloc。
+ * 修复后 QEMU raspi3 实测：config 正常跑完 init.conf，shell 交互（ps 等）
+ * 正常，空闲 CPU 回到 cpu_wait。 */
+#define MEMORY_HEAP_SIZE 1024 * 1024 * 1024  // 1g
 #define MEMORY_EXEC_SIZE 1024 * 1024 * 100  // 100m
 
 /* 【用户 VA 上界（排他）】page_destroy 靠它判断"这个 PTE 属于用户、可归还"。
- * 现值 = 旧硬编码 0x80000000，行为不变；将来扩堆区时必须与此联动，且
- * page_destroy 的 pgd 索引要按它【向上取整】（0xB0100000>>30=2 会把
- * pgd[2] 整条漏掉，mmap 页永不归还）。 */
-#define USER_VA_END 0x80000000UL
+ * 必须与 MEMORY_HEAP_SIZE 联动（扩窗时一起调），pgd 索引按它【向上取整】；
+ * 内核线程 VMA 也以它为界（vma.c 的 koffset）。FB 别名 0xfb000000 在
+ * pgd[3]，扫描上界之外不会被误归还。 */
+#define USER_VA_END 0xC0000000UL
 
 #define KERNEL_POOL_NUM 10
 #define USER_POOL_NUM 10

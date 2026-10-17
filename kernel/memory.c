@@ -344,18 +344,21 @@ void kfree_alignment_trace(void* ptr, void* name, void* no, void* fun) {
 
 void* kmalloc(size_t size, u32 flag) {
   void* addr = NULL;
-#if defined(ARM) && defined(ARMV5)
-  // ARM926/ARMv5: kernel often runs under a per-thread TTBR0 (user page table)
-  // during syscalls. If a kernel thread allocates via vm_alloc() (0x9xxxxxxx),
-  // that virtual mapping will not exist in user page tables and will fault.
-  // So: for non-user threads, always allocate from physical memory.
+  // 【非用户线程一律走物理分配】原来只有 ARMV5 这么做。内核线程
+  // （LEVEL_KERNEL/KERNEL_SHARE，如 init/irq_init/serial_init 里的
+  // kmalloc(sizeof(device_t), DEFAULT_TYPE)）若走 vm_alloc()，会从
+  // 【内核线程堆 VMA】里 bump 出地址（koffset 布局 = HEAP_ADDR+0x20000000
+  // ⇒ 0x90100040，扩窗后搬到 USER_VA_END 之上 ⇒ 0x130100000）——那片 VA
+  // 从未真正映射，靠 QEMU/硬件对未映射 PA 静默吞写才"碰巧能用"；实测
+  // /dev/stdout 的 vnode->device 指到这种幽灵 device ⇒ write 恒返 0 ⇒
+  // musl stdio 无限重试 writev ⇒ /bin/config 自旋，shell 起来即假死。
+  // 非用户线程没有可依赖的用户页表语义，统一 phy_alloc（内核堆，恒等映射）。
   thread_t* current = thread_current();
   if (current == NULL || current->level != LEVEL_USER) {
     addr = phy_alloc(size);
-    MM_ALLOC_NOTE(size); /* ARMv5 内核态走物理分配，也要计入画像（否则漏统） */
+    MM_ALLOC_NOTE(size);
     return addr;
   }
-#endif
   if (flag & KERNEL_TYPE || flag & DEVICE_TYPE) {
     addr = phy_alloc(size);
     MM_ALLOC_NOTE(size);

@@ -318,7 +318,19 @@ void vmemory_map(void* page_dir, vaddr_t virt_addr, vaddr_t phy_addr, vaddr_t si
 void vmemory_init(vmemory_t* vm, u32 level, vaddr_t usp, u32 usp_size, u32 flags) {
   vaddr_t koffset = 0;
   if (level == LEVEL_KERNEL || level == LEVEL_KERNEL_SHARE) {
+#if defined(ARM64) || defined(__aarch64__)
+    /* 【内核线程 VMA 必须在用户窗口之上】原来 koffset=KERNEL_OFFSET(0x20000000)：
+     * 内核线程 VMA 区 = 0x90100000+。用户堆窗口只有 100MB（顶到 0x76500000）
+     * 时两者不相交；扩到 1GB（堆顶 0xB0100000）后重叠 512MB ⇒ 用户高地址
+     * mmap/fork 拷贝会踩内核结构（实测：kmalloc 返回垃圾 0x90100040 ⇒
+     * /dev/stdout 的 vnode->device 被破坏 ⇒ device_write 恒返 0 ⇒ musl stdio
+     * 对短写无限重试 writev ⇒ /bin/config 自旋吃满 CPU，shell 起来即假死，
+     * QEMU raspi3 复现）。统一搬到 USER_VA_END 之上（页_destroy 扫描上界
+     * 之外，page_destroy 也不会碰到）。 */
+    koffset = USER_VA_END;
+#else
     koffset += KERNEL_OFFSET;
+#endif
   }
   if (vm == NULL) {
     log_error("vm is null\n");
@@ -504,9 +516,11 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
       if (a->flags != MEMORY_EXEC && a->flags != MEMORY_HEAP) {
         continue;
       }
-      u32 s = (u32)a->vaddr;
-      u32 e = (u32)a->vend;
-      for (u32 va = s; va < e; va += PAGE_SIZE) {
+      /* 【地址按字长】内核线程 VMA 搬到 USER_VA_END 之上后，u32 会回绕
+       * （(u32)(0x110100000)=0x10100000 < 起点 ⇒ 死循环），统一 vaddr_t。 */
+      vaddr_t s = a->vaddr;
+      vaddr_t e = a->vend;
+      for (vaddr_t va = s; va < e; va += PAGE_SIZE) {
         u32 pa = 0;
         /* 【必须跳过"内核映像段"】内核自己的段也被登记成 MEMORY_EXEC
          * （见本文件 191-200：boot_info->segments ⇒ vmemory_area_create），
@@ -516,7 +530,7 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
          *     内核一写自己的 .data/.bss 就 fault ⇒ 早期内核崩（实测
          *     tid:0 page fault at 2/10、tid 变垃圾值 2569472、风暴）✗。
          * 用户 EXEC 预留区从 EXEC_ADDR 起，故按 EXEC_ADDR 切一刀。 */
-        if (va < (u32)EXEC_ADDR) {
+        if (va < (vaddr_t)EXEC_ADDR) {
           continue;
         }
         /* 【跳过未映射的页】EXEC 段里含大段"预留区"（如 armv8-a 的

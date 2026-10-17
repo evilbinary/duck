@@ -123,7 +123,7 @@ u64* page_clone(u64* old_pgd, u32 level) {
  * 4KB 粒度。有效描述符 bits[1:0]=0b11（表/页），块描述符 0b01 跳过（只漏不踩）。
  * 表由 page_create()→mm_alloc_zero_align(PAGE_SIZE,PAGE_SIZE) 分配，
  * 用 kfree_alignment 归还（内核堆恒等映射，配对正确）。
- * 【只扫用户区 [EXEC_ADDR, 0x80000000)】上界必须与 32 位架构
+ * 【只扫用户区 [EXEC_ADDR, USER_VA_END)】上界必须与 32 位架构
  * （armv7-a/armv5/armv7 的 page_destroy，raspi2 真机长期验证）一致：
  * 0x80000000 之上是设备/帧缓冲别名（xwin 的 fb 别名 0xfb000000）与内核
  * 共享映射，其物理页是 MMIO/GPU 显存、不属于页分配器 —— 一旦归还，
@@ -172,7 +172,7 @@ void page_destroy(u64* upage) {
       if ((((vaddr_t)i << PGD_SHIFT) | ((vaddr_t)j << PMD_SHIFT)) <
               (vaddr_t)EXEC_ADDR ||
           (((vaddr_t)i << PGD_SHIFT) | ((vaddr_t)j << PMD_SHIFT)) >=
-              (vaddr_t)0x80000000UL) {
+              (vaddr_t)USER_VA_END) {
         continue;
       }
       u64* pte = (u64*)(e2 & PTE_ADDR_MASK);
@@ -188,7 +188,7 @@ void page_destroy(u64* upage) {
          * 内核的外设映射（如 0x3f00b000 的 mailbox/"box"、0x40000000 的
          * core-local 定时器）会随任意进程退出而消失 ⇒ page fault at 3f00b208
          * / 4000006c，随后调度器崩。顺序换过来：只有真要归还的页才清 PTE。 */
-        if (va < (vaddr_t)EXEC_ADDR || va >= (vaddr_t)0x80000000UL) {
+        if (va < (vaddr_t)EXEC_ADDR || va >= (vaddr_t)USER_VA_END) {
           continue;
         }
         /* 兜底：物理页不在 boot_info 声明的 RAM 内（设备/未认领映射）→ 不归还 */

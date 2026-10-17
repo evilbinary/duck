@@ -670,11 +670,15 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
         return MAP_FAILED;
       }
     }
-    /* 【按需分页】页对齐偏移走登记式文件映射：不 valloc、不读文件，
-     * 物理页在缺页时由 page.c 逐页 valloc+vread 补内容。810MB 模型因此
-     * 可以映射成功（以前在这里一次性 valloc 全量直接失败）。
-     * 旧的全量读入路径保留，作非页对齐偏移的兜底。 */
-    if ((off & ((u64)PAGE_SIZE - 1)) == 0) {
+    /* 【按需分页】页对齐偏移且【映射足够大】才走登记式文件映射：不 valloc、
+     * 不读文件，物理页在缺页时由 page.c 逐页 valloc+vread 补内容。
+     * 阈值的由来：musl ld.so 是 mmap 完就 close(fd)（dynlink.c map_library
+     * 之后紧跟 close），fatfs close 会关 FIL ⇒ 懒页缺页时 vread 全 0 ⇒
+     * shell 一起就崩（实测 2026-10）。小映射（libc 几 MB）继续走旧的
+     * 一次性读入路径（fd 关闭前内容已在内存）；大文件（yllm 810MB 模型，
+     * wmap_open 保持 fd 打开）才走 lazy。 */
+    if ((off & ((u64)PAGE_SIZE - 1)) == 0 &&
+        length >= 16 * 1024 * 1024) {
       if (sys_mmap_install_area(vm, map_at, length, node, off) < 0) {
         log_error("mmap file install failed addr=%x\n", map_at);
         return MAP_FAILED;

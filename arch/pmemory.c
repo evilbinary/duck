@@ -295,20 +295,46 @@ static void ya_list_append(block_t** head, block_t** last, block_t* block) {
  * 而链表是逻辑顺序，所以不能用 next/prev 直接当邻居。 */
 static block_t* ya_find_block_by_header(block_t* hdr) {
   block_t* b;
+  u32 n = 0;
   if (hdr == NULL) {
     return NULL;
   }
-  for (b = mmt.g_block_list; b != NULL; b = b->next) {
-    if (b == hdr) {
-      return b;
+  /* 【诊断护栏】链表被踩成环时这里会死循环转不出来；链异常巨大时每次
+   * kfree 也都 O(n)。分级探针：超过 10k/100k/500k 各打一条（一次性），
+   * 超过 1M 直接返回 NULL，把死循环/巨链变成可诊断信息。 */
+  {
+    static u8 probed;
+    static u32 max_len;
+    for (b = mmt.g_block_list; b != NULL; b = b->next) {
+      if (b == hdr) {
+        break;
+      }
+      if (++n > 1000000u) {
+        log_error("ya_find_block: g_block_list cycle len>1M hdr=%p next=%p\n",
+                  hdr, b->next);
+        return NULL;
+      }
     }
-  }
-  for (b = mmt.g_block_free; b != NULL; b = b->next) {
-    if (b == hdr) {
-      return b;
+    for (b = mmt.g_block_free; b != NULL; b = b->next) {
+      if (b == hdr) {
+        break;
+      }
+      if (++n > 1000000u) {
+        log_error("ya_find_block: g_block_free cycle len>1M hdr=%p next=%p\n",
+                  hdr, b->next);
+        return NULL;
+      }
     }
+    if (n > max_len) {
+      max_len = n;
+      if ((n > 10000 && !probed) || (n > 100000 && probed == 1) ||
+          (n > 500000 && probed == 2)) {
+        probed = n > 500000 ? 3 : (n > 100000 ? 2 : 1);
+        log_error("ya_find_block: long walk len=%u hdr=%p\n", n, hdr);
+      }
+    }
+    return n > 1000000u ? NULL : b;
   }
-  return NULL;
 }
 
 /* block 之后紧邻的物理块（没有则 NULL）。
