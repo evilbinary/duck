@@ -743,14 +743,17 @@ size_t fat_op_ioctl(struct vnode *node, uint cmd, void *args) {
       return ret;
     }
 
+    /* 整块清零再填：st_dev/st_ino/st_uid/st_gid/st_rdev/st_blocks 这些
+     * 本文件系统不提供的字段必须是 0，不能留用户栈上的旧值（libc 侧会读）。 */
+    kmemset(stat, 0, sizeof(*stat));
     if ((fno.fattrib & AM_DIR) == AM_DIR) {
       stat->st_size = fno.fsize;
-      stat->st_mtim = fno.fdate << 16 | fno.ftime;
+      stat_set_mtime(stat, (time_t)(fno.fdate << 16 | fno.ftime));
       stat->st_mode = S_IFDIR;
       stat->st_mode |= 0755;  // rwxr-xr-x
     } else {
       stat->st_size = fno.fsize;
-      stat->st_mtim = fno.fdate << 16 | fno.ftime;
+      stat_set_mtime(stat, (time_t)(fno.fdate << 16 | fno.ftime));
       stat->st_mode = S_IFREG;
       stat->st_mode |= 0644;  // rw-r--r--
     }

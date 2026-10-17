@@ -17,6 +17,38 @@ extern "C" {
 #define IOC_STATFS _IOW(IOC_MAGIC, 4, int)
 
 
+/* 【应用可见 ABI —— 必须与 libc 的 struct stat 逐字节一致】
+ * 这个结构体的写入方是内核（fatfs/ext 的 IOC_STAT 直接把用户指针当目标），
+ * 读取方是用户态 libc，两边布局必须完全一致。
+ * 64 位架构（aarch64，musl）的布局是 128 字节：
+ *   dev_t/ino_t/blkcnt_t = 64 位；mode/nlink/uid/gid/blksize = 32 位；
+ *   三个时间戳是 16 字节的 struct timespec。
+ * 而 type.h 里的 dev_t/ino_t/blkcnt_t 是 32 位（内核内部拿它们当设备号/块数
+ * 用，保留不动），直接用它拼 struct stat 会让所有字段整体前移 8 字节：
+ * st_size 落在 40 而 musl 从 48 读 ⇒ 应用拿到的"文件大小"实际是
+ * st_blksize/__pad2 两个从未被写过的字段的残留（实测 772MB 的 llf
+ * 被读成几百字节，yllm 直接 size mismatch）。这里按 ABI 宽度显式声明。
+ * 32 位架构（armv7/mips 等）沿用旧布局。 */
+#if defined(__aarch64__) || defined(__x86_64__) || defined(__LP64__) || defined(_LP64)
+struct stat {
+	unsigned long long st_dev;   /* 0  */
+	unsigned long long st_ino;   /* 8  */
+	unsigned int st_mode;        /* 16 */
+	unsigned int st_nlink;       /* 20 */
+	unsigned int st_uid;         /* 24 */
+	unsigned int st_gid;         /* 28 */
+	unsigned long long st_rdev;  /* 32 */
+	unsigned long __pad;         /* 40 */
+	off_t st_size;               /* 48 */
+	int st_blksize;              /* 56 */
+	int __pad2;                  /* 60 */
+	long long st_blocks;         /* 64 */
+	struct timespec st_atim;     /* 72 */
+	struct timespec st_mtim;     /* 88 */
+	struct timespec st_ctim;     /* 104 */
+	unsigned __unused2[2];       /* 120, 总计 128 字节 */
+};
+#else
 struct stat {
 	dev_t st_dev;
 	ino_t st_ino;
@@ -41,6 +73,22 @@ struct stat {
 #endif
 	unsigned __unused2[2];
 };
+#endif
+
+/* 填 mtime 的统一入口：64 位 ABI 下 st_mtim 是 struct timespec（16 字节，
+ * 必须同时给出 tv_nsec），旧布局下是 time_t 标量。fatfs/fat 的 IOC_STAT
+ * 都走这里，免得到处写 #if。 */
+static inline void stat_set_mtime(struct stat* st, time_t sec) {
+  if (st == NULL) {
+    return;
+  }
+#if defined(__aarch64__) || defined(__x86_64__) || defined(__LP64__) || defined(_LP64)
+  st->st_mtim.tv_sec = sec;
+  st->st_mtim.tv_nsec = 0;
+#else
+  st->st_mtim = sec;
+#endif
+}
 
 
 #define __NEED_dev_t

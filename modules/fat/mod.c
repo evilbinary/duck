@@ -414,16 +414,19 @@ size_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args) {
       node->data = file_info;
     }
     struct stat *stat = args;
+    /* 整块清零再填：本文件系统不提供的字段（st_dev/st_ino/st_uid/st_gid/
+     * st_rdev/st_blocks）必须是 0，不能把用户栈上的旧值原样留给 libc。 */
+    kmemset(stat, 0, sizeof(*stat));
     if (file_info->dd != NULL) {
       stat->st_size = file_info->dd->dir_entry.file_size;
-      stat->st_mtim = file_info->dd->dir_entry.modification_time;
+      stat_set_mtime(stat, (time_t)file_info->dd->dir_entry.modification_time);
       stat->st_mode = S_IFREG;
       if (file_info->dd->dir_entry.attributes & FAT_ATTRIB_DIR) {
         stat->st_mode |= S_IFDIR;
       }
     } else if (file_info->fd != NULL) {
       stat->st_size = file_info->fd->dir_entry.file_size;
-      stat->st_mtim = file_info->fd->dir_entry.modification_time;
+      stat_set_mtime(stat, (time_t)file_info->fd->dir_entry.modification_time);
       stat->st_mode = S_IFREG;
       if (file_info->fd->dir_entry.attributes & FAT_ATTRIB_DIR) {
         stat->st_mode |= S_IFREG;
