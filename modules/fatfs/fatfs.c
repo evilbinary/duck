@@ -350,11 +350,12 @@ uint get_fattime(void) {
   /* 直接 vread，不要再 sys_open_kernel：那条路径每次调用都会占一个 fd 且
    * 从没 sys_close（f_open/f_write 都会走 get_fattime ⇒ fd 表被慢慢耗尽）。 */
   time_node = vfs_find(NULL, "/dev/time");
-  if (time_node != NULL) {
-    if (vread(time_node, 0, sizeof(rtc_time_t), (u8 *)&time) == 0) {
-      log_error("erro read time\n");
-      return 0;
-    }
+  if (time_node == NULL) {
+    return 0; /* 没有 RTC：返回 0 表示"时间未知"，FatFs 保持原目录项时间 */
+  }
+  if (vread(time_node, 0, sizeof(rtc_time_t), (u8 *)&time) == 0) {
+    log_error("erro read time\n");
+    return 0;
   }
 
   /* rtc_time_t 的 month 是 1-12（rtc_get_time → seconds_to_date），

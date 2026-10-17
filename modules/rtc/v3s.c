@@ -47,13 +47,14 @@ void rtc_write_time(rtc_time_t* current) {
 }
 
 static size_t read(device_t* dev, void* buf, size_t len) {
-  u32 ret = 0;
   rtc_get_time();
 
   rtc_time_t* rtc = buf;
   *rtc = rtc_time;
 
-  return ret;
+  /* 必须返回实际写入的字节数：返回 0 会被读者当"读失败"
+   * （get_fattime 拿不到时间；sys_time 的 `ret < 0` 对 u32 永远为假）。 */
+  return sizeof(rtc_time_t);
 }
 
 static size_t write(device_t* dev, void* buf, size_t len) {
