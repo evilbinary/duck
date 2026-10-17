@@ -150,7 +150,9 @@ void page_destroy(u64* upage) {
     return;
   }
   u32 start = (u32)(EXEC_ADDR >> PGD_SHIFT);  /* 1GB/项，用户区起点 */
-  u32 end = (u32)(0x80000000UL >> PGD_SHIFT); /* 用户区上界（排他） */
+  /* 上界索引按 USER_VA_END【向上取整】：上界不在 1GB 边界时，直接 >>PGD_SHIFT
+   * 会漏掉最后一条 pgd（mmap 页永不归还）。现值 0x80000000 已对齐，行为不变。 */
+  u32 end = (u32)((USER_VA_END + (1UL << PGD_SHIFT) - 1) >> PGD_SHIFT);
   for (u32 i = start; i < end; i++) {
     u64 e1 = upage[i];
     if ((e1 & 3) != 3) {

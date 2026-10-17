@@ -30,9 +30,10 @@ static int sys_mmap_pages_mapped(thread_t* current, void* addr, size_t length) {
   if (current == NULL || current->vm == NULL || addr == NULL || length == 0) {
     return 0;
   }
-  u32 start = (u32)addr & ~(PAGE_SIZE - 1);
-  u32 end = ((u32)addr + length + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-  for (u32 va = start; va < end; va += PAGE_SIZE) {
+  /* 【地址按字长】u32 会在堆区越过 2GB 后回绕/截断 */
+  vaddr_t start = (vaddr_t)addr & ~(vaddr_t)(PAGE_SIZE - 1);
+  vaddr_t end = ((vaddr_t)addr + length + PAGE_SIZE - 1) & ~(vaddr_t)(PAGE_SIZE - 1);
+  for (vaddr_t va = start; va < end; va += PAGE_SIZE) {
     if (page_v2p(current->vm->upage, (void*)va) != NULL) {
       return 1;
     }
@@ -40,8 +41,8 @@ static int sys_mmap_pages_mapped(thread_t* current, void* addr, size_t length) {
   return 0;
 }
 
-static int sys_mmap_child_overlaps(vmemory_area_t* child, u32 addr, size_t length) {
-  u32 end = addr + length;
+static int sys_mmap_child_overlaps(vmemory_area_t* child, vaddr_t addr, size_t length) {
+  vaddr_t end = addr + length;
   for (vmemory_area_t* p = child; p != NULL; p = p->next) {
     if (p->flags == MEMORY_FREE) {
       continue;
@@ -61,7 +62,7 @@ static void* sys_mmap_pick_anon_addr(thread_t* current, vmemory_area_t* vm,
   if ((uintptr_t)vm->vaddr + length > vm->vend) {
     return NULL;
   }
-  u32 try = (vm->vend - length) & ~(PAGE_SIZE - 1);
+  vaddr_t try = (vm->vend - length) & ~(vaddr_t)(PAGE_SIZE - 1);
   while (try >= vm->vaddr) {
     if (!sys_mmap_pages_mapped(current, (void*)try, length) &&
         !sys_mmap_child_overlaps(vm->child, try, length)) {
@@ -546,51 +547,58 @@ int sys_getppid() {
 
 
 
-int sys_brk(u32 end) {
+/* 【地址按字长】参数/返回用 vaddr_t（ARM64=u64 / 32位=u32，见 types.h）：
+ * 堆区越过 2GB 后 int/u32 承接会变负；但不能写死 u64——ARM32 的 sys_call_fn
+ * 是 u32(*)(u32×6)，按「字」计参（见 sysfn.h 的 ABI 注释）。
+ * 行为与旧实现一致（错误返回 -1；end==0 返回当前堆顶；越界/与 mmap 重叠拒绝）。 */
+vaddr_t sys_brk(vaddr_t end) {
   thread_t* current = thread_current();
-  log_debug("brk tid:%d req:%x\n", current->id, end);
+  log_debug("brk tid:%d req:%lx\n", current->id, (unsigned long)end);
   vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
   if (vm == NULL) {
     log_error("sys brk not found vm\n");
-    return -1;
+    return (vaddr_t)-1;
   }
   if (end == 0) {
     if (vm->alloc_addr == 0) {
-      vm->alloc_addr = vm->vaddr + end;
+      vm->alloc_addr = vm->vaddr;
     }
     end = vm->alloc_addr;
-    log_debug("brk first ret:%x\n", end);
+    log_debug("brk first ret:%lx\n", (unsigned long)end);
     return end;
   }
-  if ((u32)end > (u32)vm->vend) {
-    log_error("brk: end %x exceeds heap vend %x, returning -1\n",
-              end, vm->vend);
-    return -1;
+  if (end > vm->vend) {
+    log_error("brk: end %lx exceeds heap vend %lx, returning -1\n",
+              (unsigned long)end, (unsigned long)vm->vend);
+    return (vaddr_t)-1;
   }
-  int size = (int)((u32)end - (u32)vm->alloc_addr);
+  i64 size = (i64)end - (i64)vm->alloc_addr;
   if (size > 0) {
-    if (sys_mmap_child_overlaps(vm->child, (u32)vm->alloc_addr, (u32)size)) {
-      log_error("brk: end %x overlaps mmap, keep %x\n", end, vm->alloc_addr);
-      return -1;
+    if (sys_mmap_child_overlaps(vm->child, vm->alloc_addr, (size_t)size)) {
+      log_error("brk: end %lx overlaps mmap, keep %lx\n",
+                (unsigned long)end, (unsigned long)vm->alloc_addr);
+      return (vaddr_t)-1;
     }
     /* Allocate physical pages for the expanded heap region so that musl
      * mallocng (and any brk-based allocator) can safely write metadata
      * and payloads without hitting unmapped pages. */
     if (valloc((void*)vm->alloc_addr, (size_t)size) == NULL) {
-      log_error("brk: valloc failed for %x size %d\n", vm->alloc_addr, size);
-      return -1;
+      log_error("brk: valloc failed for %lx size %lld\n",
+                (unsigned long)vm->alloc_addr, (long long)size);
+      return (vaddr_t)-1;
     }
   }
   if (size < 0) {
-    log_debug("brk shrink %x by %d\n", end, -size);
+    log_debug("brk shrink %lx by %lld\n", (unsigned long)end,
+              (long long)-size);
     vfree((void*)end, (size_t)(-size));
   }
-  int addr = end;
   vm->alloc_size += size;
   vm->alloc_addr = end;
-  log_debug("brk old:%x new:%x size_delta:%d total:%d\n",
-            addr - size, addr, size, vm->alloc_size);
-  return addr;
+  log_debug("brk old:%lx new:%lx size_delta:%lld total:%lld\n",
+            (unsigned long)(end - size), (unsigned long)end,
+            (long long)size, (long long)vm->alloc_size);
+  return end;
 }
 
 void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
@@ -895,7 +903,8 @@ void* sys_mremap(void* old_address, size_t old_size, size_t new_size, int flags,
 }
 
 int sys_munmap(void* addr, size_t size) {
-  log_debug("sys munmap addr: %x size: %d\n", addr, size);
+  log_debug("sys munmap addr: %lx size: %llu\n", (unsigned long)addr,
+            (unsigned long long)size);
   thread_t* current = thread_current();
   vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
   if (vm == NULL) {
@@ -946,8 +955,8 @@ int sys_munmap(void* addr, size_t size) {
       static u32 dbg_unmap_miss = 0;
       if (dbg_unmap_miss < 20) {
         dbg_unmap_miss++;
-        log_error("munmap: no area intersects %x len=%x\n", (u32)a0,
-                  (u32)size);
+        log_error("munmap: no area intersects %lx len=%llu\n",
+                  (unsigned long)a0, (unsigned long long)size);
       }
     }
     return 0;

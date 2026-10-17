@@ -393,7 +393,11 @@ int sys_dup(int oldfd);
 
 int sys_dup2(int oldfd, int newfd);
 int sys_readdir(int fd, int index, void* dirent);
-int sys_brk(u32 end);
+/* 【地址按字长】brk 的语义就是"堆顶地址"，用 int/u32 承接在 64 位机过 2GB
+ * 会变负（实测 1GB 堆区实验：shell 起来即卡死）。参数/返回用 vaddr_t：
+ * ARM64=u64、32 位平台=u32（types.h），与各架构 sys_call_fn 的按字 ABI 对齐，
+ * 不会像写死 u64 那样在 ARM32 上把参数槽翻倍。 */
+vaddr_t sys_brk(vaddr_t end);
 
 int sys_readv(int fd, iovec_t* vector, int count);
 int sys_writev(int fd, iovec_t* vector, int count);

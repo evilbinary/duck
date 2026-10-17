@@ -58,8 +58,20 @@
 #define MEMORY_FB 9
 
 #define MEMORY_STACK_SIZE 1024 * 1024   // 1m
+/* 【别把堆区改大】实测把这里改成 1GB（其它一行不动）后，shell 起来就卡死、
+ * 键盘无响应。1GB 会让用户堆区跨过 0x80000000（2GB）——内核里还有一批
+ * 32 位/有符号假设（sys_brk 返回 int、sys_mmap_pick_anon_addr 的 u32 try、
+ * page_destroy 的扫描上界等），逐一排查收益为零：即使 VA 修好，1GB 物理内存
+ * 也装不下 810MB 模型映射 + 107MB KV cache。需要大模型请用 4GB/8GB 机型，
+ * 并在 boot/arm64/init-armv8-a.c 的 RASPI5 分支调高 RAM 上限。 */
 #define MEMORY_HEAP_SIZE 1024 * 1024 * 100  // 100m
 #define MEMORY_EXEC_SIZE 1024 * 1024 * 100  // 100m
+
+/* 【用户 VA 上界（排他）】page_destroy 靠它判断"这个 PTE 属于用户、可归还"。
+ * 现值 = 旧硬编码 0x80000000，行为不变；将来扩堆区时必须与此联动，且
+ * page_destroy 的 pgd 索引要按它【向上取整】（0xB0100000>>30=2 会把
+ * pgd[2] 整条漏掉，mmap 页永不归还）。 */
+#define USER_VA_END 0x80000000UL
 
 #define KERNEL_POOL_NUM 10
 #define USER_POOL_NUM 10
