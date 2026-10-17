@@ -101,6 +101,14 @@ typedef struct vmemory_area {
               * arm64 的 PAGE_DEV 含 bit8 的 shareability，u8 会截掉。 */
   vaddr_t alloc_addr;
   vaddr_t alloc_size;
+  /* 【文件映射·按需分页】file_node != NULL 表示该 VMA 是文件映射：
+   * mmap 时只登记【不分配物理页、不读文件】，缺页时 page.c 逐页
+   * valloc + vread 补内容（off = file_off + (fault - vaddr)）。
+   * 大文件（如 810MB 模型）只有真正被访问的页才占物理内存。
+   * 注意：fatfs close 会关 FIL，若进程 mmap 后 close(fd)，后续缺页
+   * vread 会失败——映射期间请保持 fd 打开（yllm 当前如此）。 */
+  void* file_node;
+  u64 file_off; /* 映射起点在文件中的字节偏移（须页对齐） */
   struct vmemory_area* next;
   struct vmemory_area* child;
 } vmemory_area_t;

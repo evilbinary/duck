@@ -6,6 +6,7 @@
 #include "page.h"
 
 #include "page_ref.h"
+#include "vfs.h"
 
 /* 缺页路径上的调试日志（page fault / page area not found + vmemory_dump /
  * page lookup kernel found phy）量大且逐次缺页都打，默认关闭；排查时打开。
@@ -181,6 +182,45 @@ void* page_fault_handle(interrupt_context_t *ic) {
       if (phy == NULL) {
         if (area->flags == MEMORY_STACK) {
           extend_stack((void*)fault_addr, PAGE_SIZE);
+        } else if (area->file_node != NULL) {
+          /* 【文件映射·按需补页】mmap 只登记了 VMA（sysfn.c 的 lazy 路径），
+           * 第一次访问到这里才分配物理页并从文件读入对应页内容。
+           * 810MB 模型映射不再一次性吃光页池——只有真正被访问的页占内存。
+           * 读不到的部分（超过文件尾/读到已关闭的 FIL）保持 0，与旧的全量
+           * kmemset+vread 行为一致。vread 的偏移是 u32：模型 810MB < 4GB 够用。
+           *
+           * 【必须按页对齐】fault_addr 是触发访问的原始地址，落在页中间是常态
+           * （如 p[PAGE+123] 的首次写）。旧代码直接用它算 foff 并当补页缓冲区：
+           *   1) foff 未对齐 ⇒ 从文件读到的是错位内容；
+           *   2) kmemset/vread 从页中间写满 4KB ⇒ 越过本页尾、踩下一页
+           *      （映射末尾那页还会写到 VMA 之外）。
+           * test-mmap-file 的 test_mmap_file_write 就是在这里露的：
+           * 页首 123 字节既没被补、也没被清（valloc 清零）⇒ 读到 0。 */
+          vnode_t* node = (vnode_t*)area->file_node;
+          vaddr_t page_delta =
+              (vaddr_t)fault_addr & ((vaddr_t)PAGE_SIZE - 1);
+          vaddr_t page_va = (vaddr_t)fault_addr - page_delta;
+          u64 foff = area->file_off + (u64)(page_va - area->vaddr);
+          void* vret = valloc((void*)page_va, PAGE_SIZE);
+          if (vret == NULL) {
+            log_error("file map valloc failed addr:%lx\n",
+                      (unsigned long)page_va);
+            thread_exit(current, -1);
+            exception_process_error(current, ic, (void*)&page_error_exit);
+            schedule(ic);
+          } else {
+            u32 page_off = 0;
+            kmemset((void*)page_va, 0, PAGE_SIZE);
+            while (page_off < PAGE_SIZE) {
+              u32 done = vread(node, (u32)(foff + page_off),
+                               PAGE_SIZE - page_off,
+                               (u8*)page_va + page_off);
+              if (done == 0 || done == (u32)-1) {
+                break;
+              }
+              page_off += done;
+            }
+          }
         } else {
           void* vret = valloc((void*)fault_addr, PAGE_SIZE);
           if (vret == NULL) {

@@ -37,15 +37,21 @@
 #define MREMAP_FIXED 2
 #define MREMAP_DONTUNMAP 4
 
+/* 【必须与 modules/rtc/rtc.h 的 rtc_time_t 逐字段一致（同为 u32）】
+ * 两处用的是同一个 RTC_TIME 守卫宏，谁先被包含谁生效 —— 之前这里是 u8 版
+ * (sizeof=6)，rtc 驱动却按自己的 u32 版 (sizeof=24) 做 `*rtc = rtc_time`
+ * 整结构体赋值（rtc_read 不看 len），于是 sys_time()/get_fattime() 这种
+ * 6 字节栈变量会被写掉后面 18 字节栈；而且 year 存不下 2026（截成 u8）。
+ * 保持两份定义完全相同，包含顺序就不再影响行为。 */
 #ifndef RTC_TIME
 #define RTC_TIME
 typedef struct rtc_time {
-  u8 second;
-  u8 minute;
-  u8 hour;
-  u8 day;
-  u8 month;
-  u8 year;
+  u32 second;
+  u32 minute;
+  u32 hour;
+  u32 day;
+  u32 month;
+  u32 year;
 } rtc_time_t;
 #endif
 

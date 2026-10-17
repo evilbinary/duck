@@ -55,6 +55,8 @@ vmemory_area_t* vmemory_area_create(void* addr, vaddr_t size, u8 flags) {
   area->alloc_size = 0;
   area->flags = flags;
   area->attr = PAGE_USER; /* 默认用户可缓存页；DEV/FB 等用 create_attr 显式指定 */
+  area->file_node = NULL; /* 非 NULL = 文件映射，见 memory.h */
+  area->file_off = 0;
   area->child = NULL;
   return area;
 }

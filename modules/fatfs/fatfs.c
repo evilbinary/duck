@@ -329,31 +329,45 @@ int MMC_disk_ioctl(u8 pdrv, u8 cmd, void *buff) {
       return RES_OK;
     case CTRL_TRIM:
       return RES_PARERR;
+    default:
+      break;
   }
-  return RES_OK;
+  /* 未知命令必须报参数错误；旧代码回 RES_OK，FatFs 会以为设备支持
+   * 该命令并继续用未填充的 buff。 */
+  return RES_PARERR;
 }
 
 uint get_fattime(void) {
   rtc_time_t time;
+  vnode_t *time_node;
+  int year;
+
+  kmemset(&time, 0, sizeof(time));
   time.day = 1;
-  time.hour = 0;
-  time.minute = 0;
   time.month = 1;
-  time.second = 0;
-  time.year = 1900;
+  time.year = 1980;
 
-  int time_fd = (int)sys_open_kernel("/dev/time", 0);
-  if (time_fd < 0) return 0;
-
-  int ret = sys_read(time_fd, &time, sizeof(rtc_time_t));
-  if (ret < 0) {
-    log_error("erro read time\n");
-    return 0;
+  /* 直接 vread，不要再 sys_open_kernel：那条路径每次调用都会占一个 fd 且
+   * 从没 sys_close（f_open/f_write 都会走 get_fattime ⇒ fd 表被慢慢耗尽）。 */
+  time_node = vfs_find(NULL, "/dev/time");
+  if (time_node != NULL) {
+    if (vread(time_node, 0, sizeof(rtc_time_t), (u8 *)&time) == 0) {
+      log_error("erro read time\n");
+      return 0;
+    }
   }
 
-  return (uint)(time.year - 80) << 25 | (uint)(time.month + 1) << 21 |
-         (uint)time.day << 16 | (uint)time.hour << 11 | (uint)time.minute << 5 |
-         (uint)time.second >> 1;
+  /* rtc_time_t 的 month 是 1-12（rtc_get_time → seconds_to_date），
+   * 不能再 +1，否则 12 月会溢出成 13。年域 5 bit 只能放 1980..2107。 */
+  year = (int)time.year;
+  if (year < 1980) {
+    year = 1980;
+  } else if (year > 2107) {
+    year = 2107;
+  }
+  return (uint)(year - 1980) << 25 | (uint)(time.month & 0x0f) << 21 |
+         (uint)(time.day & 0x1f) << 16 | (uint)(time.hour & 0x1f) << 11 |
+         (uint)(time.minute & 0x3f) << 5 | (uint)(time.second >> 1 & 0x1f);
 }
 
 static void print_hex(u8 *addr, uint size) {
@@ -428,18 +442,36 @@ uint fat_op_write(vnode_t *node, uint offset, size_t nbytes, u8 *buffer) {
     return -1;
   }
   // log_debug("fat_op_write fil %x %d %s\n",&file_info->fil,nbytes,buffer);
-  if (offset >= 0) {
-    f_lseek(&file_info->fil, offset);
+  /* offset 是 uint，"offset >= 0" 恒真；要判的是 seek 本身是否成功。
+   * 追加写(O_APPEND)的 offset 可能被上层传成 0 或旧长度，这里仍按
+   * 显式 offset 定位，和 fat_op_read 保持一致（顺带省一次无谓 lseek）。 */
+  if ((FSIZE_t)offset != file_info->fil.fptr) {
+    int seek_res = f_lseek(&file_info->fil, offset);
+    if (seek_res == FR_INVALID_OBJECT) {
+      if (fat_reopen_file(node) < 0) {
+        return -1;
+      }
+      seek_res = f_lseek(&file_info->fil, offset);
+    }
+    if (seek_res != FR_OK) {
+      log_error("fat write seek %s error code %d offset %d\n", node->name,
+                seek_res, offset);
+      return -1;
+    }
   }
 
-  int readbytes = 0;
-  int res = f_write(&file_info->fil, buffer, nbytes, &readbytes);
+  UINT written = 0;
+  int res = f_write(&file_info->fil, buffer, nbytes, &written);
   if (res != FR_OK) {
     log_error("fat write %s error code %d\n", node->name, res);
     return -1;
   }
+  /* 文件长度以 fptr（写完后位置）为准；mmap/stat 依赖 node->length。 */
+  if ((u32)file_info->fil.fptr > node->length) {
+    node->length = (u32)file_info->fil.fptr;
+  }
 
-  return readbytes;
+  return written;
 }
 
 uint fat_op_open(vnode_t *node, uint mode) {
@@ -470,21 +502,51 @@ uint fat_op_open(vnode_t *node, uint mode) {
 
   if ((mode & O_CREAT) == O_CREAT) {
     log_debug("create new file %s\n", name);
-    /* YiYiYa: 新建节点的 file_info 是 vfs_open_attr 从父目录共享来的
-       （file->data = node->data），fat_path 为空（fat_init_file_info_from_node
-       只在根节点时回填），所以这里必然失败。曾尝试在本地补出完整 FAT
-       路径后继续 f_open，但会让内核 PREF ABORT（pc 落到非对齐地址），
-       疑似 f_open 之后的写盘/目录项路径（disk_write 从未被使用过）另有
-       问题，故暂不回填；open 失败由调用方（fceux 等）容忍即可。 */
+    /* 【新建节点：自建 file_info + 拼全路径】
+     * O_CREAT 新建出来的节点，data 往往直接共享父目录的 file_info，其
+     * fat_path 是父目录路径（根就是 "/"）。拿它去 f_open 等于打开目录本身，
+     * 得到 FR_INVALID_NAME(6) —— 之前 mmap 文件测试就是卡在这里。
+     * 这里做两件事：
+     *   1) 若和父目录共享，换成一自己的副本（绝不能改写父目录的 fat_path）；
+     *   2) 路径 = 父 fat_path + "/" + 节点名。
+     * O_TRUNC 对应 FA_CREATE_ALWAYS（fopen("w") 就是 O_CREAT|O_TRUNC）。 */
+    vnode_t *super_node = fat_super_node(node);
+    if (super_node == NULL || super_node->data == NULL) {
+      log_error("create %s: missing parent file_info\n",
+                name != NULL ? name : "<null>");
+      return -1;
+    }
+    file_info_t *parent_info = super_node->data;
+    if (file_info == parent_info) {
+      file_info_t *own = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
+      if (own == NULL) {
+        return -1;
+      }
+      kmemset(own, 0, sizeof(file_info_t));
+      own->fs = parent_info->fs;
+      fat_copy_vol(own, parent_info);
+      file_info = own;
+      node->data = file_info;
+    }
+    if (fat_join_path(parent_info->fat_path, name, file_info->fat_path,
+                      sizeof(file_info->fat_path)) < 0) {
+      log_error("create %s: bad path (parent=%s)\n",
+                name != NULL ? name : "<null>", parent_info->fat_path);
+      return -1;
+    }
     if (fat_volume_path(file_info, buf) < 0) {
       return -1;
     }
-    int res = f_open(&file_info->fil, buf, FA_READ | FA_WRITE | FA_OPEN_ALWAYS);
+    BYTE create_mode = FA_READ | FA_WRITE | ((mode & O_TRUNC) != 0
+                                                 ? FA_CREATE_ALWAYS
+                                                 : FA_OPEN_ALWAYS);
+    int res = f_open(&file_info->fil, buf, create_mode);
     if (res != FR_OK) {
-      log_error("open create file %s error code %d\n", node->name, res);
+      log_error("open create file %s path %s error code %d\n", node->name, buf,
+                res);
       return -1;
     }
-    // kprintf("create file_info->fil->%x buf %s\n", &file_info->fil, buf);
+    node->length = (u32)f_size(&file_info->fil);
 
   } else if ((mode & O_DIRECTORY) == O_DIRECTORY ||
              (node->flags & V_DIRECTORY) == V_DIRECTORY) {

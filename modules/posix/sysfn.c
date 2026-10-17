@@ -77,7 +77,8 @@ static void* sys_mmap_pick_anon_addr(thread_t* current, vmemory_area_t* vm,
 }
 
 static int sys_mmap_install_area(vmemory_area_t* vm, void* start_addr,
-                                 size_t length) {
+                                 size_t length, void* file_node,
+                                 u64 file_off) {
   vmemory_area_t* reuse = NULL;
   if (vm->child != NULL) {
     for (vmemory_area_t* p = vm->child; p != NULL; p = p->next) {
@@ -92,11 +93,16 @@ static int sys_mmap_install_area(vmemory_area_t* vm, void* start_addr,
     reuse->flags = MEMORY_MMAP;
     reuse->size = length;
     reuse->vend = reuse->vaddr + length;
+    reuse->file_node = file_node;
+    reuse->file_off = file_off;
     return 0;
   }
   if (vm->child == NULL) {
     vm->child = vmemory_area_create(start_addr, length, MEMORY_MMAP);
-    return vm->child != NULL ? 0 : -1;
+    if (vm->child == NULL) return -1;
+    vm->child->file_node = file_node;
+    vm->child->file_off = file_off;
+    return 0;
   }
   vmemory_area_t* last_area = vmemory_area_find_last(vm->child);
   if (last_area == NULL) {
@@ -106,6 +112,8 @@ static int sys_mmap_install_area(vmemory_area_t* vm, void* start_addr,
   if (new_area == NULL) {
     return -1;
   }
+  new_area->file_node = file_node;
+  new_area->file_off = file_off;
   last_area->next = new_area;
   return 0;
 }
@@ -662,6 +670,19 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
         return MAP_FAILED;
       }
     }
+    /* 【按需分页】页对齐偏移走登记式文件映射：不 valloc、不读文件，
+     * 物理页在缺页时由 page.c 逐页 valloc+vread 补内容。810MB 模型因此
+     * 可以映射成功（以前在这里一次性 valloc 全量直接失败）。
+     * 旧的全量读入路径保留，作非页对齐偏移的兜底。 */
+    if ((off & ((u64)PAGE_SIZE - 1)) == 0) {
+      if (sys_mmap_install_area(vm, map_at, length, node, off) < 0) {
+        log_error("mmap file install failed addr=%x\n", map_at);
+        return MAP_FAILED;
+      }
+      log_debug("mmap file lazy addr %x len %x off %x\n", map_at,
+                (u32)length, (u32)off);
+      return map_at;
+    }
     if (valloc(map_at, length) == NULL) {
       log_error("mmap file valloc failed addr=%x len=%x\n", map_at, length);
       return MAP_FAILED;
@@ -689,7 +710,7 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
                 f->name != NULL ? f->name : "", (u32)off, (u32)length);
       return MAP_FAILED;
     }
-    if (sys_mmap_install_area(vm, map_at, length) < 0) {
+    if (sys_mmap_install_area(vm, map_at, length, NULL, 0) < 0) {
       log_error("mmap file install failed addr=%x\n", map_at);
       return MAP_FAILED;
     }
@@ -706,7 +727,7 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
       log_error("map fix valloc failed addr=%x len=%x\n", addr, length);
       return MAP_FAILED;
     }
-    if (sys_mmap_install_area(vm, addr, length) < 0) {
+    if (sys_mmap_install_area(vm, addr, length, NULL, 0) < 0) {
       log_error("map fix install area failed addr=%x\n", addr);
       return MAP_FAILED;
     }
@@ -729,7 +750,7 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
       log_error("mmap anon valloc failed addr=%x len=%x\n", start_addr, length);
       return MAP_FAILED;
     }
-    if (sys_mmap_install_area(vm, start_addr, length) < 0) {
+    if (sys_mmap_install_area(vm, start_addr, length, NULL, 0) < 0) {
       log_error("mmap install area failed addr=%x\n", start_addr);
       return MAP_FAILED;
     }
@@ -756,6 +777,8 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
     reuse->flags = MEMORY_MMAP;
     reuse->size = length;
     reuse->vend = reuse->vaddr + length;
+    reuse->file_node = NULL; /* 复用 MEMORY_FREE 节点：清掉上次映射的残留 */
+    reuse->file_off = 0;
     start_addr = (void*)reuse->vaddr;
   } else {
     if (vm->child == NULL) {  // 未分配过
@@ -887,7 +910,7 @@ void* sys_mremap(void* old_address, size_t old_size, size_t new_size, int flags,
     log_error("mremap: valloc new %x len %x failed\n", new_addr, new_size);
     return MAP_FAILED;
   }
-  if (sys_mmap_install_area(vm, new_addr, new_size) < 0) {
+  if (sys_mmap_install_area(vm, new_addr, new_size, NULL, 0) < 0) {
     vfree(new_addr, new_size);
     log_error("mremap: install area failed\n");
     return MAP_FAILED;
@@ -943,6 +966,9 @@ int sys_munmap(void* addr, size_t size) {
         }
         /* 部分重叠 ⇒ 裁剪端点（保留剩余）✓ */
         if (p->vaddr >= a0) {
+          /* 裁头：剩余区起点从旧 vaddr 前移到 s1，文件映射的
+           * file_off 必须同步后移，缺页时 off=vaddr差值 才对得上。 */
+          p->file_off += (u64)(vaddr_t)(s1 - p->vaddr);
           p->vaddr = s1;
         } else {
           p->vend = s0;
