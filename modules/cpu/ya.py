@@ -11,27 +11,40 @@ add_deps(
     'arch',
     'kernel',
     'mod-devfs',
-    'mod-bcm',
 )
 
-arch=get_arch()
-arch_type=get_arch_type()
 plat=get_plat()
 
-# 【raspi5 专用】CPU 温度走 firmware mailbox 属性通道（GET_TEMPERATURE tag），
-# 独立于 fan 模块（温度不依赖 RP1/PCIe2 链路）。注册：app/init/module.c 的
-# RASPI5 分支 REGISTER_MODULE(cpu)；其它平台是空库、无符号需求，
-# 故不需要 rtc 那种 general.c 兜底。
+# 分层同 modules/gpu、modules/lcd：
+#   cpu.c   抽象层（/dev/cpu 节点 + read 语义），所有平台都编
+#   <平台>.c 后端，实现 cpu_temp_read()
+#   general.c 兜底：平台没列进来时用它（永远返回失败，节点照样存在）
 plat_source={
     'raspi5':[
-        'cpu.c',
+        'raspi5.c',
     ],
 }
+
+common_source=[
+    'cpu.c',
+]
 
 source=[]
 if plat_source.get(plat):
     source+=plat_source.get(plat)
 
+# raspi5 的温度来自 VideoCore firmware mailbox（mod-bcm 提供 mailbox.c）
+if plat == 'raspi5':
+    add_deps('mod-bcm')
+
+# 【兜底】没有专用实现的平台用 general.c。app/init/module.c 在所有平台都
+# REGISTER_MODULE(cpu)（只判 CPU_MODULE 是否在构建列表），不留符号会链接期
+# 报 undefined reference cpu_module。
+if not source:
+    source += ['general.c']
+
 add_files(
-    source
+    source+common_source
 )
+
+add_includedirs('.')
