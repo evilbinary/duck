@@ -8,8 +8,12 @@
 #include "page_ref.h"
 
 /* 缺页路径上的调试日志（page fault / page area not found + vmemory_dump /
- * page lookup kernel found phy）量大且逐次缺页都打，默认关闭；排查时打开。 */
-#define DEBUG 1
+ * page lookup kernel found phy）量大且逐次缺页都打，默认关闭；排查时打开。
+ * 关掉的原因：跑大模型时每页缺页打一条，810MB 就是 20 万行串口输出，
+ * 光是打印就能把系统拖死。
+ * 【注意】下面用的是 #ifdef DEBUG，写 `#define DEBUG 0` 是【无效】的
+ * （只要定义了就成立）—— 关闭必须把这一行注释掉，打开就取消注释。 */
+/* #define DEBUG 1 */
 
 /* 【必须在 page_fault_handle 之前定义】早期内核 fault 分支要读它判断"页表是否
  * 已建好"（NULL ⇒ page_create 期间，映射无处可做 ⇒ 打印后停机，不再无限重试）。 */

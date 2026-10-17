@@ -46,8 +46,15 @@ typedef u64 (*sys_call_fn)(u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5,
  * musl 只把大于 -4096UL 的值当 -errno。-EBADF 若停在 0xFFFFFFF7，
  * 用户态看到的是负数但 errno 仍是 0，perror 变成 "No error information"。
  * 高 32 位已是符号扩展的（返回 long 的调用）不动。 */
+/* 【判据必须是 -MAX_ERRNO 窗口，不能是 bit31】原判据 `(r & 0x80000000u)`
+ * 把所有低 32 位 ≥ 2GB 的返回值都当 32 位负错误码做符号扩展 —— 用户堆区
+ * 只有 100MB（0x70100000-0x76500000）时侥幸没暴露；堆区扩到 1GB
+ * （到 0xB0100000）后 mmap 返回 0xB00FF000 被扩成 0xFFFFFFFFB00FF000，
+ * 用户拿到野指针，/bin/config 一启动就 memory fault（实测 trace 里
+ * `no=222 ret=-1341132800` 正是这个值）。Linux 的 IS_ERR_VALUE 只在
+ * [-4095, -1]（0xFFFFF001-0xFFFFFFFF）窗口里认错误码，这里照做。 */
 static inline u64 sys_widen_ret(u64 r) {
-  if ((r >> 32) == 0 && (r & 0x80000000u)) {
+  if ((r >> 32) == 0 && (u32)r >= 0xFFFFF001u) {
     return (u64)(i64)(i32)r;
   }
   return r;
