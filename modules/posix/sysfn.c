@@ -1545,7 +1545,8 @@ pid_t sys_waitpid(pid_t pid, int* wstatus, int options) {
       //          child->state);
       pid_t ret = (pid_t)child->id;
       if (wstatus != NULL) {
-        *wstatus = (int)child->code;
+        /* Linux waitpid 语义：正常退出 status = (code&0xff)<<8 */
+        *wstatus = (int)((child->code & 0xff) << 8);
       }
       /* Detach from parent so the same zombie is not returned forever
        * (shell reap_zombies would spin and freeze input). */
@@ -1708,6 +1709,8 @@ void sys_fn_init() {
   syscall_table[SYS_GETCWD] = &sys_getcwd;
   syscall_table[SYS_CHDIR] = &sys_chdir;
   syscall_table[SYS_FCHDIR] = &sys_fchdir;
+  syscall_table[SYS_FCHOWNAT] = &sys_fchownat; /* musl chown/lchown/fchown */
+  syscall_table[SYS_FCHMODAT] = &sys_fchmodat; /* musl chmod */
   syscall_table[SYS_CLONE] = &sys_clone;
 #if defined(ARM64)
   // ARM64 uses lseek (62) which returns 64-bit offset directly.

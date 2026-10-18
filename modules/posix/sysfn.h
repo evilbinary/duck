@@ -430,6 +430,9 @@ int sys_munmap(void* addr, size_t size);
 int sys_fcntl64(int fd, int cmd, void* arg);
 char* sys_getcwd(char* buf, size_t size);
 int sys_fchdir(int fd);
+int sys_fchownat(int dirfd, const char* pathname, unsigned int owner,
+                 unsigned int group, int flags);
+int sys_fchmodat(int dirfd, const char* pathname, unsigned int mode, int flags);
 int sys_mkdir(const char* pathname, mode_t mode);
 int sys_access(const char* pathname, int mode);
 int sys_fstat64(int fd, struct stat* stat);

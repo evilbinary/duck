@@ -174,6 +174,8 @@ enum {
   SYS_GETCWD = 17,
   SYS_CHDIR = 49,
   SYS_FCHDIR = 50,
+  SYS_FCHMODAT = 53,   /* aarch64 真实编号：musl chmod -> fchmodat */
+  SYS_FCHOWNAT = 54,   /* aarch64 真实编号：musl chown/lchown/fchown -> fchownat */
   SYS_SEEK = 62,
   // ARM64 does not have _llseek; lseek returns 64-bit offset directly.
   // Map _llseek to lseek for compatibility (musl may still call it).

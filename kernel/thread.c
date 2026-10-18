@@ -18,6 +18,7 @@ thread_t* schedulable_tail_thread[MAX_CPU] = {0};
 thread_t* recycle_head_thread = NULL;
 thread_t* recycle_tail_thread = NULL;
 u32 recycle_head_thread_count = 0;
+u32 recycle_freed_count = 0; /* 【诊断】thread_recycle_process 真实释放的线程数 */
 
 u32 thread_ids = 0;
 lock_t thread_lock;
@@ -809,6 +810,7 @@ void thread_recycle_process(void) {
         v->fds = NULL;
       }
       kfree(v);
+      recycle_freed_count++; /* 【诊断】真实释放计数，见 memory.c MMPROF dump */
     } else {
       prev = v;
     }
@@ -837,6 +839,38 @@ void thread_exit(thread_t* thread, int code) {
   thread_stop(thread);
   thread_t* parent = thread_find_id((int)parent_id);
   if (parent != NULL && parent->state == THREAD_WAITING) {
+    /* 【waitpid 唤醒方代收割——修复僵尸滞留内核堆】
+     * 本内核 schedule_switch() 永不返回内核调用链（见 preempt.c/上下文的
+     * ic 内容搬运式切换）：阻塞在 sys_waitpid 的父进程被唤醒后直接回到
+     * 用户态陷阱帧，内核侧的 for(;;) 重查循环永远不会继续。因此必须
+     * 在唤醒前替父进程把这次 waitpid "做完"：
+     *   1) 收割僵尸：child->pid = -1（此前由 sys_waitpid 标记，但阻塞
+     *      路径的循环永远走不到 reap 分支 ⇒ 僵尸全部滞留 recycle 队列，
+     *      每个僵尸占 32KB kstack + fd 表 + ctx 等 ⇒ 内核堆被逐渐吃光，
+     *      LTP 全量跑到 ~35 个测试必 ya_sbrk 断言）；
+     *   2) 退出码写入父进程用户态 *wstatus：父进程此刻不在 CPU 上，
+     *      临时切到父进程页表写 4 字节后切回（thread_stop 已禁抢占）；
+     *   3) 父进程陷阱帧 x0 = child->id（waitpid 的返回值）。
+     * 旧行为：x0 仍是陷入时保存的参数 pid（>0）、status 恒 0 ⇒ waitpid
+     * "成功"但僵尸永不回收，所有测试都误报 PASS。 */
+    interrupt_context_t* pic = parent->ctx != NULL ? parent->ctx->ksp : NULL;
+    /* 注意：必须用 ctx->ksp（context_switch 时 kmemcpy 进 ksp 槽的帧副本），
+     * 不能用 ctx->ic —— ic 指向的共享槽早已被后续切换的线程帧覆盖，
+     * 从那里读 wstatus 是垃圾指针、写 x0 会破坏当前现场（实测 abort01
+     * 第一个测试就 page fault 卡死）。 */
+    if (pic != NULL) {
+      thread->pid = (u32)-1; /* 1) 收割，recycle 下一轮放行 */
+      int* wstatus = (int*)(unsigned long)context_arg1(pic);
+      if (wstatus != NULL && parent->vm != NULL &&
+          parent->vm->upage != NULL) {
+        u64 saved_ttbr0 = cpu_read_ttbr0();
+        cpu_set_page((u64)parent->vm->upage);
+        /* Linux waitpid 语义：正常退出 status = (code&0xff)<<8 */
+        *wstatus = (int)((code & 0xff) << 8);
+        cpu_set_page(saved_ttbr0);
+      }
+      context_ret(pic) = (long)thread->id; /* 3) 返回值 = child pid */
+    }
     thread_wake(parent);
   }
 }

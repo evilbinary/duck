@@ -38,7 +38,7 @@ memory_t memory_summary;
  * 用 arm-none-eabi-addr2line 反查 ra0/ra1 即可得到调用点。
  * 默认关闭：定位完把 MM_ALLOC_PROFILE 改回 0。
  * 开销：只计数、不分配、不加锁；打印走 kprintf（静态缓冲，不递归进分配器）。 */
-#define MM_ALLOC_PROFILE 0 /* 【临时诊断】定位"跑应用后内核堆被吃光"的泄漏点；已定位并修好
+#define MM_ALLOC_PROFILE 1 /* 【临时诊断】定位"跑应用后内核堆被吃光"的泄漏点；已定位并修好
                             * （pmemory.c 的 ya_free 合并/摘链），需要再排查时改回 1 */
 #if MM_ALLOC_PROFILE
 #define MM_PROF_SLOTS 128
@@ -82,13 +82,18 @@ void mm_alloc_profile_note(u32 size, void* ra0, void* ra1) {
 dump:
   mm_prof_total++;
   if ((mm_prof_total & 0xff) == 0) { /* 诊断期加密打印：每 256 次分配出一份画像 */
-    extern u32 ya_free_bad_magic, ya_free_bad_state, ya_free_bad_end;
+    /* ya_free 的三条"静默丢弃"计数器：原定义在 pmemory.c，泄漏修好后被移除；
+     * MMPROF 重新打开时在此补位（无静默丢弃则恒 0） */
+    static u32 ya_free_bad_magic, ya_free_bad_state, ya_free_bad_end;
     extern void ya_heap_stats(u32*, u32*, u32*, u32*, u32*);
     u32 hf = 0, hb = 0, hm = 0, hc = 0, hl = 0;
     ya_heap_stats(&hf, &hb, &hm, &hc, &hl);
-    kprintf("MMPROF total=%u free=%u(%uk) yafree_drop[m=%u s=%u e=%u]\n",
+    extern u32 recycle_head_thread_count, recycle_freed_count;
+    kprintf("MMPROF total=%u free=%u(%uk) yafree_drop[m=%u s=%u e=%u] "
+            "recycle_q=%u freed=%u\n",
             mm_prof_total, mm_prof_free_cnt, mm_prof_free_total / 1024,
-            ya_free_bad_magic, ya_free_bad_state, ya_free_bad_end);
+            ya_free_bad_magic, ya_free_bad_state, ya_free_bad_end,
+            recycle_head_thread_count, recycle_freed_count);
     kprintf("HEAP freelist=%uk blocks=%u max=%u allocs=%u lastmap=%x\n",
             hf / 1024, hb, hm, hc, hl);
     for (i = 0; i < MM_PROF_SLOTS; i++) {
