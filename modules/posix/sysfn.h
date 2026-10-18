@@ -433,6 +433,7 @@ int sys_fchdir(int fd);
 int sys_fchownat(int dirfd, const char* pathname, unsigned int owner,
                  unsigned int group, int flags);
 int sys_fchmodat(int dirfd, const char* pathname, unsigned int mode, int flags);
+int sys_ftruncate(int fd, off_t length);
 int sys_mkdir(const char* pathname, mode_t mode);
 int sys_access(const char* pathname, int mode);
 int sys_fstat64(int fd, struct stat* stat);

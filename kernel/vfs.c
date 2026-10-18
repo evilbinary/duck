@@ -201,6 +201,29 @@ vnode_t *vfind(vnode_t *node, char *name) {
   }
 }
 
+/* 【新增】目录操作 dispatch：文件系统未实现时返回 -1（EPERM 语义） */
+int vmkdir(vnode_t *dir, const char *name, u32 mode) {
+  if (dir == NULL || dir->op == NULL || dir->op->mkdir == NULL) {
+    return -1;
+  }
+  int ret;
+  vfs_lock();
+  ret = dir->op->mkdir(dir, name, mode);
+  vfs_unlock();
+  return ret;
+}
+
+int vunlink(vnode_t *dir, const char *name) {
+  if (dir == NULL || dir->op == NULL || dir->op->unlink == NULL) {
+    return -1;
+  }
+  int ret;
+  vfs_lock();
+  ret = dir->op->unlink(dir, name);
+  vfs_unlock();
+  return ret;
+}
+
 void vmount(vnode_t *root, u8 *path, vnode_t *node) {
   if (root->op->mount != NULL) {
     vfs_lock();
@@ -530,16 +553,32 @@ vnode_t *vfs_open_attr(vnode_t *root, u8 *name, u32 attr) {
         break;
       }
     }
-    kstrncpy(parent_path, name, len + 1);
-    parent_path[len + 1] = 0;
+    /* parent_path 不含尾部 '/'："/tmp/LTP_x/f" -> "/tmp/LTP_x"；
+     * 原实现 kstrncpy(len+1) 把 '/' 一起带上，vfs_find("/tmp/LTP_x/")
+     * 因空尾组件查找失败 -> 多级目录下 O_CREAT 永远失败 */
+    if (len > 0 && name[len] == '/') {
+      kstrncpy(parent_path, name, len);
+      parent_path[len] = 0;
+      if (len == 0) {
+        parent_path[0] = '/';
+        parent_path[1] = 0; /* "/f" -> parent="/" */
+      }
+    } else {
+      kstrncpy(parent_path, name, len + 1);
+      parent_path[len + 1] = 0;
+    }
     vnode_t *node = vfs_find(root, parent_path);
     if (node == NULL) {
       kprintf("open parent %s %s failed \n", parent_path, name);
       return NULL;
     }
-    char *last = kstrrstr(name, root->name);
-    if (last != NULL) {
-      if (last[0] == '/') last++;
+    /* 【修复】新文件名必须取最后一个 '/' 之后的部分。原实现用
+     * kstrrstr(name, root->name)，对多级绝对路径（如 /tmp/LTP_x/f）会得到
+     * "LTP_x/f" 而非 "f"，fat_join_path 拼出 /LTP_x/f 这种错路径，
+     * f_open FR_NO_FILE -> 所有 LTP 测试在 tst_test.c 建 IPC 文件时 EPERM。 */
+    char *last = (char *)name;
+    if (len > 0 && name[len] == '/') {
+      last = (char *)name + len + 1;
     }
     file = vfs_create_node(last, V_FILE);
     file->device = node->device;

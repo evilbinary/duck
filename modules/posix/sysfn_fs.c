@@ -19,6 +19,7 @@
 extern vnode_t* root_node;
 
 int fat_node_path(vnode_t* node, char* buf, size_t bufsz);
+int fat_ftruncate(vnode_t* node, u64 length);
 
 static int sys_user_page_mapped(u32 va) {
   thread_t* current = thread_current();
@@ -305,7 +306,11 @@ static u32 sys_open_kpath(const char* name, int attr) {
 
   vnode_t* file = vfs_find_relative(root, pwd, name);
   if (file == NULL && (attr & O_CREAT) == O_CREAT) {
-    file = vfs_open_attr(pwd, name, attr);
+    /* 【修复】绝对路径必须从 root 开始解析。原实现恒用 pwd：测试 chdir 进
+     * /tmp/LTP_x 后再 open("/tmp/LTP_x/f", O_CREAT) 时从 tmpdir 里找
+     * "/tmp/..." 必失败（tst_test.c 建 IPC 文件全灭，EPERM 掩盖真实错误）。 */
+    vnode_t* start = (name[0] == '/') ? root : pwd;
+    file = vfs_open_attr(start, name, attr);
   }
   if (file == NULL) {
     log_error("sys open file %s error, attr %x \n", name, attr);
@@ -1068,9 +1073,57 @@ int sys_chdir(const char* path) {
 
 
 int sys_unlink(const char* pathname) {
-    log_debug("sys unlink not impl %s\n", pathname);
+  thread_t* current = thread_current();
+  char kpath[MAX_PATH_BUFFER];
+  char parent[MAX_PATH_BUFFER];
+  const char* base;
+  char* slash;
+  vnode_t* dir_node;
+
+  if (pathname == NULL) {
     return -1;
   }
+  if (!sys_user_path_pointer_valid(pathname)) {
+    log_error("sys_unlink bad user path %x\n", pathname);
+    return -1;
+  }
+  if (sys_copy_user_string(pathname, kpath, sizeof(kpath)) < 0) {
+    return -1;
+  }
+  if (kstrlen(kpath) == 0) {
+    return -1;
+  }
+
+  kstrcpy(parent, kpath);
+  slash = parent + kstrlen(parent);
+  while (slash > parent && *slash != '/') {
+    slash--;
+  }
+  if (*slash == '/') {
+    base = slash + 1;
+    *slash = '\0';
+    if (parent[0] == '\0') {
+      parent[0] = '/';
+      parent[1] = '\0';
+    }
+  } else {
+    base = kpath;
+    parent[0] = '\0';
+  }
+  if (base[0] == '\0') {
+    return -1;
+  }
+
+  dir_node = vfs_find_relative(current->vfs->root, current->vfs->pwd,
+                               parent[0] ? parent : "/");
+  if (!vfs_node_is_valid(dir_node) ||
+      (dir_node->flags & V_DIRECTORY) != V_DIRECTORY) {
+    log_error("sys_unlink: parent not found %s\n", parent);
+    return -1;
+  }
+
+  return vunlink(dir_node, base);
+}
   
   int sys_rename(const char* old, const char* new) {
     log_debug("sys rename not impl %s\n", old);
@@ -1407,11 +1460,75 @@ int sys_stat(const char* path, struct stat* stat) {
   }
 
 
-int sys_mkdir(const char* pathname, mode_t mode) {
-    log_debug("sys mkdir not impl %s\n", pathname);
-  
-    return 0;
+/* 【新增】musl ftruncate/truncate -> ftruncate（aarch64 编号 46）。
+ * LTP tst_test.c 建 IPC 共享文件（SAFE_FTRUNCATE）必需。 */
+int sys_ftruncate(int fd, off_t length) {
+  thread_t* current = thread_current();
+  fd_t* f = thread_find_fd_id(current, fd);
+  if (f == NULL) {
+    log_error("sys_ftruncate not found fd %d tid %d\n", fd, current->id);
+    return -1;
   }
+  vnode_t* node = (vnode_t*)f->data;
+  if (node == NULL) {
+    return -1;
+  }
+  return fat_ftruncate(node, (u64)length);
+}
+
+int sys_mkdir(const char* pathname, mode_t mode) {
+  thread_t* current = thread_current();
+  char kpath[MAX_PATH_BUFFER];
+  char parent[MAX_PATH_BUFFER];
+  const char* base;
+  char* slash;
+  vnode_t* dir_node;
+
+  if (pathname == NULL) {
+    return -1;
+  }
+  if (!sys_user_path_pointer_valid(pathname)) {
+    log_error("sys_mkdir bad user path %x\n", pathname);
+    return -1;
+  }
+  if (sys_copy_user_string(pathname, kpath, sizeof(kpath)) < 0) {
+    return -1;
+  }
+  if (kstrlen(kpath) == 0) {
+    return -1;
+  }
+
+  /* 拆 parent 目录 + 末段名字：/tmp/LTP_x -> parent=/tmp base=LTP_x */
+  kstrcpy(parent, kpath);
+  slash = parent + kstrlen(parent);
+  while (slash > parent && *slash != '/') {
+    slash--;
+  }
+  if (*slash == '/') {
+    base = slash + 1;
+    *slash = '\0';
+    if (parent[0] == '\0') {
+      parent[0] = '/';
+      parent[1] = '\0'; /* "/name" -> parent="/" */
+    }
+  } else {
+    base = kpath; /* 无 '/'：相对 pwd 的裸名 */
+    parent[0] = '\0';
+  }
+  if (base[0] == '\0') {
+    return -1;
+  }
+
+  dir_node = vfs_find_relative(current->vfs->root, current->vfs->pwd,
+                               parent[0] ? parent : "/");
+  if (!vfs_node_is_valid(dir_node) ||
+      (dir_node->flags & V_DIRECTORY) != V_DIRECTORY) {
+    log_error("sys_mkdir: parent not found %s\n", parent);
+    return -1;
+  }
+
+  return vmkdir(dir_node, base, mode);
+}
   
   int sys_access(const char* pathname, int mode) {
     if (pathname == NULL) {

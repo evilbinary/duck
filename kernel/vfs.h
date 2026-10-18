@@ -42,6 +42,8 @@ typedef u32 (*vreaddir_t)(struct vnode *, struct vdirent *, u32* , u32);
 typedef struct vnode *(*vfinddir_t)(struct vnode *, char *name);
 typedef struct vnode *(*vfind_t)(struct vnode *, char *name);
 typedef void (*vmount_t)(struct vnode *root, u8 *path, vnode_t *node);
+typedef int (*vmkdir_t)(struct vnode *dir, const char *name, u32 mode);
+typedef int (*vunlink_t)(struct vnode *dir, const char *name);
 
 typedef struct voperator {
   vread_t read;
@@ -53,6 +55,10 @@ typedef struct voperator {
   vioctl_t ioctl;
   vfind_t find;
   vmount_t mount;
+  /* 【新增】目录操作：LTP tst_tmpdir 需要 mkdir/删除；未实现的文件系统
+   * 留 NULL（designated initializer 兼容旧表），dispatch 层返回 -1 */
+  vmkdir_t mkdir;
+  vunlink_t unlink;
 } voperator_t;
 
 typedef struct vnode {
@@ -88,6 +94,8 @@ u32 vclose(vnode_t *node);
 u32 vreaddir(vnode_t *node, vdirent_t *dirent, u32* offset, u32 count);
 vnode_t *vfinddir(vnode_t *node, char *name);
 vnode_t *vfind(vnode_t *node, char *name);
+int vmkdir(vnode_t *dir, const char *name, u32 mode);
+int vunlink(vnode_t *dir, const char *name);
 vnode_t *vcreate(u8 *name, u32 flags);
 void vmount(vnode_t *node, u8 *path, vnode_t *node1);
 size_t vioctl(vnode_t *node, u32 cmd, void *args);

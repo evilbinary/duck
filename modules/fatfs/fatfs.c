@@ -512,12 +512,19 @@ uint fat_op_open(vnode_t *node, uint mode) {
      *   2) 路径 = 父 fat_path + "/" + 节点名。
      * O_TRUNC 对应 FA_CREATE_ALWAYS（fopen("w") 就是 O_CREAT|O_TRUNC）。 */
     vnode_t *super_node = fat_super_node(node);
-    if (super_node == NULL || super_node->data == NULL) {
+    /* 【修复】父目录优先取 node->parent（vfs_add_child 已设置）。
+     * 原实现走 fat_super_node（卷根）——对 /tmp/LTP_x 下建文件会拼出
+     * "/LTP_x"（丢掉 /tmp），文件被建到卷根，随后 unlink 按真实路径
+     * 找不到（code 5）。仅当 parent 无 data 时才退回卷根。 */
+    vnode_t *parent_node = (node->parent != NULL && node->parent->data != NULL)
+                               ? node->parent
+                               : super_node;
+    if (parent_node == NULL || parent_node->data == NULL) {
       log_error("create %s: missing parent file_info\n",
                 name != NULL ? name : "<null>");
       return -1;
     }
-    file_info_t *parent_info = super_node->data;
+    file_info_t *parent_info = parent_node->data;
     if (file_info == parent_info) {
       file_info_t *own = kmalloc(sizeof(file_info_t), KERNEL_TYPE);
       if (own == NULL) {
@@ -839,6 +846,84 @@ size_t fat_op_ioctl(struct vnode *node, uint cmd, void *args) {
   return ret;
 }
 
+/* 【新增】在 dir_node 下建目录：拼 fat 全路径后走 f_mkdir。
+ * LTP tst_tmpdir 的 mkdtemp 依赖它（sys_mkdir 此前是假成功 stub）。 */
+int fat_op_mkdir(vnode_t *dir_node, const char *name, u32 mode) {
+  file_info_t *file_info = dir_node->data;
+  char buf[MAX_FILE_PATH];
+  FRESULT res;
+  size_t len;
+
+  (void)mode;
+  if (file_info == NULL || name == NULL || name[0] == '\0') {
+    return -1;
+  }
+  if (fat_volume_path(file_info, buf) < 0) {
+    return -1;
+  }
+  len = kstrlen(buf);
+  if (len + 1 + kstrlen(name) + 1 > sizeof(buf)) {
+    return -1;
+  }
+  if (len > 0 && buf[len - 1] != '/') {
+    buf[len++] = '/';
+  }
+  kstrcpy(buf + len, name);
+  res = f_mkdir(buf);
+  if (res != FR_OK) {
+    log_error("fat mkdir %s failed code %d\n", buf, res);
+    return -1;
+  }
+  return 0;
+}
+
+/* 【新增】删除 dir_node 下的文件或空目录（FatFs f_unlink 两者通吃）。
+ * LTP tst_tmpdir 的清理路径（rmobj/rmdir/unlink）依赖它。 */
+int fat_op_unlink(vnode_t *dir_node, const char *name) {
+  file_info_t *file_info = dir_node->data;
+  char buf[MAX_FILE_PATH];
+  FRESULT res;
+  size_t len;
+
+  if (file_info == NULL || name == NULL || name[0] == '\0') {
+    return -1;
+  }
+  if (fat_volume_path(file_info, buf) < 0) {
+    return -1;
+  }
+  len = kstrlen(buf);
+  if (len + 1 + kstrlen(name) + 1 > sizeof(buf)) {
+    return -1;
+  }
+  if (len > 0 && buf[len - 1] != '/') {
+    buf[len++] = '/';
+  }
+  kstrcpy(buf + len, name);
+  res = f_unlink(buf);
+  if (res != FR_OK) {
+    log_error("fat unlink %s failed code %d\n", buf, res);
+    return -1;
+  }
+  return 0;
+}
+
+/* 【新增】截断已打开文件到 length：LTP tst_test.c 建 IPC 共享文件
+ * （SAFE_FTRUNCATE）必需。文件以 f_lseek(length)+f_truncate 实现。 */
+int fat_ftruncate(vnode_t *node, u64 length) {
+  file_info_t *file_info = node->data;
+  if (file_info == NULL || file_info->fil.obj.fs == NULL) {
+    return -1;
+  }
+  if (f_lseek(&file_info->fil, (FSIZE_t)length) != FR_OK) {
+    return -1;
+  }
+  if (f_truncate(&file_info->fil) != FR_OK) {
+    return -1;
+  }
+  node->length = (u32)f_size(&file_info->fil);
+  return 0;
+}
+
 voperator_t fat_op = {
     .read = fat_op_read,
     .write = fat_op_write,
@@ -847,6 +932,8 @@ voperator_t fat_op = {
     .find = fat_op_find,
     .readdir = fat_op_read_dir,
     .ioctl = fat_op_ioctl,
+    .mkdir = fat_op_mkdir,
+    .unlink = fat_op_unlink,
 };
 
 void fat_init_op(vnode_t *node) { node->op = &fat_op; }

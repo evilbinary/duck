@@ -1711,6 +1711,7 @@ void sys_fn_init() {
   syscall_table[SYS_FCHDIR] = &sys_fchdir;
   syscall_table[SYS_FCHOWNAT] = &sys_fchownat; /* musl chown/lchown/fchown */
   syscall_table[SYS_FCHMODAT] = &sys_fchmodat; /* musl chmod */
+  syscall_table[SYS_FTRUNCATE] = &sys_ftruncate; /* musl ftruncate/truncate */
   syscall_table[SYS_CLONE] = &sys_clone;
 #if defined(ARM64)
   // ARM64 uses lseek (62) which returns 64-bit offset directly.

@@ -96,6 +96,25 @@ dump:
             recycle_head_thread_count, recycle_freed_count);
     kprintf("HEAP freelist=%uk blocks=%u max=%u allocs=%u lastmap=%x\n",
             hf / 1024, hb, hm, hc, hl);
+    /* 【诊断】滞留线程清单：WAITING/STOPPED 状态滞留调度链 = 64KB 栈泄漏源 */
+    {
+      extern thread_t* schedulable_head_thread[MAX_CPU];
+      int wi = 0;
+      u32 j;
+      for (j = 0; j < MAX_CPU && wi < 12; j++) {
+        thread_t* p;
+        for (p = schedulable_head_thread[j]; p != NULL && wi < 12; p = p->next) {
+          if (p->state == THREAD_WAITING || p->state == THREAD_STOPPED) {
+            kprintf("  STUCK tid=%d pid=%d state=%d\n", (int)p->id,
+                    (int)p->pid, p->state);
+            wi++;
+          }
+        }
+      }
+      if (wi > 0) {
+        kprintf("  STUCK total>= %d\n", wi);
+      }
+    }
     for (i = 0; i < MM_PROF_SLOTS; i++) {
       /* 只打印累计 ≥4KB 的调用点：泄漏点会一路涨到几 MB，一次性的小分配不打印，
        * 日志才看得清（配合相邻两份 dump 做差，bytes 单调涨的那条就是泄漏点） */
