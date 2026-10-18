@@ -41,17 +41,17 @@ static int sys_mmap_pages_mapped(thread_t* current, void* addr, size_t length) {
   return 0;
 }
 
-static int sys_mmap_child_overlaps(vmemory_area_t* child, vaddr_t addr, size_t length) {
+static vmemory_area_t* sys_mmap_child_overlaps(vmemory_area_t* child, vaddr_t addr, size_t length) {
   vaddr_t end = addr + length;
   for (vmemory_area_t* p = child; p != NULL; p = p->next) {
     if (p->flags == MEMORY_FREE) {
       continue;
     }
     if (addr < p->vend && end > p->vaddr) {
-      return 1;
+      return p;
     }
   }
-  return 0;
+  return NULL;
 }
 
 static void* sys_mmap_pick_anon_addr(thread_t* current, vmemory_area_t* vm,
@@ -64,14 +64,28 @@ static void* sys_mmap_pick_anon_addr(thread_t* current, vmemory_area_t* vm,
   }
   vaddr_t try = (vm->vend - length) & ~(vaddr_t)(PAGE_SIZE - 1);
   while (try >= vm->vaddr) {
-    if (!sys_mmap_pages_mapped(current, (void*)try, length) &&
-        !sys_mmap_child_overlaps(vm->child, try, length)) {
-      return (void*)try;
+    /* 【VMA 重叠前置 + 整段跳跃】顺序反了是大坑：lazy 文件映射的 VMA
+     * 没有已映射页，pages_mapped 恒 0，于是每个 4KB 步都要做一遍
+     * O(length/PAGE) 的页表扫描——45MB 匿名映射在 810MB 模型 VMA 底下
+     * 逐步下探 = 198k 步 × 11.5k 次 page_v2p ≈ 23 亿次查表（QEMU 实测
+     * 卡死数分钟）。先查 VMA（O(n) 链表），重叠就整段跳到冲突 VMA 之下；
+     * 只有真无 VMA 重叠才值得做页表扫描。 */
+    vmemory_area_t* ov = sys_mmap_child_overlaps(vm->child, try, length);
+    if (ov == NULL) {
+      if (!sys_mmap_pages_mapped(current, (void*)try, length)) {
+        return (void*)try;
+      }
+      if (try <= vm->vaddr) {
+        break;
+      }
+      try -= PAGE_SIZE;
+      continue;
     }
-    if (try <= vm->vaddr) {
+    /* 整段跳过冲突 VMA：落到它的 vaddr 之下（页对齐） */
+    if (ov->vaddr < (vaddr_t)length || ov->vaddr - length < vm->vaddr) {
       break;
     }
-    try -= PAGE_SIZE;
+    try = (ov->vaddr - length) & ~(vaddr_t)(PAGE_SIZE - 1);
   }
   return NULL;
 }

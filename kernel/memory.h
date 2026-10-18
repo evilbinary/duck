@@ -149,6 +149,8 @@ void kfree_alignment(void* ptr);
 #endif
 
 void* valloc(void* addr, size_t size);
+/* 不清零分配：调用方保证全量覆写（文件映射块填充用，尾部自清） */
+void* valloc_nozero(void* addr, size_t size);
 void vfree(void* addr, size_t size);
 
 void kpool_init();

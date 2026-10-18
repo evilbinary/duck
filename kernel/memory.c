@@ -544,7 +544,20 @@ void* extend_stack(void* addr, size_t size) {
 }
 
 // alloc physic right now on virtual,use for heap
+void* valloc_ex(void* addr, size_t size, int zero);
+
 void* valloc(void* addr, size_t size) {
+  return valloc_ex(addr, size, 1);
+}
+
+/* 【不清零变体】文件映射块填充用：调用方随后 vread 全量覆写，
+ * 只在短读尾部清零。省掉每页两遍清零 + 逐页 cache 维护
+ * （256KB 块 = 64 页 × 2 次 4KB memset，QEMU 上很可观）。 */
+void* valloc_nozero(void* addr, size_t size) {
+  return valloc_ex(addr, size, 0);
+}
+
+void* valloc_ex(void* addr, size_t size, int zero) {
   thread_t* current = thread_current();
   u32 page_alignt = PAGE_SIZE - 1;
   void* vaddr = (vaddr_t)addr & (~page_alignt);
@@ -572,7 +585,9 @@ void* valloc(void* addr, size_t size) {
     }
     /* First zero through the kernel identity mapping so the physical page
      * is clean even before we install the user mapping. */
-    cpu_zero_phy_page(phy_addr, PAGE_SIZE);
+    if (zero) {
+      cpu_zero_phy_page(phy_addr, PAGE_SIZE);
+    }
     {
       /* COW：新用户页引用计数 = 1 */
       page_ref_set((u32)(uintptr_t)phy_addr, 1);
@@ -596,8 +611,11 @@ void* valloc(void* addr, size_t size) {
      * T113-S3 hardware we still observe p[-4] != 0 in mallocng's enframe.
      * Re-zeroing through the user VA is the safest way to ensure the user
      * will read back zeros — whatever the root cause of the discrepancy
-     * (speculative fills, cache maintenance subtlety, or TLB race). */
-    kmemset((void*)vaddr, 0, PAGE_SIZE);
+     * (speculative fills, cache maintenance subtlety, or TLB race).
+     * 【valloc_nozero 跳过两遍清零】调用方保证 vread 全量覆写（尾部自清）。 */
+    if (zero) {
+      kmemset((void*)vaddr, 0, PAGE_SIZE);
+    }
     vaddr += PAGE_SIZE;
   }
   return addr;

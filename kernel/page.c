@@ -200,8 +200,44 @@ void* page_fault_handle(interrupt_context_t *ic) {
           vaddr_t page_delta =
               (vaddr_t)fault_addr & ((vaddr_t)PAGE_SIZE - 1);
           vaddr_t page_va = (vaddr_t)fault_addr - page_delta;
-          u64 foff = area->file_off + (u64)(page_va - area->vaddr);
-          void* vret = valloc((void*)page_va, PAGE_SIZE);
+          /* 【块填充】单页缺页 ⇒ 按 256KB 对齐块补：一次 valloc + 一次
+           * vread 顶 64 次单页往返。推理顺序触达权重，块内页迟早全用，
+           * 无浪费；超出文件尾保持 0（vread 短读，与单页行为一致）。
+           * 772MB 模型 = 19.8 万次缺页，QEMU 下每次 fatfs 4KB 读几十 ms，
+           * 按页补要半小时级；按块补 fatfs 调用数降 64 倍。 */
+          vaddr_t fill_va = page_va;
+          u32 fill_len = PAGE_SIZE;
+          int chunk_ok = 0;
+          {
+            const vaddr_t CHUNK = 256 * 1024;
+            vaddr_t cstart = page_va & ~(CHUNK - 1);
+            vaddr_t cend = cstart + CHUNK;
+            if (cstart < area->vaddr) {
+              cstart = area->vaddr;
+            }
+            if (cend > area->vend) {
+              cend = area->vend;
+            }
+            /* 块内有已映射页（此前单页回退填充过）就别重复 valloc，
+             * 直接走单页路径 */
+            vaddr_t p;
+            int mapped = 0;
+            for (p = cstart; p < cend; p += PAGE_SIZE) {
+              if (page_v2p(current->vm->upage, (void*)p) != NULL) {
+                mapped = 1;
+                break;
+              }
+            }
+            if (!mapped && valloc_nozero((void*)cstart, cend - cstart) != NULL) {
+              fill_va = cstart;
+              fill_len = (u32)(cend - cstart);
+              chunk_ok = 1;
+            }
+          }
+          u64 foff = area->file_off + (u64)(fill_va - area->vaddr);
+          /* 块已 valloc 成功就直接用；否则（含块被截成一页的情形）单页分配 */
+          void* vret = chunk_ok ? (void*)fill_va
+                                : valloc((void*)fill_va, PAGE_SIZE);
           if (vret == NULL) {
             log_error("file map valloc failed addr:%lx\n",
                       (unsigned long)page_va);
@@ -209,16 +245,21 @@ void* page_fault_handle(interrupt_context_t *ic) {
             exception_process_error(current, ic, (void*)&page_error_exit);
             schedule(ic);
           } else {
+            /* 【尾部清零】valloc_nozero 的页是池里旧数据：vread 覆盖到哪
+             * 算哪，剩余尾部（短读/EOF/读错）必须清零，语义与全量
+             * kmemset+vread 一致。 */
             u32 page_off = 0;
-            kmemset((void*)page_va, 0, PAGE_SIZE);
-            while (page_off < PAGE_SIZE) {
+            while (page_off < fill_len) {
               u32 done = vread(node, (u32)(foff + page_off),
-                               PAGE_SIZE - page_off,
-                               (u8*)page_va + page_off);
+                               fill_len - page_off,
+                               (u8*)fill_va + page_off);
               if (done == 0 || done == (u32)-1) {
                 break;
               }
               page_off += done;
+            }
+            if (page_off < fill_len) {
+              kmemset((u8*)fill_va + page_off, 0, fill_len - page_off);
             }
           }
         } else {
