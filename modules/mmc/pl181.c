@@ -114,6 +114,60 @@ static u32 mmc_read_blocks(sdhci_device_t *hci, u32 start, u32 blkcnt,
   return blkcnt * BYTE_PER_SECTOR;
 }
 
+/* 【写路径】PL181/MMCI 多块写：CMD25 + DATACTRL(方向=host→card) + 轮询
+ * TX FIFO 推数 + CMD12 停止。之前 sdhci_dev_port_write 是 return 0 的空壳
+ * ⇒ versatilepb 上 fatfs 任何元数据写都失败（挂载都报 MMC_disk_write
+ * failed），SD 卡等于只读。 */
+static u32 mmc_write_blocks(sdhci_device_t *hci, u32 start, u32 blkcnt,
+                            u8 *buf) {
+  u32 *tmp = (u32 *)buf;
+  int len = blkcnt * BYTE_PER_SECTOR;
+  int status = -1;
+
+  // timeout count
+  io_write32(SD_BASE + DATATIMER, 0xFFFF0000);
+  io_write32(SD_BASE + DATALENGTH, BYTE_PER_SECTOR * blkcnt);
+
+  // cmd25 write multiple block（与读侧 cmd18 对应，qemu 卡为字节寻址）
+  cmd(25, start * BYTE_PER_SECTOR, MMC_RSP_R1);
+
+  // 2^9=512 | Data transfer enabled |= From controller to card（bit1=0）
+  io_write32(SD_BASE + DATACTRL, 0x91);
+  do {
+    status = io_read32(SD_BASE + STATUS);
+    if (status & (SDI_STA_DCRCFAIL | SDI_STA_DTIMEOUT | SDI_STA_TXUNDERR)) {
+      log_error("mmc write data err status %x block %u\n", status, start);
+      break;
+    }
+    if (!(status & (1 << 16))) {  // TXFIFOF 未满 ⇒ 至少 1 槽可写
+      io_write32(SD_BASE + FIFO, *tmp);
+      tmp++;
+      len -= sizeof(u32);
+    }
+    io_write32(SD_BASE + STATUS_CLEAR, 0xFFFFFFFF);
+
+  } while (len > 0);
+
+  // cmd 12 stop
+  cmd(12, 0, MMC_RSP_R1);
+
+  // clear
+  io_write32(SD_BASE + STATUS_CLEAR, 0xFFFFFFFF);
+
+  if (status & (1 << 1)) {
+    log_error(" DataCrcFail\n");
+    return 0;
+  } else if (status & (1 << 3)) {
+    log_error(" Data timeout\n");
+    return 0;
+  } else if (status & (1 << 4)) {
+    log_error(" TxUnderrun\n");
+    return 0;
+  }
+
+  return blkcnt * BYTE_PER_SECTOR;
+}
+
 int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
   // log_debug("sdhci_dev_port_read %x %d\n",buf,len);
 
@@ -149,7 +203,27 @@ int sdhci_dev_port_read(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
 }
 
 int sdhci_dev_port_write(sdhci_device_t *sdhci_dev, char *buf, u32 len) {
-  return 0;
+  u32 ret = 0;
+  u32 bno = (u32)(sdhci_byte_off(sdhci_dev) / BYTE_PER_SECTOR);
+  u32 boffset = (u32)(sdhci_byte_off(sdhci_dev) % BYTE_PER_SECTOR);
+  u32 bcount = (len + boffset + BYTE_PER_SECTOR - 1) / BYTE_PER_SECTOR;
+  u32 bsize = bcount * BYTE_PER_SECTOR;
+
+  if (bsize > sdhci_dev->write_buf_size) {
+    kfree(sdhci_dev->write_buf);
+    sdhci_dev->write_buf = kmalloc(bsize, DEVICE_TYPE);
+    sdhci_dev->write_buf_size = bsize;
+  }
+
+  /* 部分扇区（偏移非 0 或长度不满）：先读整扇区改完再整扇区写回。
+   * 整扇区写跳过读，直接落用户数据。 */
+  if (boffset != 0 || len != bsize) {
+    mmc_read_blocks(sdhci_dev, bno, bcount, sdhci_dev->write_buf);
+  }
+  kmemmove(sdhci_dev->write_buf + boffset, buf, len);
+
+  ret = mmc_write_blocks(sdhci_dev, bno, bcount, sdhci_dev->write_buf);
+  return ret;
 }
 
 void sdhci_dev_init(sdhci_device_t *sdhci_dev) {
