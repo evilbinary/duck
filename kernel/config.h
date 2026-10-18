@@ -170,6 +170,21 @@
 #define CONFIG_COW 1
 #endif
 
+/* 页交换（swap）：物理页耗尽时把用户页落到 swap 设备/文件，缺页时换回。
+ * 【默认开启，但没有 backing（[swap] 配置段）时运行期自动 no-op】——
+ * 所有回收/换入路径都先查 swap_attached()，未挂载即直通。
+ * backing 配置见 app/resource/conf/system.conf 的 [swap] 段：
+ *   device = sda2                → 裸分区
+ *   file   = /mnt/sda1/swapfile  → 分区里的文件（vread/vwrite，无需预分配）
+ * 实现见 kernel/swap.c；槽位管理/页 IO 在阶段 0，回收与换入在阶段 1/2。 */
+#ifndef CONFIG_SWAP
+#define CONFIG_SWAP 1
+#endif
+/* 文件形式默认大小（MB），[swap] 段 size_mb 可覆盖；文件已存在时用文件实际大小 */
+#ifndef CONFIG_SWAP_FILE_MB
+#define CONFIG_SWAP_FILE_MB 32
+#endif
+
 /* 抢占模型：0 NONE / 1 VOLUNTARY / 2 FULL / 3 RT */
 #ifndef PREEMPT_MODEL_DEFAULT
 #define PREEMPT_MODEL_DEFAULT 0 /* PREEMPT_NONE；完整 RT 改为 3 */
