@@ -455,6 +455,10 @@ void vmemory_destroy(vmemory_t* vm) {
   if (vm->ref > 1) {
     return;
   }
+  /* 【swap 记录】页表即将销毁：清掉本地址空间的全部换出记录并归还槽位。
+   * 必须在 page_destroy 之前——否则 VA/页表被新进程复用后，旧记录命中
+   * 同 VA ⇒ 把 A 进程换出的数据换入给 B（数据串门）。 */
+  page_swap_drop_vm(vm);
 #ifdef VM_ENABLE
   if (vm->upage != NULL) {
     if (vm->kpage != NULL && vm->upage == vm->kpage) {
@@ -499,6 +503,11 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
 
   vmcopy->vma = vmemory_area_clone(vmthread->vma, 1);
   vmcopy->kpage = page_kernel_dir();
+  /* 【fork 前全部换回】换出页没有页表映射，下面的 COW 标记/page_clone 都
+   * 复制不到子进程；不换回的话子进程对这些 VA 一律读到 0（父子数据不一致）。
+   * v1 策略简单但正确：fork 前把父进程的全部换出页换回物理内存，
+   * 之后这些页作为常驻页正常走 COW 共享。 */
+  page_swap_swapback_vm(vmthread);
 #ifdef CONFIG_COW
   /* COW 策略层：fork 前把父进程可写的 EXEC 段页改成"只读+COW"，
    * 之后 page_clone 复制出的子页表自然是只读的（父子共享物理页）。

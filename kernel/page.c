@@ -180,6 +180,24 @@ void* page_fault_handle(interrupt_context_t *ic) {
       return ic;
     } else {
       if (phy == NULL) {
+        /* 【swap 换入】该页之前被换出过：先查记录，命中就换回。
+         * 必须放在 stack/file/anon 各分支之前——被换出的页没有任何其它
+         * 补页路径（file_node 是 NULL 的匿名页会补 0，数据就丢了）。
+         * valloc 内部带"页池耗尽 → swap 回收再试"，换入自身页池不足时
+         * 会换出别的页腾地方。 */
+        {
+          vaddr_t pva = (vaddr_t)fault_addr & ~((vaddr_t)PAGE_SIZE - 1);
+          u32 slot = page_swap_lookup(current->vm, pva);
+          if (slot != 0) {
+            void* vret = valloc((void*)pva, PAGE_SIZE);
+            if (vret != NULL && page_swap_read_page(slot, (void*)pva) == 0) {
+              page_swap_forget(current->vm, pva);
+              return ic;
+            }
+            /* 换入失败：保留记录，落到下面的正常分支（大概率再次失败并
+             * 走线程退出，与缺页无法满足时的既有行为一致） */
+          }
+        }
         if (area->flags == MEMORY_STACK) {
           extend_stack((void*)fault_addr, PAGE_SIZE);
         } else if (area->file_node != NULL) {
@@ -279,6 +297,13 @@ void* page_fault_handle(interrupt_context_t *ic) {
         u32 old_pa = 0;
         if (page_fault_is_write() && page_cow_query((u32*)up, fault_addr, &old_pa)) {
           void* np = mm_alloc_page();
+          if (np == NULL) {
+            /* 页池耗尽：换出几页再试。skip_pa=源页——它马上要被拷贝，
+             * 绝不能被回收（否则拷到已释放页 = 数据损坏）。 */
+            if (page_swap_reclaim(4, old_pa) > 0) {
+              np = mm_alloc_page();
+            }
+          }
           if (np != NULL) {
             u32 new_pa = (u32)(uintptr_t)np;
             kmemcpy((void*)new_pa, (void*)old_pa, PAGE_SIZE);
@@ -334,6 +359,49 @@ void page_map_current(vaddr_t virtualaddr, vaddr_t physaddr, u32 flags) {
 }
 
 void *page_kernel_dir() { return kernel_page_dir; }
+
+/* ---- 页交换 hook：默认 no-op，swap 模块 init 时注册真实现 ----
+ * 内核侧只有指针，没有对 modules/swap 的头文件/符号依赖。 */
+static const page_swap_ops_t* page_swap_ops;
+
+void page_swap_ops_register(const page_swap_ops_t* ops) {
+  if (ops == NULL || ops->lookup == NULL || ops->forget == NULL ||
+      ops->drop_vm == NULL || ops->reclaim == NULL || ops->read_page == NULL ||
+      ops->swapback_vm == NULL) {
+    log_error("page swap ops invalid, ignore\n");
+    return;
+  }
+  page_swap_ops = ops;
+  log_info("page swap ops registered\n");
+}
+
+u32 page_swap_lookup(void* vm, vaddr_t va) {
+  return (page_swap_ops != NULL) ? page_swap_ops->lookup(vm, va) : 0;
+}
+
+void page_swap_forget(void* vm, vaddr_t va) {
+  if (page_swap_ops != NULL) {
+    page_swap_ops->forget(vm, va);
+  }
+}
+
+void page_swap_drop_vm(void* vm) {
+  if (page_swap_ops != NULL) {
+    page_swap_ops->drop_vm(vm);
+  }
+}
+
+int page_swap_reclaim(u32 npages, u32 skip_pa) {
+  return (page_swap_ops != NULL) ? page_swap_ops->reclaim(npages, skip_pa) : 0;
+}
+
+int page_swap_read_page(u32 slot, void* page) {
+  return (page_swap_ops != NULL) ? page_swap_ops->read_page(slot, page) : -1;
+}
+
+int page_swap_swapback_vm(void* vm) {
+  return (page_swap_ops != NULL) ? page_swap_ops->swapback_vm(vm) : 0;
+}
 
 void page_init() {
 #ifdef VM_ENABLE

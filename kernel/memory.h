@@ -172,6 +172,35 @@ void vmemory_map_type(void* page_dir, vaddr_t virt_addr, vaddr_t phy_addr,
 
 void memory_init();
 
+/* 【物理页归还统一入口】持 memory_lock 过引用计数闸后归还页池（vfree 与
+ * swap 回收共用，swap 模块不直接碰 memory_lock）。 */
+void memory_free_phys_page(void* phy);
+
+/* ---- 页交换（swap）hook ----
+ * 内核只认这组 hook 指针，不 include 模块头：依赖方向是 module → kernel，
+ * 由 swap 模块（modules/swap）init 时 page_swap_ops_register() 注册实现。
+ * 未注册 = 无 swap，全部默认实现直通（lookup 返 0、reclaim 返 0），
+ * 内核路径零开销、零链接依赖。语义详见 modules/swap/swap.c 对应实现。 */
+typedef struct page_swap_ops {
+  u32 (*lookup)(void* vm, vaddr_t va);     /* (vm,va) 有换出记录？返回槽号，0=无 */
+  void (*forget)(void* vm, vaddr_t va);    /* 删除一条记录（换入成功后） */
+  void (*drop_vm)(void* vm);               /* 地址空间销毁/VA 复用前清全部记录 */
+  int (*reclaim)(u32 npages, u32 skip_pa); /* 页池不足时换出，返回换出页数 */
+  int (*read_page)(u32 slot, void* page);  /* 换入：读一个槽的整页，0=成功 */
+  int (*swapback_vm)(void* vm);            /* fork 前：把 vm 全部换出页换回内存 */
+} page_swap_ops_t;
+void page_swap_ops_register(const page_swap_ops_t* ops);
+
+u32 page_swap_lookup(void* vm, vaddr_t va);
+void page_swap_forget(void* vm, vaddr_t va);
+void page_swap_drop_vm(void* vm);
+int page_swap_reclaim(u32 npages, u32 skip_pa);
+int page_swap_read_page(u32 slot, void* page);
+int page_swap_swapback_vm(void* vm);
+
+/* valloc 失败后一次回收的目标页数：一次多换几页摊薄 IO 次数 */
+#define PAGE_SWAP_RECLAIM_BATCH 8
+
 vmemory_area_t* vmemory_area_create(void* addr, vaddr_t size, u8 flags);
 
 /* 同上，但显式指定该 VMA 的页表映射属性（0 = 按 flags 推导）。 */

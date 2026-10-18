@@ -546,15 +546,30 @@ void* extend_stack(void* addr, size_t size) {
 // alloc physic right now on virtual,use for heap
 void* valloc_ex(void* addr, size_t size, int zero);
 
+/* 【swap 联动】页池耗尽（valloc_ex 返回 NULL）时：同步换出一批用户页
+ * （mmap 子区/堆优先，见 modules/swap/swap.c 的 swap_reclaim）腾出物理页，
+ * 再试一次。没有 backing 时 swap_reclaim 直接返回 0，行为与从前一致。 */
 void* valloc(void* addr, size_t size) {
-  return valloc_ex(addr, size, 1);
+  void* r = valloc_ex(addr, size, 1);
+  if (r == NULL) {
+    if (page_swap_reclaim(PAGE_SWAP_RECLAIM_BATCH, 0) > 0) {
+      r = valloc_ex(addr, size, 1);
+    }
+  }
+  return r;
 }
 
 /* 【不清零变体】文件映射块填充用：调用方随后 vread 全量覆写，
  * 只在短读尾部清零。省掉每页两遍清零 + 逐页 cache 维护
  * （256KB 块 = 64 页 × 2 次 4KB memset，QEMU 上很可观）。 */
 void* valloc_nozero(void* addr, size_t size) {
-  return valloc_ex(addr, size, 0);
+  void* r = valloc_ex(addr, size, 0);
+  if (r == NULL) {
+    if (page_swap_reclaim(PAGE_SWAP_RECLAIM_BATCH, 0) > 0) {
+      r = valloc_ex(addr, size, 0);
+    }
+  }
+  return r;
 }
 
 void* valloc_ex(void* addr, size_t size, int zero) {
@@ -654,6 +669,11 @@ void vfree(void* addr, size_t size) {
 
   u32 pages = (size / PAGE_SIZE) + (size % PAGE_SIZE == 0 ? 0 : 1);
   for (int i = 0; i < pages; i++) {
+    /* 【swap 记录】被换出的页在这里 phy==NULL，不会走下面的释放分支，
+     * 但换出记录必须清掉：否则同 VA 被 MAP_FIXED/mallocng 复用后，
+     * 缺页路径命中旧记录 ⇒ 把旧数据换入新映射（匿名页本该是 0）。
+     * forget 对无记录页是 no-op，无记录时开销一次哈希查找。 */
+    page_swap_forget(current->vm, (vaddr_t)vaddr);
     void* phy = page_v2p(current->vm->upage, vaddr);
     #ifdef DEBUG
     log_debug("vfree vaddr:%x paddr:%x\n", vaddr, phy);
@@ -718,6 +738,21 @@ static void vm_release_range(vmemory_t* vm, vaddr_t start, vaddr_t size) {
   }
 }
 
+/* 【物理页归还统一入口】持 memory_lock 过引用计数闸（COW 共享页 ref>1 不放）
+ * 后归还页池。vfree 的释放路径与 swap 回收（modules/swap 不能直接碰
+ * memory_lock）共用这一个口子，保证记账/闸门只有一份。 */
+void memory_free_phys_page(void* phy) {
+  if (phy == NULL) {
+    return;
+  }
+  rt_mutex_lock(&memory_lock);
+  if (page_put_page == NULL || page_put_page(phy) == 0) {
+    mm_free_page(phy);
+  }
+  rt_mutex_unlock(&memory_lock);
+  memory_static(PAGE_SIZE, MEMORY_TYPE_FREE);
+}
+
 void vmemory_release_user_space(vmemory_t* vm) {
   if (vm == NULL || vm->vma == NULL || vm->upage == NULL) {
     return;
@@ -733,6 +768,9 @@ void vmemory_release_user_space(vmemory_t* vm) {
   if (current == NULL || current->vm != vm) {
     return;
   }
+  /* 【swap 记录】堆/栈 VA 即将被新映像复用：先清掉本地址空间的全部换出
+   * 记录并归还槽位，否则旧记录命中新映像的同 VA ⇒ 换入 A 进程的旧数据。 */
+  page_swap_drop_vm(vm);
   /* 用户映像（链接在 HEAP 区内）、brk 堆、mallocng 的 mmap 区都在堆区段 */
   vm_release_range(vm, (vaddr_t)HEAP_ADDR, MEMORY_HEAP_SIZE);
   vm_release_range(vm, (vaddr_t)STACK_ADDR, MEMORY_STACK_SIZE);

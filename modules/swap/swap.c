@@ -25,11 +25,18 @@
 #ifdef CONFIG_SWAP
 
 #include "kernel/fd.h"
+#include "kernel/page.h" /* page_swap_ops_register：向内核注册换出/换入 hook */
+#include "kernel/page_ref.h"
 #include "kernel/rt_mutex.h"
 #include "kernel/stat.h"
 #include "kernel/string.h" /* kmemcmp / kstrlen */
 #include "modules/sysconf/sysconf.h"
 #include "posix/sysfn.h" /* sys_open_kernel / sys_close：文件形式缺文件时创建 */
+
+/* 回收用的 arch/内核接口：page_unmap_on 各 arch mm.c 实现（签名按架构是
+ * (u64*,u64) 或 (u32*,u32)，不在此重声明——与 page.c/memory.c 一致走
+ * 既有可见性）。物理页归还走 memory_free_phys_page（memory.c），
+ * 不直接碰 memory_lock。 */
 
 #if defined(ARM) || defined(ARM64) || defined(__aarch64__)
 #include "mmc/sdhci.h"
@@ -62,6 +69,10 @@ typedef struct swap_backing {
 static swap_backing_t swap_bk;
 static rt_mutex_t swap_lock;
 static int swap_lock_inited;
+/* 分区形式的 IO 中转页（内核堆）：换出/换入的缓冲常是用户 VA，块设备驱动
+ * （sdhci 的 DMA/PIO 路径）不保证能直接对用户映射做 IO，统一经内核页中转。
+ * 文件形式走 fatfs（内部有自己的窗口缓冲），不需要。 */
+static void* swap_bounce;
 
 /* ---------------------------------------------------------------- bitmap */
 
@@ -81,22 +92,32 @@ static u64 swap_disk_offset(u32 slot) { return ((u64)slot + 1) * PAGE_SIZE; }
 static int swap_dev_io(u32 slot, void* page, int is_write) {
   device_t* dev = swap_bk.dev;
   u64 off = swap_disk_offset(slot);
+  void* buf = page;
   size_t done;
   if (dev == NULL) {
     return -1;
+  }
+  if (swap_bounce != NULL) {
+    buf = swap_bounce;
+    if (is_write) {
+      kmemcpy(buf, page, PAGE_SIZE);
+    }
   }
   if (dev->ioctl != NULL) {
     dev->ioctl(dev, IOC_WRITE_OFFSET, (u32)off);
   }
   if (is_write) {
-    done = dev->write(dev, page, PAGE_SIZE);
+    done = dev->write(dev, buf, PAGE_SIZE);
   } else {
-    done = dev->read(dev, page, PAGE_SIZE);
+    done = dev->read(dev, buf, PAGE_SIZE);
   }
   if (done != PAGE_SIZE) {
     log_error("swap: dev io slot %u %s got %d/%d\n", slot,
               is_write ? "write" : "read", (int)done, (int)PAGE_SIZE);
     return -1;
+  }
+  if (buf != page) {
+    kmemcpy(page, buf, PAGE_SIZE);
   }
   return 0;
 }
@@ -175,6 +196,10 @@ static void swap_backing_reset(void) {
   if (swap_bk.used != NULL) {
     kfree(swap_bk.used);
   }
+  if (swap_bounce != NULL) {
+    kfree(swap_bounce);
+    swap_bounce = NULL;
+  }
   kmemset(&swap_bk, 0, sizeof(swap_bk));
 }
 
@@ -199,6 +224,14 @@ static int swap_backing_install(swap_kind_t kind, device_t* dev, vnode_t* node,
   swap_bk.nslots = nslots;
   swap_bk.used_words = words;
   swap_bit_set(0); /* 头部槽常占（逻辑上预留，落盘在页 0） */
+  if (kind == SWAP_BK_PARTITION) {
+    swap_bounce = kmalloc(PAGE_SIZE, KERNEL_TYPE);
+    if (swap_bounce == NULL) {
+      log_error("swap: no mem for io bounce page\n");
+      swap_backing_reset();
+      return -1;
+    }
+  }
   if (swap_backing_prepare() != 0) {
     swap_backing_reset();
     return -1;
@@ -290,6 +323,292 @@ static int swap_attach_file(const char* path) {
   }
   nslots = (u32)(fsize / PAGE_SIZE) - 1; /* 减头部槽 */
   return swap_backing_install(SWAP_BK_FILE, NULL, node, nslots);
+}
+
+/* ------------------------------------------------ 换出/换入记录（阶段 1/2）
+ *
+ * 【为什么不写进 PTE】各 arch PTE 编码不同（armv5 连 present=0 时地址域的
+ * 布局都不一样），为每个 arch 改 PTE 风险大；用旁路表，键 (vm, va)。
+ * 【锁】swap_lock 只护记录表与槽位 bitmap，【绝不持锁做 IO】——文件形式的
+ * 换出/换入要进 vfs_biglock，而调用方（缺页路径）本身就持着 vfs_biglock：
+ * 若持 swap_lock 做 IO，"A 持 swap_lock 等 vfs / B 持 vfs 等 swap_lock" 的
+ * 锁序交叉就来了（rt_mutex 可重入救不了跨线程的场景）。 */
+
+#define SWAP_REC_BUCKETS 256 /* 2 的幂；哈希键 = vm ^ va */
+
+typedef struct swap_rec {
+  void* vm;
+  vaddr_t va;
+  u32 slot;
+  struct swap_rec* next;
+} swap_rec_t;
+
+static swap_rec_t* swap_recs[SWAP_REC_BUCKETS];
+
+static u32 swap_rec_bucket(void* vm, vaddr_t va) {
+  u32 h = (u32)(unsigned long)vm ^ (u32)((unsigned long)va >> 12);
+  h ^= h >> 16;
+  return h & (SWAP_REC_BUCKETS - 1);
+}
+
+/* 以下三个都要求已持 swap_lock */
+static swap_rec_t* swap_rec_find(void* vm, vaddr_t va) {
+  swap_rec_t* r;
+  for (r = swap_recs[swap_rec_bucket(vm, va)]; r != NULL; r = r->next) {
+    if (r->vm == vm && r->va == va) {
+      return r;
+    }
+  }
+  return NULL;
+}
+
+static int swap_rec_add(void* vm, vaddr_t va, u32 slot) {
+  u32 b = swap_rec_bucket(vm, va);
+  swap_rec_t* r;
+  for (r = swap_recs[b]; r != NULL; r = r->next) {
+    if (r->vm == vm && r->va == va) {
+      return -1; /* 该页已在换出中：并发回收同页时第二个直接放弃 */
+    }
+  }
+  r = kmalloc(sizeof(swap_rec_t), KERNEL_TYPE);
+  if (r == NULL) {
+    return -1;
+  }
+  r->vm = vm;
+  r->va = va;
+  r->slot = slot;
+  r->next = swap_recs[b];
+  swap_recs[b] = r;
+  return 0;
+}
+
+static void swap_rec_del(void* vm, vaddr_t va) {
+  swap_rec_t** pp = &swap_recs[swap_rec_bucket(vm, va)];
+  while (*pp != NULL) {
+    swap_rec_t* r = *pp;
+    if (r->vm == vm && r->va == va) {
+      *pp = r->next;
+      kfree(r);
+      return;
+    }
+    pp = &r->next;
+  }
+}
+
+/* 以下四个经 page_swap_ops_t 注册给内核（见 swap_init），不对外导出 */
+static u32 swap_lookup(void* vm, vaddr_t va) {
+  swap_rec_t* r;
+  u32 slot = 0;
+  if (vm == NULL || !swap_attached()) {
+    return 0;
+  }
+  va &= ~(vaddr_t)PAGE_SIZE - (vaddr_t)1;
+  rt_mutex_lock(&swap_lock);
+  r = swap_rec_find(vm, va);
+  if (r != NULL) {
+    slot = r->slot;
+  }
+  rt_mutex_unlock(&swap_lock);
+  return slot;
+}
+
+static void swap_forget(void* vm, vaddr_t va) {
+  if (vm == NULL || !swap_attached()) {
+    return;
+  }
+  va &= ~(vaddr_t)PAGE_SIZE - (vaddr_t)1;
+  rt_mutex_lock(&swap_lock);
+  swap_rec_del(vm, va);
+  rt_mutex_unlock(&swap_lock);
+}
+
+static void swap_drop_vm(void* vm) {
+  u32 b;
+  if (vm == NULL) {
+    return;
+  }
+  rt_mutex_lock(&swap_lock);
+  for (b = 0; b < SWAP_REC_BUCKETS; b++) {
+    swap_rec_t** pp = &swap_recs[b];
+    while (*pp != NULL) {
+      swap_rec_t* r = *pp;
+      if (r->vm == vm) {
+        *pp = r->next;
+        if (swap_attached()) {
+          swap_bit_clear(r->slot);
+        }
+        kfree(r);
+      } else {
+        pp = &r->next;
+      }
+    }
+  }
+  rt_mutex_unlock(&swap_lock);
+}
+
+/* ------------------------------------------------------------ 同步回收 */
+
+/* 换出一页：选槽 → 记录 → 落盘 → 摘映射 → 还页池。
+ * 【顺序】记录必须先于落盘/摘映射：缺页路径看到"phy==NULL 且有记录"才走
+ * 换入，两个条件之间不能出现"没映射也没记录"的空窗（那会当匿名页补 0，
+ * 数据就丢了）。IO 失败则回滚记录与槽位，跳过该页。 */
+static int swap_evict_one(vmemory_t* vm, vaddr_t va, u32 skip_pa) {
+  void* phy;
+  u32 pa;
+  u32 slot = 0;
+  int have_slot = 0;
+
+  if (va >= (vaddr_t)USER_VA_END) {
+    return -1; /* 内核线程的 VMA 搬在 USER_VA_END 之上，绝不动 */
+  }
+  phy = page_v2p(vm->upage, (void*)va);
+  if (phy == NULL) {
+    return -1;
+  }
+  pa = (u32)(unsigned long)phy;
+  if (pa == skip_pa) {
+    return -1; /* 调用方正在处理的页（如 COW 源页） */
+  }
+  if (page_ref_get(pa) != 1) {
+    return -1; /* COW/共享页：别人还在用，换出会踩对方 */
+  }
+  rt_mutex_lock(&swap_lock);
+  if (swap_alloc_slot(&slot) == 0) {
+    if (swap_rec_add(vm, va, slot) == 0) {
+      have_slot = 1;
+    } else {
+      swap_free_slot(slot);
+    }
+  }
+  rt_mutex_unlock(&swap_lock);
+  if (!have_slot) {
+    return -1; /* swap 满或记录表耗尽 */
+  }
+
+  /* 落盘（不持锁，见记录节注释）；换出前 clean，保证 DRAM 里是最新内容 */
+  cpu_flush_dcache_range((unsigned long)va, (unsigned long)va + PAGE_SIZE);
+  if (swap_write_page(slot, (void*)va) != 0) {
+    rt_mutex_lock(&swap_lock);
+    swap_rec_del(vm, va);
+    swap_bit_clear(slot);
+    rt_mutex_unlock(&swap_lock);
+    return -1;
+  }
+
+  /* 摘映射 + 还页池（走 memory.c 的统一入口：引用计数闸 + 统计） */
+  page_unmap_on(vm->upage, va);
+  memory_free_phys_page(phy);
+  return 0;
+}
+
+/* fork 前换回：一条条处理（摘下记录 → valloc → 读回 → 归还槽位），
+ * valloc/read 失败就把记录原样挂回，留待缺页路径兜底。
+ * 【不能拿着记录指针直接遍历】valloc 内部可能触发 reclaim —— 它会对同一张
+ * 记录表增删（换出的都是常驻页，不会动我们这条 phy==NULL 的记录，但同桶
+ * 链表会变）——所以每次摘一条、处理完再找下一条，指针不跨调用存活。 */
+static int swap_swapback_one(void* vm) {
+  u32 b;
+  rt_mutex_lock(&swap_lock);
+  for (b = 0; b < SWAP_REC_BUCKETS; b++) {
+    swap_rec_t** pp = &swap_recs[b];
+    while (*pp != NULL) {
+      if ((*pp)->vm == vm) {
+        swap_rec_t* r = *pp;
+        vaddr_t va = r->va;
+        u32 slot = r->slot;
+        void* vret;
+        int ok;
+        *pp = r->next;
+        kfree(r);
+        rt_mutex_unlock(&swap_lock);
+
+        vret = valloc((void*)va, PAGE_SIZE);
+        ok = (vret != NULL) && (swap_read_page(slot, (void*)va) == 0);
+
+        rt_mutex_lock(&swap_lock);
+        if (ok) {
+          swap_bit_clear(slot);
+        } else {
+          swap_rec_add(vm, va, slot); /* 挂回，缺页路径下次再试 */
+        }
+        rt_mutex_unlock(&swap_lock);
+        return ok ? 0 : -1;
+      }
+      pp = &(*pp)->next;
+    }
+  }
+  rt_mutex_unlock(&swap_lock);
+  return -1; /* 没有记录了 */
+}
+
+static int swap_swapback_vm(void* vm) {
+  int n = 0;
+  if (vm == NULL || !swap_attached()) {
+    return 0;
+  }
+  while (swap_swapback_one(vm) == 0) {
+    n++;
+  }
+  if (n > 0) {
+    log_info("swap: fork swapback %d page(s)\n", n);
+  }
+  return n;
+}
+
+/* 只动"有换入路径"的区：
+ *   · mmap 子区（heap->child）：大分配/文件映射都在这，优先扫；
+ *   · 堆主区（brk 长出来的匿名页）。
+ * 跳过：DEV/FB（设备寄存器/显存绝不能换）、栈（页少且热，缺页代价高）、
+ * EXEC 主区（代码页换出后每次调用都缺页，性能塌方；阶段 3 再做
+ * "只读文件页直接丢弃重读"）。
+ * 注意 reclaim 永远只扫【当前线程】的地址空间：调用点都在缺页/分配路径上，
+ * current 就是要腾内存的那个进程。 */
+static int swap_reclaim(u32 npages, u32 skip_pa) {
+  thread_t* cur = thread_current();
+  vmemory_t* vm;
+  vmemory_area_t* a;
+  int freed = 0;
+
+  if (npages == 0 || !swap_attached() || cur == NULL || cur->vm == NULL) {
+    return 0;
+  }
+  vm = cur->vm;
+  if (vm->upage == NULL || (vm->kpage != NULL && vm->upage == vm->kpage)) {
+    return 0; /* 内核线程（共享内核页目录）没有可换的用户页 */
+  }
+
+  for (a = vm->vma; a != NULL && freed < (int)npages; a = a->next) {
+    vmemory_area_t* c;
+    vaddr_t va;
+    if (a->flags == MEMORY_DEV || a->flags == MEMORY_FB ||
+        a->flags == MEMORY_FREE || a->vaddr >= (vaddr_t)USER_VA_END) {
+      continue;
+    }
+    /* 子区（mmap）优先：大块分配、文件映射都在这，回收收益最大 */
+    for (c = a->child; c != NULL && freed < (int)npages; c = c->next) {
+      if (c->flags == MEMORY_DEV || c->flags == MEMORY_FB ||
+          c->flags == MEMORY_FREE) {
+        continue;
+      }
+      for (va = c->vaddr; va < c->vend && freed < (int)npages; va += PAGE_SIZE) {
+        if (swap_evict_one(vm, va, skip_pa) == 0) {
+          freed++;
+        }
+      }
+    }
+    if (a->flags == MEMORY_STACK || a->flags == MEMORY_EXEC) {
+      continue;
+    }
+    for (va = a->vaddr; va < a->vend && freed < (int)npages; va += PAGE_SIZE) {
+      if (swap_evict_one(vm, va, skip_pa) == 0) {
+        freed++;
+      }
+    }
+  }
+  if (freed > 0) {
+    log_info("swap: reclaimed %d page(s)\n", freed);
+  }
+  return freed;
 }
 
 /* ---------------------------------------------------------- 对外接口 */
@@ -403,13 +722,24 @@ void swap_conf_attach(void) {}
 #endif /* CONFIG_SWAP */
 
 /* ---------------- 模块入口 ----------------
- * 注册在 fatfs 之后、sysconf 之前（app/init/module.c）：init 只登记
- * sysconf 回调，真正的挂载在配置就绪时做（swap_conf_attach）。
+ * 注册在 fatfs 之后、sysconf 之前（app/init/module.c）：init 做两件事——
+ *   1) 向内核注册换出/换入 hook（page_swap_ops，见 kernel/memory.h）；
+ *   2) 登记 sysconf 回调，配置就绪时挂载 backing（swap_conf_attach）。
  * sysconf_apply 已跑过的情况下（异常时序）就地挂载一次兜底。 */
+static const page_swap_ops_t swap_page_ops = {
+    .lookup = swap_lookup,
+    .forget = swap_forget,
+    .drop_vm = swap_drop_vm,
+    .reclaim = swap_reclaim,
+    .read_page = swap_read_page,
+    .swapback_vm = swap_swapback_vm,
+};
+
 int swap_init(void) {
 #ifdef CONFIG_SWAP
   rt_mutex_init(&swap_lock);
   swap_lock_inited = 1;
+  page_swap_ops_register(&swap_page_ops);
   if (sysconf_loaded()) {
     swap_conf_attach();
   } else {
