@@ -90,6 +90,10 @@ void cpu_zero_phy_page(void* p, unsigned long size);
  * 仍按硬件 TP 取 TLS 的用户态。 */
 void cpu_set_tls(void* tp);
 
+/* 读当前用户线程指针（armv8-a: TPIDR_EL0）。上下文切换保存 TP 用；
+ * 无该寄存器的架构弱符号返回 0。 */
+u64 cpu_get_tls(void);
+
 /* ---- 缓存效果自测（跨架构诊断接口） --------------------------------------
  * 打印 SCTLR 里的 MMU/D-cache/WB/I-cache 位，并用可用的时基比对
  * "小缓冲(可常驻 cache) vs 大缓冲(远超 cache)" 的读带宽，用来判断缓存

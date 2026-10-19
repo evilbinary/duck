@@ -119,6 +119,20 @@ void cpu_set_page(u64 page_table) {
   isb();
 }
 
+/* 【用户线程指针 TPIDR_EL0】aarch64 musl 的 __set_thread_area/__pthread_self
+ * 直接读写该寄存器（EL0 可读）。内核上下文切换必须保存/恢复，否则 fork 出
+ * 的子进程首次上 CPU 时读到别的进程残值（实测 tp=4 → musl self=负地址
+ * 0xffffffffffffff3c → exit_group 写 *clear_child_tid 内核态缺页）。 */
+void cpu_set_tls(void* tp) {
+  asm volatile("msr tpidr_el0, %0" : : "r"(tp) : "memory");
+}
+
+u64 cpu_get_tls(void) {
+  u64 val;
+  asm volatile("mrs %0, tpidr_el0" : "=r"(val));
+  return val;
+}
+
 /* 和 ewokos 一样：开 MMU 之前把 ACTLR_EL1 bit6 置上。
  * 不要写 CPUECTLR（S3_0_C15_C1_4），EL1 访问那个寄存器会卡在 page enable。 */
 void cpu_enable_smp_mode(void) {

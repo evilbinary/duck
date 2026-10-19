@@ -163,15 +163,30 @@ int sys_print_at(char* s, u32 x, u32 y) {
 
 size_t sys_yeild() { thread_yield(); }
 
+/* 【clear_child_tid 防崩守卫】字段被内核堆污染成垃圾指针（实测
+ * 0xffffffffffffff64，nanosleep01 exit_group 崩在 str wzr,[x0,#40]）时，
+ * 直接解引用就是内核态缺页。只在当前页表里能解析到物理页才写。 */
+static void sys_clear_child_tid(thread_t* current) {
+  if (current == NULL || current->clear_child_tid == NULL) {
+    return;
+  }
+  if (current->vm != NULL &&
+      page_v2p((u64*)current->vm->upage, current->clear_child_tid) != NULL) {
+    *(int*)current->clear_child_tid = 0;
+  } else {
+    log_error("exit: bad clear_child_tid %lx tid %d name %s\n",
+              (unsigned long)(uintptr_t)current->clear_child_tid, current->id,
+              current->name != NULL ? current->name : "?");
+    current->clear_child_tid = NULL;
+  }
+}
+
 void sys_exit(int status) {
   thread_t* current = thread_current();
   if (current != NULL && current->id > 1) {
     log_debug("sys_exit tid=%d status=%d\n", current->id, status);
   }
-  if (current != NULL && current->clear_child_tid != NULL) {
-    int* tidptr = (int*)current->clear_child_tid;
-    *tidptr = 0;
-  }
+  sys_clear_child_tid(current);
   thread_exit(current, status);
   // thread_dumps();
   // log_debug("sys exit tid %d %s status %d\n", current->id, current->name,
@@ -181,8 +196,14 @@ void sys_exit(int status) {
   // }
   // cpu_cli();
   sys_thread_self();
-  if (current->tinfo != NULL) {
+  if (current->tinfo != NULL && current->vm != NULL &&
+      current->vm->upage != NULL &&
+      page_v2p((u64*)current->vm->upage, current->tinfo) != NULL) {
     ((thread_info_t*)current->tinfo)->detach_state = DT_EXITED;
+  } else if (current->tinfo != NULL) {
+    log_error("exit: bad tinfo %lx tid %d name %s\n",
+              (unsigned long)(uintptr_t)current->tinfo, current->id,
+              current->name != NULL ? current->name : "?");
   }
   // sys_exit must not return to the caller. Once the current thread is marked
   // stopped, immediately switch away; otherwise execution continues on a dead
@@ -474,7 +495,12 @@ int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
     *parent_tid = copy_thread->id;
   }
 
-  /* CLONE_SETTLS: tls is already TP_ADJ(pthread). Do not keep parent's TP. */
+  /* CLONE_SETTLS: tls is already TP_ADJ(pthread). Do not keep parent's TP.
+   * 【必须以 CLONE_SETTLS 为准】libc clone() 的 ptid/tls/ctid 走 varargs，
+   * 调用方少传时是寄存器残渣（实测 tls=4、ptid=8 随 flags=0x100F 满天飞，
+   * 无 SETTLS 位）。Linux 语义：无 CLONE_SETTLS 就忽略 tls，子线程沿用
+   * thread_copy 继承的父 TP。此前 else-if 无条件采纳 tls，垃圾值 4 直接
+   * 变成子线程 TPIDR_EL0 → musl self=负地址 → 第一个 syscall 就崩。 */
   if ((flags & CLONE_SETTLS) != 0 && tls != NULL) {
     copy_thread->user_tp = tls;
 #if defined(TLS_ABOVE_TP)
@@ -482,9 +508,6 @@ int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
 #else
     copy_thread->tinfo = tls;
 #endif
-  } else if (tls != NULL) {
-    copy_thread->user_tp = tls;
-    copy_thread->tinfo = ((char*)tls) - sizeof(thread_info_t);
   }
 
   /* Run on the pthread stack (mmap), not the parent's process stack. */
@@ -1323,14 +1346,22 @@ void sys_exit_group(int status) {
    * 不退出就是这个）。这里先做与 sys_exit 相同的当前线程收尾，再由
    * thread_exit_group 停掉同进程其它线程并退出当前线程。 */
   thread_t* current = thread_current();
-  if (current != NULL && current->clear_child_tid != NULL) {
-    int* tidptr = (int*)current->clear_child_tid;
-    *tidptr = 0;
-  }
+  sys_clear_child_tid(current);
   if (current != NULL) {
     thread_exit_group(current, status);
-    if (current->tinfo != NULL) {
+    /* 【tinfo 同样要守卫】thread_exit_group 之后 current 可能已被污染/
+     * 复用（实测 nanosleep01 exit_group 时 tinfo=0xffffffffffffff3c，
+     * 写 detach_state 直接内核态缺页）。detach_state 只是 pthread join
+     * 记账，tinfo 不可信时跳过是正确语义。 */
+    if (current->tinfo != NULL && current->vm != NULL && current->vm->upage != NULL &&
+        page_v2p((u64*)current->vm->upage, current->tinfo) != NULL) {
       ((thread_info_t*)current->tinfo)->detach_state = DT_EXITED;
+    } else if (current->tinfo != NULL) {
+      log_error("exit_group: bad tinfo %lx tid %d name %s tp %lx ctx %x vm %x\n",
+                (unsigned long)(uintptr_t)current->tinfo, current->id,
+                current->name != NULL ? current->name : "?",
+                (unsigned long)(uintptr_t)current->user_tp,
+                (u32)(uintptr_t)current->ctx, (u32)(uintptr_t)current->vm);
     }
   }
   /* 与 sys_exit 相同：不能返回 —— 死线程上继续执行会走飞。 */
