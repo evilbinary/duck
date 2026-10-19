@@ -128,7 +128,11 @@ void* page_fault_handle(interrupt_context_t *ic) {
                     page_v2p((u64*)current->vm->upage, pte_page));
           log_debug("pte %x -> %x\n", pte_prev,
                     page_v2p((u64*)current->vm->upage, pte_prev));
-          thread_exit(current, -1);
+          /* 【诊断必须在 thread_exit 之前】thread_exit 会把线程 stop 并从
+           * 调度链摘除——之后 thread_current() 不再返回它，后续 dump/
+           * exception 处理里任何一次取 current 都可能拿到 NULL/别的线程，
+           * 再 fault 就是 handler 里 addr=0 递归 fault（实测 clone04 用户态
+           * 崩在 musl __clone 的 NULL stack → 内核挂死在 bt_dump）。 */
           if (current->vm != NULL && current->vm->vma != NULL) {
             for (vmemory_area_t* a = current->vm->vma; a != NULL;
                  a = a->next) {
@@ -141,17 +145,21 @@ void* page_fault_handle(interrupt_context_t *ic) {
               }
             }
           }
-          current->fault_count++;
-          exception_process_error(current, ic, (void *)&page_error_exit);
           context_dump_fault(ic, fault_addr);
           thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
+          current->fault_count++;
+          /* 【不再走 exception_process_error】它内部 fault_hook(bt_dump 切栈)
+           * + thread_exit + set_entry 三件套在"杀已停止线程"场景会互相踩
+           * （双重 thread_exit 损坏回收链、bt_dump 专用栈切换遇到残破 SP 后
+           * 嵌套异常无限循环，实测 clone04 用户态崩 → 内核假死）。杀进程
+           * 只需要 thread_exit + schedule，诊断已全部在上方完成。 */
+          thread_exit(current, -1);
           schedule(ic);
         } else if (current->fault_count == 3) {
           log_error("%s memory fault at %lx too many\n", current->name,
                     fault_addr);
           current->fault_count++;
           thread_exit(current, -1);
-          exception_process_error(current, ic, (void *)&page_error_exit);
           schedule(ic);
         } else {
           current->fault_count++;
@@ -331,6 +339,19 @@ void* page_fault_handle(interrupt_context_t *ic) {
        * 把 fault 地址打出来并停机 —— 把"静默死循环"变成一条可诊断信息。 */
       log_error("early kernel fault at %lx (kernel page tables not ready)\n",
                 fault_addr);
+      cpu_halt();
+    }
+    /* 【NULL current 安全阀】fault 发生时没有线程上下文（tid=-1，如死线程
+     * 退出/回收路径里的未知异常 code=0 addr=0）：这种 fault 不可能靠映射
+     * 修好，page_map 后返回会让同一指令无限重试 = QEMU 满载假死。非内核
+     * VA 一律停机并打出完整现场。 */
+    if (fault_addr < 0x80000000UL || ic == NULL) {
+      log_error("fault with no thread context: addr=%lx pc=%lx lr=%lx sp=%lx "
+                "no=%d code=%d\n",
+                (unsigned long)fault_addr, ic != NULL ? (unsigned long)ic->pc : 0,
+                ic != NULL ? (unsigned long)ic->lr : 0,
+                ic != NULL ? (unsigned long)ic->sp : 0,
+                ic != NULL ? ic->no : -1, ic != NULL ? ic->code : -1);
       cpu_halt();
     }
     page_map(fault_addr, fault_addr, PAGE_KERNEL);

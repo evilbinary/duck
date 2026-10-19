@@ -822,6 +822,13 @@ thread_t* thread_head() { return schedulable_head_thread[cpu_get_id()]; }
 
 void thread_exit(thread_t* thread, int code) {
   if (thread == NULL) return;
+  /* 【幂等】page.c 的错误路径和 exception_process_error 会对同一线程各调
+   * 一次 thread_exit。thread_stop/thread_recycle 无防重入：二次退出会让
+   * 线程重复入回收队列，回收链表损坏（实测 clone04 用户态崩 → 挂死在
+   * 回收/ fault 处理，tid=-1 addr=0）。已停的线程直接返回。 */
+  if (thread->state == THREAD_STOPPED) {
+    return;
+  }
   /* 只在退出线程自己的上下文里关 fd。fork 后父子各持一份 use_count，
    * 这里减到 0 才会 lwip_close，监听端口才能放开。回收阶段再关会卡在调度里。 */
   if (thread == thread_current() && thread->fds != NULL) {
