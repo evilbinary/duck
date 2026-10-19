@@ -13,6 +13,7 @@
 #include "kernel/kernel.h"
 #include "kernel/loader.h"
 #include "kernel/thread.h"
+#include "kernel/version.h"
 #include "kernel/vfs.h"
 #include "../loader/loader.h"
 
@@ -1577,7 +1578,9 @@ int sys_getpgid(int pid) {
   return (int)current->pid;
 }
 
-/* tst_kvercmp 解析 release 判最低内核版本；填个 ≥4.4 让检查通过。 */
+/* utsname 各字段长度（Linux __NEW_UTS_LEN+1，musl 同布局）。
+ * release 走 kernel/version.h 的 KERNEL_VERSION_STRING（单一来源）；
+ * machine/nodename 由构建系统注入的 ARM64/RASPI3 等宏推导。 */
 #define UTS_FIELD_LEN 65
 static void uts_set(char* dst, const char* src) {
   kstrncpy(dst, src, UTS_FIELD_LEN - 1);
@@ -1588,11 +1591,11 @@ int sys_uname(char* buf) {
   if (buf == NULL) {
     return -1;
   }
-  uts_set(buf + 0 * UTS_FIELD_LEN, "Linux");
-  uts_set(buf + 1 * UTS_FIELD_LEN, "yiyiya");
-  uts_set(buf + 2 * UTS_FIELD_LEN, "1.0.0-yiyiya");
-  uts_set(buf + 3 * UTS_FIELD_LEN, "#1 SMP YiYiYa");
-  uts_set(buf + 4 * UTS_FIELD_LEN, "aarch64");
+  uts_set(buf + 0 * UTS_FIELD_LEN, "Linux"); /* musl/LTP 假定 Linux ABI */
+  uts_set(buf + 1 * UTS_FIELD_LEN, UTS_NODENAME);
+  uts_set(buf + 2 * UTS_FIELD_LEN, KERNEL_VERSION_STRING);
+  uts_set(buf + 3 * UTS_FIELD_LEN, UTS_VERSION);
+  uts_set(buf + 4 * UTS_FIELD_LEN, UTS_MACHINE);
   uts_set(buf + 5 * UTS_FIELD_LEN, "");
   return 0;
 }
