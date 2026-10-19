@@ -106,6 +106,11 @@ u32 vread(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
 }
 
 u32 vwrite(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
+  if ((node->flags & V_UNLINKED) == V_UNLINKED) {
+    /* 文件已删除（LTP IPC：mmap 后 unlink，页映射还持有 vnode），
+     * 回写 flush 再写只会刷出 reopen 失败噪音。 */
+    return 0;
+  }
   if (node->op->write != NULL) {
     u32 ret;
     vfs_lock();

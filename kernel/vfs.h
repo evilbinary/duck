@@ -18,6 +18,7 @@
 #define V_CHARDEVICE 0x04
 #define V_BLOCKDEVICE 0x08
 #define V_PIPE 0x0c
+#define V_UNLINKED 0x100 /* 文件已从目录删除（LTP IPC mmap 后 unlink），vwrite 拒绝 */
 #define V_SYMLINK 0x14
 #define V_MOUNTPOINT 0x18
 

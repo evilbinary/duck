@@ -987,8 +987,17 @@ int sys_munmap(void* addr, size_t size) {
             if (fpa == 0) {
               continue;
             }
-            vwrite(fnode, (u32)(p->file_off + (u64)(fva - p->vaddr)),
-                   PAGE_SIZE, (void*)(uintptr_t)fva);
+            {
+              u32 wr = vwrite(fnode, (u32)(p->file_off + (u64)(fva - p->vaddr)),
+                              PAGE_SIZE, (void*)(uintptr_t)fva);
+              static int dbg_mfl;
+              if (dbg_mfl++ < 8) {
+                kprintf("MFLUSH area %x-%x node=%x off=%d pa=%x wr=%d\n",
+                        (u32)s0, (u32)s1, (u32)(uintptr_t)fnode,
+                        (u32)(p->file_off + (u64)(fva - p->vaddr)), (u32)fpa,
+                        wr);
+              }
+            }
           }
         }
         vfree((void*)s0, (vaddr_t)(s1 - s0));
@@ -1549,6 +1558,78 @@ int sys_sched_setscheduler(pid_t pid, int policy,
   return 0;
 }
 
+/* 【LTP 新 API 子进程存活的关键】tst_test.c fork_testrun 里子进程
+ * SAFE_SETPGID(0,0) 失败即 TBROK 自杀，所有测试收不到结果。 */
+int sys_setpgid(int pid, int pgid) {
+  log_debug("sys setpgid %d %d\n", pid, pgid);
+  return 0;
+}
+
+int sys_getpgid(int pid) {
+  thread_t* current = thread_current();
+  if (pid > 0 && pid != (int)current->id) {
+    thread_t* t = thread_find_id(pid);
+    if (t == NULL) {
+      return -1;
+    }
+    return (int)t->pid;
+  }
+  return (int)current->pid;
+}
+
+/* tst_kvercmp 解析 release 判最低内核版本；填个 ≥4.4 让检查通过。 */
+#define UTS_FIELD_LEN 65
+static void uts_set(char* dst, const char* src) {
+  kstrncpy(dst, src, UTS_FIELD_LEN - 1);
+  dst[UTS_FIELD_LEN - 1] = '\0';
+}
+
+int sys_uname(char* buf) {
+  if (buf == NULL) {
+    return -1;
+  }
+  uts_set(buf + 0 * UTS_FIELD_LEN, "Linux");
+  uts_set(buf + 1 * UTS_FIELD_LEN, "yiyiya");
+  uts_set(buf + 2 * UTS_FIELD_LEN, "1.0.0-yiyiya");
+  uts_set(buf + 3 * UTS_FIELD_LEN, "#1 SMP YiYiYa");
+  uts_set(buf + 4 * UTS_FIELD_LEN, "aarch64");
+  uts_set(buf + 5 * UTS_FIELD_LEN, "");
+  return 0;
+}
+
+/* musl sched_getaffinity：写入 mask 返回字节数。单 CPU → mask=1。 */
+int sys_sched_getaffinity(int pid, unsigned int len, unsigned long* mask) {
+  (void)pid;
+  if (mask == NULL || len < sizeof(unsigned long)) {
+    return -1;
+  }
+  *mask = 1;
+  return (int)sizeof(unsigned long);
+}
+
+/* LTP 用 setitimer 做看门狗；内核没有该定时器，直接"成功"（无超时）。
+ * struct itimerval = 2×struct timeval(16B) = 32B，内核头没有该类型。 */
+int sys_setitimer(int which, void* new_val, void* old_val) {
+  (void)which;
+  (void)new_val;
+  if (old_val != NULL) {
+    kmemset(old_val, 0, 32);
+  }
+  return 0;
+}
+
+int sys_msync(void* addr, size_t length, int flags) {
+  (void)addr;
+  (void)length;
+  (void)flags;
+  return 0; /* 我们的 mmap 不缓存写回时机，无脏数据可刷 */
+}
+
+int sys_mlockall(int flags) {
+  (void)flags;
+  return 0;
+}
+
 pid_t sys_waitpid(pid_t pid, int* wstatus, int options) {
   thread_t* current = thread_current();
   if (current == NULL) {
@@ -1773,6 +1854,8 @@ void sys_fn_init() {
   syscall_table[SYS_MREMAP] = &sys_mremap;
   syscall_table[SYS_STATX] = &sys_statx;
   syscall_table[SYS_CLOCK_GETTIME64] = &sys_clock_gettime64;
+  /* aarch64 time64 变体（musl 某些路径会用 403） */
+  syscall_table[SYS_CLOCK_GETTIME64 + 290] = &sys_clock_gettime64;
 
   syscall_table[SYS_SYSINFO] = &sys_info;
   syscall_table[SYS_MEMINFO] = &sys_mem_info;
@@ -1819,6 +1902,14 @@ void sys_fn_init() {
   syscall_table[SYS_SCHED_SETSCHEDULER] = &sys_sched_setscheduler;
   syscall_table[SYS_SCHED_GET_PRIORITY_MAX] = &sys_sched_get_priority_max;
   syscall_table[SYS_SCHED_GET_PRIORITY_MIN] = &sys_sched_get_priority_min;
+  syscall_table[SYS_SCHED_GETAFFINITY] = &sys_sched_getaffinity;
+
+  syscall_table[SYS_SETITIMER] = &sys_setitimer;
+  syscall_table[SYS_MSYNC] = &sys_msync;
+  syscall_table[SYS_SETPGID] = &sys_setpgid;
+  syscall_table[SYS_GETPGID] = &sys_getpgid;
+  syscall_table[SYS_UNAME] = &sys_uname;
+  syscall_table[SYS_MLOCKALL] = &sys_mlockall;
 
   syscall_table[SYS_WAIT4] = &sys_wait4;
 

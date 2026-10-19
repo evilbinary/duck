@@ -196,6 +196,12 @@ static int fat_reopen_file(vnode_t *node) {
 
   int res = f_open(&file_info->fil, buf, FA_READ | FA_WRITE);
   if (res != FR_OK) {
+    /* FR_NO_FILE/FR_NO_PATH = 文件已被删除（LTP IPC：mmap 后 unlink，
+     * 进程退出/munmap 的回写 flush 还会拿着 vnode 来写）。打上标记后
+     * vwrite 直接拒绝，不再反复刷 reopen 失败噪音。 */
+    if (res == FR_NO_FILE || res == FR_NO_PATH) {
+      node->flags |= V_UNLINKED;
+    }
     log_error("fat reopen file %s path %s error code %d\n", node->name, buf, res);
     return -1;
   }
