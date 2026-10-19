@@ -728,9 +728,15 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
                 f->name != NULL ? f->name : "", (u32)off, (u32)length);
       return MAP_FAILED;
     }
-    if (sys_mmap_install_area(vm, map_at, length, NULL, 0) < 0) {
-      log_error("mmap file install failed addr=%x\n", map_at);
-      return MAP_FAILED;
+    /* 【登记 file_node】仅 MAP_SHARED 登记：MAP_PRIVATE（ld.so 的 libc）
+     * 绝不能登记——clone 会把身份带给子进程，共享重映射会把父子 libc
+     * 数据页并成同一物理页、退出回写还会把脏数据写进 libc 文件。
+     * MAP_SHARED（LTP IPC：子写父读）才需要共享物理页+落盘。 */
+    if ((flags & MAP_SHARED) == MAP_SHARED) {
+      if (sys_mmap_install_area(vm, map_at, length, node, off) < 0) {
+        log_error("mmap file install failed addr=%x\n", map_at);
+        return MAP_FAILED;
+      }
     }
     return map_at;
   }
@@ -969,6 +975,22 @@ int sys_munmap(void* addr, size_t size) {
       if (a0 < p->vend && p->vaddr < a1) {
         vaddr_t s0 = a0 > p->vaddr ? a0 : p->vaddr;
         vaddr_t s1 = a1 < p->vend ? a1 : p->vend;
+        /* 【MAP_SHARED 落盘】物理页即将释放，文件映射的脏页先写回文件，
+         * 否则 munmap→close→重开读不到写入内容（LTP IPC 走这条路径）。 */
+        if (p->file_node != NULL && current->vm != NULL &&
+            current->vm->upage != NULL) {
+          vnode_t* fnode = (vnode_t*)p->file_node;
+          vaddr_t fva;
+          for (fva = s0; fva < s1; fva += PAGE_SIZE) {
+            vaddr_t fpa =
+                (vaddr_t)page_v2p(current->vm->upage, (void*)(uintptr_t)fva);
+            if (fpa == 0) {
+              continue;
+            }
+            vwrite(fnode, (u32)(p->file_off + (u64)(fva - p->vaddr)),
+                   PAGE_SIZE, (void*)(uintptr_t)fva);
+          }
+        }
         vfree((void*)s0, (vaddr_t)(s1 - s0));
         freed++;
         if (a0 <= p->vaddr && a1 >= p->vend) {

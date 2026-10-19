@@ -836,6 +836,12 @@ void thread_exit(thread_t* thread, int code) {
   }
   thread->code = code;
   u32 parent_id = thread->pid;
+  /* 【MAP_SHARED 落盘】线程还活着时把文件映射区写回文件（此后线程退出、
+   * 页面回收，再 flush 读它 VA 会崩）。LTP 子进程写完 IPC 文件直接 exit，
+   * 不 flush 父进程重开文件就读不到子进程结果。 */
+  if (thread->vm != NULL) {
+    vmemory_flush_shared_files(thread->vm);
+  }
   thread_stop(thread);
   thread_t* parent = thread_find_id((int)parent_id);
   if (parent != NULL && parent->state == THREAD_WAITING) {

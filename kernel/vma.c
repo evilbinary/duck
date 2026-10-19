@@ -7,6 +7,7 @@
 #include "page.h"
 #include "page_ref.h"
 #include "thread.h"
+#include "vfs.h"
 #include "libs/include/kernel/string.h"
 
 #define log_debug
@@ -189,6 +190,11 @@ vmemory_area_t* vmemory_area_clone(vmemory_area_t* areas, int flag) {
   for (; p != NULL; p = p->next) {
     vmemory_area_t* c = vmemory_area_create((void*)p->vaddr, p->size, p->flags);
     c->attr = p->attr;
+    /* 【文件映射身份必须跟着走】vmemory_clone 的 MAP_SHARED 共享重映射与
+     * vmemory_flush_shared_files 都按 file_node 识别区域；此前克隆丢掉它，
+     * fork 出的子进程映射退化成匿名私有页——子写父读失效、退出也无从回写。 */
+    c->file_node = p->file_node;
+    c->file_off = p->file_off;
     if (flag == 1) {
       c->alloc_addr = p->alloc_addr;
       c->alloc_size = p->alloc_size;
@@ -448,6 +454,47 @@ void vmemory_copy_data(vmemory_t* vm_copy, vmemory_t* vm_src, u32 type) {
  * 每个死进程要漏 16KB + n×1KB 的内核堆，跑 64 次 exec 就漏 1MB+。
  * LEVEL_KERNEL_SHARE 的 upage 就是全局共享内核页目录（== vm->kpage），
  * 绝不能释放，直接跳过。 */
+/* 【MAP_SHARED 落盘】把 file_node 文件映射区的脏页写回文件。
+ * 映射没有脏页跟踪，整区逐页 vwrite（FAT f_write 跳过末尾全零段代价可
+ * 接受；LTP IPC 文件只有 1-2 页）。调用点：munmap 与进程退出（线程尚为
+ * current、其 VA 仍可访问时）——子进程写完直接 exit，不 flush 父进程
+ * 重开文件就读不到。必须只处理 ref<=1 的地址空间：CLONE_VM 线程共享
+ * vma，多线程重复回写无害但线程尚活时读它 VA 会崩。 */
+void vmemory_flush_shared_files(vmemory_t* vm) {
+  if (vm == NULL || vm->vma == NULL || vm->ref > 1) {
+    return;
+  }
+  vmemory_area_t* top;
+  for (top = vm->vma; top != NULL; top = top->next) {
+    vmemory_area_t* c;
+    for (c = top->child; c != NULL; c = c->next) {
+      vnode_t* node;
+      vaddr_t va;
+      if (c->flags != MEMORY_MMAP || c->file_node == NULL) {
+        continue;
+      }
+      node = (vnode_t*)c->file_node;
+      for (va = c->vaddr; va < c->vend; va += PAGE_SIZE) {
+        vaddr_t pa = (vaddr_t)page_v2p(vm->upage, (void*)(uintptr_t)va);
+        u64 off;
+        if (pa == 0) {
+          continue;
+        }
+        off = c->file_off + (u64)(va - c->vaddr);
+        /* vwrite 走 vnode → fatfs，内部有自己的缓存管理 */
+        {
+          u32 wr = vwrite(node, (u32)off, PAGE_SIZE, (void*)(uintptr_t)va);
+          static int dbg_fl;
+          if (dbg_fl++ < 8) {
+            kprintf("FLUSH area %lx-%lx node=%x off=%d wr=%d\n", c->vaddr,
+                    c->vend, (u32)(uintptr_t)node, (u32)off, wr);
+          }
+        }
+      }
+    }
+  }
+}
+
 void vmemory_destroy(vmemory_t* vm) {
   if (vm == NULL) {
     return;
@@ -572,6 +619,49 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
 
   // 堆拷贝并映射
   vmemory_copy_data(vmcopy, vmthread, MEMORY_HEAP);
+
+  /* 【MAP_SHARED 文件映射真共享】LTP tst_test.c 的 IPC 机制：lib_pid 先
+   * mmap 文件，fork 出的测试子进程把结果 struct 写进共享映射，父进程读
+   * 同一物理页收集结果。HEAP 深拷贝给子进程的是独立副本 ⇒ 子写父盲
+   * （实测子写 1234 父读回垃圾，1031 个测试全部收不到结果）。
+   * 处理：对 file_node != NULL 的 MEMORY_MMAP 区，把子进程 PTE 重映射到
+   * 父进程当前物理页（可写、非 COW），父子写读同页即真共享。
+   * 引用计数：COW 标记循环已为"父子共享"ref_inc 过（=2）；深拷贝曾用
+   * 私有副本顶掉了子侧映射（虚占一个引用），现在重映射回父页正好把
+   * 那个引用用掉，计数重新正确；子进程的私有副本归还页分配器。 */
+  {
+    vmemory_area_t* top;
+    for (top = vmthread->vma; top != NULL; top = top->next) {
+      vmemory_area_t* c;
+      for (c = top->child; c != NULL; c = c->next) {
+        vaddr_t va;
+        if (c->flags != MEMORY_MMAP || c->file_node == NULL) {
+          continue;
+        }
+        for (va = c->vaddr; va < c->vend; va += PAGE_SIZE) {
+          vaddr_t pa_parent = (vaddr_t)page_v2p((u64*)vmthread->upage,
+                                                (void*)(uintptr_t)va);
+          if (pa_parent == 0) {
+            continue; /* 未映射页（懒加载/空洞）不处理 */
+          }
+          vaddr_t pa_child = (vaddr_t)page_v2p((u64*)vmcopy->upage,
+                                               (void*)(uintptr_t)va);
+          if (pa_child == pa_parent) {
+            continue; /* 已经共享 */
+          }
+          vmemory_map(vmcopy->upage, va, pa_parent, PAGE_SIZE);
+          if (pa_child != 0) {
+            /* 子私有副本 ref=1（vmemory_copy_data 里 page_ref_set 过） */
+            if (page_ref_dec((u32)pa_child) == 0) {
+              mm_free_page((void*)(uintptr_t)pa_child);
+            }
+          }
+          log_debug("vm clone shared file page %lx -> pa %lx\n", va,
+                    pa_parent);
+        }
+      }
+    }
+  }
 
   // init 0
   if (vmcopy->vma != NULL) {

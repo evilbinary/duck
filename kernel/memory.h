@@ -226,6 +226,8 @@ void vmemory_area_free(vmemory_area_t* area);
  * vmemory_destroy → page_destroy 统一归还，见 vma.c 实现处注释。 */
 void vmemory_area_destroy_list(vmemory_area_t* area);
 void vmemory_destroy(vmemory_t* vm);
+/* 把 file_node 文件映射区回写文件（munmap/进程退出时调用） */
+void vmemory_flush_shared_files(vmemory_t* vm);
 /* 【exec 用】回收当前进程用户堆区里已映射的页（含 brk 堆/映像/mmap 区）
  * 并复位 brk 前沿、释放 mmap 节点；页表保留复用。栈区不动（见 vma.c 注释）。
  * 供 loader 在"原地 exec 替换映像"前调用，避免旧进程占用被带到新映像。 */
