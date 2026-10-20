@@ -1049,8 +1049,9 @@ fd_t* thread_find_fd_id(thread_t* thread, u32 fd) {
   }
   if (fd >= thread->fd_size) {
     /* fd 是 u32，负错误码（如 os_lwfd 返回的 -9）会变成巨大的无符号数；
-     * 打印有符号值更直观，一眼看出是"错误码被当 fd 用"。 */
-    log_error("thread find fd limit %d >= size %d\n", (int)fd, thread->fd_size);
+     * 打印有符号值更直观，一眼看出是"错误码被当 fd 用"。
+     * 【debug 级】EBADF 常态路径，error 级会被测试的坏 fd 循环刷爆串口。 */
+    log_debug("thread find fd limit %d >= size %d\n", (int)fd, thread->fd_size);
     return NULL;
   }
   if (thread->fds[fd] == NULL) {

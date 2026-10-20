@@ -1821,6 +1821,9 @@ void sys_fn_init() {
   syscall_table[SYS_GETPPID] = &sys_getppid;
   syscall_table[SYS_DUP] = &sys_dup;
   syscall_table[SYS_DUP2] = &sys_dup2;
+  /* 【aarch64】dup3=24：aarch64 无 dup2，musl dup2() 走 dup3(fd,newfd,flags)。
+   * 忽略 flags（O_CLOEXEC 语义没有），行为等同 dup2。 */
+  syscall_table[24] = &sys_dup2;
   syscall_table[SYS_READDIR] = &sys_readdir;
   syscall_table[SYS_NEWSELECT] = &sys_select;
   syscall_table[SYS_BRK] = &sys_brk;
@@ -1853,6 +1856,11 @@ void sys_fn_init() {
   syscall_table[SYS_MUNMAP] = &sys_munmap;
 
   syscall_table[SYS_FCNT64] = &sys_fcntl64;
+  /* 【aarch64】163=getrlimit / 261=prlimit64：musl sysconf(_SC_OPEN_MAX)
+   * 依赖它们，没注册时栈垃圾当 open_max ⇒ dup201 18.8 亿次 fcntl 卡死。
+   * （实测 warn 顺序：syscall 261 not found → 163 not found → fcntl64 风暴） */
+  syscall_table[163] = &sys_getrlimit64;
+  syscall_table[261] = &sys_prlimit64;
   syscall_table[SYS_GETCWD] = &sys_getcwd;
   syscall_table[SYS_CHDIR] = &sys_chdir;
   syscall_table[SYS_FCHDIR] = &sys_fchdir;

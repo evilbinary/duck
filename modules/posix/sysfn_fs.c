@@ -1237,12 +1237,49 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
   return (int)nbytes;
 }
   
+  /* 【最小 rlimit】aarch64 getrlimit(163)/prlimit64(261)。musl 的
+   * sysconf(_SC_OPEN_MAX) 走 prlimit64/getrlimit(RLIMIT_NOFILE)：此前两个
+   * syscall 都没注册，musl 拿 -ENOSYS 后把【栈垃圾】当 rlim_cur 返回
+   * （实测 0x700ffc6f = 用户栈地址），dup201 拿它当 open_max 就开始
+   * 18.8 亿次 fcntl 扫描，整机卡死。给一个与内核 fd 表容量一致的值。 */
+  struct yiyiya_rlimit64 {
+    u64 rlim_cur;
+    u64 rlim_max;
+  };
+#define YIYIYA_RLIM_NOFILE 64
+#define YIYIYA_RLIM_INFINITY (0xffffffffffffffffULL)
+
+  int sys_getrlimit64(int resource, void* lim) {
+    struct yiyiya_rlimit64* rl = (struct yiyiya_rlimit64*)lim;
+    if (rl == NULL) {
+      return -1;
+    }
+    rl->rlim_cur = YIYIYA_RLIM_NOFILE;
+    rl->rlim_max = YIYIYA_RLIM_NOFILE;
+    (void)resource;
+    return 0;
+  }
+
+  int sys_prlimit64(int pid, int resource, void* new_limit, void* old_limit) {
+    struct yiyiya_rlimit64* old_rl = (struct yiyiya_rlimit64*)old_limit;
+    /* 不支持改限额：只实现查询（musl sysconf 只用 old_limit） */
+    if (old_rl != NULL) {
+      old_rl->rlim_cur = YIYIYA_RLIM_NOFILE;
+      old_rl->rlim_max = YIYIYA_RLIM_NOFILE;
+    }
+    (void)pid;
+    (void)resource;
+    (void)new_limit;
+    return 0;
+  }
+
   int sys_fcntl64(int fd, int cmd, void* arg) {
     log_debug("sys fcntl64 fd: %d cmd: %x flag: %x\n", fd, cmd, arg);
     thread_t* current = thread_current();
     fd_t* findfd = thread_find_fd_id(current, fd);
     if (findfd == NULL) {
-      log_error("sys fcntl64 not found fd %d\n", fd);
+      /* EBADF 是常态路径（测试故意传坏 fd），降级成 debug 防串口刷屏 */
+      log_debug("sys fcntl64 not found fd %d\n", fd);
       return -1;
     }
     vnode_t* node = findfd->data;

@@ -428,6 +428,8 @@ void sys_dumps();
 int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count);
 int sys_munmap(void* addr, size_t size);
 int sys_fcntl64(int fd, int cmd, void* arg);
+int sys_getrlimit64(int resource, void* lim);
+int sys_prlimit64(int pid, int resource, void* new_limit, void* old_limit);
 char* sys_getcwd(char* buf, size_t size);
 int sys_fchdir(int fd);
 int sys_fchownat(int dirfd, const char* pathname, unsigned int owner,
