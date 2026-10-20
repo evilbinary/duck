@@ -910,8 +910,9 @@ int sys_dup2(int oldfd, int newfd) {
   thread_t* current = thread_current();
   fd_t* fd = thread_find_fd_id(current, oldfd);
   if (fd == NULL) {
-    log_error("dup not found fd %d\n", fd);
-    return -1;
+    /* 【-EBADF 而非 -1】内核返回 -1 时 musl 一律映射成 EPERM，
+     * LTP dup201 等测试专门验证 EBADF。9 = EBADF。 */
+    return -9;
   }
   if (oldfd == newfd) {
     return newfd;
@@ -924,8 +925,7 @@ int sys_dup2(int oldfd, int newfd) {
   }
 
   if (newfd >= current->fd_size) {
-    log_error("dup2 newfd limit %d >= %d\n", newfd, current->fd_size);
-    return -1;
+    return -9;
   }
 
   thread_set_fd(current, newfd, fd);
@@ -1249,13 +1249,21 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
 #define YIYIYA_RLIM_NOFILE 64
 #define YIYIYA_RLIM_INFINITY (0xffffffffffffffffULL)
 
+  /* NOFILE 与进程 fd 表容量一致：getdtablesize() 的值必须和 dup2/open 的
+   * 真实上限相同，否则 LTP dup201 这类"以 getdtablesize() 为界验证 EBADF"
+   * 的测试会边界不一致。 */
+  static int yiyiya_nofile(void) {
+    thread_t* t = thread_current();
+    return (t != NULL && t->fd_size > 0) ? (int)t->fd_size : YIYIYA_RLIM_NOFILE;
+  }
+
   int sys_getrlimit64(int resource, void* lim) {
     struct yiyiya_rlimit64* rl = (struct yiyiya_rlimit64*)lim;
     if (rl == NULL) {
       return -1;
     }
-    rl->rlim_cur = YIYIYA_RLIM_NOFILE;
-    rl->rlim_max = YIYIYA_RLIM_NOFILE;
+    rl->rlim_cur = (u64)yiyiya_nofile();
+    rl->rlim_max = rl->rlim_cur;
     (void)resource;
     return 0;
   }
@@ -1264,8 +1272,8 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
     struct yiyiya_rlimit64* old_rl = (struct yiyiya_rlimit64*)old_limit;
     /* 不支持改限额：只实现查询（musl sysconf 只用 old_limit） */
     if (old_rl != NULL) {
-      old_rl->rlim_cur = YIYIYA_RLIM_NOFILE;
-      old_rl->rlim_max = YIYIYA_RLIM_NOFILE;
+      old_rl->rlim_cur = (u64)yiyiya_nofile();
+      old_rl->rlim_max = old_rl->rlim_cur;
     }
     (void)pid;
     (void)resource;
