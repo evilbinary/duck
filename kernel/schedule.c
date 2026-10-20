@@ -121,9 +121,8 @@ interrupt_context_t* schedule_reschedule(interrupt_context_t* ic) {
 
   next_thread->counter++;
   preempt_clear_need_resched();
-  {
-    interrupt_context_t* next_ic =
-        context_switch(ic, current_thread->ctx, next_thread->ctx);
+  interrupt_context_t* next_ic =
+      context_switch(ic, current_thread->ctx, next_thread->ctx);
     thread_set_current(next_thread);
     thread_bind_finish(current_thread, cpu);
     preempt_reset(); /* 退出临界区的抢占计数不留给新线程 */
@@ -133,7 +132,6 @@ interrupt_context_t* schedule_reschedule(interrupt_context_t* ic) {
 #endif
     thread_recycle_process(); /* 已切到别的线程，此时回收退出的线程是安全的 */
     return next_ic;
-  }
 }
 
 void schedule(interrupt_context_t* ic) {
@@ -256,8 +254,6 @@ void* do_schedule(interrupt_context_t* ic) {
 
   schedule_state(cpu);
   timer_ticks[cpu]++;
-  /* Only RUNNING burns "busy" time. SLEEP/WAITING still current during
-   * nanosleep/wait in SVC would otherwise steal all ticks from children. */
   if (current_thread->state == THREAD_RUNNING) {
     current_thread->ticks++;
   }

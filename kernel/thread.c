@@ -683,8 +683,15 @@ void thread_stop(thread_t* thread) {
   /* 【退出临界区不可抢占】thread_stop 后到真正切走（schedule_switch）之间，
    * 本线程仍站在自己的内核栈上。若此时被时钟换出，current_threads 立刻改人，
    * thread_recycle_process 会误判"它没在跑"而把它的 ctx->ksp_start 释放掉 ⇒
-   * 切回来即 UAF。这里禁止抢占，切到新线程后由 preempt_reset() 清计数。 */
-  preempt_disable();
+   * 切回来即 UAF。这里禁止抢占，切到新线程后由 preempt_reset() 清计数。
+   * 【只对"停自己"生效】远程 stop（kill/exit_group 扫同进程线程）发生在
+   * 杀手的上下文里，目标线程根本没在杀手 CPU 上跑：此时抬杀手 CPU 的
+   * preempt 计数没有任何保护意义，而"切走时 preempt_reset 清计数"对
+   * 目标线程也永远不会发生 ⇒ 计数永久泄漏（实测 clone10：SIGUSR1 心跳
+   * 杀父进程后，cpu0 preempt_count=1 卡死，时钟抢占失效、pthread 饿死）。 */
+  if (thread == thread_current()) {
+    preempt_disable();
+  }
   /* 【移入回收队列】不能在这里直接释放：线程可能还在自己的栈上跑
    * （thread_exit 就发生在它自己的上下文里）。真正的释放由调度器在切换到
    * 其它线程之后调用 thread_recycle_process() 完成。 */
