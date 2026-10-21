@@ -27,6 +27,10 @@
 static u32 count = 0;
 const size_t align_to = 16;
 
+/* 【前向声明】mm_kernel_heap_watermark 用；定义在同文件 #ifdef 分支后段 */
+ullong mm_get_total(void);
+ullong mm_get_free(void);
+
 /* 【块尾哨兵占位必须按 8 字节算】堆块布局 [block_t 头][数据(size)][END]：
  * END 只写 4 字节 int，但占位留 8 字节 —— 否则下一个块头落在 4 mod 8 的
  * 地址上，AArch64 上 block_t 的 8 字节字段就是非对齐访问（MMU 未开 ⇒ 对齐
@@ -146,6 +150,11 @@ static int ya_block_magic_valid(block_t* block) {
 void ya_heap_stats(u32* free_bytes, u32* free_blocks, u32* max_free_block,
                    u32* alloc_count, u32* last_map);
 
+static ullong sbrk_carved_total = 0;
+static ullong sbrk_carve_count = 0;
+static ullong ya_free_calls = 0;
+static ullong ya_free_bytes = 0;
+
 void* ya_sbrk(size_t size) {
   mem_block_t* current = mmt.blocks;
   kassert(current != NULL);
@@ -171,6 +180,18 @@ void* ya_sbrk(size_t size) {
     current = current->next;
   }
 
+  sbrk_carved_total += size;
+  sbrk_carve_count++;
+  if (size >= 65536) {
+    static int probe_carve_n = 0;
+    if (probe_carve_n < 20) {
+      probe_carve_n++;
+      log_error("PROBE sbrk big carve size=%d ra=%x carved=%dM cnt=%d\n",
+                (int)size, (u32)(uintptr_t)__builtin_return_address(0),
+                (int)(sbrk_carved_total >> 20), (int)sbrk_carve_count);
+    }
+  }
+
   if (!found) {
     /* 所有原始块都放不下：内核堆耗尽（或请求异常巨大）。断言前先把堆画像
      * 打出来 —— 判据见 ya_heap_stats() 的注释：
@@ -180,8 +201,48 @@ void* ya_sbrk(size_t size) {
     ya_heap_stats(&fbytes, &fblocks, &fmax, &acount, &lmap);
     log_error(
         "ya_sbrk oom need=%d | free=%dK free_blocks=%d max_free=%dK "
-        "alloc_count=%d last_map=%x\n",
-        size, fbytes / 1024, fblocks, fmax / 1024, acount, lmap);
+        "alloc_count=%d last_map=%x carved=%dM cnt=%d\n",
+        size, fbytes / 1024, fblocks, fmax / 1024, acount, lmap,
+        (int)(sbrk_carved_total >> 20), (int)sbrk_carve_count);
+    {
+      /* 【已用链画像】carved - freelist - used_live 的差值就是"孤立块"
+       * （从两条链上都不可达的块）：判定 ya_free/链操作是否丢块。
+       * 【size 直方图】2 的幂分桶：泄漏者的分配尺寸特征一眼可见 */
+      block_t* u = mmt.g_block_list;
+      ullong used_tot = 0;
+      int used_cnt = 0;
+      u32 hist[16];
+      kmemset(hist, 0, sizeof(hist));
+      while (u != NULL) {
+        used_tot += u->size;
+        used_cnt++;
+        int b = 0;
+        size_t s = u->size;
+        while (((1ull << (b + 1)) <= s) && b < 15) {
+          b++;
+        }
+        hist[b]++;
+        u = u->next;
+      }
+      log_error("  used list: blocks=%d total=%dM\n", used_cnt,
+                (int)(used_tot >> 20));
+      log_error("  ya_free: calls=%d bytes=%dM (carved=%dM alloc_no=%d)\n",
+                (int)ya_free_calls, (int)(ya_free_bytes >> 20),
+                (int)(sbrk_carved_total >> 20), (int)mmt.alloc_count);
+      {
+        extern int g_vmd_calls;
+        extern int g_vmd_refskip;
+        extern int g_pd_calls;
+        log_error("  vmd_calls=%d refskip=%d pd_calls=%d\n", g_vmd_calls,
+                  g_vmd_refskip, g_pd_calls);
+      }
+      probe_leak_dump();
+      for (int b = 0; b < 16; b++) {
+        if (hist[b] > 0) {
+          log_error("    size<=%dK: %d blocks\n", 1 << b, hist[b]);
+        }
+      }
+    }
     for (mem_block_t* b = mmt.blocks; b != NULL; b = b->next) {
       log_error("  raw block %x type=%d size=%d addr=%x\n", b, b->type, b->size,
                 b->addr);
@@ -217,7 +278,47 @@ void* ya_sbrk(size_t size) {
   return addr;
 }
 
+/* 【PROBE-leak】新 carve 的调用链直方图：OOM 时看谁在持续 carve 不还 */
+static struct {
+  u32 ra2;
+  u32 ra3;
+  int cnt;
+  ullong bytes;
+} s_probe_leak[16];
+static int s_probe_leak_n = 0;
+
+static void probe_leak_note(size_t size) {
+  if (size < 4096) {
+    return;
+  }
+  u32 r2 = (u32)(uintptr_t)__builtin_return_address(1);
+  u32 r3 = (u32)(uintptr_t)__builtin_return_address(2);
+  for (int i = 0; i < s_probe_leak_n; i++) {
+    if (s_probe_leak[i].ra2 == r2 && s_probe_leak[i].ra3 == r3) {
+      s_probe_leak[i].cnt++;
+      s_probe_leak[i].bytes += size;
+      return;
+    }
+  }
+  if (s_probe_leak_n < 16) {
+    s_probe_leak[s_probe_leak_n].ra2 = r2;
+    s_probe_leak[s_probe_leak_n].ra3 = r3;
+    s_probe_leak[s_probe_leak_n].cnt = 1;
+    s_probe_leak[s_probe_leak_n].bytes = size;
+    s_probe_leak_n++;
+  }
+}
+
+void probe_leak_dump(void) {
+  for (int i = 0; i < s_probe_leak_n; i++) {
+    log_error("  LEAKCAND ra2=%x ra3=%x cnt=%d bytes=%dK\n",
+              s_probe_leak[i].ra2, s_probe_leak[i].ra3, s_probe_leak[i].cnt,
+              (int)(s_probe_leak[i].bytes >> 10));
+  }
+}
+
 block_t* ya_new_block(size_t size) {
+  probe_leak_note(size);
   block_t* block = ya_sbrk(size + sizeof(block_t) + YA_END_SIZE);
   /* 【对齐铁律】block_t 含 8 字节字段（AArch64）：块头必须 8 字节对齐。
    * 不满足时在 MMU 未开阶段会直接对齐异常（不是能容错的问题），所以断言。 */
@@ -400,6 +501,14 @@ void* ya_alloc(size_t size) {
    * 统一交给 ya_find_free_block：找不到合适块时它自己会 fallback 到
    * ya_new_block（见其函数尾），语义不变但不再白吃内存。 */
   block = ya_find_free_block(size);
+  {
+    /* 【PROBE-leak3】本次是否走了新 carve（8-16KB）：phy_alloc 检到标记后
+     * 打自己的调用链（ya_alloc←mm_alloc←phy_alloc 的 RA 链被尾调用截断） */
+    extern volatile int g_probe_carved;
+    g_probe_carved = (block->free != BLOCK_FREE && size > 8192 && size <= 16384)
+                         ? 1
+                         : 0;
+  }
   /* 【复用时先把块从空闲链上摘掉】用统一入口，head/last/邻居 prev 一起维护；
    * 以前这里手写摘链漏了 next->prev，空闲链的双向指针会逐渐失真。 */
   if (block->free == BLOCK_FREE) {
@@ -434,6 +543,23 @@ void* ya_alloc(size_t size) {
 
   block->no = mmt.alloc_count++;
   mmt.alloc_size += size;
+  {
+    /* 【PROBE-leak2】8-16KB 分配采样：每 512 次打一次 RA 链。
+     * 直方图桶 b=13 表示 size∈[8192,16384) 字节（打印的 K 单位是错的），
+     * 122569 块都在这桶 ⇒ 泄漏者分配的是 8-16KB。 */
+    if (size > 8192 && size <= 16384 && (mmt.alloc_count & 0x1FF) == 0) {
+      static int probe_l2_n = 0;
+      if (probe_l2_n < 10) {
+        probe_l2_n++;
+        log_error(
+            "PROBE alloc4-8k no=%d ra1=%x ra2=%x ra3=%x ra4=%x\n",
+            (int)mmt.alloc_count, (u32)(uintptr_t)__builtin_return_address(0),
+            (u32)(uintptr_t)__builtin_return_address(1),
+            (u32)(uintptr_t)__builtin_return_address(2),
+            (u32)(uintptr_t)__builtin_return_address(3));
+      }
+    }
+  }
 
 #ifdef DEBUG
 #include "kernel/thread.h"
@@ -553,6 +679,7 @@ void ya_free(void* ptr) {
   if (ptr == NULL) {
     return;
   }
+  ya_free_calls++;
   block_t* block = ya_block_ptr(ptr);
 #ifdef DEBUG
   // kprintf("ya_free_no(%d);\n", block->no);
@@ -624,6 +751,7 @@ void ya_free(void* ptr) {
 
   /* 合并后的数据区末尾必须是 MAGIC_END（原块的 END 正好落在新末尾） */
   *((int*)((u8*)ya_block_addr(block) + block->size)) = MAGIC_END;
+  ya_free_bytes += block->size;
 
   /* 挂回空闲链（append 统一维护 head/last/双向指针） */
   ya_list_append(&mmt.g_block_free, &mmt.g_block_free_last, block);
@@ -633,6 +761,7 @@ void ya_free(void* ptr) {
 int is_line_intersect(int a1, int a2, int b1, int b2) {
   return !(b2 < a1 || b1 > a2);
 }
+
 
 void mm_add_block(uintptr_t addr, uintptr_t len) {
   mem_block_t* block = (mem_block_t*)addr;
@@ -793,11 +922,42 @@ int mm_page_in_ram(void* p) {
 /* 设备保留区间（显示缓冲）**不在这里处理**：显存段已由 boot 侧的内存配置
  * （boot/arm/init-armv5.c 的 VERSATILEPB 条目）从 RAM 里排除，分配器根本
  * 看不到它，所以不需要任何运行时"保留区间"过滤。 */
+/* 【内核堆水位线：页分配不许把 raw 区吃穿】mm_alloc_page（用户物理页）与
+ * ya_sbrk（内核字节堆）共用 mmt.blocks；页释放只进 mm_page_free_list、
+ * 不还 mmt.blocks ⇒ fork/深拷贝密集的负载（LTP 全量，实测 60 个测试）会把
+ * 整段 RAM 切成页，内核堆被饿死（ya_sbrk assert found>0，整机停摆）。
+ *
+ * 通用算法（不挑平台/负载）：raw 区剩余量（MEM_FREE 总和）低于水位线时，
+ * 页分配一律失败，让用户态优雅拿到 NULL；水位线按总内存等比例伸缩——
+ *   watermark = clamp(total/8, 4MB, 128MB)
+ * 【判据语义】mm_get_free() 是 raw 区剩余，随"历史累计发页量"单调下降是
+ * 正常的（退回的页在 mm_page_free_list 循环复用，不占 raw）。水位线覆盖的
+ * 是【内核字节堆的 raw 足迹 = 累计分配量】：碎片导致 freed 块很少拼回大块，
+ * raw 只出不进，足迹随测试数缓慢增长（实测 60 测试 ~13MB，含 xwin 9.4MB）。
+ * 预留的 raw 对页池不是浪费——页的复用走 free list，不经过 mmt.blocks。 */
+static ullong mm_kernel_heap_watermark(void) {
+  ullong wm = mm_get_total() / 8;
+  if (wm < 4ull * 1024 * 1024) {
+    wm = 4ull * 1024 * 1024;
+  }
+  if (wm > 128ull * 1024 * 1024) {
+    wm = 128ull * 1024 * 1024;
+  }
+  return wm;
+}
+
 void* mm_alloc_page(void) {
   if (mm_page_free_list != NULL) {
     void* page = mm_page_free_list;
     mm_page_free_list = *(void**)page;
     return page;
+  }
+
+  /* 【水位线闸门】raw 区剩余低于水位线就不再发页：这点内存是内核字节堆
+   * （ya_sbrk）的保命粮。用户态拿到 NULL 后走分配失败路径（musl malloc
+   * 返回 NULL / 测试 TBROK），内核不会停摆。 */
+  if (mm_get_free() < mm_kernel_heap_watermark()) {
+    return NULL;
   }
 
   mem_block_t* current = mmt.blocks;

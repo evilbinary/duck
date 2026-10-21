@@ -145,11 +145,22 @@ u64* page_clone(u64* old_pgd, u32 level) {
  * 【严禁】用 32 位语义（u32*、1MB section、0xFFFFF000）解析 64 位页表：
  * 索引/掩码全错，会把堆内存当页表项，垃圾指针进 mm_page_free_list，
  * 被 page_create 清零后物理擦掉 .text（raspi3 实测内核崩死）。 */
+extern int g_pd_calls;
+extern int g_vmd_calls;
+extern int g_vmd_refskip;
+
 void page_destroy(u64* upage) {
   if (upage == NULL) {
     return;
   }
-  u32 start = (u32)(EXEC_ADDR >> PGD_SHIFT);  /* 1GB/项，用户区起点 */
+  g_pd_calls++;
+  u32 start = 0;  /* 【必须从 pgd[0] 开始扫】用户进程的堆 VMA（HEAP_ADDR 一带，
+                     如 0x21400000）落在 pgd[0]（VA 0-1GB），与内核恒等映射同一
+                     条 pgd。此前 start=1 导致 pgd[0] 的表整段跳过：每进程几百
+                     张 4KB 表（8KB 内核堆块/张）永不归还 ⇒ LTP 全量 60 测试泄漏
+                     ~12 万张 = 969MB ⇒ ya_sbrk assert。pgd[0] 的安全性由 pte 级
+                     的 VA 分支保证：KMEM/外设/内核区映射只清 pte 不还页数据
+                     （它们不属于页池），用户私有页才 mm_free_page。 */
   /* 上界索引按 USER_VA_END【向上取整】：上界不在 1GB 边界时，直接 >>PGD_SHIFT
    * 会漏掉最后一条 pgd（mmap 页永不归还）。现值 0x80000000 已对齐，行为不变。 */
   u32 end = (u32)((USER_VA_END + (1UL << PGD_SHIFT) - 1) >> PGD_SHIFT);
@@ -164,17 +175,21 @@ void page_destroy(u64* upage) {
       if ((e2 & 3) != 3) {
         continue;
       }
-      /* 【整条 pmd 也要按 VA 过滤】pmd 粒度 2MB，而用户区与"内核外设区"可能落在
-       * 同一条 pgd(1GB) 里（armv8-a：内核 core-local/外设映射在 0x40000000-0x5fffffff，
-       * 用户 EXEC/栈在 0x60000000+）⇒ 若不看 VA 就把这条 2MB 的 L3 表清掉+归还，
-       * 内核自己的映射会消失（实测 raspi3：page fault at 4000006c = core-local
-       * 定时器寄存器，随后调度器炸）。 */
-      if ((((vaddr_t)i << PGD_SHIFT) | ((vaddr_t)j << PMD_SHIFT)) <
-              (vaddr_t)EXEC_ADDR ||
-          (((vaddr_t)i << PGD_SHIFT) | ((vaddr_t)j << PMD_SHIFT)) >=
-              (vaddr_t)USER_VA_END) {
-        continue;
-      }
+      /* 【pgd[0]（VA<EXEC_ADDR）不再整条跳过】这条 1GB 里既有内核共享映射
+       * （外设/core-local，boot 期在 kernel pgd 建立后被 page_clone 复制进
+       * 各用户 pgd），也有"内核堆随需映射"——ya_sbrk 扩展时 page_map_current
+       * 把新 KMEM 区映射进【当时正在运行的用户进程 pgd】，缺页路径亦然。
+       * 此前的"整条跳过"导致：用户进程死时，它 pgd 里积累的全部内核区表
+       * （每张 4KB 表 + 头 = 8KB 内核堆块）无人归还 ⇒ LTP 全量 60 个测试
+       * 泄漏 ~12 万张表 = 969MB 内核堆 ⇒ ya_sbrk assert（实测）。
+       * 【正确语义】被 destroy 的 pgd 是进程私有、已脱离 MMU：其中的一切
+       * 映射都可以清——pmd 级不再按 VA 整条跳过，进入 pte 级区分：
+       *   · VA ∈ [EXEC_ADDR, USER_VA_END)：用户私有页 → 归还页池；
+       *   · VA < EXEC_ADDR：KMEM/外设映射 → 只清 pte，页数据不归还
+       *     （内核堆页由 kmalloc 体系管理、外设页不属于页池）；
+       *   · VA ≥ USER_VA_END：保护性保留（不做任何事）。
+       * 共享内核页目录（kpage）在 vmemory_destroy 已提前 return，不会走到
+       * 这里 ⇒ kernel pgd 的共享映射不受影响。 */
       u64* pte = (u64*)(e2 & PTE_ADDR_MASK);
       for (u32 k = 0; k < PTRS_PER_TABLE; k++) {
         u64 e3 = pte[k];
@@ -188,7 +203,12 @@ void page_destroy(u64* upage) {
          * 内核的外设映射（如 0x3f00b000 的 mailbox/"box"、0x40000000 的
          * core-local 定时器）会随任意进程退出而消失 ⇒ page fault at 3f00b208
          * / 4000006c，随后调度器崩。顺序换过来：只有真要归还的页才清 PTE。 */
-        if (va < (vaddr_t)EXEC_ADDR || va >= (vaddr_t)USER_VA_END) {
+        if (va < (vaddr_t)EXEC_ADDR) {
+          /* 内核区映射副本：清 pte（进程已死无害），页数据不归还 */
+          pte[k] = 0;
+          continue;
+        }
+        if (va >= (vaddr_t)USER_VA_END) {
           continue;
         }
         /* 兜底：物理页不在 boot_info 声明的 RAM 内（设备/未认领映射）→ 不归还 */

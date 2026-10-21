@@ -249,6 +249,12 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
 #ifdef VM_ENABLE
   // vm init
   copy->vm = kmalloc(sizeof(vmemory_t), KERNEL_TYPE);
+  /* 【必须清零】kmalloc 不清零 ⇒ vm->ref/vm->kpage 等字段是堆垃圾。
+   * vmemory_clone 非 VM_SAME 路径只设 vma/kpage/upage 不设 ref ⇒
+   * fork 出的 vm->ref=垃圾（大概率>1）⇒ vmemory_destroy 直接 return ⇒
+   * page_destroy 永不执行 ⇒ 页表（每张 8KB 内核堆块）全部泄漏
+   * （实测 LTP 全量 60 测试泄漏 ~12 万张 = 969MB ⇒ ya_sbrk assert）。 */
+  kmemset(copy->vm, 0, sizeof(vmemory_t));
   copy->vm->tid = copy->id;
 
   // init vm include stack heap exec

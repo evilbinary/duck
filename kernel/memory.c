@@ -185,6 +185,8 @@ void check_addr(void* addr) {
   }
 }
 
+volatile int g_probe_carved = 0;
+
 void* phy_alloc(size_t size) {
   if (size == 0) return NULL;
   if (memory_locked_other()) {
@@ -194,6 +196,10 @@ void* phy_alloc(size_t size) {
   rt_mutex_lock(&memory_lock);
   addr = mm_alloc(size);
   rt_mutex_unlock(&memory_lock);
+  /* 【note 下移】kmalloc 里的 MM_ALLOC_NOTE 只覆盖 kmalloc 路径，8-16KB 的
+   * 泄漏分配没被记录（mm_prof total 与 used list 969MB 对不上）。note 记录
+   * 的是物理分配的调用链 RA，放在这里所有 kmalloc/trace 变体都逃不掉。 */
+  MM_ALLOC_NOTE(size);
   check_addr(addr);
   memory_static(size, MEMORY_TYPE_USE);
   return addr;
@@ -380,12 +386,10 @@ void* kmalloc(size_t size, u32 flag) {
   thread_t* current = thread_current();
   if (current == NULL || current->level != LEVEL_USER) {
     addr = phy_alloc(size);
-    MM_ALLOC_NOTE(size);
     return addr;
   }
   if (flag & KERNEL_TYPE || flag & DEVICE_TYPE) {
     addr = phy_alloc(size);
-    MM_ALLOC_NOTE(size);
   } else {
 #ifdef VM_ENABLE
     addr = vm_alloc(size);

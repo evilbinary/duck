@@ -495,11 +495,18 @@ void vmemory_flush_shared_files(vmemory_t* vm) {
   }
 }
 
+/* 【PROBE-vmdestroy】区分"page_destroy 没被调"的三种原因 */
+int g_vmd_calls = 0;
+int g_vmd_refskip = 0;
+int g_pd_calls = 0;
+
 void vmemory_destroy(vmemory_t* vm) {
   if (vm == NULL) {
     return;
   }
+  g_vmd_calls++;
   if (vm->ref > 1) {
+    g_vmd_refskip++;
     return;
   }
   /* 【swap 记录】页表即将销毁：清掉本地址空间的全部换出记录并归还槽位。
@@ -550,6 +557,10 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
 
   vmcopy->vma = vmemory_area_clone(vmthread->vma, 1);
   vmcopy->kpage = page_kernel_dir();
+  /* 【fork/vfork 的地址空间是独占的】ref 必须为 1：thread_copy 的 vm 是裸
+   * kmalloc（现已在调用处清零），但语义上这里显式设 1 才正确——否则
+   * vmemory_destroy 的 ref>1 保险会把 page_destroy 挡在门外。 */
+  vmcopy->ref = 1;
   /* 【fork 前全部换回】换出页没有页表映射，下面的 COW 标记/page_clone 都
    * 复制不到子进程；不换回的话子进程对这些 VA 一律读到 0（父子数据不一致）。
    * v1 策略简单但正确：fork 前把父进程的全部换出页换回物理内存，
