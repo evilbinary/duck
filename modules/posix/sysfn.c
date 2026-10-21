@@ -1080,9 +1080,68 @@ int sys_rt_sigaction(int signum, const struct sigaction* restrict act,
   return 0;
 }
 
+/* 【最小 alarm：到期终止进程（SIGALRM 默认动作）】LTP tst_test 给每个测试
+ * 设 alarm(30) 看门狗（SIGALRM 到期杀测试进程）。此前 sys_alarm 是空壳 ⇒
+ * 任何卡死的测试（如 futex 语义不完整时的自旋）都会永久挂住全量套件。
+ * 内核没有信号投递设施，"默认动作"的最小实现 = 到期直接终止该进程
+ * （thread_exit_group，唤醒父进程 waitpid ⇒ 测试记 TBROK 后套件继续）。
+ * 由 do_schedule 每 tick 调 sys_alarm_poll()（只在 cpu0 的 tick 路径）。 */
+struct sys_alarm_ent {
+  int tid;
+  ullong expire; /* 绝对 tick（1 tick = 1ms） */
+};
+static struct sys_alarm_ent s_alarm_tab[16];
+static int s_alarm_n = 0;
+
 unsigned int sys_alarm(unsigned int seconds) {
-  log_debug("sys alarm not impl\n");
-  return -1;
+  thread_t* current = thread_current();
+  if (current == NULL) {
+    return 0;
+  }
+  int i;
+  int slot = -1;
+  for (i = 0; i < s_alarm_n; i++) {
+    if (s_alarm_tab[i].tid == (int)current->id) {
+      slot = i;
+      break;
+    }
+  }
+  if (seconds == 0) {
+    /* 取消 */
+    if (slot >= 0) {
+      s_alarm_tab[slot] = s_alarm_tab[s_alarm_n - 1];
+      s_alarm_n--;
+    }
+    return 0;
+  }
+  if (slot < 0 && s_alarm_n < 16) {
+    slot = s_alarm_n++;
+    s_alarm_tab[slot].tid = (int)current->id;
+  }
+  if (slot >= 0) {
+    s_alarm_tab[slot].expire =
+        (ullong)schedule_get_ticks() + (ullong)seconds * SCHEDULE_FREQUENCY;
+  }
+  return 0; /* 旧剩余值：LTP watchdog 不依赖 */
+}
+
+void sys_alarm_poll(void) {
+  int i = 0;
+  while (i < s_alarm_n) {
+    if ((ullong)schedule_get_ticks() < s_alarm_tab[i].expire) {
+      i++;
+      continue;
+    }
+    int tid = s_alarm_tab[i].tid;
+    s_alarm_tab[i] = s_alarm_tab[s_alarm_n - 1];
+    s_alarm_n--;
+    thread_t* t = thread_find_id(tid);
+    if (t != NULL) {
+      /* SIGALRM 默认动作 = 终止进程 */
+      thread_exit_group(t, 9);
+    }
+    /* 不 i++：表尾元素换到了位置 i，下一轮复查 */
+  }
 }
 
 
@@ -1517,7 +1576,16 @@ int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
              (u32)(uintptr_t)uaddr, val, current->id);
   }
 
-  if ((futex_op & FUTEX_WAKE) == FUTEX_WAIT) {
+  /* 【WAIT_BITSET(9) 不能落进 WAKE 分支】op 的位 0 是 WAIT/WAKE 位：
+   * WAIT_BITSET=9、WAIT_BITSET|CLOCK_REALTIME=265 的位 0 都是 1，
+   * 旧的 `op & FUTEX_WAKE == FUTEX_WAIT` 判定会把它们当 WAKE 处理
+   * （LTP futex_wake02 系列全是 BITSET 变体 ⇒ 语义全错）。统一掩掉
+   * PRIVATE(128)/CLOCK_REALTIME(256) 后按 op 判定。 */
+  u32 fop = futex_op & ~(u32)128 & ~(u32)256;
+  if (fop == 9 /* FUTEX_WAIT_BITSET */) {
+    fop = 0 /* 当 FUTEX_WAIT 处理（忽略 bitmask） */;
+  }
+  if ((fop & 1u) == 0 /* FUTEX_WAIT */) {
     if (uaddr == NULL || *uaddr != val) {
       return EAGAIN;
     }
@@ -1527,7 +1595,7 @@ int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
     return 0;
   }
 
-  if ((futex_op & FUTEX_WAKE) == FUTEX_WAKE) {
+  if ((fop & 1u) != 0 /* FUTEX_WAKE / FUTEX_WAKE_BITSET */) {
     /* 唤醒登记在该地址上的等待者（不是调用者自己 ✗） */
     return (int)futex_waiter_wake(uaddr);
   }

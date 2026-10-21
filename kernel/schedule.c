@@ -254,6 +254,12 @@ void* do_schedule(interrupt_context_t* ic) {
 
   schedule_state(cpu);
   timer_ticks[cpu]++;
+  {
+    /* 【alarm 看门狗】到期终止测试进程（SIGALRM 默认动作），防卡死型
+     * 测试永久挂住全量套件 */
+    extern void sys_alarm_poll(void);
+    sys_alarm_poll();
+  }
   if (current_thread->state == THREAD_RUNNING) {
     current_thread->ticks++;
   }
