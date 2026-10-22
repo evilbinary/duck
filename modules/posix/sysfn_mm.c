@@ -344,6 +344,14 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
       log_error("map fix install area failed addr=%x\n", addr);
       return MAP_FAILED;
     }
+    /* 【匿名 MAP_SHARED 标记】类型改为 MEMORY_SHARE，fork 时 vmemory_clone
+     * 据此把子进程重映射到父进程物理页（真共享）；MAP_PRIVATE 不标。 */
+    if ((flags & MAP_SHARED) == MAP_SHARED) {
+      vmemory_area_t* area = vmemory_area_find(vm->child, addr, length);
+      if (area != NULL) {
+        area->flags = MEMORY_SHARE;
+      }
+    }
     return addr;
   }
 
@@ -366,6 +374,16 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
     if (sys_mmap_install_area(vm, start_addr, length, NULL, 0) < 0) {
       log_error("mmap install area failed addr=%x\n", start_addr);
       return MAP_FAILED;
+    }
+    /* 【匿名 MAP_SHARED 标记】LTP futex 系/clone03 用
+     * mmap(MAP_SHARED|MAP_ANONYMOUS) 做父子共享区。fork 的深拷贝+COW 会让
+     * 子进程一写就私有化 ⇒ 父进程读不到。类型改 MEMORY_SHARE 后
+     * vmemory_clone 会把子进程 PTE 重映射到父进程当前物理页（真共享）。 */
+    if ((flags & MAP_SHARED) == MAP_SHARED) {
+      vmemory_area_t* area = vmemory_area_find(vm->child, start_addr, length);
+      if (area != NULL) {
+        area->flags = MEMORY_SHARE;
+      }
     }
     log_debug("mmap anon addr %x len %x prot %x\n", start_addr, length, prot);
     return start_addr;

@@ -646,7 +646,14 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
       vmemory_area_t* c;
       for (c = top->child; c != NULL; c = c->next) {
         vaddr_t va;
-        if (c->flags != MEMORY_MMAP || c->file_node == NULL) {
+        if (c->flags != MEMORY_MMAP && c->flags != MEMORY_SHARE) {
+          continue;
+        }
+        /* 【真共享判定】文件映射（file_node）或匿名 MAP_SHARED（类型
+         * MEMORY_SHARE）：clone03/LTP futex 系用 mmap(MAP_SHARED|MAP_ANONYMOUS)
+         * 做父子共享区，深拷贝+COW 会让子进程一写就私有化 ⇒ 父进程读不到
+         * 子进程写入。普通匿名 MAP_PRIVATE 区（flags 仍为 MEMORY_MMAP）跳过。 */
+        if (c->flags == MEMORY_MMAP && c->file_node == NULL) {
           continue;
         }
         for (va = c->vaddr; va < c->vend; va += PAGE_SIZE) {

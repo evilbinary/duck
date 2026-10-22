@@ -15,13 +15,70 @@
 
 #define log_debug
 
-/* 【alarm no-op】TCG 下 guest 时钟比墙钟慢约 60 倍，alarm(30) 看门狗实际是
- * 墙钟 30 分钟，形同虚设；且内核没有信号投递设施，到期终止只能在中断上下文
- * 走轻量 thread_stop 路径，仍有风险。卡死兜底改由外部 runner（墙钟超时 +
- * 杀 QEMU 重启）承担，这里保持 no-op 返回 0（未设闹钟 ⇒ 旧剩余 0）。 */
+/* 【alarm 最小语义：登记 + 返回旧剩余秒数】alarm02 验证 alarm(0) 返回旧剩余、
+ * alarm03 验证 fork 不继承（子 alarm(0)=0，父 alarm(0)=100）。
+ * 【不做到期动作】内核无信号投递设施，到期终止只能在中断上下文走轻量
+ * thread_stop 路径，仍有整机自旋风险（adjtimex02 实测）；TCG 下 guest 时钟
+ * 比墙钟慢约 60 倍，alarm(30) 看门狗实际是墙钟 30 分钟形同虚设。到期兜底
+ * 完全交给外部 runner（墙钟超时 + 杀 QEMU 重启）。
+ * 【向上取整】alarm(100) 后 1ms 内 alarm(0) 必须仍回 100（LTP 用整值断言），
+ * 整除会得 99，故用 ceil(rem/FREQUENCY)。 */
+struct sys_alarm_ent {
+  int tid;
+  ullong expire; /* 绝对 tick（1 tick = 1ms） */
+};
+static struct sys_alarm_ent s_alarm_tab[16];
+static int s_alarm_n = 0;
+
 unsigned int sys_alarm(unsigned int seconds) {
-  (void)seconds;
-  return 0;
+  thread_t* current = thread_current();
+  if (current == NULL) {
+    return 0;
+  }
+  int i;
+  int slot = -1;
+  /* 【顺带回收死线程条目】测试退出不调 alarm(0)（tst_test 的 watchdog 闹钟
+   * 一直挂着），16 槽随测试数积累会满 ⇒ 新 alarm 登记失败。tid 已不存在
+   * 即条目作废，lazy 清理（仅在下次 alarm 调用时扫一遍，无中断上下文）。 */
+  i = 0;
+  while (i < s_alarm_n) {
+    if (s_alarm_tab[i].tid != (int)current->id &&
+        thread_find_id(s_alarm_tab[i].tid) == NULL) {
+      s_alarm_tab[i] = s_alarm_tab[s_alarm_n - 1];
+      s_alarm_n--;
+      continue;
+    }
+    if (s_alarm_tab[i].tid == (int)current->id) {
+      slot = i;
+    }
+    i++;
+  }
+  ullong now = (ullong)schedule_get_ticks();
+  /* 旧剩余秒数（未设为 0），向上取整保住整值断言 */
+  unsigned int old_left = 0;
+  if (slot >= 0) {
+    old_left = s_alarm_tab[slot].expire > now
+                   ? (unsigned int)((s_alarm_tab[slot].expire - now +
+                                     (ullong)SCHEDULE_FREQUENCY - 1) /
+                                    (ullong)SCHEDULE_FREQUENCY)
+                   : 0;
+  }
+  if (seconds == 0) {
+    if (slot >= 0) {
+      s_alarm_tab[slot] = s_alarm_tab[s_alarm_n - 1];
+      s_alarm_n--;
+    }
+    return old_left;
+  }
+  if (slot < 0 && s_alarm_n < 16) {
+    slot = s_alarm_n++;
+    s_alarm_tab[slot].tid = (int)current->id;
+  }
+  if (slot >= 0) {
+    s_alarm_tab[slot].expire = now + (ullong)seconds * (ullong)SCHEDULE_FREQUENCY;
+  }
+  /* 表满：登记失败但语义上仍返回 old_left（超长闹钟本就永不到期） */
+  return old_left;
 }
 
 /* ===================== sleep ===================== */

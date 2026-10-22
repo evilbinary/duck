@@ -51,6 +51,12 @@
 #define MEMORY_STACK 6
 #define MEMORY_MMAP 7
 #define MEMORY_DEV 8
+
+/* 【MEMORY_SHARE 用法】匿名 MAP_SHARED 的 mmap 区用该类型（而非 MEMORY_MMAP）：
+ * fork 时 vmemory_clone 据此把子进程 PTE 重映射到父进程当前物理页实现真共享
+ * （LTP futex 系/clone03 用 mmap(MAP_SHARED|MAP_ANONYMOUS) 做父子共享区，
+ * 深拷贝+COW 会让子进程一写就私有化 ⇒ 父进程读不到子进程写入）。
+ * 注意：文件映射的 MAP_SHARED 仍走 MEMORY_MMAP + file_node 判定，不走此类型。 */
 /* 帧缓冲：物理页已存在（通常由内核页表映射），用户态按需镜像时要用
  * PAGE_FB（可缓存写回，配合驱动每帧 clean），而不是 MEMORY_DEV 的 PAGE_DEV。
  * 之前是靠在 page_fault_handle 里用 paddr/fault_addr >= 0xF0000000 判断，
