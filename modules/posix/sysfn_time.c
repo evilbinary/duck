@@ -88,7 +88,9 @@ unsigned int sys_alarm(unsigned int seconds) {
  * no-op 恒回 0 ⇒ alarm02/03 全灭。与 sys_alarm 共用同一登记表（每进程一个
  * real-time 定时器语义一致）。仍无到期动作（无信号基建），兜底靠外部 runner。
  * struct itimerval = 2×struct timeval{long sec; long usec} = 32B：
- *   [0..7]=value.sec [8..15]=value.usec [16..23]=interval.sec [24..31]=interval.usec */
+ *   [0..7]=interval.sec [8..15]=interval.usec [16..23]=value.sec [24..31]=value.usec
+ * （Linux 语义 interval 在前；探针实测 musl alarm(2147483647) 时 offset0 恒 0、
+ *  offset16 才是 2147483647，证实 value 在后半。） */
 int sys_setitimer(int which, void* new_val, void* old_val) {
   if (which != 0 /* ITIMER_REAL */) {
     /* VIRTUAL/PROF 无记账，恒"未设置" */
@@ -117,15 +119,17 @@ int sys_setitimer(int which, void* new_val, void* old_val) {
         ullong rem = s_alarm_tab[slot].expire - now;
         long left = (long)((rem + (ullong)SCHEDULE_FREQUENCY - 1) /
                            (ullong)SCHEDULE_FREQUENCY);
-        *(long*)old_val = left;
+        /* 写 value.sec（offset 16），interval 段保持 0 —— musl alarm 读
+         * old.it_value.tv_sec + !!old.it_value.tv_usec，恰好整值 */
+        *((long*)old_val + 2) = left;
       }
     }
   }
   long sec = 0;
   long usec = 0;
   if (new_val != NULL) {
-    sec = *(long*)new_val;
-    usec = *((long*)new_val + 1);
+    sec = *((long*)new_val + 2); /* value.sec 在 offset 16（interval 在前） */
+    usec = *((long*)new_val + 3);
   }
   int slot = -1;
   for (int i = 0; i < s_alarm_n; i++) {

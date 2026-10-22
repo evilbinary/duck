@@ -656,16 +656,27 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
         if (c->flags == MEMORY_MMAP && c->file_node == NULL) {
           continue;
         }
+        /* 【同 PA ≠ 可写】匿名共享区从顶层 HEAP VMA 范围内分配
+         * （sys_mmap_pick_anon_addr 自 vm->vend 向下），上面的 COW 标记
+         * 循环按【地址范围】标页、不看 VMA 类型 ⇒ 共享页也被标成
+         * "只读+COW"，page_clone 后父子 PTE 同 PA 且都是 RO —— 直接
+         * continue 会让任一侧一写就私有化（clone03 实测父读 0）。
+         * 这里用 page_cow_apply(new_pa!=0) 恢复父子两侧可写、保持同 PA
+         * 真共享。仅对已过滤的 file_node/MEMORY_SHARE 区执行，安全。 */
         for (va = c->vaddr; va < c->vend; va += PAGE_SIZE) {
           vaddr_t pa_parent = (vaddr_t)page_v2p((u64*)vmthread->upage,
                                                 (void*)(uintptr_t)va);
           if (pa_parent == 0) {
             continue; /* 未映射页（懒加载/空洞）不处理 */
           }
+          /* 父侧 PTE 若被 COW 标记循环改成只读，恢复可写（已是 RW 则无害） */
+          page_cow_apply((u32*)vmthread->upage, va, (u32)pa_parent);
           vaddr_t pa_child = (vaddr_t)page_v2p((u64*)vmcopy->upage,
                                                (void*)(uintptr_t)va);
           if (pa_child == pa_parent) {
-            continue; /* 已经共享 */
+            /* 子侧同 PA：只需恢复可写 */
+            page_cow_apply((u32*)vmcopy->upage, va, (u32)pa_parent);
+            continue;
           }
           vmemory_map(vmcopy->upage, va, pa_parent, PAGE_SIZE);
           if (pa_child != 0) {

@@ -160,17 +160,36 @@ int sys_sched_getaffinity(int pid, unsigned int len, unsigned long* mask) {
  * 现在：等待者按地址登记；FUTEX_WAKE 唤醒**登记在该地址上的等待者**；同时保留
  * 400 tick 兜底睡眠（万一没人唤醒也能自己醒来重试，不会比以前更糟）。
  * ================================================ */
-#define FUTEX_WAITER_MAX 8
+/* 【动态分配等待者表】futex_wake02 一次挂 55 个线程在同一 futex 上；
+ * 静态 8 槽时多余等待者登记失败退化成 30s 盲睡 ⇒ 唤醒计数全错 + join
+ * 永久重试挂死。表只在系统调用路径（线程上下文，可睡眠）访问，首次
+ * 使用时 kmalloc，分配失败或未分配时登记退化成"纯超时"行为（不阻塞
+ * 功能，只是唤醒语义降级）。 */
+#define FUTEX_WAITER_MAX 512
 static struct {
   u32* addr;
   thread_t* t;
-} futex_waiters[FUTEX_WAITER_MAX];
+} * futex_waiters = NULL;
 static u32 futex_dbg;
+
+static void futex_waiter_ensure(void) {
+  if (futex_waiters != NULL) {
+    return;
+  }
+  futex_waiters = kmalloc(sizeof(*futex_waiters) * FUTEX_WAITER_MAX, KERNEL_TYPE);
+  if (futex_waiters != NULL) {
+    kmemset(futex_waiters, 0, sizeof(*futex_waiters) * FUTEX_WAITER_MAX);
+  }
+}
 
 static void futex_waiter_add(u32* addr, thread_t* t) {
   int i;
   if (t == NULL) {
     return;
+  }
+  futex_waiter_ensure();
+  if (futex_waiters == NULL) {
+    return; /* 分配失败：退化为"纯超时"行为 */
   }
   for (i = 0; i < FUTEX_WAITER_MAX; i++) {
     if (futex_waiters[i].t == t) {
@@ -188,16 +207,29 @@ static void futex_waiter_add(u32* addr, thread_t* t) {
   /* 表满：退化为旧的"纯超时"行为，功能不受影响 */
 }
 
-static u32 futex_waiter_wake(u32* addr) {
+static u32 futex_waiter_wake(u32* addr, u32 max_wake) {
   u32 n = 0;
   int i;
-  for (i = 0; i < FUTEX_WAITER_MAX; i++) {
+  /* 【按 val 限量唤醒】Linux 语义 FUTEX_WAKE 的 val = 最多唤醒几个；
+   * futex_wake02 逐个验证 wake(1)..wake(10) 的返回值 ⇒ 忽略 val 一次
+   * 全唤醒会让计数与 flags 全错。 */
+  if (futex_waiters == NULL) {
+    return 0;
+  }
+  for (i = 0; i < FUTEX_WAITER_MAX && n < max_wake; i++) {
     thread_t* w = futex_waiters[i].t;
     if (w == NULL || futex_waiters[i].addr != addr) {
       continue;
     }
     /* 只在"还在等"时唤醒；已经自己超时醒来的直接清槽 */
     if (w->state == THREAD_SLEEP || w->state == THREAD_WAITING) {
+      /* 【回填返回值】WAITING 是 schedule_switch 式阻塞：内核调用链被弃，
+       * 唤醒后线程从保存帧直接回用户态 —— 必须由唤醒方把返回值写进
+       * 保存帧（与 thread_exit 代收割 waitpid 的同款机制）。 */
+      if (w->state == THREAD_WAITING && w->ctx != NULL &&
+          w->ctx->ksp != NULL) {
+        ((interrupt_context_t*)w->ctx->ksp)->x0 = 0;
+      }
       thread_wake(w); /* 同时清零 sleep_counter ⇒ 兜底睡眠也会立刻结束 */
       n++;
     }
@@ -214,10 +246,13 @@ int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
 
   /* 【诊断·可删】只打前 16 次：确认应用真的走到 futex、以及 op 类型
    * （0=WAIT / 1=WAKE）。若 gnuboy 卡住时这里完全没有输出 ⇒ 它与 futex 无关。 */
-  if (futex_dbg < 16u) {
+  if (futex_dbg < 200u) {
     futex_dbg++;
-    log_info("futex op=%x addr=%x val=%x tid=%d\n", (u32)futex_op & 0xff,
-             (u32)(uintptr_t)uaddr, val, current->id);
+    u64 pc = (current->ctx != NULL && current->ctx->ic != NULL)
+                 ? current->ctx->ic->pc
+                 : 0;
+    log_info("futex op=%x addr=%x val=%x tid=%d pc=%x\n", (u32)futex_op & 0xff,
+             (u32)(uintptr_t)uaddr, val, current->id, (u32)pc);
   }
 
   /* 【WAIT_BITSET(9) 不能落进 WAKE 分支】op 的位 0 是 WAIT/WAKE 位：
@@ -230,43 +265,41 @@ int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
     fop = 0 /* 当 FUTEX_WAIT 处理（忽略 bitmask） */;
   }
   if ((fop & 1u) == 0 /* FUTEX_WAIT / FUTEX_WAIT_BITSET */) {
-    int i;
-    u32 sleep_ticks = 400; /* 无 timeout 的兜底等待 */
+    /* 【无 timeout = 真·永久阻塞】Linux 语义。旧实现 thread_sleep 只是
+     * "记账"（syscall 立即回用户态，tick 边界才真正换出）⇒ musl 的等待
+     * 循环在同一个 tick 内把返回值当"已唤醒"继续跑：futex_wake02 的测试
+     * 线程 futex_wait 一返回就退出，wait_for_threads 永远凑不齐 ⇒ 挂死。
+     * 现照 sys_waitpid 模式：登记 → 置 WAITING → schedule_switch() 换出，
+     * 内核链被弃；被 WAKE 回填 x0=0 或 tick 到期回填 x0=-ETIMEDOUT 后
+     * 从保存帧直接回用户态（schedule.c schedule_state 的 WAITING 分支）。 */
     int has_timeout = 0;
     if (uaddr == NULL || *uaddr != val) {
       return EAGAIN;
     }
-    /* 【timeout 语义】WAIT 带 timespec：超时后返回 -ETIMEDOUT（Linux 语义）。
-     * LTP futex_wait_bitset01 专门验证"超时返回 -1"；此前恒返回 0 导致
-     * 测试语义错乱后自旋挂死。CLOCK_REALTIME 的 BITSET 传绝对时间——
-     * 按"早已经过"处理同样得到立即超时，两个变体都满足测试期望。 */
+    u32 sleep_ticks = 0;
     if (timeout != NULL && timeout->tv_sec >= 0) {
       sleep_ticks = (u32)timeout->tv_sec * 1000 +
                     (u32)(timeout->tv_nsec / 1000000);
+      if (sleep_ticks == 0) {
+        sleep_ticks = 1;
+      }
+      if (sleep_ticks > 0x40000000u) {
+        sleep_ticks = 0x40000000u; /* 防溢出 int（绝对时间已被 musl 转相对） */
+      }
       has_timeout = 1;
     }
-    if (sleep_ticks == 0) {
-      sleep_ticks = 1;
-    }
     futex_waiter_add(uaddr, current);
-    thread_sleep(current, sleep_ticks);
-    /* 醒来：仍在 waiter 表 = 没人唤醒 ⇒ 超时；被 WAKE 者槽位已清 ⇒ 0 */
-    for (i = 0; i < FUTEX_WAITER_MAX; i++) {
-      if (futex_waiters[i].t == current) {
-        futex_waiters[i].t = NULL;
-        futex_waiters[i].addr = NULL;
-        if (has_timeout) {
-          return -110; /* ETIMEDOUT */
-        }
-        return 0;
-      }
+    if (has_timeout) {
+      current->sleep_counter = (int)sleep_ticks; /* 到期由 tick 回填 ETIMEDOUT */
     }
-    return 0;
+    current->state = THREAD_WAITING;
+    schedule_switch();
+    return 0; /* 【不可达】唤醒后从保存帧回用户态，不会回到这里 */
   }
 
   if ((fop & 1u) != 0 /* FUTEX_WAKE / FUTEX_WAKE_BITSET */) {
-    /* 唤醒登记在该地址上的等待者（不是调用者自己 ✗） */
-    return (int)futex_waiter_wake(uaddr);
+    /* 唤醒登记在该地址上的等待者（不是调用者自己 ✗），val=最多唤醒几个 */
+    return (int)futex_waiter_wake(uaddr, val);
   }
 
   log_debug("sys futext not impl %d\n", futex_op);

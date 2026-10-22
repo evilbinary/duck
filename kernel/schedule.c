@@ -57,6 +57,18 @@ int schedule_state(int cpu) {
       if (v->sleep_counter <= 0) {
         thread_wake(v);
       }
+    } else if (v->state == THREAD_WAITING && v->sleep_counter > 0) {
+      /* 【futex WAIT 带 timeout 的到期兜底】WAITING 线程走 schedule_switch
+       * 式阻塞（内核链被弃），到期不能靠"返回路径"给出错误码 —— 由 tick
+       * 回填保存帧 x0=-ETIMEDOUT 后唤醒，线程从保存帧直接回用户态。
+       * 普通 WAITING（waitpid/thread_wait）sleep_counter 恒 0，不受影响。 */
+      v->sleep_counter--;
+      if (v->sleep_counter <= 0) {
+        if (v->ctx != NULL && v->ctx->ksp != NULL) {
+          ((interrupt_context_t*)v->ctx->ksp)->x0 = (u64)(long)-110;
+        }
+        thread_wake(v);
+      }
     } else if (v->state == THREAD_RUNNING) {
       count++;
     }
