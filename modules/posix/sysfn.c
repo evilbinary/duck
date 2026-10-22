@@ -263,6 +263,14 @@ void sys_fn_init() {
   syscall_table[SYS_GETPGID] = &sys_getpgid;
   syscall_table[SYS_UNAME] = &sys_uname;
   syscall_table[SYS_MLOCKALL] = &sys_mlockall;
+  /* 【aarch64 通用号】getuid/geteuid/getgid/getegid(174-177)：tst_test 每个
+   * 测试启动都调，此前 "syscall 176 not found" 刷屏。单用户恒 0。 */
+#if defined(ARM64) || defined(__aarch64__)
+  syscall_table[174] = &sys_getuid;
+  syscall_table[175] = &sys_geteuid;
+  syscall_table[176] = &sys_getgid;
+  syscall_table[177] = &sys_getegid;
+#endif
 
   syscall_table[SYS_WAIT4] = &sys_wait4;
 

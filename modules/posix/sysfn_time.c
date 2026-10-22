@@ -81,6 +81,79 @@ unsigned int sys_alarm(unsigned int seconds) {
   return old_left;
 }
 
+/* ===================== setitimer ===================== */
+
+/* 【ITIMER_REAL 必须真实现】aarch64 musl 的 alarm() 就是
+ * setitimer(ITIMER_REAL, {sec,0}, &old)（musl src/unistd/alarm.c），此前
+ * no-op 恒回 0 ⇒ alarm02/03 全灭。与 sys_alarm 共用同一登记表（每进程一个
+ * real-time 定时器语义一致）。仍无到期动作（无信号基建），兜底靠外部 runner。
+ * struct itimerval = 2×struct timeval{long sec; long usec} = 32B：
+ *   [0..7]=value.sec [8..15]=value.usec [16..23]=interval.sec [24..31]=interval.usec */
+int sys_setitimer(int which, void* new_val, void* old_val) {
+  if (which != 0 /* ITIMER_REAL */) {
+    /* VIRTUAL/PROF 无记账，恒"未设置" */
+    if (old_val != NULL) {
+      kmemset(old_val, 0, 32);
+    }
+    return 0;
+  }
+  thread_t* current = thread_current();
+  if (current == NULL) {
+    return -1;
+  }
+  /* old：当前登记的剩余秒数（ceil），value.usec=0 ⇒ musl alarm 恰好取整值 */
+  if (old_val != NULL) {
+    kmemset(old_val, 0, 32);
+    int slot = -1;
+    for (int i = 0; i < s_alarm_n; i++) {
+      if (s_alarm_tab[i].tid == (int)current->id) {
+        slot = i;
+        break;
+      }
+    }
+    if (slot >= 0) {
+      ullong now = (ullong)schedule_get_ticks();
+      if (s_alarm_tab[slot].expire > now) {
+        ullong rem = s_alarm_tab[slot].expire - now;
+        long left = (long)((rem + (ullong)SCHEDULE_FREQUENCY - 1) /
+                           (ullong)SCHEDULE_FREQUENCY);
+        *(long*)old_val = left;
+      }
+    }
+  }
+  long sec = 0;
+  long usec = 0;
+  if (new_val != NULL) {
+    sec = *(long*)new_val;
+    usec = *((long*)new_val + 1);
+  }
+  int slot = -1;
+  for (int i = 0; i < s_alarm_n; i++) {
+    if (s_alarm_tab[i].tid == (int)current->id) {
+      slot = i;
+      break;
+    }
+  }
+  if (sec == 0 && usec == 0) {
+    /* 取消 */
+    if (slot >= 0) {
+      s_alarm_tab[slot] = s_alarm_tab[s_alarm_n - 1];
+      s_alarm_n--;
+    }
+    return 0;
+  }
+  if (slot < 0 && s_alarm_n < 16) {
+    slot = s_alarm_n++;
+    s_alarm_tab[slot].tid = (int)current->id;
+  }
+  if (slot >= 0) {
+    ullong now = (ullong)schedule_get_ticks();
+    s_alarm_tab[slot].expire = now + (ullong)sec * (ullong)SCHEDULE_FREQUENCY +
+                               (ullong)usec / 1000ull;
+  }
+  return 0;
+}
+
 /* ===================== sleep ===================== */
 
 /* 【重要·应用其实走的是这一路】musl 的 __clock_nanosleep 在本平台
@@ -220,15 +293,4 @@ int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
   }
   log_warn("clock not support %d\n", clockid);
   return -1;
-}
-
-/* LTP 用 setitimer 做看门狗；内核没有该定时器，直接"成功"（无超时）。
- * struct itimerval = 2×struct timeval(16B) = 32B，内核头没有该类型。 */
-int sys_setitimer(int which, void* new_val, void* old_val) {
-  (void)which;
-  (void)new_val;
-  if (old_val != NULL) {
-    kmemset(old_val, 0, 32);
-  }
-  return 0;
 }

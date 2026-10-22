@@ -83,6 +83,13 @@ int sys_uname(char* buf) {
 
 /* ===================== 其它 ===================== */
 
+/* 【身份 syscall】单用户内核恒 root(0)。aarch64 通用号 174-177，每个测试
+ * 启动时 tst_test 都会调（此前 "syscall 176 not found" 刷屏）。 */
+int sys_getuid() { return 0; }
+int sys_geteuid() { return 0; }
+int sys_getgid() { return 0; }
+int sys_getegid() { return 0; }
+
 int sys_umask(int mask) {
   thread_t* current = thread_current();
   if (current == NULL) {

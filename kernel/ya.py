@@ -24,6 +24,7 @@ add_files(
     'module.c',
     'device.c',
     'vfs.c',
+    'procfs.c',
     'devfn.c',
     'fd.c',
     'loader.c',

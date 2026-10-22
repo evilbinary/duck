@@ -415,6 +415,7 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
 int sys_mprotect(const void* start, size_t len, int prot);
 
 int sys_rt_sigprocmask(int, void* set, void* old_set);
+struct sigaction;
 int sys_rt_sigaction(int signum, const struct sigaction* restrict act,
                      struct sigaction* restrict oldact);
 
@@ -455,6 +456,11 @@ int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
 int sys_llseek(int fd, int offset_hi, int offset_lo, off_t* result, int whence);
 
 int sys_umask(int mask);
+int sys_getuid();
+int sys_geteuid();
+int sys_getgid();
+int sys_getegid();
+int sys_setitimer(int which, void* new_val, void* old_val);
 
 int sys_stat(const char* path, struct stat* buf);
 int sys_fstat(int fd, struct stat* buf);

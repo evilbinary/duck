@@ -103,6 +103,8 @@ size_t vioctl(vnode_t *node, u32 cmd, void *args);
 
 vnode_t *vfs_find(vnode_t *root, u8 *path);
 vnode_t *vfs_find_relative(vnode_t *root, vnode_t *pwd, const char *path);
+/* 最小 procfs 垫片（procfs.c）：命中 /proc 动态路径返回临时 vnode，否则 NULL */
+vnode_t *procfs_lookup(const char *path);
 /* 执行挂在某个分区上的程序时，把当前进程的根换成那个挂载点。
  * 先拆开和父进程共用的 vfs，shell 的根不变。不在挂载点上则什么都不做。 */
 int vfs_chroot_mount(const char *path);

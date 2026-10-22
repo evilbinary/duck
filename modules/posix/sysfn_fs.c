@@ -304,34 +304,41 @@ static u32 sys_open_kpath(const char* name, int attr) {
   vnode_t* pwd = current->vfs->pwd;
   vnode_t* root = current->vfs->root;
 
-  vnode_t* file = vfs_find_relative(root, pwd, name);
-  if (file == NULL && (attr & O_CREAT) == O_CREAT) {
-    /* 【修复】绝对路径必须从 root 开始解析。原实现恒用 pwd：测试 chdir 进
-     * /tmp/LTP_x 后再 open("/tmp/LTP_x/f", O_CREAT) 时从 tmpdir 里找
-     * "/tmp/..." 必失败（tst_test.c 建 IPC 文件全灭，EPERM 掩盖真实错误）。 */
-    vnode_t* start = (name[0] == '/') ? root : pwd;
-    file = vfs_open_attr(start, name, attr);
-  }
-  if (file == NULL) {
-    log_error("sys open file %s error, attr %x \n", name, attr);
-    return -1;
-  }
-
+  /* 【procfs 垫片】/proc/<pid>/stat、/proc/<pid>/task/... 等动态文件不走
+   * fatfs（此前这些路径全 ENOENT，futex 系 wait_for_threads 直接 TBROK）。 */
+  vnode_t* file = procfs_lookup(name);
   char path_name[256];
   kmemset(path_name, 0, sizeof(path_name));
-  if (fat_node_path(file, path_name, sizeof(path_name)) < 0) {
-    if (vfs_path_append(file, "", path_name) < 0) {
-      log_error("sys open path append failed name=%s file=%x\n", name, file);
+  if (file != NULL) {
+    kstrncpy(path_name, name, sizeof(path_name) - 1);
+  } else {
+    file = vfs_find_relative(root, pwd, name);
+    if (file == NULL && (attr & O_CREAT) == O_CREAT) {
+      /* 【修复】绝对路径必须从 root 开始解析。原实现恒用 pwd：测试 chdir 进
+       * /tmp/LTP_x 后再 open("/tmp/LTP_x/f", O_CREAT) 时从 tmpdir 里找
+       * "/tmp/..." 必失败（tst_test.c 建 IPC 文件全灭，EPERM 掩盖真实错误）。 */
+      vnode_t* start = (name[0] == '/') ? root : pwd;
+      file = vfs_open_attr(start, name, attr);
+    }
+    if (file == NULL) {
+      log_error("sys open file %s error, attr %x \n", name, attr);
       return -1;
     }
-  }
-  if (path_name[0] == '\0') {
-    if (name != NULL && name[0] != '\0') {
-      kstrncpy(path_name, name, sizeof(path_name) - 1);
-    } else {
-      kstrncpy(path_name, "/", sizeof(path_name) - 1);
+
+    if (fat_node_path(file, path_name, sizeof(path_name)) < 0) {
+      if (vfs_path_append(file, "", path_name) < 0) {
+        log_error("sys open path append failed name=%s file=%x\n", name, file);
+        return -1;
+      }
     }
-    path_name[sizeof(path_name) - 1] = '\0';
+    if (path_name[0] == '\0') {
+      if (name != NULL && name[0] != '\0') {
+        kstrncpy(path_name, name, sizeof(path_name) - 1);
+      } else {
+        kstrncpy(path_name, "/", sizeof(path_name) - 1);
+      }
+      path_name[sizeof(path_name) - 1] = '\0';
+    }
   }
 
   log_debug("path name %s to %s\n", name, path_name);
