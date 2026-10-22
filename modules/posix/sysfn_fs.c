@@ -1593,3 +1593,34 @@ int sys_mkdir(const char* pathname, mode_t mode) {
     sys_close(fd);
     return 0;
   }
+
+/* ===================== 文件状态/符号链接（自 sysfn.c 迁入） ===================== */
+
+int sys_statx(int dirfd, const char* restrict pathname, int flags,
+              unsigned int mask, struct statx* restrict statxbuf) {
+  log_debug("sys statx not impl dirfd %d pathname %s\n", dirfd, pathname);
+
+  if (statxbuf == NULL) {
+    return -1;
+  }
+
+  struct stat buf;
+  int ret = sys_stat(pathname, &buf);
+  if (ret < 0) {
+    return -1;
+  }
+
+  statxbuf->stx_mode = buf.st_mode;
+  statxbuf->stx_gid = buf.st_gid;
+  statxbuf->stx_uid = buf.st_uid;
+  statxbuf->stx_size = buf.st_size;
+  statxbuf->stx_blocks = buf.st_blocks;
+
+  return 0;
+}
+
+ssize_t sys_readlink(const char* restrict pathname, char* restrict buf,
+                     size_t bufsiz) {
+  log_debug("sys readlink not impl %s\n", pathname);
+  return bufsiz;
+}

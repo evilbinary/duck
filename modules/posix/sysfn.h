@@ -415,6 +415,8 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
 int sys_mprotect(const void* start, size_t len, int prot);
 
 int sys_rt_sigprocmask(int, void* set, void* old_set);
+int sys_rt_sigaction(int signum, const struct sigaction* restrict act,
+                     struct sigaction* restrict oldact);
 
 unsigned int sys_alarm(unsigned int seconds);
 int sys_getresuid(void* ruid, void* euid, void* suid);
@@ -482,6 +484,54 @@ void sys_fn_init();
 void sys_fn_net_init(void** syscall_table);
 /* Syscall number → handler (NULL if unset / out of range). */
 void* sys_fn_get(int no);
+
+/* ===== 拆分文件后的跨文件声明 =====
+ * （sysfn_proc / sysfn_thread / sysfn_mm / sysfn_time / sysfn_misc / sysfn_fs） */
+void sys_exit_group(int status);
+int sys_gettid();
+int sys_setpgid(int pid, int pgid);
+int sys_getpgid(int pid);
+int sys_kill(pid_t pid, int sig);
+int sys_waitpid(pid_t pid, int* wstatus, int options);
+long sys_wait4(pid_t pid, int* wstatus, int options, struct rusage* rusage);
+int sys_set_tid_adress(void* ptr);
+int sys_pipe(int fds[2]);
+int sys_thread_create(char* name, void* entry, void* data);
+int sys_thread_dump();
+int sys_thread_self();
+void* sys_thread_addr(void* vaddr);
+int sys_thread_map(int tid, u32 virt_addr, u32 phy_addr, u32 size, u32 attr);
+int sys_sched_getparam(int pid, sched_param_t* param);
+int sys_sched_setparam(int pid, sched_param_t* param);
+int sys_sched_setscheduler(pid_t pid, int policy,
+                           const struct sched_param* param);
+int sys_sched_get_priority_max(int policy);
+int sys_sched_get_priority_min(int policy);
+int sys_sched_getaffinity(int pid, unsigned int len, unsigned long* mask);
+int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
+              const struct timespec* timeout, uint32_t* uaddr2, uint32_t val3);
+void* sys_mremap(void* old_address, size_t old_size, size_t new_size, int flags,
+                 ...);
+int sys_msync(void* addr, size_t length, int flags);
+int sys_mlockall(int flags);
+int sys_madvice(void* addr, size_t length, int advice);
+int sys_nanosleep(struct timespec* req, struct timespec* rem);
+int sys_clock_nanosleep(int clock, int flag, struct timespec* req,
+                        struct timespec* rem);
+int sys_clock_gettime64(clockid_t clockid, struct timespec* ts);
+u32 sys_time(time_t* t);
+int sys_setitimer(int which, void* new_val, void* old_val);
+int sys_mem_info();
+int sys_info(sysinfo_t* info);
+int sys_uname(char* buf);
+ssize_t sys_readlink(const char* restrict pathname, char* restrict buf,
+                     size_t bufsiz);
+int sys_statx(int dirfd, const char* restrict pathname, int flags,
+              unsigned int mask, struct statx* restrict statxbuf);
+void sys_test();
+int sys_print(char* s);
+int sys_print_at(char* s, u32 x, u32 y);
+size_t sys_yeild();
 
 
 #endif
