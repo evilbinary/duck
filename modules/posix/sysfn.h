@@ -417,6 +417,8 @@ int sys_mprotect(const void* start, size_t len, int prot);
 int sys_rt_sigprocmask(int, void* set, void* old_set);
 
 unsigned int sys_alarm(unsigned int seconds);
+int sys_getresuid(void* ruid, void* euid, void* suid);
+int sys_getresgid(void* rgid, void* egid, void* sgid);
 
 int sys_unlink(const char* pathname);
 int sys_rename(const char* old, const char* new);

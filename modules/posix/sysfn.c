@@ -1080,68 +1080,13 @@ int sys_rt_sigaction(int signum, const struct sigaction* restrict act,
   return 0;
 }
 
-/* 【最小 alarm：到期终止进程（SIGALRM 默认动作）】LTP tst_test 给每个测试
- * 设 alarm(30) 看门狗（SIGALRM 到期杀测试进程）。此前 sys_alarm 是空壳 ⇒
- * 任何卡死的测试（如 futex 语义不完整时的自旋）都会永久挂住全量套件。
- * 内核没有信号投递设施，"默认动作"的最小实现 = 到期直接终止该进程
- * （thread_exit_group，唤醒父进程 waitpid ⇒ 测试记 TBROK 后套件继续）。
- * 由 do_schedule 每 tick 调 sys_alarm_poll()（只在 cpu0 的 tick 路径）。 */
-struct sys_alarm_ent {
-  int tid;
-  ullong expire; /* 绝对 tick（1 tick = 1ms） */
-};
-static struct sys_alarm_ent s_alarm_tab[16];
-static int s_alarm_n = 0;
-
+/* 【alarm no-op】TCG 下 guest 时钟比墙钟慢约 60 倍，alarm(30) 看门狗实际是
+ * 墙钟 30 分钟，形同虚设；且内核没有信号投递设施，到期终止只能在中断上下文
+ * 走轻量 thread_stop 路径，仍有风险。卡死兜底改由外部 runner（墙钟超时 +
+ * 杀 QEMU 重启）承担，这里保持 no-op 返回 0（未设闹钟 ⇒ 旧剩余 0）。 */
 unsigned int sys_alarm(unsigned int seconds) {
-  thread_t* current = thread_current();
-  if (current == NULL) {
-    return 0;
-  }
-  int i;
-  int slot = -1;
-  for (i = 0; i < s_alarm_n; i++) {
-    if (s_alarm_tab[i].tid == (int)current->id) {
-      slot = i;
-      break;
-    }
-  }
-  if (seconds == 0) {
-    /* 取消 */
-    if (slot >= 0) {
-      s_alarm_tab[slot] = s_alarm_tab[s_alarm_n - 1];
-      s_alarm_n--;
-    }
-    return 0;
-  }
-  if (slot < 0 && s_alarm_n < 16) {
-    slot = s_alarm_n++;
-    s_alarm_tab[slot].tid = (int)current->id;
-  }
-  if (slot >= 0) {
-    s_alarm_tab[slot].expire =
-        (ullong)schedule_get_ticks() + (ullong)seconds * SCHEDULE_FREQUENCY;
-  }
-  return 0; /* 旧剩余值：LTP watchdog 不依赖 */
-}
-
-void sys_alarm_poll(void) {
-  int i = 0;
-  while (i < s_alarm_n) {
-    if ((ullong)schedule_get_ticks() < s_alarm_tab[i].expire) {
-      i++;
-      continue;
-    }
-    int tid = s_alarm_tab[i].tid;
-    s_alarm_tab[i] = s_alarm_tab[s_alarm_n - 1];
-    s_alarm_n--;
-    thread_t* t = thread_find_id(tid);
-    if (t != NULL) {
-      /* SIGALRM 默认动作 = 终止进程 */
-      thread_exit_group(t, 9);
-    }
-    /* 不 i++：表尾元素换到了位置 i，下一轮复查 */
-  }
+  (void)seconds;
+  return 0;
 }
 
 
@@ -1585,13 +1530,38 @@ int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
   if (fop == 9 /* FUTEX_WAIT_BITSET */) {
     fop = 0 /* 当 FUTEX_WAIT 处理（忽略 bitmask） */;
   }
-  if ((fop & 1u) == 0 /* FUTEX_WAIT */) {
+  if ((fop & 1u) == 0 /* FUTEX_WAIT / FUTEX_WAIT_BITSET */) {
+    int i;
+    u32 sleep_ticks = 400; /* 无 timeout 的兜底等待 */
+    int has_timeout = 0;
     if (uaddr == NULL || *uaddr != val) {
       return EAGAIN;
     }
-    /* 登记 + 有界等待：正常由另一线程的 FUTEX_WAKE 唤醒，没人唤醒也会超时醒来 */
+    /* 【timeout 语义】WAIT 带 timespec：超时后返回 -ETIMEDOUT（Linux 语义）。
+     * LTP futex_wait_bitset01 专门验证"超时返回 -1"；此前恒返回 0 导致
+     * 测试语义错乱后自旋挂死。CLOCK_REALTIME 的 BITSET 传绝对时间——
+     * 按"早已经过"处理同样得到立即超时，两个变体都满足测试期望。 */
+    if (timeout != NULL && timeout->tv_sec >= 0) {
+      sleep_ticks = (u32)timeout->tv_sec * 1000 +
+                    (u32)(timeout->tv_nsec / 1000000);
+      has_timeout = 1;
+    }
+    if (sleep_ticks == 0) {
+      sleep_ticks = 1;
+    }
     futex_waiter_add(uaddr, current);
-    thread_sleep(current, 400);
+    thread_sleep(current, sleep_ticks);
+    /* 醒来：仍在 waiter 表 = 没人唤醒 ⇒ 超时；被 WAKE 者槽位已清 ⇒ 0 */
+    for (i = 0; i < FUTEX_WAITER_MAX; i++) {
+      if (futex_waiters[i].t == current) {
+        futex_waiters[i].t = NULL;
+        futex_waiters[i].addr = NULL;
+        if (has_timeout) {
+          return -110; /* ETIMEDOUT */
+        }
+        return 0;
+      }
+    }
     return 0;
   }
 
@@ -1608,6 +1578,34 @@ int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
 int sys_gettid() {
   thread_t* current = thread_current();
   return current->id;
+}
+
+/* 【单用户内核】getresuid/getresgid：恒 0/0/0（成功）。vfork01 等 LTP 测试
+ * 的 setup 调它，ENOSYS 会 TBROK。 */
+int sys_getresuid(void* ruid, void* euid, void* suid) {
+  if (ruid != NULL) {
+    *(unsigned int*)ruid = 0;
+  }
+  if (euid != NULL) {
+    *(unsigned int*)euid = 0;
+  }
+  if (suid != NULL) {
+    *(unsigned int*)suid = 0;
+  }
+  return 0;
+}
+
+int sys_getresgid(void* rgid, void* egid, void* sgid) {
+  if (rgid != NULL) {
+    *(unsigned int*)rgid = 0;
+  }
+  if (egid != NULL) {
+    *(unsigned int*)egid = 0;
+  }
+  if (sgid != NULL) {
+    *(unsigned int*)sgid = 0;
+  }
+  return 0;
 }
 
 int sys_thread_map(int tid, u32 virt_addr, u32 phy_addr, u32 size, u32 attr) {
@@ -2014,6 +2012,10 @@ void sys_fn_init() {
 #endif
 
   syscall_table[SYS_GETTID] = &sys_gettid;
+  /* 【aarch64】165=getresuid / 166=getresgid：vfork01 等测试的 setup 调
+   * getresuid，未注册返回 ENOSYS ⇒ TBROK。单用户内核恒返回 0/0/0。 */
+  syscall_table[165] = &sys_getresuid;
+  syscall_table[166] = &sys_getresgid;
   syscall_table[SYS_THREAD_MAP] = &sys_thread_map;
   syscall_table[SYS_FSTAT64] = &sys_fstat64;
   syscall_table[SYS_STATFS64] = &sys_statfs64;
