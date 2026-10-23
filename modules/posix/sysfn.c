@@ -17,11 +17,8 @@
 
 #define log_debug
 
-/* 逐系统调用追踪探针（tid>=6 且只打前 1500 条）。默认关闭：它的输出会把
- * 用户态程序的真实日志整段淹没。排查"某个系统调用之后现场被写坏"时改成 1。 */
-#ifndef SYS_TRACE_SYSCALL
-#define SYS_TRACE_SYSCALL 0
-#endif
+/* 逐系统调用追踪探针（tid>=6 且只打前 1500 条）由 PROBE_TRACE 统一控制，
+ * 默认关闭：它的输出会把用户态程序的真实日志整段淹没。 */
 
 static void* syscall_table[SYSCALL_NUMBER];
 
@@ -54,7 +51,7 @@ void sys_fn_call_handler(int no, interrupt_context_t* ic) {
   if (current != NULL && current->ctx != NULL) {
     current->ctx->ic = ic;
   }
-#if SYS_TRACE_SYSCALL
+#if PROBE_TRACE
   {
     static int trace_cnt = 0;
     if (current != NULL && current->id >= 6 && trace_cnt < 1500) {

@@ -211,6 +211,7 @@ void* ya_sbrk(size_t size) {
 
   sbrk_carved_total += size;
   sbrk_carve_count++;
+#if PROBE_TRACE
   if (size >= 65536) {
     static int probe_carve_n = 0;
     if (probe_carve_n < 20) {
@@ -220,6 +221,7 @@ void* ya_sbrk(size_t size) {
                 (int)(sbrk_carved_total >> 20), (int)sbrk_carve_count);
     }
   }
+#endif
 
   if (!found) {
     /* 所有原始块都放不下：内核堆耗尽（或请求异常巨大）。断言前先把堆画像
@@ -536,6 +538,7 @@ void* ya_alloc(size_t size) {
     /* 【PROBE-leak2】8-16KB 分配采样：每 512 次打一次 RA 链。
      * 直方图桶 b=13 表示 size∈[8192,16384) 字节（打印的 K 单位是错的），
      * 122569 块都在这桶 ⇒ 泄漏者分配的是 8-16KB。 */
+#if PROBE_TRACE
     if (size > 8192 && size <= 16384 && (mmt.alloc_count & 0x1FF) == 0) {
       static int probe_l2_n = 0;
       if (probe_l2_n < 10) {
@@ -548,6 +551,7 @@ void* ya_alloc(size_t size) {
             (u32)(uintptr_t)__builtin_return_address(3));
       }
     }
+#endif
   }
 
 #ifdef DEBUG

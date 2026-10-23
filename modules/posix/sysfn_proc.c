@@ -239,7 +239,8 @@ static void sys_clear_child_tid(thread_t* current) {
 
 void sys_exit(int status) {
   thread_t* current = thread_current();
-  /* 【诊断·可删】冷启动跑单个测试时排查"子进程秒退零输出" */
+#if PROBE_TRACE
+  /* 线程退出打点，排查"子进程秒退零输出"时改 PROBE_TRACE=1 */
   {
     static int exit_dbg = 0;
     if (current != NULL && exit_dbg++ < 4000) {
@@ -250,6 +251,7 @@ void sys_exit(int status) {
                 current->name != NULL ? current->name : "?", status, (u32)pc);
     }
   }
+#endif
   if (current != NULL && current->id > 1) {
     log_debug("sys_exit tid=%d status=%d\n", current->id, status);
   }
@@ -281,7 +283,8 @@ void sys_exit(int status) {
 }
 
 void sys_exit_group(int status) {
-  /* 【诊断·可删】同 sys_exit 的 EXIT 探针 */
+#if PROBE_TRACE
+  /* 进程退出打点（tid/name/status/pc），排查退出路径时改 PROBE_TRACE=1 */
   {
     static int exitg_dbg = 0;
     thread_t* dbg_t = thread_current();
@@ -291,6 +294,7 @@ void sys_exit_group(int status) {
                 dbg_t->name != NULL ? dbg_t->name : "?", status, (u32)pc);
     }
   }
+#endif
   /* 【真正结束整个进程】musl 的 exit()/_Exit() 走 SYS_exit_group；原实现
    * 直接 sys_exit（只退当前线程）✗ —— pthread 后台线程（SDL timer 等）
    * 还活着，ps 里进程一直挂着（gnuboy 按 HOME 打印 "HOME -> exit" 后

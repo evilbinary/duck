@@ -217,6 +217,7 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
                 size_t pgoffset) {
   int ret = 0;
   thread_t* current = thread_current();
+#if PROBE_TRACE
   {
     static int mmap_in_cnt = 0;
     if (current != NULL && current->id >= 6 && mmap_in_cnt < 800) {
@@ -225,6 +226,7 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
                 prot, flags, fd, (u32)pgoffset);
     }
   }
+#endif
   vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
   if (vm == NULL) {
     log_error("sys mmap2 not found vm\n");

@@ -27,6 +27,14 @@ enum { LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR };
 #define LOG_MIN_LEVEL LOG_DEBUG
 #endif
 
+/* 【调试探针总开关】逐系统调用追踪、mmap 入参、ELF 装载打点、内核堆分配采样、
+ * 页错误现场等都受它控制。默认关闭 —— 这些输出量极大，会把用户态程序
+ * （如 Xorg/ltp）自己的日志整段淹没，让真正的报错看不见。
+ * 排查具体问题时改成 1 重新构建，看完立刻改回 0。 */
+#ifndef PROBE_TRACE
+#define PROBE_TRACE 0
+#endif
+
 /* 【va_list 必须传指针】理由见 kernel/string.h：按值传会生成 128 位 SIMD 拷贝，
  * MMU 未开时在真机上卡死。 */
 typedef void (*log_format_fn)(int tag, const char* message, va_list *args);
