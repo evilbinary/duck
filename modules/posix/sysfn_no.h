@@ -191,6 +191,7 @@ enum {
   SYS_MKDIR = 34,
   SYS_LINKAT = 37,     // aarch64 无 link，只有 linkat；37 与 SYS_ALARM 同号
   SYS_RENAMEAT2 = 276,
+  SYS_UTIMENSAT = 88,  // 时间戳设置（FAT 不存，no-op 成功）
   SYS_ACESS = 48,
   SYS_ALARM = 37,  // ARM64: alarm is available
   SYS_KILL = 129,

@@ -191,6 +191,7 @@ void sys_fn_init() {
    * 276 = renameat2，flags 只支持 0，等价 renameat。 */
   syscall_table[SYS_LINKAT] = &sys_linkat;
   syscall_table[SYS_RENAMEAT2] = &sys_renameat2;
+  syscall_table[SYS_UTIMENSAT] = &sys_utimensat;
 #endif
 
   syscall_table[SYS_SET_THREAD_AREA] = &sys_set_thread_area;

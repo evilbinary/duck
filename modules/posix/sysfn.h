@@ -343,6 +343,7 @@ int sys_renameat2(int olddirfd, const char* oldpath, int newdirfd,
                   const char* newpath, unsigned int flags);
 int sys_linkat(int olddirfd, const char* oldpath, int newdirfd,
                const char* newpath, int flags);
+int sys_utimensat(int dirfd, const char* pathname, const void* times, int flags);
 int sys_newfstatat(int dirfd, const char* pathname, struct stat* stat,
                    int flags);
 ssize_t sys_readlinkat(int dirfd, const char* restrict pathname,

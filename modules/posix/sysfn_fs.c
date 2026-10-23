@@ -614,14 +614,35 @@ int sys_renameat(int olddirfd, const char* oldpath, int newdirfd,
   return sys_rename(oldpath, newpath);
 }
 
-/* 276 = renameat2。flags 只接受 0（RENAME_NOREPLACE/EXCHANGE/WHITEOUT 都不做），
- * 非 0 按 EINVAL 返回，让调用方退回普通 renameat。 */
+/* 276 = renameat2。
+ *   flags==0            → 普通改名（renameat）
+ *   RENAME_NOREPLACE(1) → 目标已存在返回 EEXIST，否则普通改名
+ *   RENAME_EXCHANGE(2)/WHITEOUT(4) 未实现 → EINVAL（overlayfs/whiteout 才用，
+ *   FAT 上 Linux 本身也不支持） */
 int sys_renameat2(int olddirfd, const char* oldpath, int newdirfd,
                   const char* newpath, unsigned int flags) {
-  if (flags != 0) {
-    return -22; /* -EINVAL */
+  if (flags == 0) {
+    return sys_renameat(olddirfd, oldpath, newdirfd, newpath);
   }
-  return sys_renameat(olddirfd, oldpath, newdirfd, newpath);
+  if (flags == 1) { /* RENAME_NOREPLACE */
+    struct stat st;
+    if (newpath != NULL && sys_stat(newpath, &st) == 0) {
+      return -17; /* -EEXIST */
+    }
+    return sys_renameat(olddirfd, oldpath, newdirfd, newpath);
+  }
+  return -22; /* -EINVAL */
+}
+
+/* 88 = utimensat。FAT 的时间戳精度/写入路径都没接，直接成功返回：
+ * 语义上"设置访问/修改时间"失败会让调用方误判文件不可写（tst_test 的
+ * SAFE_UTIMES 就是 TBROK），而时间戳在 FAT 上并非可靠信息。 */
+int sys_utimensat(int dirfd, const char* pathname, const void* times, int flags) {
+  (void)dirfd;
+  (void)pathname;
+  (void)times;
+  (void)flags;
+  return 0;
 }
 
 /* 37 = linkat。FAT 没有硬链接，按 POSIX "目标文件系统不支持链接" 返回
@@ -1235,6 +1256,10 @@ int sys_unlink(const char* pathname) {
   if (kstrlen(kpath) == 0) {
     return -1;
   }
+  /* 剥掉尾部 '/'："dir/" 这种写法拆分后 base 会是空串 */
+  while (kstrlen(kpath) > 1 && kpath[kstrlen(kpath) - 1] == '/') {
+    kpath[kstrlen(kpath) - 1] = '\0';
+  }
 
   kstrcpy(parent, kpath);
   slash = parent + kstrlen(parent);
@@ -1256,8 +1281,10 @@ int sys_unlink(const char* pathname) {
     return -1;
   }
 
-  dir_node = vfs_find_relative(current->vfs->root, current->vfs->pwd,
-                               parent[0] ? parent : "/");
+  /* 【相对路径必须落在 pwd】裸名（无 '/'）时 parent 为空串，传 "/" 会跑到根
+   * 目录去找 —— 调用方 cwd 里的相对路径全部解析失败。空串交给
+   * vfs_find_relative 直接返回 pwd。 */
+  dir_node = vfs_find_relative(current->vfs->root, current->vfs->pwd, parent);
   if (!vfs_node_is_valid(dir_node) ||
       (dir_node->flags & V_DIRECTORY) != V_DIRECTORY) {
     log_error("sys_unlink: parent not found %s\n", parent);
@@ -1332,8 +1359,8 @@ int sys_rename(const char* old, const char* new) {
     return -18; /* -EXDEV：只支持同目录改名 */
   }
 
-  old_dir = vfs_find_relative(current->vfs->root, current->vfs->pwd,
-                              old_parent[0] ? old_parent : "/");
+  /* 相对路径（Xorg 的日志/锁文件都是裸名）必须落在 pwd，不能落到根 */
+  old_dir = vfs_find_relative(current->vfs->root, current->vfs->pwd, old_parent);
   if (!vfs_node_is_valid(old_dir) ||
       (old_dir->flags & V_DIRECTORY) != V_DIRECTORY) {
     return -2;
@@ -1767,6 +1794,11 @@ int sys_mkdir(const char* pathname, mode_t mode) {
   if (kstrlen(kpath) == 0) {
     return -1;
   }
+  /* 【尾部 '/' 必须先剥掉】"test_dir/" 拆分后 base 会变成空串 —— 之前直接
+   * 返回 EPERM，LTP renameat201/202 以及不少程序的 mkdir("x/") 全被拒。 */
+  while (kstrlen(kpath) > 1 && kpath[kstrlen(kpath) - 1] == '/') {
+    kpath[kstrlen(kpath) - 1] = '\0';
+  }
 
   /* 拆 parent 目录 + 末段名字：/tmp/LTP_x -> parent=/tmp base=LTP_x */
   kstrcpy(parent, kpath);
@@ -1789,8 +1821,10 @@ int sys_mkdir(const char* pathname, mode_t mode) {
     return -1;
   }
 
-  dir_node = vfs_find_relative(current->vfs->root, current->vfs->pwd,
-                               parent[0] ? parent : "/");
+  /* 【相对路径必须落在 pwd】裸名（无 '/'）时 parent 为空串，传 "/" 会变成
+   * "在根目录下建同名目录"，cwd 里随后找不到 ⇒ LTP 等报 EPERM。
+   * 空串交给 vfs_find_relative 直接返回 pwd。 */
+  dir_node = vfs_find_relative(current->vfs->root, current->vfs->pwd, parent);
   if (!vfs_node_is_valid(dir_node) ||
       (dir_node->flags & V_DIRECTORY) != V_DIRECTORY) {
     log_error("sys_mkdir: parent not found %s\n", parent);
