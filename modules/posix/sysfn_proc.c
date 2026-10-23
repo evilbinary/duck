@@ -224,6 +224,11 @@ static void sys_clear_child_tid(thread_t* current) {
   if (current->vm != NULL &&
       page_v2p((u64*)current->vm->upage, current->clear_child_tid) != NULL) {
     *(int*)current->clear_child_tid = 0;
+    /* 【必须唤醒】Linux mm_release 语义：写 0 之外还要 futex_wake 该地址。
+     * musl 1.2 的线程链表锁由退出线程故意持到 SYS_exit，靠内核这一步
+     * 解锁 —— 只写不唤醒 ⇒ 等锁的 joiner/退出线程全部永久阻塞
+     * （futex_wake02 join 阶段实测全灭）。 */
+    futex_wake_kernel_userspace((u32*)current->clear_child_tid, 0xFFFFFFFFu);
   } else {
     log_error("exit: bad clear_child_tid %lx tid %d name %s\n",
               (unsigned long)(uintptr_t)current->clear_child_tid, current->id,
@@ -388,7 +393,14 @@ int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
 
   thread_set_ret(copy_thread, 0); /* clone child return value (r0=0) */
 
-  (void)child_tid;
+  /* 【CLONE_CHILD_CLEARTID 必须落地】musl 的 pthread 用 clone 的 ctid 传
+   * &__thread_list_lock（线程链表锁）：退出线程持锁走到 SYS_exit，由内核
+   * 写 0 + futex 唤醒解锁。原实现 (void)child_tid 直接丢弃 ⇒ pthread 线程
+   * clear_child_tid 恒 NULL ⇒ 锁值永远停在持有者 tid 上，join/退出全体
+   * 死锁（futex_wake02 join 阶段实测）。 */
+  if ((flags & CLONE_CHILD_CLEARTID) != 0 && child_tid != NULL) {
+    copy_thread->clear_child_tid = (void*)(uintptr_t)child_tid;
+  }
   thread_run(copy_thread);
   return copy_thread->id;
 }

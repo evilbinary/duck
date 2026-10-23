@@ -246,13 +246,22 @@ int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
 
   /* 【诊断·可删】只打前 16 次：确认应用真的走到 futex、以及 op 类型
    * （0=WAIT / 1=WAKE）。若 gnuboy 卡住时这里完全没有输出 ⇒ 它与 futex 无关。 */
-  if (futex_dbg < 200u) {
+  {
+    /* 【定向探针·可删】全量打会淹没在框架噪音里：只打 WAKE 类（join 退出
+     * 唤醒）和 tid<=10 的主线程操作。总量有上限，长期运行不刷屏。 */
     futex_dbg++;
-    u64 pc = (current->ctx != NULL && current->ctx->ic != NULL)
-                 ? current->ctx->ic->pc
-                 : 0;
-    log_info("futex op=%x addr=%x val=%x tid=%d pc=%x\n", (u32)futex_op & 0xff,
-             (u32)(uintptr_t)uaddr, val, current->id, (u32)pc);
+    if (futex_dbg < 400u &&
+        (((futex_op & 1u) != 0 && futex_dbg > 300u) || current->id <= 10u)) {
+      u64 pc = (current->ctx != NULL && current->ctx->ic != NULL)
+                   ? current->ctx->ic->pc
+                   : 0;
+      u64 lr = (current->ctx != NULL && current->ctx->ic != NULL)
+                   ? current->ctx->ic->lr
+                   : 0;
+      log_info("futex op=%x addr=%x val=%x tid=%d pc=%x lr=%x\n",
+               (u32)futex_op & 0xff, (u32)(uintptr_t)uaddr, val, current->id,
+               (u32)pc, (u32)lr);
+    }
   }
 
   /* 【WAIT_BITSET(9) 不能落进 WAKE 分支】op 的位 0 是 WAIT/WAKE 位：
@@ -261,6 +270,7 @@ int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
    * （LTP futex_wake02 系列全是 BITSET 变体 ⇒ 语义全错）。统一掩掉
    * PRIVATE(128)/CLOCK_REALTIME(256) 后按 op 判定。 */
   u32 fop = futex_op & ~(u32)128 & ~(u32)256;
+  int is_bitset = (fop == 9) /* WAIT_BITSET：绝对超时 + 忽略 bitmask */;
   if (fop == 9 /* FUTEX_WAIT_BITSET */) {
     fop = 0 /* 当 FUTEX_WAIT 处理（忽略 bitmask） */;
   }
@@ -277,14 +287,53 @@ int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
       return EAGAIN;
     }
     u32 sleep_ticks = 0;
-    if (timeout != NULL && timeout->tv_sec >= 0) {
-      sleep_ticks = (u32)timeout->tv_sec * 1000 +
-                    (u32)(timeout->tv_nsec / 1000000);
+    if (timeout != NULL) {
+      /* 【timespec 两种布局】SYS_futex(98) 的调用方有两种：
+       *  a) futextest.h/LTP 直发：old_timespec32 = 8 字节打包 {i32 sec, i32 nsec}；
+       *  b) musl __timedwait 内部：16 字节 {i64 sec, i64 nsec}（相对时长）。
+       * 区分：16B 的小正数 sec64 高 32 位恒 0 ⇒ offset4 处的 i32 恒 0；
+       * 8B 的 nsec32 几乎总非 0。nsec32==0 时按 16B 解（8B 且 nsec 恰为 0
+       * 的概率 1/1000，误差可忽略）。
+       * 【WAIT_BITSET(op=9) 是绝对超时】Linux 语义：默认单调时钟基准；
+       * 带 CLOCK_REALTIME(256) 位则实时时钟基准。此前当相对时长睡 ⇒
+       * futex_wait_bitset01 睡了"绝对秒数+100ms"（实测 2581ms）。 */
+      i32 sec32 = *(volatile i32*)timeout;
+      i32 nsec32 = *((volatile i32*)timeout + 1);
+      u64 tmo_ms;
+      /* 毫秒向上取整：floor 会比 deadline 早醒 1 tick 内的纳秒零头
+       * （futex_wait_bitset01 实测 99.0ms < 100.01ms 判 premature） */
+      if (nsec32 != 0) {
+        tmo_ms = (u64)(u32)sec32 * 1000ull + ((u32)nsec32 + 999999ull) / 1000000ull;
+      } else {
+        i64 sec64 = *(volatile i64*)timeout;
+        i64 nsec64 = *(volatile i64*)((char*)timeout + 8);
+        tmo_ms = (u64)(sec64 > 0 ? sec64 : 0) * 1000ull +
+                 ((u64)(nsec64 > 0 ? nsec64 : 0) + 999999ull) / 1000000ull;
+      }
+      if (is_bitset /* FUTEX_WAIT_BITSET: 绝对超时 */) {
+        extern u64 schedule_get_ticks();
+        u64 now_ms;
+        if ((futex_op & 256u) /* FUTEX_CLOCK_REALTIME */) {
+          time_t rtc = 0;
+          sys_time(&rtc);
+          now_ms = (u64)rtc * 1000ull +
+                   (u64)(schedule_get_ticks() % (u64)SCHEDULE_FREQUENCY);
+        } else {
+          now_ms = (u64)schedule_get_ticks(); /* 单调 ms，与 musl 同基准 */
+        }
+        /* 【+1 补偿记账差一】schedule_state 的递减在睡下去的当个 tick 就
+         * 发生 ⇒ 实际睡眠 = sleep_ticks - 1 tick（futex_wait_bitset01 实测
+         * 100000us < 100010us 判 premature）。绝对 deadline 少睡不可接受。 */
+        sleep_ticks = tmo_ms > now_ms ? (u32)(tmo_ms - now_ms) + 1 : 1;
+      } else {
+        /* 普通 FUTEX_WAIT：相对时长（musl 内部已折算） */
+        sleep_ticks = (u32)tmo_ms;
+      }
       if (sleep_ticks == 0) {
         sleep_ticks = 1;
       }
       if (sleep_ticks > 0x40000000u) {
-        sleep_ticks = 0x40000000u; /* 防溢出 int（绝对时间已被 musl 转相对） */
+        sleep_ticks = 0x40000000u; /* 防溢出 int */
       }
       has_timeout = 1;
     }
@@ -304,4 +353,16 @@ int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
 
   log_debug("sys futext not impl %d\n", futex_op);
   return 0;
+}
+
+/* 【内核侧线程退出唤醒】Linux 语义：线程退出时 mm_release 写
+ * *clear_child_tid=0 并 futex_wake 该地址。musl 1.2 的线程链表锁
+ * （__thread_list_lock）靠这一步释放——退出线程故意带着 tl_lock 走到
+ * SYS_exit，由内核解锁；只写不唤醒 ⇒ 所有等锁线程（含 joiner）永久
+ * 阻塞（futex_wake02 的 join 阶段实测全灭）。 */
+int futex_wake_kernel_userspace(u32* addr, u32 nwake) {
+  if (addr == NULL || futex_waiters == NULL) {
+    return 0;
+  }
+  return (int)futex_waiter_wake(addr, nwake);
 }

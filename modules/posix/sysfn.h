@@ -501,6 +501,8 @@ int sys_kill(pid_t pid, int sig);
 int sys_waitpid(pid_t pid, int* wstatus, int options);
 long sys_wait4(pid_t pid, int* wstatus, int options, struct rusage* rusage);
 int sys_set_tid_adress(void* ptr);
+/* 内核侧 futex 唤醒（线程退出释放 clear_child_tid 用，sysfn_thread.c 实现） */
+int futex_wake_kernel_userspace(u32* addr, u32 nwake);
 int sys_pipe(int fds[2]);
 int sys_thread_create(char* name, void* entry, void* data);
 int sys_thread_dump();
