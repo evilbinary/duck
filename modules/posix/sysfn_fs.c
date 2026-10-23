@@ -96,7 +96,7 @@ static int sys_copy_user_string(const char* user, char* kbuf, size_t ksize) {
   return kbuf[0] == '\0' ? -1 : 0;
 }
 
-static int sys_copy_from_user(void* kbuf, const void* user, size_t size) {
+int sys_copy_from_user(void* kbuf, const void* user, size_t size) {
   if (kbuf == NULL || user == NULL || size == 0) {
     return -1;
   }
@@ -144,7 +144,7 @@ static void sys_user_dcache_sync(const void* user, size_t size) {
 }
 #endif
 
-static int sys_copy_to_user(void* user, const void* kbuf, size_t size) {
+int sys_copy_to_user(void* user, const void* kbuf, size_t size) {
   if (user == NULL || kbuf == NULL || size == 0) {
     return -1;
   }
@@ -762,6 +762,85 @@ int sys_select(int nfds, unsigned long* readfds, unsigned long* writefds,
 
   sys_fd_set_sleep(timeout);
   return 0;
+}
+
+/* ===================== ppoll(73) =====================
+ * poll 轮询接口（用户态 poll() → ppoll）。沿用 select 的"fd 存在即
+ * 就绪"轮询模型：存在 fd 的请求位回填 POLLIN|POLLOUT|POLLPRI，坏 fd
+ * 回填 POLLNVAL；全不就绪时按 timeout 睡（NULL = 睡 1 tick 轮询，
+ * 与 select 同款）。sigmask 忽略。 */
+#define PPOLL_NFDS_MAX 512
+#define POLLIN_ 0x001
+#define POLLOUT_ 0x004
+#define POLLPRI_ 0x008
+#define POLLNVAL_ 0x020
+
+struct pollfd_k {
+  int fd;
+  short events;
+  short revents;
+};
+
+int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
+  thread_t* current = thread_current();
+  struct pollfd_k* ufds = (struct pollfd_k*)u_ufds;
+  struct pollfd_k* fds = NULL;
+  int ready = 0;
+  unsigned int i;
+  (void)sigmask;
+  if (current == NULL) {
+    return -1;
+  }
+  if (nfds > PPOLL_NFDS_MAX) {
+    nfds = PPOLL_NFDS_MAX;
+  }
+  if (nfds == 0) {
+    schedule_sleep(1);
+    return 0;
+  }
+  fds = kmalloc(sizeof(struct pollfd_k) * nfds, KERNEL_TYPE);
+  if (fds == NULL) {
+    return -12; /* -ENOMEM */
+  }
+  if (sys_copy_from_user(fds, ufds, sizeof(struct pollfd_k) * nfds) < 0) {
+    kfree(fds);
+    return -14; /* -EFAULT */
+  }
+  /* 【超时】16B {i64 sec,i64 nsec} timespec；换算 ms（ceil） */
+  if (tmo != NULL) {
+    i64 sec64 = *(volatile i64*)tmo;
+    i64 nsec64 = *(volatile i64*)((char*)tmo + 8);
+    u64 ms = (u64)(sec64 > 0 ? sec64 : 0) * 1000ull +
+             ((u64)(nsec64 > 0 ? nsec64 : 0) + 999999ull) / 1000000ull;
+    if (ms == 0) {
+      ms = 1;
+    }
+    schedule_sleep((int)(ms > 1000 ? 1000 : ms));
+  } else {
+    schedule_sleep(1); /* 永久等待：1 tick 轮询兜底 */
+  }
+  for (i = 0; i < nfds; i++) {
+    short want = fds[i].events;
+    short got = 0;
+    if (fds[i].fd < 0) {
+      continue; /* poll 规范：fd<0 忽略 events，revents=0 */
+    }
+    if (thread_find_fd_id(current, fds[i].fd) == NULL) {
+      got = POLLNVAL_;
+    } else {
+      if (want & POLLIN_) got |= POLLIN_;
+      if (want & POLLOUT_) got |= POLLOUT_;
+      if (want & POLLPRI_) got |= POLLPRI_;
+      if (want == 0) got = 0;
+    }
+    if (got != 0) {
+      ready++;
+    }
+    fds[i].revents = got;
+  }
+  sys_copy_to_user(ufds, fds, sizeof(struct pollfd_k) * nfds);
+  kfree(fds);
+  return ready;
 }
 
 size_t sys_write(u32 fd, void* buf, size_t nbytes) {

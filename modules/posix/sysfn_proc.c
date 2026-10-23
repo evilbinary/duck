@@ -596,6 +596,46 @@ int sys_kill(pid_t pid, int sig) {
   return 0;
 }
 
+/* ===================== 会话/凭据 ===================== */
+
+/* 【setsid(157)】创建新会话。本内核无会话概念：直接把调用者当新会话
+ * 首进程，返回其 pid（合法 sid 值，调用方只检查不为 -1）。
+ * 已是进程组长时应返回 -EPERM——没有进程组语义，不做检查。 */
+int sys_setsid(void) {
+  thread_t* current = thread_current();
+  log_debug("sys setsid tid=%d\n", current->id);
+  return (int)current->id;
+}
+
+/* 【tgkill(131)】向线程发信号（pthread_kill 底座）。内核无定向线程
+ * 信号：sig!=SIGKILL 与 sys_kill 同款忽略，SIGKILL 按进程级处理
+ * （目标 tgid 的整个进程）。 */
+int sys_tgkill(int tgid, int tid, int sig) {
+  if (tgid <= 0) {
+    return -1;
+  }
+  (void)tid; /* 无线程级信号设施，退化为进程级 */
+  return sys_kill(tgid, sig);
+}
+
+/* 【setuid/setgid/setgroups】单用户内核：恒成功恒 0（调用方的凭据
+ * 切换逻辑依赖返回成功）。 */
+int sys_setuid(uid_t uid) {
+  (void)uid;
+  return 0;
+}
+
+int sys_setgid(gid_t gid) {
+  (void)gid;
+  return 0;
+}
+
+int sys_setgroups(int size, const gid_t* list) {
+  (void)size;
+  (void)list;
+  return 0;
+}
+
 /* ===================== wait ===================== */
 
 pid_t sys_waitpid(pid_t pid, int* wstatus, int options) {

@@ -227,6 +227,30 @@ enum {
   SYS_UNAME = 160,
   SYS_MLOCKALL = 230,
 
+  /* 【标准 POSIX 接口组】ppoll=73（poll 轮询）、setsid=157、prctl=167、
+   * sigaltstack=132、tgkill=131、getrandom=278、setrlimit=164、
+   * eventfd2=19、epoll 三件套=20/21/22、inotify=26/27/28、
+   * close_range=436。sendmsg=211/recvmsg=212 宏已在网络组。 */
+  SYS_PPOLL = 73,
+  SYS_SETSID = 157,
+  SYS_PRCTL = 167,
+  SYS_SIGALTSTACK = 132,
+  SYS_TGKILL = 131,
+  SYS_GETRANDOM = 278,
+  SYS_SETRLIMIT = 164,
+  SYS_SETUID = 105,
+  SYS_SETGID = 106,
+  SYS_SETGROUPS = 81,
+  SYS_VHANGUP = 159,
+  SYS_EVENTFD2 = 19,
+  SYS_EPOLL_CREATE1 = 20,
+  SYS_EPOLL_CTL = 21,
+  SYS_EPOLL_PWAIT = 22,
+  SYS_INOTIFY_INIT1 = 26,
+  SYS_INOTIFY_ADD_WATCH = 27,
+  SYS_INOTIFY_RM_WATCH = 28,
+  SYS_CLOSE_RANGE = 436,
+
   SYS_MADVISE = 233,
   SYS_WAITID = 95,
 

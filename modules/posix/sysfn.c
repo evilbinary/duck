@@ -274,6 +274,29 @@ void sys_fn_init() {
 
   syscall_table[SYS_WAIT4] = &sys_wait4;
 
+  /* 【标准 POSIX 接口组】轮询/事件 fd/会话/杂项 */
+  syscall_table[SYS_PPOLL] = &sys_ppoll;
+  syscall_table[SYS_SETSID] = &sys_setsid;
+  syscall_table[SYS_PRCTL] = &sys_prctl;
+  syscall_table[SYS_SIGALTSTACK] = &sys_sigaltstack;
+  syscall_table[SYS_TGKILL] = &sys_tgkill;
+  syscall_table[SYS_GETRANDOM] = &sys_getrandom;
+  syscall_table[SYS_SETRLIMIT] = &sys_setrlimit;
+  syscall_table[SYS_SETUID] = &sys_setuid;
+  syscall_table[SYS_SETGID] = &sys_setgid;
+  syscall_table[SYS_SETGROUPS] = &sys_setgroups;
+  syscall_table[SYS_VHANGUP] = &sys_setsid;
+  syscall_table[SYS_EVENTFD2] = &sys_eventfd2;
+  syscall_table[SYS_EPOLL_CREATE1] = &sys_epoll_create1;
+  syscall_table[SYS_EPOLL_CTL] = &sys_epoll_ctl;
+  syscall_table[SYS_EPOLL_PWAIT] = &sys_epoll_pwait;
+  syscall_table[SYS_INOTIFY_INIT1] = &sys_inotify_init1;
+  syscall_table[SYS_INOTIFY_ADD_WATCH] = &sys_inotify_add_watch;
+  syscall_table[SYS_INOTIFY_RM_WATCH] = &sys_inotify_rm_watch;
+  syscall_table[SYS_CLOSE_RANGE] = &sys_close_range;
+  syscall_table[SYS_SENDMSG] = &sys_sendmsg;
+  syscall_table[SYS_RECVMSG] = &sys_recvmsg;
+
   // Initialize network syscalls
   sys_fn_net_init((void**)syscall_table);
 #ifdef PERF_MODULE

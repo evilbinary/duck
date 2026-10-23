@@ -541,5 +541,30 @@ int sys_print(char* s);
 int sys_print_at(char* s, u32 x, u32 y);
 size_t sys_yeild();
 
+/* ===================== 标准 POSIX 接口组（跨文件声明） ===================== */
+int sys_copy_from_user(void* kbuf, const void* user, size_t size);
+int sys_copy_to_user(void* user, const void* kbuf, size_t size);
+int sys_setsid(void);
+int sys_tgkill(int tgid, int tid, int sig);
+int sys_setuid(uid_t uid);
+int sys_setgid(gid_t gid);
+int sys_setgroups(int size, const gid_t* list);
+int sys_prctl(int option, unsigned long a2, unsigned long a3,
+              unsigned long a4, unsigned long a5);
+int sys_sigaltstack(const void* ss, void* old_ss);
+int sys_getrandom(void* buf, size_t len, unsigned int flags);
+int sys_close_range(u32 first, u32 last, unsigned int flags);
+int sys_setrlimit(int resource, const void* rlim);
+int sys_ppoll(void* ufds, unsigned int nfds, void* tmo, void* sigmask);
+ssize_t sys_sendmsg(int sockfd, void* umsg, int flags);
+ssize_t sys_recvmsg(int sockfd, void* umsg, int flags);
+int sys_eventfd2(u64 initval, int flags);
+int sys_epoll_create1(int flags);
+int sys_epoll_ctl(int epfd, int op, int fd, void* ev);
+int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
+                    void* sigmask, size_t sigsetsize);
+int sys_inotify_init1(int flags);
+int sys_inotify_add_watch(int fd, const char* pathname, u32 mask);
+int sys_inotify_rm_watch(int fd, int wd);
 
 #endif

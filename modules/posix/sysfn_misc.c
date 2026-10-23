@@ -118,3 +118,101 @@ int sys_rt_sigaction(int signum, const struct sigaction* restrict act,
   log_debug("sys sigaction not impl\n");
   return 0;
 }
+
+/* ===================== 杂项/进程属性 ===================== */
+
+/* 【prctl(167)】进程/线程属性控制。只认真处理 PR_SET_NAME/GET_NAME
+ * （线程命名），其余 option no-op 返回 0。 */
+#define PR_SET_NAME_ 15
+#define PR_GET_NAME_ 16
+
+int sys_prctl(int option, unsigned long a2, unsigned long a3,
+              unsigned long a4, unsigned long a5) {
+  thread_t* current = thread_current();
+  if (current == NULL) {
+    return -1;
+  }
+  (void)a3;
+  (void)a4;
+  (void)a5;
+  if (option == PR_SET_NAME_ && a2 != 0) {
+    /* 线程名最长 16 字节（含 '\0'） */
+    char name[16];
+    if (sys_copy_from_user(name, (void*)(unsigned long)a2, sizeof(name)) < 0) {
+      return -1;
+    }
+    name[sizeof(name) - 1] = '\0';
+    if (current->name != NULL) {
+      kstrncpy(current->name, name, kstrlen(name));
+    }
+    return 0;
+  }
+  if (option == PR_GET_NAME_ && a2 != 0) {
+    char name[16] = {0};
+    if (current->name != NULL) {
+      kstrncpy(name, current->name, sizeof(name) - 1);
+    }
+    if (sys_copy_to_user((void*)(unsigned long)a2, name, sizeof(name)) < 0) {
+      return -1;
+    }
+    return 0;
+  }
+  return 0;
+}
+
+/* 【sigaltstack(132)】信号处理备选栈。无真信号设施：no-op 成功
+ * （调用方只检查返回值）。 */
+int sys_sigaltstack(const void* ss, void* old_ss) {
+  (void)ss;
+  (void)old_ss;
+  return 0;
+}
+
+/* 【getrandom(278)】随机字节填充。无熵源：时钟异或递增计数器的
+ * 软件伪随机。 */
+int sys_getrandom(void* buf, size_t len, unsigned int flags) {
+  static u32 s_rand_state = 0x13572468u;
+  u8* p = (u8*)buf;
+  u64 ticks;
+  extern u64 schedule_get_ticks();
+  (void)flags;
+  if (buf == NULL || len == 0) {
+    return 0;
+  }
+  ticks = schedule_get_ticks();
+  for (size_t i = 0; i < len; i++) {
+    s_rand_state ^= (u32)(ticks >> ((i & 7) * 8)) ^ (u32)(i * 2654435761u);
+    s_rand_state = s_rand_state * 1664525u + 1013904223u;
+    p[i] = (u8)(s_rand_state >> 16);
+  }
+  return (int)len;
+}
+
+/* 【close_range(436)】批量关闭 fd 区间。
+ * Linux 语义：区间内不存在的 fd 忽略。 */
+int sys_close_range(u32 first, u32 last, unsigned int flags) {
+  thread_t* current = thread_current();
+  (void)flags;
+  if (current == NULL) {
+    return -1;
+  }
+  if (first > last) {
+    return -22; /* -EINVAL */
+  }
+  if (last >= 1024) {
+    last = 1023;
+  }
+  for (u32 fd = first; fd <= last; fd++) {
+    if (thread_find_fd_id(current, (int)fd) != NULL) {
+      sys_close(fd);
+    }
+  }
+  return 0;
+}
+
+/* 【setrlimit(164)】no-op 成功（改动不落地，getrlimit 仍报 NOFILE） */
+int sys_setrlimit(int resource, const void* rlim) {
+  (void)resource;
+  (void)rlim;
+  return 0;
+}

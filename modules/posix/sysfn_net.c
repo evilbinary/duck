@@ -518,6 +518,104 @@ ssize_t sys_recvfrom(int sockfd, void* buf, size_t len, int flags,
   return -1;  // Would block or error
 }
 
+/* ===================== sendmsg(211)/recvmsg(212) =====================
+ * 多缓冲收发接口。最小实现：逐 iovec 走 sendto/recvfrom 同款通道；
+ * msg_control（SCM_RIGHTS fd 传递）不支持——核心协议不用 fd passing。 */
+struct iovec_k {
+  void* base;
+  size_t len;
+};
+
+struct msghdr_k {
+  void* msg_name;
+  socklen_t msg_namelen;
+  struct iovec_k* msg_iov;
+  size_t msg_iovlen;
+  void* msg_control;
+  size_t msg_controllen;
+  int msg_flags;
+};
+
+ssize_t sys_sendmsg(int sockfd, void* u_umsg, int flags) {
+  struct msghdr_k msg;
+  struct iovec_k iov;
+  size_t i;
+  ssize_t total = 0;
+  const struct msghdr_k* umsg = (const struct msghdr_k*)u_umsg;
+  if (umsg == NULL) {
+    return -14; /* -EFAULT */
+  }
+  if (sys_copy_from_user(&msg, (void*)umsg, sizeof(msg)) < 0) {
+    return -14;
+  }
+  if (msg.msg_iov == NULL || msg.msg_iovlen == 0) {
+    return 0;
+  }
+  if (msg.msg_iovlen > 64) {
+    msg.msg_iovlen = 64;
+  }
+  for (i = 0; i < msg.msg_iovlen; i++) {
+    if (sys_copy_from_user(&iov, (void*)((char*)msg.msg_iov + i * sizeof(iov)),
+                           sizeof(iov)) < 0) {
+      return total > 0 ? total : -14;
+    }
+    if (iov.base == NULL || iov.len == 0) {
+      continue;
+    }
+    ssize_t n = sys_sendto(sockfd, iov.base, iov.len, flags, msg.msg_name,
+                           msg.msg_namelen);
+    if (n < 0) {
+      return total > 0 ? total : (int)n;
+    }
+    total += n;
+  }
+  return total;
+}
+
+ssize_t sys_recvmsg(int sockfd, void* u_umsg, int flags) {
+  struct msghdr_k msg;
+  struct iovec_k iov;
+  size_t i;
+  ssize_t total = 0;
+  struct msghdr_k* umsg = (struct msghdr_k*)u_umsg;
+  if (umsg == NULL) {
+    return -14;
+  }
+  if (sys_copy_from_user(&msg, umsg, sizeof(msg)) < 0) {
+    return -14;
+  }
+  if (msg.msg_iov == NULL || msg.msg_iovlen == 0) {
+    return 0;
+  }
+  if (msg.msg_iovlen > 64) {
+    msg.msg_iovlen = 64;
+  }
+  for (i = 0; i < msg.msg_iovlen; i++) {
+    if (sys_copy_from_user(
+            &iov, (void*)((char*)msg.msg_iov + i * sizeof(iov)), sizeof(iov)) <
+        0) {
+      return total > 0 ? total : -14;
+    }
+    if (iov.base == NULL || iov.len == 0) {
+      continue;
+    }
+    ssize_t n = sys_recvfrom(sockfd, iov.base, iov.len, flags, msg.msg_name,
+                             &msg.msg_namelen);
+    if (n < 0) {
+      return total > 0 ? total : (int)n;
+    }
+    total += n;
+    if ((size_t)n < iov.len) {
+      break; /* 短读：剩余 iov 不再填 */
+    }
+  }
+  /* 回写 namelen 与 flags；control 不支持（controllen 置 0） */
+  msg.msg_controllen = 0;
+  msg.msg_flags = 0;
+  sys_copy_to_user(umsg, &msg, sizeof(msg));
+  return total;
+}
+
 int sys_setsockopt(int sockfd, int level, int optname, const void* optval,
                    socklen_t optlen) {
 #ifdef NET_DRIVER
