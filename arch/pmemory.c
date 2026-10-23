@@ -147,6 +147,35 @@ static int ya_block_magic_valid(block_t* block) {
   return block->magic == MAGIC_USED || block->magic == MAGIC_FREE;
 }
 
+/* 【END 槽布局 v2】8 字节 = [MAGIC_END 哨兵(4B)][回指本块头 self 指针(4B)]。
+ * self 指针让 ya_phys_prev/ya_phys_next 从 O(n) 链表遍历降为 O(1)：
+ * 55 个 fork 子进程收尸时逐张释放几百个页表块，旧实现的每次 kfree 都要
+ * 遍历 3 万+ 块的链表两次，TCG 下直接把 futex_wake03 冻死。
+ * 所有写 MAGIC_END 的地方一律走 ya_end_write，别处不许手写。 */
+static void ya_end_write(block_t* block) {
+  int* end = (int*)((u8*)ya_block_addr(block) + block->size);
+  end[0] = MAGIC_END;
+  end[1] = (int)(u32)(uintptr_t)block;
+}
+
+/* O(1) 校验 block 的 END 槽完整（哨兵 + self 回指一致） */
+static int ya_end_valid(block_t* block) {
+  int* end = (int*)((u8*)ya_block_addr(block) + block->size);
+  return end[0] == MAGIC_END && (block_t*)(uintptr_t)(u32)end[1] == block;
+}
+
+/* 候选地址必须落在已登记的池内存范围内：phys_next 会向前读一块头的位置，
+ * 池尾的块后面可能是未映射区，先挡住再读（O(池数)，池数是个位数）。 */
+static int ya_addr_in_pool(void* p) {
+  mem_block_t* mb;
+  for (mb = mmt.blocks; mb != NULL; mb = mb->next) {
+    if ((u8*)p >= (u8*)mb->addr && (u8*)p < (u8*)mb->addr + mb->size) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 void ya_heap_stats(u32* free_bytes, u32* free_blocks, u32* max_free_block,
                    u32* alloc_count, u32* last_map);
 
@@ -339,8 +368,7 @@ block_t* ya_new_block(size_t size) {
   }
 
   void* addr = ya_block_addr(block);
-  int* end = addr + block->size;
-  *end = MAGIC_END;  // check overflow
+  ya_end_write(block);
 
   return block;
 }
@@ -394,76 +422,37 @@ static void ya_list_append(block_t** head, block_t** last, block_t* block) {
 
 /* 在两条链里按 header 地址找块：物理相邻合并要按【地址】判断，
  * 而链表是逻辑顺序，所以不能用 next/prev 直接当邻居。 */
-static block_t* ya_find_block_by_header(block_t* hdr) {
-  block_t* b;
-  u32 n = 0;
-  if (hdr == NULL) {
+static block_t* ya_phys_next(block_t* block) {
+  /* 块布局 [header][data(size)][END(8B)] ⇒ 下一块头地址可直接算出 */
+  block_t* cand =
+      (block_t*)((u8*)ya_block_addr(block) + block->size + YA_END_SIZE);
+  /* O(1) 校验三连：池内、magic 合法、END 槽回指自己。
+   * 误判需要垃圾数据恰好同时命中 999999999/888888888 的 magic 且
+   * END 槽后 4 字节恰为候选头地址，概率可忽略。 */
+  if (!ya_addr_in_pool(cand) || !ya_block_magic_valid(cand) ||
+      !ya_end_valid(cand)) {
     return NULL;
   }
-  /* 【诊断护栏】链表被踩成环时这里会死循环转不出来；链异常巨大时每次
-   * kfree 也都 O(n)。分级探针：超过 10k/100k/500k 各打一条（一次性），
-   * 超过 1M 直接返回 NULL，把死循环/巨链变成可诊断信息。 */
-  {
-    static u8 probed;
-    static u32 max_len;
-    for (b = mmt.g_block_list; b != NULL; b = b->next) {
-      if (b == hdr) {
-        break;
-      }
-      if (++n > 1000000u) {
-        log_error("ya_find_block: g_block_list cycle len>1M hdr=%p next=%p\n",
-                  hdr, b->next);
-        return NULL;
-      }
-    }
-    for (b = mmt.g_block_free; b != NULL; b = b->next) {
-      if (b == hdr) {
-        break;
-      }
-      if (++n > 1000000u) {
-        log_error("ya_find_block: g_block_free cycle len>1M hdr=%p next=%p\n",
-                  hdr, b->next);
-        return NULL;
-      }
-    }
-    if (n > max_len) {
-      max_len = n;
-      if ((n > 10000 && !probed) || (n > 100000 && probed == 1) ||
-          (n > 500000 && probed == 2)) {
-        probed = n > 500000 ? 3 : (n > 100000 ? 2 : 1);
-        log_error("ya_find_block: long walk len=%u hdr=%p\n", n, hdr);
-      }
-    }
-    return n > 1000000u ? NULL : b;
-  }
+  return cand;
 }
 
-/* block 之后紧邻的物理块（没有则 NULL）。
- * 块布局：[block_t header][data(size)][END(占 8 字节，YA_END_SIZE)]
- * ⇒ 下一个 header 地址 = data + size + YA_END_SIZE。
- * 必须用链表核对这个地址确实是登记过的块，否则会把越界地址当块用。 */
-static block_t* ya_phys_next(block_t* block) {
-  return ya_find_block_by_header(
-      (block_t*)((u8*)ya_block_addr(block) + block->size + YA_END_SIZE));
-}
-
-/* block 之前紧邻的物理块（没有则 NULL） */
+/* block 之前紧邻的物理块（没有则 NULL）：前块的 END 槽恰好落在本块头
+ * 之前 8 字节，其 self 回指就是前块头 —— O(1)，替代旧的全链遍历。 */
 static block_t* ya_phys_prev(block_t* block) {
-  block_t* lists[2];
-  int li;
-  lists[0] = mmt.g_block_list;
-  lists[1] = mmt.g_block_free;
-  for (li = 0; li < 2; li++) {
-    for (block_t* b = lists[li]; b != NULL; b = b->next) {
-      if (b == block) {
-        continue;
-      }
-      if ((block_t*)((u8*)ya_block_addr(b) + b->size + YA_END_SIZE) == block) {
-        return b;
-      }
-    }
+  u8* h = (u8*)block;
+  int* e = (int*)(h - YA_END_SIZE);
+  if (((uintptr_t)e & 3) != 0 || !ya_addr_in_pool(e) || e[0] != MAGIC_END) {
+    return NULL;
   }
-  return NULL;
+  block_t* prv = (block_t*)(uintptr_t)(u32)e[1];
+  if (prv == NULL || prv == block || !ya_block_magic_valid(prv)) {
+    return NULL;
+  }
+  /* 一致性：prv 的 END 必须就是本块头前的这个槽（防垃圾指针/旧格式） */
+  if ((int*)((u8*)ya_block_addr(prv) + prv->size) != e || !ya_end_valid(prv)) {
+    return NULL;
+  }
+  return prv;
 }
 
 block_t* ya_find_free_block(size_t size) {
@@ -528,7 +517,7 @@ void* ya_alloc(size_t size) {
     rest->magic = MAGIC_FREE;
     rest->prev = NULL;
     rest->next = NULL;
-    *((int*)((u8*)ya_block_addr(rest) + rest->size)) = MAGIC_END;
+    ya_end_write(rest);
     ya_list_append(&mmt.g_block_free, &mmt.g_block_free_last, rest);
     block->size = size;
   }
@@ -539,7 +528,7 @@ void* ya_alloc(size_t size) {
   kassert(addr != NULL);
   /* 数据区末尾的越界哨兵：切分时就地写过，未切分时是建块时写的；
    * 这里统一再写一次（覆盖"合并后残留的中间 header"）。 */
-  *((int*)((u8*)addr + block->size)) = MAGIC_END;
+  ya_end_write(block);
 
   block->no = mmt.alloc_count++;
   mmt.alloc_size += size;
@@ -609,9 +598,8 @@ void ya_verify() {
     }
     void* addr = ya_block_addr(current);
     kassert(addr != NULL);
-    int* end = addr + current->size;
-    *end = MAGIC_END;  // check overflow
-    kassert((*end) == MAGIC_END);
+    /* END 槽 v2：校验哨兵 + self 回指（不再自我重写——重写会把真问题盖掉） */
+    kassert(ya_end_valid(current));
 
     current = current->next;
     total++;
@@ -633,9 +621,7 @@ void ya_verify() {
     }
     void* addr = ya_block_addr(current);
     kassert(addr != NULL);
-    int* end = addr + current->size;
-    *end = MAGIC_END;  // check overflow
-    kassert((*end) == MAGIC_END);
+    kassert(ya_end_valid(current));
 
     current = current->next;
     total++;
@@ -749,8 +735,9 @@ void ya_free(void* ptr) {
     block = prv;
   }
 
-  /* 合并后的数据区末尾必须是 MAGIC_END（原块的 END 正好落在新末尾） */
-  *((int*)((u8*)ya_block_addr(block) + block->size)) = MAGIC_END;
+  /* 合并后的数据区末尾必须是完整 END 槽（原块的 END 正好落在新末尾，
+   * 但 self 回指要更新成合并后的结果块） */
+  ya_end_write(block);
   ya_free_bytes += block->size;
 
   /* 挂回空闲链（append 统一维护 head/last/双向指针） */
