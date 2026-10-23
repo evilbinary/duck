@@ -134,6 +134,19 @@ void vmemory_map_phys(vaddr_t vaddr, vaddr_t paddr, vaddr_t size, u8 flags,
   vmemory_attach_live(vaddr, size, flags, attr);
 }
 
+vaddr_t vmemory_phys_area(u8 flags, vaddr_t* size) {
+  for (vmemory_area_t* p = s_phys_vma; p != NULL; p = p->next) {
+    if (p->flags != flags) {
+      continue;
+    }
+    if (size != NULL) {
+      *size = p->size;
+    }
+    return p->vaddr;
+  }
+  return 0;
+}
+
 void vmemory_area_add(vmemory_area_t* areas, vmemory_area_t* area) {
   vmemory_area_t* p = areas;
   for (; p->next != NULL; p = p->next) {

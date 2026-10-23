@@ -7,6 +7,7 @@
 #include "sysfn.h"
 
 #include "kernel/devfn.h"
+#include "kernel/device.h"
 #include "kernel/error.h"
 #include "kernel/event.h"
 #include "kernel/fd.h"
@@ -243,6 +244,41 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
 
   // 内存大小 对齐 16 page-aligned
   length = ALIGN(length, PAGE_SIZE);
+
+  /* 【帧缓冲 mmap（/dev/fb0 等显示设备）】显存不是页池里的页：驱动 init 时
+   * 已用 vmemory_map_phys(..., MEMORY_FB, PAGE_FB) 按【物理地址恒等】映射进
+   * 内核页表，并把这条 VMA 注入每个地址空间；用户态首次访问时缺页处理器按
+   * PAGE_FB 把物理页镜像到自己的页表（kernel/page.c 的 MEMORY_FB 分支）。
+   * 所以这里既不分配页、也不登记新区，直接把已登记的区域"借"给调用方
+   * （偏移按字节），返回的地址就是显存地址。
+   * 【语义差异（有意）】返回值不在堆/mmap 窗口内 ⇒ munmap 对它是空操作
+   * （sys_munmap 里对 MEMORY_FB/MEMORY_DEV 直接放行）；fork 出来的子进程
+   * 因为继承 VMA 模板，同样能访问。 */
+  if ((flags & MAP_ANON) == 0 && fd >= 0) {
+    fd_t* ff = thread_find_fd_id(current, fd);
+    vnode_t* fnode = (ff != NULL) ? (vnode_t*)ff->data : NULL;
+    device_t* fdev = (fnode != NULL) ? (device_t*)fnode->device : NULL;
+    if (fdev != NULL && fdev->type == DEVICE_TYPE_VGA) {
+      vaddr_t fb_size = 0;
+      vaddr_t fb_base = vmemory_phys_area(MEMORY_FB, &fb_size);
+      u64 fb_off;
+#if defined(ARM64) || defined(__aarch64__)
+      fb_off = (u64)pgoffset;
+#else
+      fb_off = (u64)pgoffset * PAGE_SIZE;
+#endif
+      if (fb_base == 0 || fb_size == 0) {
+        log_error("mmap fb: no MEMORY_FB area registered\n");
+        return MAP_FAILED;
+      }
+      if (fb_off + (u64)length > (u64)fb_size) {
+        log_error("mmap fb: off=%x len=%x beyond fb size %x\n", (u32)fb_off,
+                  (u32)length, (u32)fb_size);
+        return MAP_FAILED;
+      }
+      return (void*)(uintptr_t)(fb_base + (vaddr_t)fb_off);
+    }
+  }
 
   /* 匿名映射忽略 fd。其余 fd>=0 是文件映射，ld.so 靠它装 libc。
    * aarch64 的偏移是字节；arm 的 mmap2 偏移是页。 */
@@ -574,6 +610,16 @@ int sys_munmap(void* addr, size_t size) {
   if (vm == NULL) {
     log_error("sys munmap not found vm\n");
     return MAP_FAILED;
+  }
+  /* 【设备/帧缓冲区直接放行】mmap("/dev/fb0") 只是把驱动登记好的显存区
+   * 借出去，没有分配页、也没有 heap child 节点；真去摘 VMA 会让后续访问
+   * 找不到物理页。这里按"成功"返回即可。 */
+  {
+    vmemory_area_t* pa = vmemory_area_find(current->vm->vma, addr, size);
+    if (pa != NULL &&
+        (pa->flags == MEMORY_FB || pa->flags == MEMORY_DEV)) {
+      return 0;
+    }
   }
   /* YiYiYa·修复：支持一次 munmap 覆盖【多个/部分】area ✗→✓
    * 原实现要求 [addr, addr+size) 完全落在【单个】area 内；而 mallocng 的 trim

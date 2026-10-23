@@ -220,6 +220,12 @@ vmemory_area_t* vmemory_area_create_attr(void* addr, vaddr_t size, u8 flags,
  * 这样就不用手写 create + add + page_map 三处。 */
 void vmemory_map_phys(vaddr_t vaddr, vaddr_t paddr, vaddr_t size, u8 flags,
                       u32 attr);
+
+/* 【按类型找已登记的物理区模板】返回基址（没有则 0），size 出参可空。
+ * 目前用于帧缓冲：用户态 mmap("/dev/fb0") 时把驱动的显存区（MEMORY_FB）
+ * 借给调用方，不再另分配页、也不新建 VMA。 */
+vaddr_t vmemory_phys_area(u8 flags, vaddr_t* size);
+
 vmemory_area_t* vmemory_area_destroy(vmemory_area_t* area);
 
 vmemory_area_t* vmemory_area_alloc(vmemory_area_t* areas, void* addr, vaddr_t size);

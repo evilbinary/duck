@@ -517,10 +517,10 @@ int sys_gettid() {
  * *(u32*)ptr 赋值遇到坏指针（实测 0x12）会让内核在 data abort 里崩掉，
  * 整个进程静默消失。 */
 static void res_id_store(void* ptr) {
-  unsigned int v = 0;
-  if (ptr != NULL) {
-    sys_copy_to_user(ptr, &v, sizeof(v));
-  }
+  /* 【临时验证】glibc 的 ld.so 在某些路径把 TLS 内部地址当参数传进来
+   * （实测 a1=0x60318b60 = __stack_chk_guard 所在），写 4 字节 0 会把
+   * 栈保护 canary 打坏 ⇒ 后续 "stack smashing detected"。先不写，只返回。 */
+  (void)ptr;
 }
 
 int sys_getresuid(void* ruid, void* euid, void* suid) {

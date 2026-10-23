@@ -226,6 +226,26 @@ void* sync_handler(interrupt_context_t* ic) {
     case ESR_ELx_EC_IABT_CUR:
       ic->no = EX_PREF_ABORT;
       break;
+    case 0x3c:
+      /* 【探针·可删】BRK 指令（glibc 的 ABORT_INSTRUCTION / __stack_chk_fail
+       * 路径）。把用户栈前 40 个双字打出来，靠返回地址定位是哪个函数
+       * 的 canary 被踩。 */
+      {
+        u64* usp = (u64*)(uintptr_t)ic->sp;
+        u64 tp = cpu_get_tls();
+        u64 guard = 0;
+        if (tp != 0) {
+          guard = *(volatile u64*)(uintptr_t)(tp + 0x28);
+        }
+        kprintf("sync: BRK esr=%lx pc=%lx sp=%lx lr=%lx tp=%lx guard=%lx\n", esr,
+                ic->pc, ic->sp, ic->lr, tp, guard);
+        for (int i = 0; i < 120; i++) {
+          kprintf("  usp[%03d] @%lx = %lx\n", i, (u64)(uintptr_t)&usp[i],
+                  usp[i]);
+        }
+      }
+      ic->no = EX_UNDEF;
+      break;
     default:
       kprintf("sync: unknown ec=%x esr=%lx pc=%lx sp=%lx x8=%lx\n", ec, esr,
               ic->pc, ic->sp, ic->x8);

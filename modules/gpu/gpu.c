@@ -29,6 +29,162 @@ size_t gpu_write(device_t* dev, const void* buf, size_t len) {
   return len;
 }
 
+/* ===================== Linux fbdev 标准 ioctl 兼容 =====================
+ * 自己的图形栈用 VGA_IOC_*（自定义编号，见 vga/vga.h），而外来用户态程序
+ * （fbcon/fbdev 后端、fbtest、SDL/Qt 的 fb 后端……）走的是 linux/fb.h 的
+ * 标准编号和结构体。这里把标准编号翻译成同一套 vga 语义，使 /dev/fb0 既能
+ * 被自家 libgui 用（VGA_IOC_*），也能被标准 fbdev 程序直接打开。
+ * 【结构体按 aarch64 LP64 布局手写】内核侧不 include 用户态头文件；字段顺序
+ * 与 linux/fb.h 严格一致，中间填充由编译器按 4/8 字节对齐自然产生。 */
+#define GPU_FBIOGET_VSCREENINFO 0x4600u
+#define GPU_FBIOPUT_VSCREENINFO 0x4601u
+#define GPU_FBIOGET_FSCREENINFO 0x4602u
+#define GPU_FBIOPAN_DISPLAY 0x4606u
+#define GPU_FBIOBLANK 0x4611u
+
+#define GPU_FB_TYPE_PACKED_PIXELS 0u
+#define GPU_FB_VISUAL_TRUECOLOR 2u
+
+typedef struct {
+  u32 offset;
+  u32 length;
+  u32 msb_right;
+} gpu_fb_bitfield_t;
+
+/* sizeof() = 160 */
+typedef struct {
+  u32 xres;
+  u32 yres;
+  u32 xres_virtual;
+  u32 yres_virtual;
+  u32 xoffset;
+  u32 yoffset;
+  u32 bits_per_pixel;
+  u32 grayscale;
+  gpu_fb_bitfield_t red;
+  gpu_fb_bitfield_t green;
+  gpu_fb_bitfield_t blue;
+  gpu_fb_bitfield_t transp;
+  u32 nonstd;
+  u32 activate;
+  u32 height;
+  u32 width;
+  u32 accel_flags;
+  u32 pixclock;
+  u32 left_margin;
+  u32 right_margin;
+  u32 upper_margin;
+  u32 lower_margin;
+  u32 hsync_len;
+  u32 vsync_len;
+  u32 sync;
+  u32 vmode;
+  u32 rotate;
+  u32 colorspace;
+  u32 reserved[4];
+} gpu_fb_varinfo_t;
+
+/* sizeof() = 80（id 后 smem_start 8 字节对齐，line_length 前有 2 字节填充） */
+typedef struct {
+  char id[16];
+  u64 smem_start;
+  u32 smem_len;
+  u32 type;
+  u32 type_aux;
+  u32 visual;
+  u16 xpanstep;
+  u16 ypanstep;
+  u16 ywrapstep;
+  u32 line_length;
+  u64 mmio_start;
+  u32 mmio_len;
+  u32 accel;
+  u16 capabilities;
+  u16 reserved[2];
+} gpu_fb_fixinfo_t;
+
+/* 前向声明：重新把当前几何落到硬件（实现在 gpu_ioctl 之后） */
+static int gpu_mode_reapply(vga_device_t* vga, int index);
+
+/* 帧缓冲份数（双缓冲平台 > 1，未申报按 1） */
+static u32 gpu_fb_buffers(vga_device_t* vga) {
+  return vga->framebuffer_count > 0 ? vga->framebuffer_count : 1;
+}
+
+/* vga 几何/格式 → fb_var_screeninfo（分辨率、虚拟分辨率、像素位域） */
+static void gpu_fb_fill_var(vga_device_t* vga, gpu_fb_varinfo_t* var) {
+  u32 fmt = vga_fmt_from_bpp(vga->format, vga->bpp);
+  u32 n = gpu_fb_buffers(vga);
+  u32 idx = vga->framebuffer_index < n ? vga->framebuffer_index : 0;
+
+  kmemset(var, 0, sizeof(*var));
+  var->xres = vga->width;
+  var->yres = vga->height;
+  var->xres_virtual = vga->width;
+  var->yres_virtual = vga->height * n; /* 双缓冲：虚拟高度 = 份数 × 高度 */
+  var->xoffset = 0;
+  var->yoffset = vga->height * idx;    /* 当前显示的是第 idx 份 */
+  var->bits_per_pixel = vga->bpp;
+  var->grayscale = 0;
+  switch (fmt) {
+    case VGA_FMT_RGB565:
+      var->red.offset = 11;   var->red.length = 5;
+      var->green.offset = 5;  var->green.length = 6;
+      var->blue.offset = 0;   var->blue.length = 5;
+      break;
+    case VGA_FMT_BGR565:
+      var->blue.offset = 11;  var->blue.length = 5;
+      var->green.offset = 5;  var->green.length = 6;
+      var->red.offset = 0;    var->red.length = 5;
+      break;
+    case VGA_FMT_RGB555:
+      var->red.offset = 10;   var->red.length = 5;
+      var->green.offset = 5;  var->green.length = 5;
+      var->blue.offset = 0;   var->blue.length = 5;
+      break;
+    case VGA_FMT_RGB888:
+      var->red.offset = 16;   var->red.length = 8;
+      var->green.offset = 8;  var->green.length = 8;
+      var->blue.offset = 0;   var->blue.length = 8;
+      break;
+    default: /* ARGB8888（32bpp）以及未申报格式 */
+      var->transp.offset = 24; var->transp.length = 8;
+      var->red.offset = 16;    var->red.length = 8;
+      var->green.offset = 8;   var->green.length = 8;
+      var->blue.offset = 0;    var->blue.length = 8;
+      break;
+  }
+  var->activate = 0;
+  var->height = vga->height; /* 物理尺寸(mm)驱动未申报，按像素数占位 */
+  var->width = vga->width;
+  var->rotate = (vga->rotate & VGA_ROT_MASK) * 90; /* 0/90/180/270 */
+}
+
+/* vga 几何 → fb_fix_screeninfo（显存物理地址、行长、显存大小） */
+static void gpu_fb_fill_fix(vga_device_t* vga, gpu_fb_fixinfo_t* fix) {
+  u32 line = vga->width * (vga->bpp / 8);
+
+  kmemset(fix, 0, sizeof(*fix));
+  kstrncpy(fix->id, "yiyiya-fb", sizeof(fix->id) - 1);
+  /* 内核把显存恒等映射，frambuffer 的虚拟地址即物理地址 */
+  fix->smem_start = (u64)(uintptr_t)vga->frambuffer;
+  fix->line_length = line;
+  /* 取"几何推算"与"驱动申报字节数"的较大者：固件分配的显存可能比估算略大
+   * （对齐填充），而双缓冲平台的 framebuffer_length 可能是单份字节数。
+   * 用户态按 smem_len 做 mmap，报小了会被 X 侧判"显存不足"。 */
+  {
+    u32 by_geom = line * vga->height * gpu_fb_buffers(vga);
+    fix->smem_len =
+        (vga->framebuffer_length > by_geom) ? vga->framebuffer_length : by_geom;
+  }
+  fix->type = GPU_FB_TYPE_PACKED_PIXELS;
+  fix->visual = GPU_FB_VISUAL_TRUECOLOR;
+  fix->xpanstep = 1;
+  fix->ypanstep = 1;
+  fix->mmio_start = 0;
+  fix->accel = 0;
+}
+
 size_t gpu_ioctl(device_t* dev, u32 cmd, void* args) {
   u32 ret = 0;
   vga_device_t* vga = dev->data;
@@ -74,6 +230,71 @@ size_t gpu_ioctl(device_t* dev, u32 cmd, void* args) {
       kmemcpy(args, info, sizeof(info));
     }
     ret = (u32)(uintptr_t)vga->frambuffer;
+  } else if (cmd == GPU_FBIOGET_VSCREENINFO) {
+    gpu_fb_varinfo_t var;
+    if (args == NULL) {
+      return 0;
+    }
+    gpu_fb_fill_var(vga, &var);
+    kmemcpy(args, &var, sizeof(var));
+  } else if (cmd == GPU_FBIOGET_FSCREENINFO) {
+    gpu_fb_fixinfo_t fix;
+    if (args == NULL) {
+      return 0;
+    }
+    gpu_fb_fill_fix(vga, &fix);
+    kmemcpy(args, &fix, sizeof(fix));
+  } else if (cmd == GPU_FBIOPUT_VSCREENINFO) {
+    /* 改分辨率/色深：与当前不同就重新落到硬件；失败则回退并回写实际值，
+     * 调用方按回写后的 var 判断是否被接受（fbdev 的约定）。 */
+    gpu_fb_varinfo_t var;
+    if (args == NULL) {
+      return 0;
+    }
+    kmemcpy(&var, args, sizeof(var));
+    if (var.xres > 0 && var.yres > 0 && var.bits_per_pixel > 0 &&
+        (var.xres != vga->width || var.yres != vga->height ||
+         var.bits_per_pixel != vga->bpp)) {
+      u32 ow = vga->width;
+      u32 oh = vga->height;
+      u32 ob = vga->bpp;
+      u32 om = vga->mode;
+      vga->width = var.xres;
+      vga->height = var.yres;
+      vga->bpp = var.bits_per_pixel;
+      vga->mode = 0; /* 0 = 按当前 width/height 申请，不走模式表 */
+      vga->format = VGA_FMT_UNKNOWN;
+      if (gpu_mode_reapply(vga, dev != NULL ? dev->index : 0) < 0) {
+        log_error("gpu: PUT_VSCREENINFO %ux%u@%u rejected\n", var.xres,
+                  var.yres, var.bits_per_pixel);
+        vga->width = ow;
+        vga->height = oh;
+        vga->bpp = ob;
+        vga->mode = om;
+      }
+    }
+    gpu_fb_fill_var(vga, &var);
+    kmemcpy(args, &var, sizeof(var));
+  } else if (cmd == GPU_FBIOPAN_DISPLAY) {
+    /* 双缓冲翻页：yoffset 落在第几份就切到第几份 */
+    gpu_fb_varinfo_t var;
+    u32 n = gpu_fb_buffers(vga);
+    u32 idx;
+    if (args == NULL) {
+      return 0;
+    }
+    kmemcpy(&var, args, sizeof(var));
+    idx = (vga->height > 0) ? (var.yoffset / vga->height) : 0;
+    if (idx >= n) {
+      idx = idx % n;
+    }
+    if (vga->frambuffer != NULL && vga->flip_buffer != NULL) {
+      vga->flip_buffer(vga, idx);
+    }
+    vga->framebuffer_index = idx;
+  } else if (cmd == GPU_FBIOBLANK) {
+    /* 背光/消隐：不改变显存内容，接受即可（0=亮 4=省电） */
+    ret = 0;
   }
   return ret;
 }

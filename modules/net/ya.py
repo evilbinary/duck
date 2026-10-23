@@ -113,7 +113,11 @@ if arch_source.get(arch_type):
 if plat_source.get(plat):
     source+=plat_source.get(plat)
 
-if plat in ('raspi5', 'v3s'):
+# 【必须与根 ya.py 的 net_driver_plats 一致】posix 层在 NET_DRIVER 下直接调用
+# lwip_port_*（socket/bind/listen/accept…），符号由 port/lwip_port.c 提供；
+# 若平台开了 NET_DRIVER 而这里没把 lwip 源编进来，链接期就是一片
+# "undefined reference to `lwip_port_socket'"（raspi3 实测）。
+if plat in ('raspi5', 'v3s', 'raspi3'):
     source+=lwip_source
 
 add_files(

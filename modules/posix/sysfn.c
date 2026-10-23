@@ -57,6 +57,31 @@ void sys_fn_call_handler(int no, interrupt_context_t* ic) {
                 (u64)context_arg2(ic));
     }
   }
+  /* 【探针·可删】glibc 栈保护 canary 位于 TLS 的 [TP+0x28]。每次进内核读一次，
+   * 与上次比对：值变了就说明"上一个系统调用"把用户栈/TLS 写坏了，直接点名。 */
+  {
+    static u64 guard_ref = 0;
+    static u64 guard_tp = 0;
+    static int guard_init = 0;
+    static int last_no = -1;
+    u64 tp = cpu_get_tls();
+    if (tp != 0) {
+      u64 g = 0;
+      if (sys_copy_from_user(&g, (const void*)(uintptr_t)(tp + 0x28), sizeof(g)) >=
+          0) {
+        if (!guard_init || tp != guard_tp) {
+          guard_init = 1;
+          guard_tp = tp;
+          guard_ref = g;
+        } else if (g != guard_ref) {
+          log_error("GUARD tp=%lx %lx -> %lx after syscall no=%d tid=%d\n", tp,
+                    guard_ref, g, last_no, current != NULL ? current->id : -1);
+          guard_ref = g;
+        }
+      }
+    }
+    last_no = (int)context_fn(ic);
+  }
   void* fn = syscall_table[context_fn(ic)];
   if (fn != NULL) {
     if (context_fn(ic) == SYS_EXEC) {
