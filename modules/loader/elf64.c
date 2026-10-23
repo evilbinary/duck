@@ -583,6 +583,10 @@ int run_elf64_thread(long* p) {
   if (elf64_open_and_load(exec->filename, &main_image, 0) < 0) {
     return -1;
   }
+  elf64_log_error("XPROBE main %s base=%lx entry=%lx phdr=%lx interp=%s\n",
+                  exec->filename, main_image.base, main_image.entry,
+                  main_image.phdr,
+                  main_image.interp_path[0] ? main_image.interp_path : "<none>");
   /* 主程序已经按真实路径加载完。解释器和它之后打开的 /lib、/usr
    * 用这个进程自己的根，shell 的根不动。 */
   vfs_chroot_mount(exec->filename);
@@ -596,17 +600,22 @@ int run_elf64_thread(long* p) {
     interp_base = interp_image.base;
     main_image.interp_base = interp_base;
     start_entry = interp_image.entry;
+    elf64_log_error("XPROBE interp base=%lx entry=%lx\n", interp_base,
+                    start_entry);
   }
 
   if (elf64_build_initial_stack(current, exec, &main_image, interp_base, &layout) <
       0) {
     return -1;
   }
+  elf64_log_error("XPROBE stack sp=%lx top=%lx\n", layout.sp, layout.stack_top);
 
   elf64_log_debug(
       "elf64 start=%lx main_entry=%lx main_base=%lx interp_base=%lx phdr=%lx sp=%lx argc=%d file=%s\n",
       start_entry, main_image.entry, main_image.base, interp_base,
       main_image.phdr, layout.sp, exec->argc, exec->filename);
+  elf64_log_error("XPROBE enter entry=%lx sp=%lx\n", start_entry, layout.sp);
   elf64_enter_user(current, start_entry, &layout);
+  elf64_log_error("XPROBE entered\n");
   return 0;
 }

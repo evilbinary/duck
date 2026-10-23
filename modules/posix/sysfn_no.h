@@ -175,6 +175,7 @@ enum {
   SYS_CHDIR = 49,
   SYS_FCHDIR = 50,
   SYS_FCHMODAT = 53,   /* aarch64 真实编号：musl chmod -> fchmodat */
+  SYS_FCHMOD = 52,     /* aarch64 真实编号：fchmod 独立号 */
   SYS_FTRUNCATE = 46,  /* aarch64 真实编号：musl ftruncate/truncate */
   SYS_FCHOWNAT = 54,   /* aarch64 真实编号：musl chown/lchown/fchown -> fchownat */
   SYS_SEEK = 62,
@@ -250,6 +251,8 @@ enum {
   SYS_INOTIFY_ADD_WATCH = 27,
   SYS_INOTIFY_RM_WATCH = 28,
   SYS_CLOSE_RANGE = 436,
+  SYS_SET_ROBUST_LIST = 99,
+  SYS_RSEQ = 293,
 
   SYS_MADVISE = 233,
   SYS_WAITID = 95,

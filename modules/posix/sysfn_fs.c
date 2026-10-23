@@ -936,6 +936,29 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
   }
 
   u32 ret = vread(node, f->offset, nbytes, read_buf);
+  {
+    /* 【探针·可删】.so 读追踪：定位库内容截断点 */
+    const char* nm = f->name != NULL ? f->name : "?";
+    int iss = 0;
+    for (const char* q = nm; *q; q++) {
+      if (q[0] == '.' && q[1] == 's' && q[2] == 'o') {
+        iss = 1;
+        break;
+      }
+    }
+    if (iss && (nbytes > 512)) {
+      u64 pc = (current->ctx != NULL && current->ctx->ic != NULL)
+                   ? current->ctx->ic->pc
+                   : 0;
+      u64 lr = (current->ctx != NULL && current->ctx->ic != NULL)
+                   ? current->ctx->ic->lr
+                   : 0;
+      log_error("RDCHK %s off=%x req=%x ret=%x tid=%d name=%s pc=%x lr=%x\n",
+                nm, (u32)f->offset, (u32)nbytes, ret, current->id,
+                current->name != NULL ? current->name : "?", (u32)pc,
+                (u32)lr);
+    }
+  }
   if (ret > 0 && tmp_buf != NULL && buf != NULL) {
     if (sys_copy_to_user(buf, tmp_buf, ret) < 0) {
       ret = 0;
@@ -1508,6 +1531,14 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
     (void)pathname;
     (void)mode;
     (void)flags;
+    return 0;
+  }
+
+  /* fchmod(52)：aarch64 上 fchmod() 走自己的号（不是 fchmodat）。FAT 没有
+   * 权限位语义，按成功返回；缺注册会让调用方拿到 ENOSYS。 */
+  int sys_fchmod(int fd, unsigned int mode) {
+    (void)fd;
+    (void)mode;
     return 0;
   }
   

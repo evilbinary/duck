@@ -440,6 +440,7 @@ int sys_fchdir(int fd);
 int sys_fchownat(int dirfd, const char* pathname, unsigned int owner,
                  unsigned int group, int flags);
 int sys_fchmodat(int dirfd, const char* pathname, unsigned int mode, int flags);
+int sys_fchmod(int fd, unsigned int mode);
 int sys_ftruncate(int fd, off_t length);
 int sys_mkdir(const char* pathname, mode_t mode);
 int sys_access(const char* pathname, int mode);
@@ -555,6 +556,8 @@ int sys_sigaltstack(const void* ss, void* old_ss);
 int sys_getrandom(void* buf, size_t len, unsigned int flags);
 int sys_close_range(u32 first, u32 last, unsigned int flags);
 int sys_setrlimit(int resource, const void* rlim);
+int sys_set_robust_list(void* head, size_t len);
+int sys_rseq(void* ptr, u32 len, int flags, u32 sig);
 int sys_ppoll(void* ufds, unsigned int nfds, void* tmo, void* sigmask);
 ssize_t sys_sendmsg(int sockfd, void* umsg, int flags);
 ssize_t sys_recvmsg(int sockfd, void* umsg, int flags);

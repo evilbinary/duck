@@ -1026,7 +1026,11 @@ static size_t ext_op_ioctl(vnode_t *node, u32 cmd, void *args) {
   }
   st = args;
   kmemset(st, 0, sizeof(*st));
-  st->st_ino = n->ino;
+  /* 【glibc ld.so 去重 key】st_dev + st_ino 唯一标识一个文件；ld.so 用它
+   * 判断"该 .so 是否已经加载过"。dev 恒 0 + ino 缺失会让不同 .so 相撞，
+   * 被当成同一个已加载对象（不 mmap、符号解析失败）。 */
+  st->st_dev = 2;
+  st->st_ino = n->ino != 0 ? n->ino : ((u64)node + 1);
   st->st_mode = n->mode;
   st->st_size = (off_t)n->size;
   st->st_blksize = n->fs != NULL ? (int)n->fs->block_size : 512;

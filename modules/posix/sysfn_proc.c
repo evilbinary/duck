@@ -242,7 +242,7 @@ void sys_exit(int status) {
   /* 【诊断·可删】冷启动跑单个测试时排查"子进程秒退零输出" */
   {
     static int exit_dbg = 0;
-    if (current != NULL && exit_dbg++ < 40) {
+    if (current != NULL && exit_dbg++ < 4000) {
       u64 pc = (current->ctx != NULL && current->ctx->ic != NULL)
                    ? current->ctx->ic->pc
                    : 0;
@@ -285,7 +285,7 @@ void sys_exit_group(int status) {
   {
     static int exitg_dbg = 0;
     thread_t* dbg_t = thread_current();
-    if (dbg_t != NULL && exitg_dbg++ < 40) {
+    if (dbg_t != NULL && exitg_dbg++ < 4000) {
       u64 pc = (dbg_t->ctx != NULL && dbg_t->ctx->ic != NULL) ? dbg_t->ctx->ic->pc : 0;
       log_error("EXITG tid=%d name=%s status=%d pc=%x\n", dbg_t->id,
                 dbg_t->name != NULL ? dbg_t->name : "?", status, (u32)pc);
@@ -512,30 +512,28 @@ int sys_gettid() {
 }
 
 /* 【单用户内核】getresuid/getresgid：恒 0/0/0（成功）。vfork01 等 LTP 测试
- * 的 setup 调它，ENOSYS 会 TBROK。 */
+ * 的 setup 调它，ENOSYS 会 TBROK。
+ * 写用户指针必须走 sys_copy_to_user（逐页校验是否已映射）：直接
+ * *(u32*)ptr 赋值遇到坏指针（实测 0x12）会让内核在 data abort 里崩掉，
+ * 整个进程静默消失。 */
+static void res_id_store(void* ptr) {
+  unsigned int v = 0;
+  if (ptr != NULL) {
+    sys_copy_to_user(ptr, &v, sizeof(v));
+  }
+}
+
 int sys_getresuid(void* ruid, void* euid, void* suid) {
-  if (ruid != NULL) {
-    *(unsigned int*)ruid = 0;
-  }
-  if (euid != NULL) {
-    *(unsigned int*)euid = 0;
-  }
-  if (suid != NULL) {
-    *(unsigned int*)suid = 0;
-  }
+  res_id_store(ruid);
+  res_id_store(euid);
+  res_id_store(suid);
   return 0;
 }
 
 int sys_getresgid(void* rgid, void* egid, void* sgid) {
-  if (rgid != NULL) {
-    *(unsigned int*)rgid = 0;
-  }
-  if (egid != NULL) {
-    *(unsigned int*)egid = 0;
-  }
-  if (sgid != NULL) {
-    *(unsigned int*)sgid = 0;
-  }
+  res_id_store(rgid);
+  res_id_store(egid);
+  res_id_store(sgid);
   return 0;
 }
 

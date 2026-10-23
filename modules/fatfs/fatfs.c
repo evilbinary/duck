@@ -819,9 +819,24 @@ size_t fat_op_ioctl(struct vnode *node, uint cmd, void *args) {
       return ret;
     }
 
-    /* 整块清零再填：st_dev/st_ino/st_uid/st_gid/st_rdev/st_blocks 这些
-     * 本文件系统不提供的字段必须是 0，不能留用户栈上的旧值（libc 侧会读）。 */
+    /* 整块清零再填：st_uid/st_gid/st_rdev/st_blocks 这些本文件系统不提供
+     * 的字段必须是 0，不能留用户栈上的旧值（libc 侧会读）。 */
     kmemset(stat, 0, sizeof(*stat));
+    /* 【glibc ld.so 去重 key】st_dev + st_ino 是动态链接器判断"该文件已经
+     * 加载过"的依据。FAT 无真实 inode：用规范化路径的 FNV-1a 摘要当 ino
+     * （同文件恒定、不同文件互异），st_dev 给固定值。两者恒为 0 会让 ld.so
+     * 把每个 .so 都误判成已加载的主程序——不 mmap、依赖名全串成主程序路径、
+     * 符号解析拿主程序表，最后报 undefined symbol。 */
+    {
+      unsigned long long h = 1469598103934665603ull;
+      const char *p = buf;
+      while (p != NULL && *p != '\0') {
+        h ^= (unsigned char)*p++;
+        h *= 1099511628211ull;
+      }
+      stat->st_dev = 1;
+      stat->st_ino = h | 1ull;
+    }
     if ((fno.fattrib & AM_DIR) == AM_DIR) {
       stat->st_size = fno.fsize;
       stat_set_mtime(stat, (time_t)(fno.fdate << 16 | fno.ftime));

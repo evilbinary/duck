@@ -48,6 +48,15 @@ void sys_fn_call_handler(int no, interrupt_context_t* ic) {
   if (current != NULL && current->ctx != NULL) {
     current->ctx->ic = ic;
   }
+  {
+    static int trace_cnt = 0;
+    if (current != NULL && current->id >= 6 && trace_cnt < 1500) {
+      log_error("SYSC %d tid=%d no=%d a0=%lx a1=%lx a2=%lx\n", trace_cnt++,
+                current->id, (int)context_fn(ic),
+                (u64)context_arg0(ic), (u64)context_arg1(ic),
+                (u64)context_arg2(ic));
+    }
+  }
   void* fn = syscall_table[context_fn(ic)];
   if (fn != NULL) {
     if (context_fn(ic) == SYS_EXEC) {
@@ -166,6 +175,7 @@ void sys_fn_init() {
   syscall_table[SYS_FCHDIR] = &sys_fchdir;
   syscall_table[SYS_FCHOWNAT] = &sys_fchownat; /* musl chown/lchown/fchown */
   syscall_table[SYS_FCHMODAT] = &sys_fchmodat; /* musl chmod */
+  syscall_table[SYS_FCHMOD] = &sys_fchmod;     /* fchmod（FAT 无权限位，no-op 成功） */
   syscall_table[SYS_FTRUNCATE] = &sys_ftruncate; /* musl ftruncate/truncate */
   syscall_table[SYS_CLONE] = &sys_clone;
 #if defined(ARM64)
@@ -294,6 +304,8 @@ void sys_fn_init() {
   syscall_table[SYS_INOTIFY_ADD_WATCH] = &sys_inotify_add_watch;
   syscall_table[SYS_INOTIFY_RM_WATCH] = &sys_inotify_rm_watch;
   syscall_table[SYS_CLOSE_RANGE] = &sys_close_range;
+  syscall_table[SYS_SET_ROBUST_LIST] = &sys_set_robust_list;
+  syscall_table[SYS_RSEQ] = &sys_rseq;
   syscall_table[SYS_SENDMSG] = &sys_sendmsg;
   syscall_table[SYS_RECVMSG] = &sys_recvmsg;
 

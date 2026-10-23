@@ -216,9 +216,13 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
                 size_t pgoffset) {
   int ret = 0;
   thread_t* current = thread_current();
-  if (current != NULL && current->id > 1) {
-    log_debug("sys_mmap2 tid=%d addr=%x len=%d prot=%x flags=%x fd=%d off=%d\n",
-              current->id, addr, length, prot, flags, fd, pgoffset);
+  {
+    static int mmap_in_cnt = 0;
+    if (current != NULL && current->id >= 6 && mmap_in_cnt < 800) {
+      log_error("MMAPIN %d tid=%d addr=%x len=%x prot=%x flags=%x fd=%d off=%x\n",
+                mmap_in_cnt++, current->id, (u32)(uintptr_t)addr, (u32)length,
+                prot, flags, fd, (u32)pgoffset);
+    }
   }
   vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
   if (vm == NULL) {
@@ -316,6 +320,12 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
       log_error("mmap file read 0 %s off=%x len=%x\n",
                 f->name != NULL ? f->name : "", (u32)off, (u32)length);
       return MAP_FAILED;
+    }
+    {
+      u8* p = (u8*)map_at;
+      log_error("MMAPCHK %s off=%x len=%x filled=%x hdr=%02x%02x%02x%02x\n",
+                f->name != NULL ? f->name : "?", (u32)off, (u32)length,
+                filled, p[0], p[1], p[2], p[3]);
     }
     /* 【登记 file_node】仅 MAP_SHARED 登记：MAP_PRIVATE（ld.so 的 libc）
      * 绝不能登记——clone 会把身份带给子进程，共享重映射会把父子 libc

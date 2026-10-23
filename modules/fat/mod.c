@@ -414,10 +414,17 @@ size_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args) {
       node->data = file_info;
     }
     struct stat *stat = args;
-    /* 整块清零再填：本文件系统不提供的字段（st_dev/st_ino/st_uid/st_gid/
-     * st_rdev/st_blocks）必须是 0，不能把用户栈上的旧值原样留给 libc。 */
+    /* 整块清零再填：本文件系统不提供的字段（st_uid/st_gid/st_rdev/
+     * st_blocks）必须是 0，不能把用户栈上的旧值原样留给 libc。 */
     kmemset(stat, 0, sizeof(*stat));
+    /* 【glibc ld.so 去重 key】st_dev + st_ino 是动态链接器判断"该文件已经
+     * 加载过"的依据。FAT 没有真实 inode：这里用目录项在磁盘上的偏移
+     * (entry_offset) 顶替（同一文件恒定、不同文件互异），st_dev 给固定值。
+     * 两者恒为 0 会让 ld.so 把每个 .so 都误判成已加载的主程序——不 mmap、
+     * 依赖名全部串成主程序路径、符号解析拿主程序表，最后报 undefined。 */
+    stat->st_dev = 1;
     if (file_info->dd != NULL) {
+      stat->st_ino = (u64)file_info->dd->dir_entry.entry_offset + 1;
       stat->st_size = file_info->dd->dir_entry.file_size;
       stat_set_mtime(stat, (time_t)file_info->dd->dir_entry.modification_time);
       stat->st_mode = S_IFREG;
@@ -425,6 +432,7 @@ size_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args) {
         stat->st_mode |= S_IFDIR;
       }
     } else if (file_info->fd != NULL) {
+      stat->st_ino = (u64)file_info->fd->dir_entry.entry_offset + 1;
       stat->st_size = file_info->fd->dir_entry.file_size;
       stat_set_mtime(stat, (time_t)file_info->fd->dir_entry.modification_time);
       stat->st_mode = S_IFREG;

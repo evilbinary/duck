@@ -216,3 +216,19 @@ int sys_setrlimit(int resource, const void* rlim) {
   (void)rlim;
   return 0;
 }
+
+/* 【set_robust_list(99)/rseq(293)】glibc pthread 初始化调用：no-op 返回 0，
+ * 避免每次 not found 噪音。 */
+int sys_set_robust_list(void* head, size_t len) {
+  (void)head;
+  (void)len;
+  return 0;
+}
+
+int sys_rseq(void* ptr, u32 len, int flags, u32 sig) {
+  (void)ptr;
+  (void)len;
+  (void)flags;
+  (void)sig;
+  return 0;
+}
