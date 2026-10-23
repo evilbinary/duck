@@ -60,6 +60,10 @@ typedef struct voperator {
    * 留 NULL（designated initializer 兼容旧表），dispatch 层返回 -1 */
   vmkdir_t mkdir;
   vunlink_t unlink;
+  /* 【新增·必须追加在末尾】同一目录内的改名（rename），空 = 该文件系统
+   * 不支持。Xorg 的 LogInit()/锁文件都要用到 rename，此前 sys_rename 是
+   * 恒返回 -1 的 stub，导致 "Cannot move old log file" 直接 FatalError。 */
+  int (*rename)(struct vnode *dir, const char *oldname, const char *newname);
 } voperator_t;
 
 typedef struct vnode {
@@ -97,6 +101,8 @@ vnode_t *vfinddir(vnode_t *node, char *name);
 vnode_t *vfind(vnode_t *node, char *name);
 int vmkdir(vnode_t *dir, const char *name, u32 mode);
 int vunlink(vnode_t *dir, const char *name);
+/* 同一目录内改名（不支持的文件系统返回 -1） */
+int vrename(vnode_t *dir, const char *oldname, const char *newname);
 vnode_t *vcreate(u8 *name, u32 flags);
 void vmount(vnode_t *node, u8 *path, vnode_t *node1);
 size_t vioctl(vnode_t *node, u32 cmd, void *args);

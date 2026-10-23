@@ -339,6 +339,10 @@ int sys_mkdirat(int dirfd, const char* pathname, mode_t mode);
 int sys_unlinkat(int dirfd, const char* pathname, int flags);
 int sys_renameat(int olddirfd, const char* oldpath, int newdirfd,
                  const char* newpath);
+int sys_renameat2(int olddirfd, const char* oldpath, int newdirfd,
+                  const char* newpath, unsigned int flags);
+int sys_linkat(int olddirfd, const char* oldpath, int newdirfd,
+               const char* newpath, int flags);
 int sys_newfstatat(int dirfd, const char* pathname, struct stat* stat,
                    int flags);
 ssize_t sys_readlinkat(int dirfd, const char* restrict pathname,
@@ -486,6 +490,25 @@ int sys_setsockopt(int sockfd, int level, int optname, const void* optval,
 int sys_getsockopt(int sockfd, int level, int optname, void* optval,
                    socklen_t* optlen);
 int sys_shutdown(int sockfd, int how);
+
+/* ---- AF_UNIX 本机传输（sysfn_unix.c）----
+ * lwIP 只做 IPv4/IPv6，AF_UNIX 走这条纯内存通道；sysfn_net.c 里的 socket
+ * 族入口按 domain / fd 归属分流过来。 */
+int unix_socket(int type, int protocol);
+int unix_owns(int fd);
+int unix_bind(int fd, const void* addr, u32 addrlen);
+int unix_listen(int fd, int backlog);
+int unix_accept(int fd, void* addr, u32* addrlen);
+int unix_connect(int fd, const void* addr, u32 addrlen);
+int unix_getsockname(int fd, void* addr, u32* addrlen);
+int unix_getpeername(int fd, void* addr, u32* addrlen);
+int unix_shutdown(int fd, int how);
+int unix_socketpair(int type, int protocol, int* sv);
+int unix_setsockopt(int fd, int level, int optname, const void* optval,
+                    u32 optlen);
+int unix_getsockopt(int fd, int level, int optname, void* optval, u32* optlen);
+/* select/poll 就绪判定：1 就绪 / 0 未就绪 / -1 不是本机 socket */
+int unix_poll_ready(int fd, int want_read, int want_write);
 
 void sys_fn_init();
 void sys_fn_net_init(void** syscall_table);

@@ -120,6 +120,10 @@ static void socket_free(socket_t* sock) {
 }
 
 int sys_socket(int domain, int type, int protocol) {
+  /* AF_UNIX：lwIP 没有本机域，走内核内存通道（sysfn_unix.c） */
+  if (domain == AF_UNIX) {
+    return unix_socket(type, protocol);
+  }
 #ifdef NET_DRIVER
   int lwfd = lwip_port_socket(domain, type, protocol);
   return lwip_os_attach(lwfd);
@@ -171,6 +175,9 @@ int sys_socket(int domain, int type, int protocol) {
 }
 
 int sys_socketpair(int domain, int type, int protocol, int sv[2]) {
+  if (domain == AF_UNIX) {
+    return unix_socketpair(type, protocol, sv);
+  }
 #ifdef NET_DRIVER
   (void)domain;
   (void)type;
@@ -199,6 +206,9 @@ int sys_socketpair(int domain, int type, int protocol, int sv[2]) {
 }
 
 int sys_bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
+  if (unix_owns(sockfd)) {
+    return unix_bind(sockfd, (const void*)addr, (u32)addrlen);
+  }
 #ifdef NET_DRIVER
   int lwfd = os_lwfd(sockfd);
   if (lwfd < 0) return lwfd;
@@ -235,6 +245,9 @@ int sys_bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
 }
 
 int sys_listen(int sockfd, int backlog) {
+  if (unix_owns(sockfd)) {
+    return unix_listen(sockfd, backlog);
+  }
 #ifdef NET_DRIVER
   int lwfd = os_lwfd(sockfd);
   if (lwfd < 0) return lwfd;
@@ -267,6 +280,9 @@ int sys_listen(int sockfd, int backlog) {
 }
 
 int sys_accept(int sockfd, struct sockaddr* addr, socklen_t* addrlen) {
+  if (unix_owns(sockfd)) {
+    return unix_accept(sockfd, (void*)addr, (u32*)addrlen);
+  }
 #ifdef NET_DRIVER
   int lwfd = os_lwfd(sockfd);
   int nfd;
@@ -320,6 +336,9 @@ int sys_accept4(int sockfd, struct sockaddr* addr, socklen_t* addrlen, int flags
 }
 
 int sys_connect(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
+  if (unix_owns(sockfd)) {
+    return unix_connect(sockfd, (const void*)addr, (u32)addrlen);
+  }
 #ifdef NET_DRIVER
   int lwfd = os_lwfd(sockfd);
   if (lwfd < 0) return lwfd;
@@ -359,6 +378,9 @@ int sys_connect(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
 }
 
 int sys_getsockname(int sockfd, struct sockaddr* addr, socklen_t* addrlen) {
+  if (unix_owns(sockfd)) {
+    return unix_getsockname(sockfd, (void*)addr, (u32*)addrlen);
+  }
 #ifdef NET_DRIVER
   int lwfd = os_lwfd(sockfd);
   unsigned long alen = 0;
@@ -393,6 +415,9 @@ int sys_getsockname(int sockfd, struct sockaddr* addr, socklen_t* addrlen) {
 }
 
 int sys_getpeername(int sockfd, struct sockaddr* addr, socklen_t* addrlen) {
+  if (unix_owns(sockfd)) {
+    return unix_getpeername(sockfd, (void*)addr, (u32*)addrlen);
+  }
 #ifdef NET_DRIVER
   int lwfd = os_lwfd(sockfd);
   unsigned long alen = 0;
@@ -433,6 +458,14 @@ int sys_getpeername(int sockfd, struct sockaddr* addr, socklen_t* addrlen) {
 
 ssize_t sys_sendto(int sockfd, const void* buf, size_t len, int flags,
                    const struct sockaddr* dest_addr, socklen_t addrlen) {
+  /* 本机 socket：已连接的点对点通道，直接当 write；SOCK_DGRAM 的
+   * "按地址发送"这里不支持（名字只能用来建立连接）。 */
+  if (unix_owns(sockfd)) {
+    (void)flags;
+    (void)dest_addr;
+    (void)addrlen;
+    return (ssize_t)sys_write((u32)sockfd, (void*)buf, len);
+  }
 #ifdef NET_DRIVER
   int lwfd = os_lwfd(sockfd);
   if (lwfd < 0) return lwfd;
@@ -473,6 +506,15 @@ ssize_t sys_sendto(int sockfd, const void* buf, size_t len, int flags,
 
 ssize_t sys_recvfrom(int sockfd, void* buf, size_t len, int flags,
                      struct sockaddr* src_addr, socklen_t* addrlen) {
+  if (unix_owns(sockfd)) {
+    ssize_t n;
+    (void)flags;
+    n = (ssize_t)sys_read((u32)sockfd, buf, len);
+    if (n > 0 && src_addr != NULL && addrlen != NULL) {
+      (void)unix_getpeername(sockfd, (void*)src_addr, (u32*)addrlen);
+    }
+    return n;
+  }
 #ifdef NET_DRIVER
   int lwfd = os_lwfd(sockfd);
   unsigned long alen = 0;
@@ -618,6 +660,10 @@ ssize_t sys_recvmsg(int sockfd, void* u_umsg, int flags) {
 
 int sys_setsockopt(int sockfd, int level, int optname, const void* optval,
                    socklen_t optlen) {
+  if (unix_owns(sockfd)) {
+    return unix_setsockopt(sockfd, level, optname, (const void*)optval,
+                           (u32)optlen);
+  }
 #ifdef NET_DRIVER
   int lwfd = os_lwfd(sockfd);
   if (lwfd < 0) return lwfd;
@@ -670,6 +716,9 @@ int sys_setsockopt(int sockfd, int level, int optname, const void* optval,
 
 int sys_getsockopt(int sockfd, int level, int optname, void* optval,
                    socklen_t* optlen) {
+  if (unix_owns(sockfd)) {
+    return unix_getsockopt(sockfd, level, optname, optval, (u32*)optlen);
+  }
 #ifdef NET_DRIVER
   int lwfd = os_lwfd(sockfd);
   unsigned long ol = 0;
@@ -737,6 +786,9 @@ int sys_getsockopt(int sockfd, int level, int optname, void* optval,
 }
 
 int sys_shutdown(int sockfd, int how) {
+  if (unix_owns(sockfd)) {
+    return unix_shutdown(sockfd, how);
+  }
 #ifdef NET_DRIVER
   int lwfd = os_lwfd(sockfd);
   if (lwfd < 0) return lwfd;

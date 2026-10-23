@@ -17,6 +17,12 @@
 
 #define log_debug
 
+/* 逐系统调用追踪探针（tid>=6 且只打前 1500 条）。默认关闭：它的输出会把
+ * 用户态程序的真实日志整段淹没。排查"某个系统调用之后现场被写坏"时改成 1。 */
+#ifndef SYS_TRACE_SYSCALL
+#define SYS_TRACE_SYSCALL 0
+#endif
+
 static void* syscall_table[SYSCALL_NUMBER];
 
 extern long xwin_syscall_handler(u32 num, long a1, long a2, long a3, long a4,
@@ -48,6 +54,7 @@ void sys_fn_call_handler(int no, interrupt_context_t* ic) {
   if (current != NULL && current->ctx != NULL) {
     current->ctx->ic = ic;
   }
+#if SYS_TRACE_SYSCALL
   {
     static int trace_cnt = 0;
     if (current != NULL && current->id >= 6 && trace_cnt < 1500) {
@@ -57,8 +64,8 @@ void sys_fn_call_handler(int no, interrupt_context_t* ic) {
                 (u64)context_arg2(ic));
     }
   }
-  /* 【探针·可删】glibc 栈保护 canary 位于 TLS 的 [TP+0x28]。每次进内核读一次，
-   * 与上次比对：值变了就说明"上一个系统调用"把用户栈/TLS 写坏了，直接点名。 */
+  /* glibc 栈保护 canary 位于 TLS 的 [TP+0x28]。每次进内核读一次，与上次比对：
+   * 值变了就说明"上一个系统调用"把用户栈/TLS 写坏了，直接点名。 */
   {
     static u64 guard_ref = 0;
     static u64 guard_tp = 0;
@@ -82,6 +89,7 @@ void sys_fn_call_handler(int no, interrupt_context_t* ic) {
     }
     last_no = (int)context_fn(ic);
   }
+#endif
   void* fn = syscall_table[context_fn(ic)];
   if (fn != NULL) {
     if (context_fn(ic) == SYS_EXEC) {
@@ -180,7 +188,13 @@ void sys_fn_init() {
   syscall_table[SYS_RENAME] = &sys_rename;
 #endif
 
-  syscall_table[SYS_RENAME] = &sys_rename;
+#if defined(ARM64) || defined(__aarch64__)
+  /* 37 在 aarch64 真实 ABI 里是 linkat（arm64 没有 alarm，musl 的 alarm() 走
+   * setitimer）。要写在 SYS_ALARM 之后才不会被同号的 alarm 覆盖。
+   * 276 = renameat2，flags 只支持 0，等价 renameat。 */
+  syscall_table[SYS_LINKAT] = &sys_linkat;
+  syscall_table[SYS_RENAMEAT2] = &sys_renameat2;
+#endif
 
   syscall_table[SYS_SET_THREAD_AREA] = &sys_set_thread_area;
   syscall_table[SYS_DUMPS] = &sys_dumps;

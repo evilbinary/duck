@@ -614,6 +614,29 @@ int sys_renameat(int olddirfd, const char* oldpath, int newdirfd,
   return sys_rename(oldpath, newpath);
 }
 
+/* 276 = renameat2。flags 只接受 0（RENAME_NOREPLACE/EXCHANGE/WHITEOUT 都不做），
+ * 非 0 按 EINVAL 返回，让调用方退回普通 renameat。 */
+int sys_renameat2(int olddirfd, const char* oldpath, int newdirfd,
+                  const char* newpath, unsigned int flags) {
+  if (flags != 0) {
+    return -22; /* -EINVAL */
+  }
+  return sys_renameat(olddirfd, oldpath, newdirfd, newpath);
+}
+
+/* 37 = linkat。FAT 没有硬链接，按 POSIX "目标文件系统不支持链接" 返回
+ * EPERM（-1 在本框架里就是 EPERM，musl 侧看到 errno=1），不要返回 ENOSYS ——
+ * 部分库会把 ENOSYS 当作"内核太老"再降级重试一轮。 */
+int sys_linkat(int olddirfd, const char* oldpath, int newdirfd,
+               const char* newpath, int flags) {
+  (void)olddirfd;
+  (void)oldpath;
+  (void)newdirfd;
+  (void)newpath;
+  (void)flags;
+  return -1;
+}
+
 int sys_newfstatat(int dirfd, const char* pathname, struct stat* stat,
                    int flags) {
   (void)dirfd;
@@ -678,14 +701,16 @@ static int sys_fd_set_poll(unsigned long* rset, unsigned long* wset,
     int word = fd / bits;
     int present = thread_find_fd_id(current, fd) != NULL;
     if (rset != NULL && (rset[word] & mask)) {
-      if (present) {
+      /* 本机(AF_UNIX) socket 有真实就绪状态（收到数据/有待 accept 的连接），
+       * 其它 fd 沿用"存在即就绪"。 */
+      if (present && unix_poll_ready(fd, 1, 0) != 0) {
         (*ready)++;
       } else {
         rset[word] &= ~mask;
       }
     }
     if (wset != NULL && (wset[word] & mask)) {
-      if (present) {
+      if (present && unix_poll_ready(fd, 0, 1) != 0) {
         (*ready)++;
       } else {
         wset[word] &= ~mask;
@@ -828,8 +853,13 @@ int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
     if (thread_find_fd_id(current, fds[i].fd) == NULL) {
       got = POLLNVAL_;
     } else {
-      if (want & POLLIN_) got |= POLLIN_;
-      if (want & POLLOUT_) got |= POLLOUT_;
+      /* 本机(AF_UNIX) socket 有真实就绪状态；其它 fd 沿用"存在即就绪" */
+      if ((want & POLLIN_) && unix_poll_ready(fds[i].fd, 1, 0) != 0) {
+        got |= POLLIN_;
+      }
+      if ((want & POLLOUT_) && unix_poll_ready(fds[i].fd, 0, 1) != 0) {
+        got |= POLLOUT_;
+      }
       if (want & POLLPRI_) got |= POLLPRI_;
       if (want == 0) got = 0;
     }
@@ -1237,11 +1267,86 @@ int sys_unlink(const char* pathname) {
   return vunlink(dir_node, base);
 }
   
-  int sys_rename(const char* old, const char* new) {
-    log_debug("sys rename not impl %s\n", old);
-  
-    return -1;
+/* ===================== rename(38 / renameat) =====================
+ * 此前是恒返回 -1 的 stub。`-1` 在 musl 里一律变成 EPERM(1)，而 Xorg 的
+ * LogInit() 只在 errno==ENOENT 时才忽略 rename 失败 ⇒ 直接把
+ * "Cannot move old log file ..." 升级成 Fatal server error（实测）。
+ * 现在按 POSIX 语义实现：
+ *   · 源不存在        → -ENOENT（调用方当作"没什么可挪"）
+ *   · 跨目录          → -EXDEV（本实现只支持同一目录内改名）
+ *   · 目标已存在      → 由文件系统负责替换（fatfs 先删再 f_rename）
+ * 参数是路径，末尾组件当作新名字。 */
+static int sys_rename_split(const char* upath, char* parent, char* base) {
+  char kpath[MAX_PATH_BUFFER];
+  char* slash;
+
+  if (upath == NULL || !sys_user_path_pointer_valid(upath)) {
+    return -14; /* -EFAULT */
   }
+  if (sys_copy_user_string(upath, kpath, sizeof(kpath)) < 0) {
+    return -14;
+  }
+  if (kstrlen(kpath) == 0) {
+    return -2; /* -ENOENT */
+  }
+  kstrcpy(parent, kpath);
+  slash = parent + kstrlen(parent);
+  while (slash > parent && *slash != '/') {
+    slash--;
+  }
+  if (*slash == '/') {
+    kstrcpy(base, slash + 1);
+    *slash = '\0';
+    if (parent[0] == '\0') {
+      parent[0] = '/';
+      parent[1] = '\0';
+    }
+  } else {
+    kstrcpy(base, kpath);
+    parent[0] = '\0';
+  }
+  return (base[0] == '\0') ? -2 : 0;
+}
+
+int sys_rename(const char* old, const char* new) {
+  thread_t* current = thread_current();
+  char old_parent[MAX_PATH_BUFFER];
+  char new_parent[MAX_PATH_BUFFER];
+  char old_base[MAX_PATH_BUFFER];
+  char new_base[MAX_PATH_BUFFER];
+  vnode_t* old_dir;
+  int rc;
+
+  if (current == NULL || current->vfs == NULL) {
+    return -14;
+  }
+  rc = sys_rename_split(old, old_parent, old_base);
+  if (rc < 0) {
+    return rc;
+  }
+  rc = sys_rename_split(new, new_parent, new_base);
+  if (rc < 0) {
+    return rc;
+  }
+  if (kstrcmp(old_parent, new_parent) != 0) {
+    return -18; /* -EXDEV：只支持同目录改名 */
+  }
+
+  old_dir = vfs_find_relative(current->vfs->root, current->vfs->pwd,
+                              old_parent[0] ? old_parent : "/");
+  if (!vfs_node_is_valid(old_dir) ||
+      (old_dir->flags & V_DIRECTORY) != V_DIRECTORY) {
+    return -2;
+  }
+  /* 源不存在 ⇒ ENOENT（Xorg 处理日志/锁文件时把它当"无需处理"忽略） */
+  if (vfs_find_relative(current->vfs->root, old_dir, old_base) == NULL) {
+    return -2;
+  }
+  if (vrename(old_dir, old_base, new_base) < 0) {
+    return -5; /* -EIO：文件系统拒绝（不支持/目标被占用） */
+  }
+  return 0;
+}
 
 
 static void sys_getdents_dump_buf(const char* tag, const u8* buf, u32 nbytes) {

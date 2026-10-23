@@ -168,15 +168,15 @@ size_t net_read(device_t* dev, void* buf, size_t len) {
         return 0;
     }
     
+    /* 【不要在这里打印】本函数由 lwip 的收包泵以毫秒级、每轮 ETH_RX_BURST
+     * 次调用（见 port/ethernetif.c 的 drain()），原来一行逐包 kprintf 会把
+     * 串口刷满（实测 "[BCM2837-Net] Read packet (len=1600)" 刷屏），
+     * 还会把 shell 输出挤掉。真正的 USB bulk IN 实现之前这里静默返回 0。 */
     // In a real implementation:
     // 1. Check USB host channel for received data
     // 2. Read packet from SMSC LAN95xx via USB bulk transfer
     // 3. Copy to buffer
-    
-    kprintf("[BCM2837-Net] Read packet (len=%d)\n", len);
-    
     // For now, return 0 (no data available)
-    // This should be replaced with actual USB bulk IN transfer
     return 0;
 }
 
@@ -203,9 +203,7 @@ size_t net_write(device_t* dev, const void* buf, size_t len) {
     // 1. Prepare USB bulk transfer
     // 2. Send packet to SMSC LAN95xx via USB
     // 3. Wait for completion
-    
-    kprintf("[BCM2837-Net] Send packet (len=%d)\n", len);
-    
+    /* 同上：逐包打印会刷屏，静默（返回 len 是"已接受"的约定） */
     return len;
 }
 

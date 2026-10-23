@@ -229,6 +229,18 @@ int vunlink(vnode_t *dir, const char *name) {
   return ret;
 }
 
+int vrename(vnode_t *dir, const char *oldname, const char *newname) {
+  if (dir == NULL || dir->op == NULL || dir->op->rename == NULL ||
+      oldname == NULL || newname == NULL) {
+    return -1;
+  }
+  int ret;
+  vfs_lock();
+  ret = dir->op->rename(dir, oldname, newname);
+  vfs_unlock();
+  return ret;
+}
+
 void vmount(vnode_t *root, u8 *path, vnode_t *node) {
   if (root->op->mount != NULL) {
     vfs_lock();

@@ -928,6 +928,61 @@ int fat_op_unlink(vnode_t *dir_node, const char *name) {
   return 0;
 }
 
+/* 【新增】同一目录内改名：拼两个全路径后走 FatFs 的 f_rename。
+ * 目标已存在时先删掉（POSIX rename 是"替换"语义；Xorg 每次启动都会把
+ * Xorg.0.log 挪成 .old，上一轮留下的 .old 必须能被覆盖）。 */
+int fat_op_rename(vnode_t *dir_node, const char *oldname,
+                  const char *newname) {
+  file_info_t *file_info = dir_node->data;
+  char src[MAX_FILE_PATH];
+  char dst[MAX_FILE_PATH];
+  FRESULT res;
+  size_t len;
+
+  if (file_info == NULL || oldname == NULL || newname == NULL ||
+      oldname[0] == '\0' || newname[0] == '\0') {
+    return -1;
+  }
+  if (fat_volume_path(file_info, src) < 0) {
+    return -1;
+  }
+  len = kstrlen(src);
+  if (len + 1 + kstrlen(oldname) + 1 > sizeof(src)) {
+    return -1;
+  }
+  if (len > 0 && src[len - 1] != '/') {
+    src[len++] = '/';
+  }
+  kstrcpy(src + len, oldname);
+
+  if (fat_volume_path(file_info, dst) < 0) {
+    return -1;
+  }
+  len = kstrlen(dst);
+  if (len + 1 + kstrlen(newname) + 1 > sizeof(dst)) {
+    return -1;
+  }
+  if (len > 0 && dst[len - 1] != '/') {
+    dst[len++] = '/';
+  }
+  kstrcpy(dst + len, newname);
+
+  res = f_rename(src, dst);
+  if (res == FR_EXIST) {
+    /* 目标还在：先删再试一次 */
+    if (f_unlink(dst) != FR_OK) {
+      log_error("fat rename %s -> %s target busy\n", src, dst);
+      return -1;
+    }
+    res = f_rename(src, dst);
+  }
+  if (res != FR_OK) {
+    log_error("fat rename %s -> %s failed code %d\n", src, dst, res);
+    return -1;
+  }
+  return 0;
+}
+
 /* 【新增】截断已打开文件到 length：LTP tst_test.c 建 IPC 共享文件
  * （SAFE_FTRUNCATE）必需。文件以 f_lseek(length)+f_truncate 实现。 */
 int fat_ftruncate(vnode_t *node, u64 length) {
@@ -955,6 +1010,7 @@ voperator_t fat_op = {
     .ioctl = fat_op_ioctl,
     .mkdir = fat_op_mkdir,
     .unlink = fat_op_unlink,
+    .rename = fat_op_rename,
 };
 
 void fat_init_op(vnode_t *node) { node->op = &fat_op; }
