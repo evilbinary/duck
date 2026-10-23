@@ -888,19 +888,34 @@ void thread_exit(thread_t* thread, int code) {
      * 从那里读 wstatus 是垃圾指针、写 x0 会破坏当前现场（实测 abort01
      * 第一个测试就 page fault 卡死）。 */
     if (pic != NULL) {
-      thread->pid = (u32)-1; /* 1) 收割，recycle 下一轮放行 */
-      int* wstatus = (int*)(unsigned long)context_arg1(pic);
-      if (wstatus != NULL && parent->vm != NULL &&
-          parent->vm->upage != NULL) {
-        u64 saved_ttbr0 = cpu_read_ttbr0();
-        cpu_set_page((u64)parent->vm->upage);
-        /* Linux waitpid 语义：正常退出 status = (code&0xff)<<8 */
-        *wstatus = (int)((code & 0xff) << 8);
-        cpu_set_page(saved_ttbr0);
+      /* 【代收割必须匹配父在等的目标 pid】目标保存在父保存帧的 x0
+       * （SVC 现场 waitpid 的第一个参数）：want<0 = 等任意子进程。
+       * 旧行为无条件代收割"任何一个退出的 child"：父 waitpid(19) 阻塞时
+       * child 20 先退出 ⇒ 20 被收走（pid=-1）、父被唤醒返回 20；之后父
+       * waitpid(20) 时 20 已不在（pid=-1 不匹配 find_zombie/child_exists
+       * 的 p->pid 检查）、其余 child 的 id≠20 ⇒ thread_child_exists=false
+       * ⇒ ECHILD（futex_cmp_requeue01 的阻塞收尸循环实测）。
+       * 不匹配的 child 不收割也不唤醒父：留 recycle 队列当僵尸，由父后续
+       * 对应的 waitpid 首轮 reap 收割。 */
+      long want = (long)context_arg0(pic);
+      if (want < 0 || want == (long)thread->id) {
+        thread->pid = (u32)-1; /* 1) 收割，recycle 下一轮放行 */
+        int* wstatus = (int*)(unsigned long)context_arg1(pic);
+        if (wstatus != NULL && parent->vm != NULL &&
+            parent->vm->upage != NULL) {
+          u64 saved_ttbr0 = cpu_read_ttbr0();
+          cpu_set_page((u64)parent->vm->upage);
+          /* Linux waitpid 语义：正常退出 status = (code&0xff)<<8 */
+          *wstatus = (int)((code & 0xff) << 8);
+          cpu_set_page(saved_ttbr0);
+        }
+        context_ret(pic) = (long)thread->id; /* 3) 返回值 = child pid */
+        thread_wake(parent);
       }
-      context_ret(pic) = (long)thread->id; /* 3) 返回值 = child pid */
+      /* 不匹配：父继续睡它的目标；本线程 STOPPED + recycle 队列 */
+    } else {
+      thread_wake(parent);
     }
-    thread_wake(parent);
   }
 }
 

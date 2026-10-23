@@ -216,6 +216,15 @@ static u32 futex_waiter_wake(u32* addr, u32 max_wake) {
   if (futex_waiters == NULL) {
     return 0;
   }
+  {
+    /* 【诊断·可删】wake03 冻结点定位 */
+    static int wk_dbg = 0;
+    if (wk_dbg++ < 60) {
+      log_error("WK enter addr=%x max=%d tid=%d\n", (u32)(uintptr_t)addr,
+                (int)max_wake,
+                thread_current() != NULL ? (int)thread_current()->id : -1);
+    }
+  }
   for (i = 0; i < FUTEX_WAITER_MAX && n < max_wake; i++) {
     thread_t* w = futex_waiters[i].t;
     if (w == NULL || futex_waiters[i].addr != addr) {
@@ -236,7 +245,65 @@ static u32 futex_waiter_wake(u32* addr, u32 max_wake) {
     futex_waiters[i].t = NULL;
     futex_waiters[i].addr = NULL;
   }
+  {
+    /* 【诊断·可删】 */
+    static int wk_dbg2 = 0;
+    if (wk_dbg2++ < 60) {
+      log_error("WK ret n=%d tid=%d\n", (int)n,
+                thread_current() != NULL ? (int)thread_current()->id : -1);
+    }
+  }
   return n;
+}
+
+/* 【FUTEX_CMP_REQUEUE(4)/REQUEUE(3)】唤醒 uaddr 上最多 max_wake 个等待者，
+ * 再把其余等待者（最多 max_requeue 个）从 uaddr 迁移到 uaddr2（不唤醒，
+ * 改为等在 uaddr2 上）。返回唤醒+迁移总数（Linux 语义）。
+ * futex_cmp_requeue01：requeue 后 futex_wake(uaddr2) 应恰好收到迁移的
+ * 那批 waiter；迁移的 waiter 保持 THREAD_WAITING，sleep_counter 不动
+ * （超时兜底仍有效）。 */
+static u32 futex_waiter_requeue(u32* addr, u32* addr2, u32 max_wake,
+                                u32 max_requeue) {
+  u32 woken = 0, moved = 0;
+  int i;
+  if (futex_waiters == NULL) {
+    return 0;
+  }
+  for (i = 0; i < FUTEX_WAITER_MAX; i++) {
+    thread_t* w = futex_waiters[i].t;
+    if (w == NULL || futex_waiters[i].addr != addr) {
+      continue;
+    }
+    if (w->state == THREAD_SLEEP || w->state == THREAD_WAITING) {
+      if (woken < max_wake) {
+        /* 与 futex_waiter_wake 同款：WAITING 是 schedule_switch 式阻塞，
+         * 返回值必须由唤醒方写进保存帧 */
+        if (w->state == THREAD_WAITING && w->ctx != NULL &&
+            w->ctx->ksp != NULL) {
+          ((interrupt_context_t*)w->ctx->ksp)->x0 = 0;
+        }
+        thread_wake(w);
+        futex_waiters[i].t = NULL;
+        futex_waiters[i].addr = NULL;
+        woken++;
+        continue;
+      }
+      if (moved < max_requeue) {
+        futex_waiters[i].addr = addr2;
+        moved++;
+        continue;
+      }
+      /* 【配额用尽的活跃等待者必须留在原地址】wake/requeue 配额都满后，
+       * 剩余 waiter 仍要等在 uaddr 上（调用方随后 futex_wake(uaddr) 收尾）；
+       * 清掉他们的槽 = 永久丢唤醒（futex_cmp_requeue01 Test 2 实测 2 个
+       * waiter ETIMEDOUT，futex0: 0）。 */
+      continue;
+    }
+    /* 已超时自醒的：清槽（与 wake 同款），不计入返回值 */
+    futex_waiters[i].t = NULL;
+    futex_waiters[i].addr = NULL;
+  }
+  return woken + moved;
 }
 
 int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
@@ -274,7 +341,17 @@ int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
   if (fop == 9 /* FUTEX_WAIT_BITSET */) {
     fop = 0 /* 当 FUTEX_WAIT 处理（忽略 bitmask） */;
   }
-  if ((fop & 1u) == 0 /* FUTEX_WAIT / FUTEX_WAIT_BITSET */) {
+  /* 【REQUEUE(3)/CMP_REQUEUE(4)】val2 经 timeout 形参以 union 方式传入；
+   * CMP_REQUEUE 先校验 *uaddr == val3，不等返回 EAGAIN（Linux 语义）。 */
+  if (fop == 3 || fop == 4) {
+    if (fop == 4 && (uaddr == NULL || *uaddr != val3)) {
+      return EAGAIN;
+    }
+    return (int)futex_waiter_requeue(uaddr, uaddr2, val,
+                                     (u32)(uintptr_t)timeout);
+  }
+
+  if (fop == 0 /* FUTEX_WAIT / FUTEX_WAIT_BITSET(op=9 已归一) */) {
     /* 【无 timeout = 真·永久阻塞】Linux 语义。旧实现 thread_sleep 只是
      * "记账"（syscall 立即回用户态，tick 边界才真正换出）⇒ musl 的等待
      * 循环在同一个 tick 内把返回值当"已唤醒"继续跑：futex_wake02 的测试
@@ -346,7 +423,9 @@ int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
     return 0; /* 【不可达】唤醒后从保存帧回用户态，不会回到这里 */
   }
 
-  if ((fop & 1u) != 0 /* FUTEX_WAKE / FUTEX_WAKE_BITSET */) {
+  /* 【WAKE_BITSET(10) 位 0 也是 0】旧的 (fop&1)!=0 判定会把它漏进 WAIT
+   * 分支（*uaddr!=val → EAGAIN，语义全错）。显式列出两个 WAKE op。 */
+  if (fop == 1 || fop == 10 /* FUTEX_WAKE / FUTEX_WAKE_BITSET */) {
     /* 唤醒登记在该地址上的等待者（不是调用者自己 ✗），val=最多唤醒几个 */
     return (int)futex_waiter_wake(uaddr, val);
   }
