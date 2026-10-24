@@ -462,6 +462,14 @@ u64 sys_readlink_dispatch(sys_arg_t a0, sys_arg_t a1, sys_arg_t a2,
 
 int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
               int child_tid);
+int sys_clone3(void* uargs, size_t size);
+/* gettimeofday(169)：aarch64 的 timeval 是 { i64 tv_sec; i64 tv_usec; }，
+ * tz 参数 Linux 语义上必须是 NULL（非 NULL 返回 EINVAL）。 */
+int sys_gettimeofday(void* tv, void* tz);
+/* name_to_handle_at(264)：本内核没有文件句柄概念，恒返回 EOPNOTSUPP，
+ * 调用方（udev/gio 的设备枚举）按"不支持"降级即可。 */
+int sys_name_to_handle_at(int dfd, const char* name, void* handle,
+                          int* mount_id, int flags);
 
 int sys_llseek(int fd, int offset_hi, int offset_lo, off_t* result, int whence);
 

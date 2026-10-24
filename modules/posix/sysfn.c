@@ -357,6 +357,14 @@ void sys_fn_init() {
   syscall_table[SYS_CLOSE_RANGE] = &sys_close_range;
   syscall_table[SYS_SET_ROBUST_LIST] = &sys_set_robust_list;
   syscall_table[SYS_RSEQ] = &sys_rseq;
+  /* 【aarch64 真实编号补齐】148=getresuid / 150=getresgid（165/166 是
+   * getrusage，上面那两行是历史误映射，保留不动）；169=gettimeofday；
+   * 264=name_to_handle_at；435=clone3。Xorg/GTK 都会碰到这几个。 */
+  syscall_table[SYS_GETRESUID] = &sys_getresuid;
+  syscall_table[SYS_GETRESGID] = &sys_getresgid;
+  syscall_table[SYS_GETTIMEOFDAY] = &sys_gettimeofday;
+  syscall_table[SYS_NAME_TO_HANDLE_AT] = &sys_name_to_handle_at;
+  syscall_table[SYS_CLONE3] = &sys_clone3;
   syscall_table[SYS_SENDMSG] = &sys_sendmsg;
   syscall_table[SYS_RECVMSG] = &sys_recvmsg;
 

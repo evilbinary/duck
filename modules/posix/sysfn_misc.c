@@ -248,3 +248,18 @@ int sys_rseq(void* ptr, u32 len, int flags, u32 sig) {
   (void)sig;
   return 0;
 }
+
+/* 【name_to_handle_at(264)】文件句柄（fh）是 GPL 之外的"按句柄打开"机制，
+ * 本内核的 VFS 没有 inode handle 概念，也无法给出 mount_id。用户态（udev/
+ * gio 的设备与挂载点枚举）只把返回值当能力探测：EOPNOTSUPP 会走"不支持"
+ * 分支正常降级；返回成功反而会给出垃圾句柄让调用方崩。
+ * 注意不要返回 ENOSYS——部分库把 ENOSYS 当"内核太老"直接放弃整条枚举路径。 */
+int sys_name_to_handle_at(int dfd, const char* name, void* handle,
+                          int* mount_id, int flags) {
+  (void)dfd;
+  (void)name;
+  (void)handle;
+  (void)mount_id;
+  (void)flags;
+  return -95; /* -EOPNOTSUPP */
+}

@@ -311,3 +311,36 @@ int sys_clock_getres(clockid_t clockid, struct timespec* res) {
   sys_time64_write(res, 0, 1);
   return 0;
 }
+
+/* ===================== gettimeofday(169) ===================== */
+/* aarch64 的 struct timeval 是 { i64 tv_sec; i64 tv_usec; }（64 位成员，
+ * 与 time64 布局一致），不能套用 32 位 arm 的 { i32, i32 }。
+ * tz 参数按 Linux 语义：非 NULL 返回 -EINVAL（Linux 早已不支持设置时区）。
+ * 其余时间类 syscall 都直接往用户指针写，这里统一用 sys_copy_to_user，
+ * 指针不可访问时返回 -EFAULT 而不是让内核在 data abort 里崩掉。 */
+struct timeval64_layout {
+  long long tv_sec;
+  long long tv_usec;
+};
+
+int sys_gettimeofday(void* tv, void* tz) {
+  struct timeval64_layout v;
+  time_t seconds;
+  u64 ticks;
+  if (tz != NULL) {
+    return -22; /* -EINVAL */
+  }
+  if (tv == NULL) { /* Linux：tv 为 NULL 合法，仅查询时区（已被忽略） */
+    return 0;
+  }
+  seconds = 0;
+  sys_time(&seconds);
+  ticks = schedule_get_ticks();
+  v.tv_sec = (long long)seconds;
+  v.tv_usec =
+      (long long)((ticks % SCHEDULE_FREQUENCY) * (1000000u / SCHEDULE_FREQUENCY));
+  if (sys_copy_to_user(tv, &v, sizeof(v)) < 0) {
+    return -14; /* -EFAULT */
+  }
+  return 0;
+}

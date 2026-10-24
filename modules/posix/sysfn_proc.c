@@ -469,6 +469,45 @@ int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
   return copy_thread->id;
 }
 
+/* 【clone3(435)】glibc 2.34+ 的 pthread_create/posix_spawn 优先走 clone3，
+ * 缺失时每次创建线程都要先吃一次 ENOSYS 再退回 clone（能用但不干净，
+ * 也会刷 "syscall 435 not found handler"）。
+ * 参数是 struct clone_args，字段全为 __aligned_u64；这里只取内核关心的
+ * 前 8 个，set_tid/cgroup 忽略。与 clone 的语义差异：
+ *   1) exit_signal 被拆成独立字段，需并回 flags 低 8 位；
+ *   2) stack 是【栈底】，内核要栈顶 ⇒ stack + stack_size；
+ *   3) size 小于 64 字节按 EINVAL（Linux 同样校验）。 */
+struct clone_args_k {
+  u64 flags;
+  u64 pidfd;
+  u64 child_tid;
+  u64 parent_tid;
+  u64 exit_signal;
+  u64 stack;
+  u64 stack_size;
+  u64 tls;
+  u64 set_tid;
+  u64 set_tid_size;
+  u64 cgroup;
+};
+
+int sys_clone3(void* uargs, size_t size) {
+  struct clone_args_k a;
+  u64 flags;
+  void* stack;
+  if (uargs == NULL || size < 64) {
+    return -22; /* -EINVAL */
+  }
+  if (sys_copy_from_user(&a, uargs, 64) < 0) {
+    return -14; /* -EFAULT */
+  }
+  flags = a.flags | (a.exit_signal & 0xffu);
+  /* stack == 0 ⇒ 与 fork 同语义（sys_clone 内部按 stack==NULL 处理） */
+  stack = (a.stack != 0) ? (void*)(uintptr_t)(a.stack + a.stack_size) : NULL;
+  return sys_clone((int)flags, stack, (int*)(uintptr_t)a.parent_tid,
+                   (void*)(uintptr_t)a.tls, (int)(uintptr_t)a.child_tid);
+}
+
 int sys_vfork() {
   thread_t* current = thread_current();
   if (current == NULL) {
@@ -569,10 +608,16 @@ int sys_gettid() {
  * *(u32*)ptr 赋值遇到坏指针（实测 0x12）会让内核在 data abort 里崩掉，
  * 整个进程静默消失。 */
 static void res_id_store(void* ptr) {
-  /* 【临时验证】glibc 的 ld.so 在某些路径把 TLS 内部地址当参数传进来
-   * （实测 a1=0x60318b60 = __stack_chk_guard 所在），写 4 字节 0 会把
-   * 栈保护 canary 打坏 ⇒ 后续 "stack smashing detected"。先不写，只返回。 */
-  (void)ptr;
+  /* 【必须真的写 0】只在 165/166（aarch64 那其实是 getrusage/getresgid 之外的
+   * 错号）注册时，参数根本不是 uid 指针，写内存会打坏调用方的栈 canary，
+   * 所以曾经退化成"只返回不写"。现在注册在真实号 148/150 上，三个参数确实
+   * 是 uid_t*，不写会留下调用方的栈垃圾：glibc 的 getuid/geteuid 走
+   * getresuid 时两个值来自不同栈帧，于是 getuid() != geteuid() 成立，
+   * GTK 据此判定"进程以 setuid 运行"并拒绝初始化（lxterminal 退出码 1）。 */
+  u32 v = 0;
+  if (ptr != NULL && sys_copy_to_user(ptr, &v, sizeof(v)) < 0) {
+    /* 坏指针：忽略（Linux 这里会返回 EFAULT，调用方几乎没有能处理的） */
+  }
 }
 
 int sys_getresuid(void* ruid, void* euid, void* suid) {
