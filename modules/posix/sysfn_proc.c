@@ -244,7 +244,7 @@ static void sys_clear_child_tid(thread_t* current) {
 
 void sys_exit(int status) {
   thread_t* current = thread_current();
-#if 1 /* 临时：定位 Xorg 静默退出（status/pc），查完改回 PROBE_TRACE */
+#if PROBE_TRACE
   /* 线程退出打点，排查"子进程秒退零输出"时改 PROBE_TRACE=1 */
   {
     static int exit_dbg = 0;
@@ -288,7 +288,7 @@ void sys_exit(int status) {
 }
 
 void sys_exit_group(int status) {
-#if 1 /* 临时：定位 Xorg 静默退出（status/pc），查完改回 PROBE_TRACE */
+#if PROBE_TRACE
   /* 进程退出打点（tid/name/status/pc），排查退出路径时改 PROBE_TRACE=1 */
   {
     static int exitg_dbg = 0;
@@ -566,12 +566,6 @@ int sys_getpgid(int pid) {
 }
 
 int sys_kill(pid_t pid, int sig) {
-  /* 临时探针：查 Xorg "Server is already active" 的 kill(pid,0) 到底问的是谁 */
-  {
-    thread_t* f = pid > 0 ? thread_find_id(pid) : NULL;
-    log_error("KILL pid=%d sig=%d found=%d name=%s\n", (int)pid, sig,
-              f != NULL, (f != NULL && f->name != NULL) ? f->name : "-");
-  }
   if (pid <= 0) {
     /* 0/负数在 Linux 里指"自己的进程组"：本内核没有进程组语义，
      * 直接当投递成功（此类调用只用于探测，不做实际动作）。 */

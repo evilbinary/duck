@@ -26,6 +26,7 @@ voperator_t device_operator = {.ioctl = device_ioctl,
 static vnode_t* devfs_stdin;
 static vnode_t* devfs_stdout;
 static vnode_t* devfs_stderr;
+static vnode_t* devfs_console;
 
 static device_t* devfs_pick_output_device(void) {
   device_t* dev = device_find(DEVICE_SERIAL);
@@ -64,6 +65,11 @@ static void devfs_bind_stdio(void) {
   }
   if (devfs_stderr != NULL && devfs_stdout != NULL) {
     devfs_stderr->device = devfs_stdout->device;
+  }
+  /* /dev/console：与 stdout 同一输出设备（串口/VGA/LCD 里第一个可用的），
+   * 输入侧复用该设备自己的 read（串口读得到，VGA 读不到就返回 0）。 */
+  if (devfs_console != NULL) {
+    devfs_console->device = devfs_pick_output_device();
   }
 }
 
@@ -186,6 +192,18 @@ int devfs_init(void) {
   null->device = device_find(DEVICE_NULL);
   null->op = &device_operator;
   vfs_mount(NULL, "/dev", null);
+
+  /* /dev/console：POSIX 里的"系统控制台"。X server 默认把日志/致命错误往它
+   * 上面写（LogInit 第一选择就是 /dev/console）。此前这个节点不存在，而
+   * Xorg 打开时带 O_CREAT ⇒ vfs 在 /dev 下造出一个假的 "console" 节点
+   * （op 仍是 default_operator，没有真实设备），写日志直接踩进
+   * vwrite→vfs_write 的自递归，把内核栈写爆、整机挂死。
+   * 这里给它一个真设备（串口优先，见 devfs_bind_stdio 的绑定逻辑）。 */
+  vnode_t *console = vfs_create_node("console", V_FILE);
+  console->op = &device_operator;
+  console->device = devfs_pick_output_device();
+  vfs_mount(NULL, "/dev", console);
+  devfs_console = console;
 
   device_set_notify(devfs_on_device_added);
   devfs_bind_stdio();

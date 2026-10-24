@@ -221,7 +221,7 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
   {
     static int mmap_in_cnt = 0;
     if (current != NULL && current->id >= 6 && mmap_in_cnt < 800) {
-      log_error("MMAPIN %d tid=%d addr=%x len=%x prot=%x flags=%x fd=%d off=%x\n",
+      log_debug("MMAPIN %d tid=%d addr=%x len=%x prot=%x flags=%x fd=%d off=%x\n",
                 mmap_in_cnt++, current->id, (u32)(uintptr_t)addr, (u32)length,
                 prot, flags, fd, (u32)pgoffset);
     }
