@@ -80,15 +80,16 @@ u32 pip_ioctl(vnode_t* node, u32 cmd, void* args) {
     return (u32)-1;
   }
   switch (cmd) {
-    case 0x541B:       /* FIONREAD（Linux aarch64/通用形式） */
-    case 0x40046603:   /* FIONREAD 的 _IOR('f', 3, int) 形式 */
+    case FIONREAD:
+    case FIONREAD_IOC_READ:
+    case FIONREAD_IOC_WRITE:
       if (args != NULL) {
         *(int*)args = (int)cqueue_count(pipe->buffer->buffer);
       }
       return 0;
-    case 0x5421: /* FIONBIO：本内核的 pipe 本来就是非阻塞的 */
+    case FIONBIO: /* 本内核的 pipe 本来就是非阻塞的 */
       return 0;
-    case 0x540B: /* TCFLSH：丢弃缓冲区里未读的数据 */
+    case TCFLSH: /* 丢弃缓冲区里未读的数据 */
       cqueue_clear(pipe->buffer->buffer);
       return 0;
     default:
