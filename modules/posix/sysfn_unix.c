@@ -350,11 +350,18 @@ int unix_owns(int fd) { return unix_fd_sock(fd) != NULL; }
 
 /* ===================== 地址 / 命名空间 ===================== */
 
-/* 从用户 sockaddr 提取"命名键"：family 2 字节 + 路径（去掉尾部 NUL 填充）。
- * 抽象名以首个 NUL 开头，去掉尾填充后仍保留首 NUL，不会和普通路径撞。 */
+/* 从用户 sockaddr 提取"命名键"：family 2 字节 + 路径（截到名字结尾）。
+ * 【必须按名字结尾归一化，不能只看尾部零】调用方给 addrlen 时常常传
+ * sizeof(struct sockaddr_un)，名字之后的字节是调用方栈上的未初始化内容：
+ * 服务端 bind 的键尾于是带进垃圾字节（实测 Xorg 绑 /tmp/.X11-unix/X0 时
+ * 尾部多一个 '\t'，len=19），客户端用干净名字 connect 永远匹配不上 ⇒
+ * XOpenDisplay 失败（"cannot open display"）。Linux 的 unix_mkname() 同样
+ * 对路径名按 strlen 截断，抽象名则保留前缀 NUL 后按名字长度截断。
+ * 抽象名以首个 NUL 开头，保留该前缀 NUL，不会和普通路径撞。 */
 static int unix_key_of(const void* uaddr, u32 addrlen, u8* key, u32* keylen) {
   u8 raw[UNIX_KEY_MAX];
   u32 n;
+  u32 i;
   if (uaddr == NULL || addrlen < 2) {
     return -22;
   }
@@ -368,11 +375,16 @@ static int unix_key_of(const void* uaddr, u32 addrlen, u8* key, u32* keylen) {
   if (n > 0 && sys_copy_from_user(raw + 2, (void*)((const u8*)uaddr + 2), n) < 0) {
     return -14;
   }
-  while (n > 0 && raw[2 + n - 1] == 0) {
-    n--;
+  /* 名字长度 = 从名字起点到第一个 NUL（抽象名跳过前缀 NUL 再找） */
+  i = 0;
+  if (n > 0 && raw[2] == 0) {
+    i = 1;
   }
-  kmemcpy(key, raw, n + 2);
-  *keylen = n + 2;
+  while (i < n && raw[2 + i] != 0) {
+    i++;
+  }
+  kmemcpy(key, raw, i + 2);
+  *keylen = i + 2;
   return 0;
 }
 
@@ -499,8 +511,10 @@ int unix_bind(int fd, const void* addr, u32 addrlen) {
     return rc;
   }
   /* 【诊断·可删】看服务端 bind 的名字（含抽象命名空间的 \0 前缀） */
-  log_error("UXBIND fd=%d len=%d b0=%x b2=%x name=%s\n", fd, keylen, key[0],
-            key[2], (keylen > 2) ? (char*)(key + 2) : "");
+  log_error("UXBIND fd=%d addrlen=%d len=%d b0=%x b2=%x name=%s\n", fd, addrlen,
+            keylen, key[0], key[2],
+            (keylen > 3 && key[2] == 0) ? (char*)(key + 3)
+                                        : ((keylen > 2) ? (char*)(key + 2) : ""));
   rc = unix_bind_add(sk, key, keylen);
   if (rc < 0) {
     return rc;
@@ -549,8 +563,10 @@ int unix_connect(int fd, const void* addr, u32 addrlen) {
   }
   ls = unix_lookup(key, keylen);
   /* 【诊断·可删】客户端 connect 用的名字与查表结果 */
-  log_error("UXCONN fd=%d len=%d b0=%x b2=%x name=%s -> %s\n", fd, keylen,
-            key[0], key[2], (keylen > 2) ? (char*)(key + 2) : "",
+  log_error("UXCONN fd=%d addrlen=%d len=%d b0=%x b2=%x name=%s -> %s\n", fd,
+            addrlen, keylen, key[0], key[2],
+            (keylen > 3 && key[2] == 0) ? (char*)(key + 3)
+                                        : ((keylen > 2) ? (char*)(key + 2) : ""),
             ls != NULL ? (ls->listening ? "ok" : "not-listen") : "none");
   /* 【诊断·可删】连到 X 服务器的进程，把它接下来的 syscall 全打出来 */
   {

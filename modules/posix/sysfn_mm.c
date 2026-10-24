@@ -322,8 +322,8 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
      * shell 一起就崩（实测 2026-10）。小映射（libc 几 MB）继续走旧的
      * 一次性读入路径（fd 关闭前内容已在内存）；大文件（yllm 810MB 模型，
      * wmap_open 保持 fd 打开）才走 lazy。 */
-    if ((off & ((u64)PAGE_SIZE - 1)) == 0 &&
-        length >= 16 * 1024 * 1024) {
+    if ((flags & MAP_SHARED) == MAP_SHARED &&
+        (off & ((u64)PAGE_SIZE - 1)) == 0 && length >= 16 * 1024 * 1024) {
       if (sys_mmap_install_area(vm, map_at, length, node, off) < 0) {
         log_error("mmap file install failed addr=%x\n", map_at);
         return MAP_FAILED;
@@ -364,6 +364,12 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
       log_debug("MMAPCHK %s off=%x len=%x filled=%x hdr=%02x%02x%02x%02x\n",
                 f->name != NULL ? f->name : "?", (u32)off, (u32)length,
                 filled, p[0], p[1], p[2], p[3]);
+    }
+    /* 【诊断·可删】大文件映射：确认一次性读入是否真的读满（读不满时后面
+     * 是零页，动态链接器会报 undefined symbol）。 */
+    if (length >= 8 * 1024 * 1024) {
+      log_error("MMAPBIG %s off=%x len=%x filled=%x\n",
+                f->name != NULL ? f->name : "?", (u32)off, (u32)length, filled);
     }
     /* 【登记 file_node】仅 MAP_SHARED 登记：MAP_PRIVATE（ld.so 的 libc）
      * 绝不能登记——clone 会把身份带给子进程，共享重映射会把父子 libc
