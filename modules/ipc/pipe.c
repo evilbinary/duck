@@ -46,6 +46,7 @@ pipe_t* pipe_create(u32 size) {
       buffer_create(size, NULL, NULL,
                     pipe_buffer_write_notify, pipe_buffer_read_notify);
   pipe->buffer->data = pipe->wait_queue;
+  pipe->ref = 2; /* 读端 + 写端 */
   return pipe;
 }
 
@@ -98,6 +99,33 @@ u32 pip_ioctl(vnode_t* node, u32 cmd, void* args) {
   }
 }
 
+/* 【pipe 的 close】此前 op->close 是 NULL，每次关闭都在 vclose 里打
+ *   pipe close is null
+ * 且 pipe_t / 缓冲区永不释放（Xorg 每 fork 一次就造两条管道，长期运行
+ * 会把内核堆吃掉）。node 由读写两端的 fd 共用，所以要按端计数释放。 */
+u32 pip_close(vnode_t* node) {
+  pipe_t* pipe = node->device;
+  if (pipe == NULL) {
+    return 0;
+  }
+  if (pipe->ref > 0) {
+    pipe->ref--;
+  }
+  if (pipe->ref == 0) {
+    if (pipe->buffer != NULL) {
+      buffer_destroy(pipe->buffer);
+      pipe->buffer = NULL;
+    }
+    if (pipe->wait_queue != NULL) {
+      rw_queue_destroy(pipe->wait_queue);
+      pipe->wait_queue = NULL;
+    }
+    kfree(pipe);
+    node->device = NULL;
+  }
+  return 0;
+}
+
 vnode_t* pipe_make(u32 size) {
   vnode_t* node = vfs_create_node("pipe", 0);
   node->device = pipe_create(size);
@@ -106,5 +134,6 @@ vnode_t* pipe_make(u32 size) {
   op->read = pip_read;
   op->write = pip_write;
   op->ioctl = pip_ioctl;
+  op->close = pip_close;
   return node;
 }

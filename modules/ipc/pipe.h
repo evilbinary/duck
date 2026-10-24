@@ -50,6 +50,10 @@
 typedef struct pipe{
     rw_queue_t* wait_queue;
     buffer_t *buffer;
+    /* 引用计数：pipe_make 出一个节点被读写两端共 2 个 fd 引用，fd 最后
+     * 一次关闭（fd_close → vclose，fork 复制的 fd 只减 use_count）才减 1，
+     * 减到 0 才能真正释放缓冲区。 */
+    u32 ref;
 }pipe_t;
 
 pipe_t* pipe_create(u32 size);
