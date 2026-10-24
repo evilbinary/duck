@@ -252,10 +252,12 @@ void sys_fn_init() {
   syscall_table[SYS_CLOCK_GETTIME64] = &sys_clock_gettime64;
   /* aarch64 time64 变体（musl 某些路径会用 403） */
   syscall_table[SYS_CLOCK_GETTIME64 + 290] = &sys_clock_gettime64;
-#ifdef SYS_CLOCK_GETRES
+#if defined(ARM64) || defined(__aarch64__)
   /* aarch64 的 114 = clock_getres（113 是 clock_gettime），此前未注册 ⇒
    * 调用方拿到 ENOSYS（实测 X server 的 Xtrans 超时初始化就在这里报
-   * "syscall 114 not found handler"）。 */
+   * "syscall 114 not found handler"）。
+   * 注意：SYS_CLOCK_GETRES 是 enum 常量，不是宏，#ifdef 判定永远为假 ⇒
+   * 只能用架构宏包住。 */
   syscall_table[SYS_CLOCK_GETRES] = &sys_clock_getres;
 #endif
 
