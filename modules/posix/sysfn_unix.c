@@ -568,16 +568,10 @@ int unix_connect(int fd, const void* addr, u32 addrlen) {
             (keylen > 3 && key[2] == 0) ? (char*)(key + 3)
                                         : ((keylen > 2) ? (char*)(key + 2) : ""),
             ls != NULL ? (ls->listening ? "ok" : "not-listen") : "none");
-  /* 【诊断·可删】连到 X 服务器的进程，把它接下来的 syscall 全打出来 */
-  {
-    thread_t* c = thread_current();
-    /* X11 的连接名是 /tmp/.X11-unix/X0（可能是抽象命名空间，路径从 key+3 起），
-     * 用长度区间兜住两种写法 */
-    if (c != NULL && keylen > 10 && keylen < 30) {
-      extern void sys_probe_arm(int tid, int count);
-      sys_probe_arm((int)c->id, 40);
-    }
-  }
+  /* 【探针已关】此前连到 X 的进程会被 arm 40 条 syscall 打印，但 Xorg 的
+   * 主循环会反复连接/重连，日志刷得比串口快，把 UXCONN 等关键行冲掉。
+   * 需要看某个进程的调用序列时，改由 kernel/syscall.c 里的 sys_probe_arm
+   * 在具体位置显式打开。 */
   if (ls == NULL || !ls->listening) {
     return -111; /* -ECONNREFUSED：名字没有被 listen 的端点占用 */
   }

@@ -202,7 +202,10 @@ int sys_epoll_ctl(int epfd, int op, int fd, void* ev) {
    * DEL 额外打用户态 pc/lr，用来定位是谁把连接从集合里摘掉 */
   {
     thread_t* c = thread_current();
-    if (fd >= 8) {
+    /* 【诊断·限额】Xorg 主循环每个事件都 epoll_ctl，无条件打印会把串口打满
+     * （日志刷得比串口快，关键行全被冲掉）。只留前 40 条。 */
+    static int epctl_dbg = 0;
+    if (fd >= 8 && epctl_dbg++ < 40) {
       u64 pc = (c != NULL && c->ctx != NULL && c->ctx->ic != NULL)
                    ? c->ctx->ic->pc
                    : 0;

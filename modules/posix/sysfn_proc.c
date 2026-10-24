@@ -367,7 +367,7 @@ void sys_exit_group(int status) {
 /* ===================== fork / clone ===================== */
 
 int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
-              int child_tid) {
+              void* child_tid) {
   thread_t* current = thread_current();
   if (current == NULL) {
     log_error("current is null\n");
@@ -463,7 +463,7 @@ int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
    * clear_child_tid 恒 NULL ⇒ 锁值永远停在持有者 tid 上，join/退出全体
    * 死锁（futex_wake02 join 阶段实测）。 */
   if ((flags & CLONE_CHILD_CLEARTID) != 0 && child_tid != NULL) {
-    copy_thread->clear_child_tid = (void*)(uintptr_t)child_tid;
+    copy_thread->clear_child_tid = child_tid;
   }
   thread_run(copy_thread);
   return copy_thread->id;
@@ -505,7 +505,7 @@ int sys_clone3(void* uargs, size_t size) {
   /* stack == 0 ⇒ 与 fork 同语义（sys_clone 内部按 stack==NULL 处理） */
   stack = (a.stack != 0) ? (void*)(uintptr_t)(a.stack + a.stack_size) : NULL;
   return sys_clone((int)flags, stack, (int*)(uintptr_t)a.parent_tid,
-                   (void*)(uintptr_t)a.tls, (int)(uintptr_t)a.child_tid);
+                   (void*)(uintptr_t)a.tls, (void*)(uintptr_t)a.child_tid);
 }
 
 int sys_vfork() {
@@ -631,6 +631,26 @@ int sys_getresgid(void* rgid, void* egid, void* sgid) {
   res_id_store(rgid);
   res_id_store(egid);
   res_id_store(sgid);
+  return 0;
+}
+
+/* 【getrusage(165)】aarch64 struct rusage = 2 个 timeval(16B) + 14 个 long(8B)
+ * = 144 字节，全零返回（本内核没有 CPU 时间统计）。
+ * 【千万不要再复用 getresuid 当 165】两个 syscall 的参数完全对不上：
+ * getrusage(who, rusage) 的第二参是结构体指针、第三参是寄存器垃圾；按 uid
+ * 指针去写 4 字节 0 就是"用垃圾值当地址写内存"。实测后果：Xorg 的
+ * getrusage 调用把 TLS 里的 __stack_chk_guard（TP+0x28）写成 0，随后
+ * "*** stack smashing detected ***" 直接终止进程。 */
+int sys_getrusage(int who, void* usage) {
+  u8 zero[144];
+  (void)who;
+  if (usage == NULL) {
+    return 0;
+  }
+  kmemset(zero, 0, sizeof(zero));
+  if (sys_copy_to_user(usage, zero, sizeof(zero)) < 0) {
+    return -14; /* -EFAULT */
+  }
   return 0;
 }
 

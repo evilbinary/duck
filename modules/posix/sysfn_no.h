@@ -252,6 +252,7 @@ enum {
   SYS_GETRESUID = 148,
   SYS_SETRESGID = 149,
   SYS_GETRESGID = 150,
+  SYS_GETRUSAGE = 165,      /* aarch64：165 是 getrusage（不是 getresuid！） */
   SYS_GETTIMEOFDAY = 169,   /* aarch64：169 是 gettimeofday（165 是 getrusage） */
   SYS_NAME_TO_HANDLE_AT = 264, /* udev/gio 枚举设备时用，本内核不支持 */
   SYS_CLONE3 = 435,         /* glibc 2.34+ 新线程/进程走 clone3 */

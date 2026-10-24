@@ -298,10 +298,12 @@ void sys_fn_init() {
 #endif
 
   syscall_table[SYS_GETTID] = &sys_gettid;
-  /* 【aarch64】165=getresuid / 166=getresgid：vfork01 等测试的 setup 调
-   * getresuid，未注册返回 ENOSYS ⇒ TBROK。单用户内核恒返回 0/0/0。 */
-  syscall_table[165] = &sys_getresuid;
-  syscall_table[166] = &sys_getresgid;
+  /* 【aarch64 号别搞错】165 是 getrusage、166 是 umask（umask 已在上面注册）。
+   * 之前这里把 165/166 当成 getresuid/getresgid：不仅把 umask 顶掉了，还让
+   * getrusage 的垃圾第三参被当作 uid 指针写入 ⇒ 调用方 TLS 的
+   * __stack_chk_guard 被清零、进程报 stack smashing 退出（Xorg 实测挂在这）。
+   * 真正的 getresuid/getresgid 是 148/150，见下方真实编号补齐块。 */
+  syscall_table[SYS_GETRUSAGE] = &sys_getrusage;
   syscall_table[SYS_THREAD_MAP] = &sys_thread_map;
   syscall_table[SYS_FSTAT64] = &sys_fstat64;
   syscall_table[SYS_STATFS64] = &sys_statfs64;

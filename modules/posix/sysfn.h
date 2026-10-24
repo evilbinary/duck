@@ -427,6 +427,7 @@ int sys_rt_sigaction(int signum, const struct sigaction* restrict act,
 unsigned int sys_alarm(unsigned int seconds);
 int sys_getresuid(void* ruid, void* euid, void* suid);
 int sys_getresgid(void* rgid, void* egid, void* sgid);
+int sys_getrusage(int who, void* usage);
 
 int sys_unlink(const char* pathname);
 int sys_rename(const char* old, const char* new);
@@ -461,7 +462,7 @@ u64 sys_readlink_dispatch(sys_arg_t a0, sys_arg_t a1, sys_arg_t a2,
                           sys_arg_t a3, sys_arg_t a4, sys_arg_t a5);
 
 int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
-              int child_tid);
+              void* child_tid);
 int sys_clone3(void* uargs, size_t size);
 /* gettimeofday(169)：aarch64 的 timeval 是 { i64 tv_sec; i64 tv_usec; }，
  * tz 参数 Linux 语义上必须是 NULL（非 NULL 返回 EINVAL）。 */

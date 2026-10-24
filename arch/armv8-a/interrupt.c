@@ -8,6 +8,11 @@
 #include "interrupt.h"
 #include "context.h"
 #include "cpu.h"
+/* 必须有：cpu_get_tls() 的 u64 原型在 arch/cpu.h 里。少了它编译器按
+ * "隐式声明返回 int" 处理，读回来的 TPIDR_EL0 被 sxtw 符号扩展成
+ * 0xffffffffXXXXXXXX（用户态 TP 一旦落在 0x80000000 以上就变负数地址），
+ * 下面 BRK 探针再拿它当指针解引用 ⇒ 内核在 EL1 data abort。 */
+#include "arch/cpu.h"
 #include "kernel/io.h"
 
 extern boot_info_t* boot_info;
@@ -234,7 +239,10 @@ void* sync_handler(interrupt_context_t* ic) {
         u64* usp = (u64*)(uintptr_t)ic->sp;
         u64 tp = cpu_get_tls();
         u64 guard = 0;
-        if (tp != 0) {
+        /* 探针自己不能再崩：只有看起来像用户指针的 TP 才解引用。TP 落在
+         * 高位地址（0xffffffff...）说明 TPIDR_EL0 是垃圾值，跳过取 guard，
+         * 保证后面的 BRK 报告还能正常打出来。 */
+        if (tp >= 0x1000ull && tp < 0x100000000ull) {
           guard = *(volatile u64*)(uintptr_t)(tp + 0x28);
         }
         kprintf("sync: BRK esr=%lx pc=%lx sp=%lx lr=%lx tp=%lx guard=%lx\n", esr,
