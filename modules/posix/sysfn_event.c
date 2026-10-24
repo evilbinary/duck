@@ -8,6 +8,31 @@
 
 #define log_debug
 
+/* ===================== 事件类节点的 close =====================
+ * eventfd/epoll/inotify 的 vnode 都是临时对象：vfs_create_node（node +
+ * name）+ 私有 device 结构 + 每节点一个 voperator。三者此前都没挂
+ * op->close，fd 关闭时 vclose 报 "node epoll close is null"，
+ * 且这三块堆内存全部泄漏（Xorg 每轮初始化都会建 epoll/inotify）。 */
+static u32 evfd_node_close(vnode_t* node) {
+  if (node == NULL) {
+    return 0;
+  }
+  if (node->device != NULL) {
+    kfree(node->device);
+    node->device = NULL;
+  }
+  if (node->op != NULL) {
+    kfree(node->op);
+    node->op = NULL;
+  }
+  if (node->name != NULL) {
+    kfree(node->name);
+    node->name = NULL;
+  }
+  kfree(node);
+  return 0;
+}
+
 /* ===================== eventfd2(19) ===================== */
 struct eventfd_k {
   u32 magic;
@@ -66,6 +91,7 @@ static vnode_t* eventfd_make(u64 initval) {
   node->op = op;
   op->read = evfd_read;
   op->write = evfd_write;
+  op->close = evfd_node_close;
   return node;
 }
 
@@ -136,6 +162,7 @@ static vnode_t* epoll_make(void) {
   ep->magic = EPOLL_K_MAGIC;
   node->device = ep;
   node->op = op; /* read/write 留 NULL：epoll fd 只经 epoll_* 访问 */
+  op->close = evfd_node_close;
   return node;
 }
 
@@ -270,6 +297,7 @@ static vnode_t* inotify_make(void) {
   in->wd_next = 1;
   node->device = in;
   node->op = op;
+  op->close = evfd_node_close;
   return node;
 }
 
