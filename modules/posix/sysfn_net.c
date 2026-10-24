@@ -120,9 +120,26 @@ static void socket_free(socket_t* sock) {
 }
 
 int sys_socket(int domain, int type, int protocol) {
+  {
+    /* 【诊断·可删】所有域都打（只看业务线程 tid>=6，避开 init/tcpip 噪音） */
+    static int s_dbg = 0;
+    thread_t* t = thread_current();
+    int tid = (t != NULL) ? (int)t->id : -1;
+    if (tid >= 6 && s_dbg++ < 40) {
+      log_error("SOCK2 tid=%d dom=%d type=%d\n", tid, domain, type);
+    }
+  }
   /* AF_UNIX：lwIP 没有本机域，走内核内存通道（sysfn_unix.c） */
   if (domain == AF_UNIX) {
-    return unix_socket(type, protocol);
+    int n = unix_socket(type, protocol);
+    /* 【诊断·可删】谁在开本机 socket */
+    static int s_dbg = 0;
+    if (s_dbg++ < 20) {
+      thread_t* t = thread_current();
+      log_error("USOCK tid=%d type=%d -> fd=%d\n",
+                t != NULL ? (int)t->id : -1, type, n);
+    }
+    return n;
   }
 #ifdef NET_DRIVER
   int lwfd = lwip_port_socket(domain, type, protocol);
@@ -336,6 +353,19 @@ int sys_accept4(int sockfd, struct sockaddr* addr, socklen_t* addrlen, int flags
 }
 
 int sys_connect(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
+  {
+    /* 【诊断·可删】客户端 connect 走哪条通道（unix / 网络）与地址族 */
+    static int c_dbg = 0;
+    if (c_dbg++ < 20) {
+      thread_t* t = thread_current();
+      u16 fam = (addr != NULL && addrlen >= 2)
+                    ? *(volatile u16*)addr
+                    : 0xffff;
+      log_error("SCONN tid=%d fd=%d unix=%d fam=%d len=%d\n",
+                t != NULL ? (int)t->id : -1, sockfd, unix_owns(sockfd), (int)fam,
+                (int)addrlen);
+    }
+  }
   if (unix_owns(sockfd)) {
     return unix_connect(sockfd, (const void*)addr, (u32)addrlen);
   }
@@ -506,6 +536,15 @@ ssize_t sys_sendto(int sockfd, const void* buf, size_t len, int flags,
 
 ssize_t sys_recvfrom(int sockfd, void* buf, size_t len, int flags,
                      struct sockaddr* src_addr, socklen_t* addrlen) {
+  {
+    /* 【诊断·可删】客户端收包走哪条通道（只打业务线程，额度放宽） */
+    static int r_dbg = 0;
+    thread_t* t = thread_current();
+    int tid = (t != NULL) ? (int)t->id : -1;
+    if (tid >= 6 && r_dbg++ < 200) {
+      log_error("SRECV tid=%d fd=%d unix=%d\n", tid, sockfd, unix_owns(sockfd));
+    }
+  }
   if (unix_owns(sockfd)) {
     ssize_t n;
     (void)flags;

@@ -594,6 +594,8 @@ ssize_t sys_recvmsg(int sockfd, void* umsg, int flags);
 int sys_eventfd2(u64 initval, int flags);
 int sys_epoll_create1(int flags);
 int sys_epoll_ctl(int epfd, int op, int fd, void* ev);
+int sys_epoll_pwait2(int epfd, void* events, int maxevents, void* tmo,
+                     void* sigmask, size_t sigsetsize);
 int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
                     void* sigmask, size_t sigsetsize);
 int sys_inotify_init1(int flags);

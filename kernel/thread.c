@@ -1267,6 +1267,11 @@ void thread_dumps() {
                   : 0,
               p->mem / 1024, p->ctx->usp_size / 1024, p->fd_number,
               p->sleep_counter, p->level, p->faults, p->ticks, p->last_no);
+      /* 【诊断·可删】该线程最近 8 次系统调用号（定位"卡在哪个调用上"） */
+      if (!is_idle) {
+        extern void sys_recent_print(int tid);
+        sys_recent_print((int)p->id);
+      }
     }
   }
 }

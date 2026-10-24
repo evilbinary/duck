@@ -933,6 +933,23 @@ int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
   if (current == NULL) {
     return -1;
   }
+  {
+    /* 【诊断·可删】谁在 ppoll、等哪个 fd、什么事件 */
+    static int pp_dbg = 0;
+    int tid = (int)current->id;
+    if (tid >= 6 && pp_dbg++ < 20) {
+      struct pollfd_k k0;
+      short fd0 = -1;
+      short ev0 = 0;
+      if (ufds != NULL && nfds > 0 &&
+          sys_copy_from_user(&k0, ufds, sizeof(k0)) >= 0) {
+        fd0 = k0.fd;
+        ev0 = k0.events;
+      }
+      log_error("PPOLL tid=%d nfds=%u fd0=%d ev0=%x tmo=%x\n", tid, nfds, (int)fd0,
+                (int)ev0, (u32)(uintptr_t)tmo);
+    }
+  }
   if (nfds > PPOLL_NFDS_MAX) {
     nfds = PPOLL_NFDS_MAX;
   }
@@ -2056,6 +2073,7 @@ extern thread_t* schedulable_head_thread[MAX_CPU];
 #define PROC_FILESYSTEMS 6
 #define PROC_MOUNTS 7
 #define PROC_CPUINFO 8
+#define PROC_CMDLINE 9
 
 static u32 proc_file_read(vnode_t* node, u32 offset, u32 size, u8* buf);
 static u32 proc_task_readdir(vnode_t* node, vdirent_t* dirent, u32* offset,
@@ -2195,6 +2213,13 @@ static int proc_generate(vnode_t* node, char* out, int outsz) {
       procfs_put_dec(&p, end, (u32)c);
       procfs_put_str(&p, end, "\nmodel name\t: YiYiYa ARMv8\n\n");
     }
+  } else if (node->inode == PROC_CMDLINE) {
+    /* 以 NUL 分隔的命令行：内核里只有进程名，终端补一个 NUL。
+     * Xorg 用它识别客户端（读不到只是日志噪音，但会走一条慢路径）。 */
+    thread_t* ct = thread_find_id((int)node->impl);
+    const char* nm = (ct != NULL && ct->name != NULL) ? ct->name : "unknown";
+    procfs_put_str(&p, end, nm);
+    procfs_put_char(&p, end, '\0');
   } else if (node->inode == PROC_STAT_PROC || node->inode == PROC_STAT_TID) {
     thread_t* t = thread_find_id((int)node->impl);
     if (t == NULL) {
@@ -2351,6 +2376,9 @@ static vnode_t* procfs_lookup(const char* path) {
   rest += n;
   if (kstrcmp(rest, "/stat") == 0) {
     return proc_make(path, V_FILE, PROC_STAT_PROC, pid);
+  }
+  if (kstrcmp(rest, "/cmdline") == 0) {
+    return proc_make(path, V_FILE, PROC_CMDLINE, pid);
   }
   if (kstrcmp(rest, "/task") == 0) {
     return proc_make(path, V_DIRECTORY, PROC_STAT_TID, pid);

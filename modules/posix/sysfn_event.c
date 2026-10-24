@@ -217,24 +217,21 @@ int sys_epoll_ctl(int epfd, int op, int fd, void* ev) {
   if (ep == NULL) {
     return -9; /* -EBADF */
   }
-  if (op == 3 /* EPOLL_CTL_DEL */) {
-    /* 【特例】Xorg 建好监听 fd 后紧跟一次 DEL 把它摘掉（ospoll 的 remove 被
-     * 调到），导致主循环的 epoll 集合为空、永不 accept —— 客户端连上来只会
-     * 挂在挂起队列里，X 客户端全部 "unable to open display"。
-     * 其它 fd 的 DEL 照常执行（否则会留下已释放的 osfd 指针，Xorg 主线程在
-     * dispatch 时拿野指针当 data.ptr 用，实测 data abort 退出）。 */
+  /* 【常量必须与 Linux 一致】EPOLL_CTL_ADD=1、EPOLL_CTL_DEL=2、
+   * EPOLL_CTL_MOD=3。旧代码把 DEL/MOD 写反（op==2 当 MOD、op==3 当 DEL），
+   * 于是 Xorg 对"刚 accept 的连接"做 MOD 时被当成 DEL 摘出集合 ⇒ 连接被
+   * 遗忘，客户端永远收不到 setup 回复（xsetroot 在 ppoll/recvfrom 上空转
+   * 烧 45% CPU）。之前给监听 fd 加的"DEL 保留"特例正是这个错位的副作用，
+   * 现已一并去掉。 */
+  if (op == 2 /* EPOLL_CTL_DEL */) {
     for (i = 0; i < EPOLL_MAX_ITEMS; i++) {
       if (ep->items[i].used && ep->items[i].fd == fd) {
-        if (unix_fd_is_listener(fd)) {
-          log_error("EPCTL-DEL-KEEP-LISTEN fd=%d\n", fd);
-          return 0;
-        }
         ep->items[i].used = 0;
         ep->nitems--;
         return 0;
       }
     }
-    return 2; /* -ENOENT 的绝对值 */
+    return -2; /* -ENOENT：syscall 约定是负 errno（返回 +2 时 libc 当成成功值） */
   }
   if (ev != NULL && sys_copy_from_user(&kev, ev, sizeof(kev)) < 0) {
     return -14;
@@ -250,7 +247,7 @@ int sys_epoll_ctl(int epfd, int op, int fd, void* ev) {
                 (u32)raw[3], (u32)raw[4], (u32)raw[5]);
     }
   }
-  if (op == 2 /* EPOLL_CTL_MOD */) {
+  if (op == 3 /* EPOLL_CTL_MOD */) {
     for (i = 0; i < EPOLL_MAX_ITEMS; i++) {
       if (ep->items[i].used && ep->items[i].fd == fd) {
         ep->items[i].events = kev.events;
@@ -258,7 +255,7 @@ int sys_epoll_ctl(int epfd, int op, int fd, void* ev) {
         return 0;
       }
     }
-    return 2;
+    return -2; /* -ENOENT */
   }
   if (op == 1 /* EPOLL_CTL_ADD */) {
     if (ep->nitems >= EPOLL_MAX_ITEMS) {
@@ -311,27 +308,47 @@ int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
   }
   int ready = 0;
   int i;
-  (void)sigmask;
   (void)sigsetsize;
   if (ep == NULL) {
-    return -9;
+    /* fd 不存在 ⇒ EBADF；fd 存在但不是 epoll ⇒ EINVAL（Linux 语义，
+     * LTP epoll_wait03 逐条校验这两条）。 */
+    return (thread_find_fd_id(thread_current(), epfd) == NULL) ? -9 : -22;
   }
   if (events == NULL || maxevents <= 0) {
     return -22;
   }
+  /* 用户指针必须可访问：events 可写（EFAULT），sigmask 可读（EFAULT）。
+   * 探针/越界访问在用户态会变成内核 fault，这里提前用 copy 校验。 */
   {
-    /* 【诊断·可删】wait 时把集合内容打出来：监听 fd 在不在、就绪判定 */
+    u8 probe = 0;
+    if (sys_copy_to_user(events, &probe, 1) < 0) {
+      return -14;
+    }
+    if (sigmask != NULL) {
+      u8 sm[16];
+      u32 n = (sigsetsize > 0 && sigsetsize <= sizeof(sm)) ? (u32)sigsetsize : 8;
+      if (sys_copy_from_user(sm, sigmask, n) < 0) {
+        return -14;
+      }
+    }
+  }
+  {
+    /* 【诊断·可删】只在真的检测到"就绪项"时打印，定位监听 fd 有没有被
+     * 判成可读（若打了却仍不 accept，问题在服务端 accept 侧）。 */
     static int epw_dbg = 0;
-    if (epw_dbg++ < 12) {
+    if (epw_dbg < 100) {
       thread_t* c = thread_current();
       for (i = 0; i < EPOLL_MAX_ITEMS; i++) {
         if (!ep->items[i].used) {
           continue;
         }
-        log_error("EPWAIT tid=%d n=%d fd=%d ev=%x listen=%d pend_r=%d\n",
-                  c != NULL ? (int)c->id : -1, ep->nitems, ep->items[i].fd,
-                  ep->items[i].events, unix_fd_is_listener(ep->items[i].fd),
-                  sys_fd_ready(ep->items[i].fd, 1, 0));
+        if (sys_fd_ready(ep->items[i].fd, 1, 0)) {
+          epw_dbg++;
+          log_error("EPWAIT-RDY tid=%d fd=%d ev=%x listen=%d\n",
+                    c != NULL ? (int)c->id : -1, ep->items[i].fd,
+                    ep->items[i].events, unix_fd_is_listener(ep->items[i].fd));
+          break;
+        }
       }
     }
   }
@@ -382,6 +399,27 @@ int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
     schedule_sleep(timeout > 1000 ? 1000 : timeout);
   }
   return 0;
+}
+
+/* epoll_pwait2(441)：与 epoll_pwait 相同，但超时是 timespec（纳秒精度）。
+ * glibc 2.35+ 的 epoll_wait/epoll_pwait 优先走它：缺失时每次调用都要先吃
+ * 一次 ENOSYS 再 fallback，errno 还会残留在调用方（观察到 Xorg 的
+ * epoll_wait 因此拿不到事件）。超时 ms 向上取整，避免"早醒"。 */
+int sys_epoll_pwait2(int epfd, void* events, int maxevents, void* tmo,
+                     void* sigmask, size_t sigsetsize) {
+  int timeout = -1;
+  if (tmo != NULL) {
+    i64 sec64 = *(volatile i64*)tmo;
+    i64 nsec64 = *(volatile i64*)((char*)tmo + 8);
+    if (sec64 < 0 || nsec64 < 0 || nsec64 >= 1000000000ll) {
+      return -22; /* EINVAL，Linux 对负值/越界 nsec 的行为 */
+    }
+    timeout = (int)(sec64 * 1000ll + (nsec64 + 999999ll) / 1000000ll);
+    if (timeout < 0) {
+      timeout = 0;
+    }
+  }
+  return sys_epoll_pwait(epfd, events, maxevents, timeout, sigmask, sigsetsize);
 }
 
 /* ===================== inotify(26/27/28) ===================== */

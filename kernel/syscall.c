@@ -23,6 +23,37 @@ static int sys_trace_ret[SYS_TRACE_N];
 static u32 sys_trace_tid[SYS_TRACE_N];
 static u32 sys_trace_idx = 0;
 
+/* 【诊断·可删】每线程最近 8 次系统调用（ps 里打印）。
+ * 动机：Xorg 每秒只调一次 clock_gettime 就睡，last_no 只能看到最后一次，
+ * 看不到"它是被哪个 syscall 睡下去的"——把最近几次连号打出来即可判断。 */
+#define SYS_RECENT_N 8
+#define SYS_RECENT_TIDS 64
+static u32 sys_recent_no[SYS_RECENT_TIDS][SYS_RECENT_N];
+static u32 sys_recent_pos[SYS_RECENT_TIDS];
+
+void sys_recent_record(int tid, u32 no) {
+  u32 p;
+  if (tid < 0 || tid >= SYS_RECENT_TIDS) {
+    return;
+  }
+  p = sys_recent_pos[tid] % SYS_RECENT_N;
+  sys_recent_no[tid][p] = no;
+  sys_recent_pos[tid] = (p + 1) % SYS_RECENT_N;
+}
+
+void sys_recent_print(int tid) {
+  int i;
+  if (tid < 0 || tid >= SYS_RECENT_TIDS) {
+    return;
+  }
+  kprintf("   calls tid=%d:", tid);
+  for (i = 0; i < SYS_RECENT_N; i++) {
+    u32 p = (sys_recent_pos[tid] + i) % SYS_RECENT_N;
+    kprintf(" %d", (int)sys_recent_no[tid][p]);
+  }
+  kprintf("\n");
+}
+
 void sys_trace_dump(void) {
   u32 i;
   log_info("syscall trace (last %d, oldest first):\n", SYS_TRACE_N);
@@ -58,7 +89,12 @@ void* do_syscall(interrupt_context_t* ic) {
   {
     thread_t* t = thread_current();
     int tid = (t != NULL) ? (int)t->id : -1;
-    if (no == 59 /* aarch64 pipe2 */) {
+    /* 【诊断·可删】per-tid 最近调用序列（ps 里打印，见 sys_recent_print） */
+    sys_recent_record(tid, (u32)no);
+    /* 【诊断·可删】pipe2 自动 arm 已关闭：Xorg 主循环每次 pipe2 都会触发，
+     * 每秒刷 80 行串口日志，把真正有用的探针行冲掉（UXCONN/EPWAIT 疑似因此
+     * 丢行）。需要看某个进程的调用序列时，由 unix_connect 等位置显式 arm。 */
+    if (0 && no == 59 /* aarch64 pipe2 */) {
       sys_probe_tid = tid;
       sys_probe_left = 40;
       log_error("PROBE pipe2 by tid=%d\n", tid);
