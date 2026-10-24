@@ -67,6 +67,36 @@ u32 pip_write(vnode_t* node, u32 offset, u32 size, u8* buffer) {
   return buffer_write(pipe->buffer, buffer, size);
 }
 
+/* 【pipe 的 ioctl】此前 op->ioctl 是 NULL，vioctl 只打一行
+ *   vioctl ioctl is null node=pipe cmd=...
+ * 然后返回 0 —— 调用方以为"查询成功、但可读字节数是 0"。
+ * 用户态（X server 的 Xtrans、glibc 的 popen/stdio 路径等）常用
+ * FIONREAD 判断管道里还有没有数据，恒返回 0 会让它们提前收工。
+ * 这里至少把这三个实现掉：FIONREAD（可读字节数）、FIONBIO（本实现恒非
+ * 阻塞）、TCFLSH（清空缓冲）。 */
+u32 pip_ioctl(vnode_t* node, u32 cmd, void* args) {
+  pipe_t* pipe = node->device;
+  if (pipe == NULL || pipe->buffer == NULL || pipe->buffer->buffer == NULL) {
+    return (u32)-1;
+  }
+  switch (cmd) {
+    case 0x541B:       /* FIONREAD（Linux aarch64/通用形式） */
+    case 0x40046603:   /* FIONREAD 的 _IOR('f', 3, int) 形式 */
+      if (args != NULL) {
+        *(int*)args = (int)cqueue_count(pipe->buffer->buffer);
+      }
+      return 0;
+    case 0x5421: /* FIONBIO：本内核的 pipe 本来就是非阻塞的 */
+      return 0;
+    case 0x540B: /* TCFLSH：丢弃缓冲区里未读的数据 */
+      cqueue_clear(pipe->buffer->buffer);
+      return 0;
+    default:
+      log_debug("pipe ioctl unsupported cmd=%x\n", cmd);
+      return 0;
+  }
+}
+
 vnode_t* pipe_make(u32 size) {
   vnode_t* node = vfs_create_node("pipe", 0);
   node->device = pipe_create(size);
@@ -74,5 +104,6 @@ vnode_t* pipe_make(u32 size) {
   node->op = op;
   op->read = pip_read;
   op->write = pip_write;
+  op->ioctl = pip_ioctl;
   return node;
 }
