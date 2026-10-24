@@ -58,6 +58,9 @@ struct unix_sock {
   struct unix_ring* rx;
   struct unix_ring* tx;
   struct unix_sock* peer;
+  /* SO_PEERCRED：对端 pid（Xorg 用它判断本机客户端身份，拿不到就丢弃连接） */
+  int owner_pid; /* 本端所属线程（bind/listen 者） */
+  int peer_pid;  /* connect 时对端 pid */
   /* 监听者在 accept 前挂起的连接：单链 + 计数（backlog 限流） */
   struct unix_sock* pend_next;
   struct unix_sock* pend_head;
@@ -463,6 +466,10 @@ int unix_socket(int type, int protocol) {
   if (sk == NULL) {
     return -12;
   }
+  {
+    thread_t* t = thread_current();
+    sk->owner_pid = (t != NULL) ? (int)t->id : 0; /* 监听者 pid（SO_PEERCRED） */
+  }
   fd = unix_install(sk, "/dev/unix");
   if (fd < 0) {
     unix_discard(sk);
@@ -570,6 +577,13 @@ int unix_connect(int fd, const void* addr, u32 addrlen) {
   sk->raddr_len = keylen;
   kmemcpy(srv->laddr, key, keylen);
   srv->laddr_len = keylen;
+  /* SO_PEERCRED 双向 pid：服务端看到客户端 pid，客户端看到监听者 pid */
+  {
+    thread_t* t = thread_current();
+    srv->owner_pid = ls->owner_pid;
+    srv->peer_pid = (t != NULL) ? (int)t->id : 0;
+    sk->peer_pid = ls->owner_pid;
+  }
   if (sk->laddr_len > 0) {
     kmemcpy(srv->raddr, sk->laddr, sk->laddr_len);
     srv->raddr_len = sk->laddr_len;
@@ -739,6 +753,30 @@ int unix_getsockopt(int fd, int level, int optname, void* optval,
   (void)level;
   if (sk == NULL) {
     return -88;
+  }
+  if (optname == 17 /* SO_PEERCRED：struct ucred {pid, uid, gid} 12 字节 */) {
+    struct {
+      int pid;
+      u32 uid;
+      u32 gid;
+    } cred;
+    if (optval == NULL || optlen == NULL) {
+      return -22;
+    }
+    if (sys_copy_from_user(&cap, optlen, sizeof(cap)) < 0) {
+      return -14;
+    }
+    cred.pid = sk->peer_pid;
+    cred.uid = 0;
+    cred.gid = 0;
+    if (cap > sizeof(cred)) {
+      cap = sizeof(cred);
+    }
+    if (sys_copy_to_user(optval, &cred, cap) < 0) {
+      return -14;
+    }
+    sys_copy_to_user(optlen, &cap, sizeof(cap));
+    return 0;
   }
   switch (optname) {
     case 3: /* SO_TYPE */

@@ -424,6 +424,18 @@ int page_swap_swapback_vm(void* vm) {
   return (page_swap_ops != NULL) ? page_swap_ops->swapback_vm(vm) : 0;
 }
 
+void page_swap_stat(u64* total_bytes, u64* used_bytes) {
+  if (total_bytes != NULL) {
+    *total_bytes = 0;
+  }
+  if (used_bytes != NULL) {
+    *used_bytes = 0;
+  }
+  if (page_swap_ops != NULL && page_swap_ops->stat != NULL) {
+    page_swap_ops->stat(total_bytes, used_bytes);
+  }
+}
+
 void page_init() {
 #ifdef VM_ENABLE
   int cpu = cpu_get_id();

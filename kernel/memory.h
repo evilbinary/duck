@@ -194,6 +194,7 @@ typedef struct page_swap_ops {
   int (*reclaim)(u32 npages, u32 skip_pa); /* 页池不足时换出，返回换出页数 */
   int (*read_page)(u32 slot, void* page);  /* 换入：读一个槽的整页，0=成功 */
   int (*swapback_vm)(void* vm);            /* fork 前：把 vm 全部换出页换回内存 */
+  void (*stat)(u64* total_bytes, u64* used_bytes); /* 容量/已用（/proc/meminfo 用） */
 } page_swap_ops_t;
 void page_swap_ops_register(const page_swap_ops_t* ops);
 
@@ -203,6 +204,8 @@ void page_swap_drop_vm(void* vm);
 int page_swap_reclaim(u32 npages, u32 skip_pa);
 int page_swap_read_page(u32 slot, void* page);
 int page_swap_swapback_vm(void* vm);
+/* 换出区总容量/已用字节数；未挂 swap 时两者都为 0。 */
+void page_swap_stat(u64* total_bytes, u64* used_bytes);
 
 /* valloc 失败后一次回收的目标页数：一次多换几页摊薄 IO 次数 */
 #define PAGE_SWAP_RECLAIM_BATCH 8

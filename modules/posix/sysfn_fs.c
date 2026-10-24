@@ -1064,6 +1064,10 @@ size_t sys_write(u32 fd, void* buf, size_t nbytes) {
   if (tmp_buf != NULL) {
     kfree(tmp_buf);
   }
+  /* 同 sys_read：-EAGAIN/-EPIPE 必须符号扩展，否则用户态看到的是天文数字 */
+  if ((int)ret < 0) {
+    return (size_t)(long)(int)ret;
+  }
   if (ret > 0) {
     f->offset += ret;
   }
@@ -1136,6 +1140,16 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
                 current->name != NULL ? current->name : "?", (u32)pc,
                 (u32)lr);
     }
+  }
+  /* 【负值必须符号扩展】vread 的 -EAGAIN/-EPIPE 是 u32 形态（0xFFFFFFF5），
+   * 本函数返回 size_t，直接返回它会被 musl 当成"成功读了 4GB"：
+   * __syscall_ret 只把 >= -4096UL 的值翻成 errno，0xFFFFFFF5 远小于它。
+   * Xorg 的 unix socket 非阻塞读因此拿到天文数字后自旋/踩内存。 */
+  if ((int)ret < 0) {
+    if (tmp_buf != NULL) {
+      kfree(tmp_buf);
+    }
+    return (size_t)(long)(int)ret;
   }
   if (ret > 0 && tmp_buf != NULL && buf != NULL) {
     if (sys_copy_to_user(buf, tmp_buf, ret) < 0) {
@@ -2038,6 +2052,10 @@ extern thread_t* schedulable_head_thread[MAX_CPU];
 #define PROC_STAT_TID 2
 #define PROC_UPTIME 3
 #define PROC_PID_MAX 4
+#define PROC_MEMINFO 5
+#define PROC_FILESYSTEMS 6
+#define PROC_MOUNTS 7
+#define PROC_CPUINFO 8
 
 static u32 proc_file_read(vnode_t* node, u32 offset, u32 size, u8* buf);
 static u32 proc_task_readdir(vnode_t* node, vdirent_t* dirent, u32* offset,
@@ -2127,6 +2145,56 @@ static int proc_generate(vnode_t* node, char* out, int outsz) {
     procfs_put_str(&p, end, ".00\n");
   } else if (node->inode == PROC_PID_MAX) {
     procfs_put_str(&p, end, "4194304\n");
+  } else if (node->inode == PROC_MEMINFO) {
+    /* 全部取自内核实时状态（不写死）：
+     *   MemTotal/MemFree 页池总量与剩余（mm_get_total/mm_get_free，字节）；
+     *   Buffers 内核堆已分配、Cached 用户页已映射（memory_info 的计数）；
+     *   SwapTotal/SwapFree 换出区容量与已用（page_swap_stat，未挂 swap 为 0）。
+     * LTP 的 tst_memutils 启动即读这个文件算可用内存（缺文件直接 TBROK）。 */
+    extern ullong mm_get_total(void);
+    extern ullong mm_get_free(void);
+    extern memory_t* memory_info(void);
+    extern void page_swap_stat(u64* total_bytes, u64* used_bytes);
+    memory_t* mem = memory_info();
+    u64 swap_total = 0;
+    u64 swap_used = 0;
+    u64 total_kb64 = mm_get_total() / 1024ull;
+    u64 free_kb64 = mm_get_free() / 1024ull;
+    u64 kernel_kb64 = (mem != NULL) ? (u64)mem->kernel_used / 1024ull : 0;
+    u64 user_kb64 = (mem != NULL) ? (u64)mem->user_used / 1024ull : 0;
+    u64 swap_total_kb64;
+    u64 swap_free_kb64;
+    page_swap_stat(&swap_total, &swap_used);
+    swap_total_kb64 = swap_total / 1024ull;
+    swap_free_kb64 = (swap_total > swap_used) ? (swap_total - swap_used) / 1024ull
+                                             : 0;
+    procfs_put_str(&p, end, "MemTotal:       ");
+    procfs_put_dec(&p, end, (u32)total_kb64);
+    procfs_put_str(&p, end, " kB\nMemFree:        ");
+    procfs_put_dec(&p, end, (u32)free_kb64);
+    procfs_put_str(&p, end, " kB\nMemAvailable:   ");
+    procfs_put_dec(&p, end, (u32)free_kb64);
+    procfs_put_str(&p, end, " kB\nBuffers:        ");
+    procfs_put_dec(&p, end, (u32)kernel_kb64);
+    procfs_put_str(&p, end, " kB\nCached:         ");
+    procfs_put_dec(&p, end, (u32)user_kb64);
+    procfs_put_str(&p, end, " kB\nSwapTotal:      ");
+    procfs_put_dec(&p, end, (u32)swap_total_kb64);
+    procfs_put_str(&p, end, " kB\nSwapFree:       ");
+    procfs_put_dec(&p, end, (u32)swap_free_kb64);
+    procfs_put_str(&p, end, " kB\n");
+  } else if (node->inode == PROC_FILESYSTEMS) {
+    procfs_put_str(&p, end, "\tnodev\n\tproc\n\tsysfs\n\tvfat\n");
+  } else if (node->inode == PROC_MOUNTS) {
+    procfs_put_str(&p, end, "/dev/root / vfat rw,relatime 0 0\n");
+  } else if (node->inode == PROC_CPUINFO) {
+    /* 每核一段（tst_virt 等只需要文件可读并扫关键字；核数取自 MAX_CPU） */
+    int c;
+    for (c = 0; c < MAX_CPU; c++) {
+      procfs_put_str(&p, end, "processor\t: ");
+      procfs_put_dec(&p, end, (u32)c);
+      procfs_put_str(&p, end, "\nmodel name\t: YiYiYa ARMv8\n\n");
+    }
   } else if (node->inode == PROC_STAT_PROC || node->inode == PROC_STAT_TID) {
     thread_t* t = thread_find_id((int)node->impl);
     if (t == NULL) {
@@ -2140,7 +2208,10 @@ static int proc_generate(vnode_t* node, char* out, int outsz) {
     procfs_put_char(&p, end, proc_state_char(t));
     procfs_put_char(&p, end, ' ');
     procfs_put_dec(&p, end, (u32)t->pid);
-    for (int i = 0; i < 36; i++) {
+    /* Linux 的 stat 共 52 个字段（pid..exit_code）：前 4 个已给真实值，
+     * 其余补 0。字段数不够时 LTP 的 safe_file_scanf 会报
+     * "The FILE '/proc/<pid>/stat' ended prematurely"。 */
+    for (int i = 0; i < 48; i++) {
       procfs_put_str(&p, end, " 0");
     }
     procfs_put_char(&p, end, '\n');
@@ -2152,7 +2223,7 @@ static int proc_generate(vnode_t* node, char* out, int outsz) {
 }
 
 static u32 proc_file_read(vnode_t* node, u32 offset, u32 size, u8* buf) {
-  char tmp[256];
+  char tmp[512];
   int len = proc_generate(node, tmp, sizeof(tmp));
   if (len < 0) {
     return 0;
@@ -2244,6 +2315,18 @@ static vnode_t* procfs_lookup(const char* path) {
   }
   if (kstrcmp(rest, "sys/kernel/pid_max") == 0) {
     return proc_make(path, V_FILE, PROC_PID_MAX, 0);
+  }
+  if (kstrcmp(rest, "meminfo") == 0) {
+    return proc_make(path, V_FILE, PROC_MEMINFO, 0);
+  }
+  if (kstrcmp(rest, "filesystems") == 0) {
+    return proc_make(path, V_FILE, PROC_FILESYSTEMS, 0);
+  }
+  if (kstrcmp(rest, "mounts") == 0) {
+    return proc_make(path, V_FILE, PROC_MOUNTS, 0);
+  }
+  if (kstrcmp(rest, "cpuinfo") == 0) {
+    return proc_make(path, V_FILE, PROC_CPUINFO, 0);
   }
   /* /proc/self/... → /proc/<pid>/... 递归一次 */
   if (kstrncmp(rest, "self/", 5) == 0) {

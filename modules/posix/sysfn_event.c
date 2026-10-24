@@ -198,14 +198,20 @@ int sys_epoll_ctl(int epfd, int op, int fd, void* ev) {
   struct epoll_k* ep = (struct epoll_k*)evfd_priv(epfd, EPOLL_K_MAGIC);
   struct epoll_event_k kev;
   int i;
-  /* 【诊断·可删】看 ADD/DEL 到底有没有进来、fd 是不是对的 */
+  /* 【诊断·可删】fd>=8 全量打印（不设上限，重连/监听相关都在这个区间）；
+   * DEL 额外打用户态 pc/lr，用来定位是谁把连接从集合里摘掉 */
   {
-    static int ec_dbg = 0;
     thread_t* c = thread_current();
-    if (ec_dbg++ < 30) {
-      log_error("EPCTL tid=%d epfd=%d op=%d fd=%d ep=%s\n",
+    if (fd >= 8) {
+      u64 pc = (c != NULL && c->ctx != NULL && c->ctx->ic != NULL)
+                   ? c->ctx->ic->pc
+                   : 0;
+      u64 lr = (c != NULL && c->ctx != NULL && c->ctx->ic != NULL)
+                   ? c->ctx->ic->lr
+                   : 0;
+      log_error("EPCTL tid=%d epfd=%d op=%d fd=%d ep=%s pc=%x lr=%x\n",
                 c != NULL ? (int)c->id : -1, epfd, op, fd,
-                ep != NULL ? "ok" : "BAD");
+                ep != NULL ? "ok" : "BAD", (u32)pc, (u32)lr);
     }
   }
   if (ep == NULL) {
@@ -283,8 +289,26 @@ int sys_epoll_ctl(int epfd, int op, int fd, void* ev) {
  * pipe/本机 socket 按真实缓冲状态，普通文件/网络 socket 仍是"存在即就绪"。 */
 int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
                     void* sigmask, size_t sigsetsize) {
-  struct epoll_k* ep = (struct epoll_k*)evfd_priv(epfd, EPOLL_K_MAGIC);
+  struct epoll_k* ep;
   struct epoll_event_k out;
+  /* 【诊断·可删】入口参数（含 ep 指针原值）：EPWAIT 探针此前一次都没打印，
+   * 需要区分是"根本没进函数"还是"入口就 early-return"。 */
+  {
+    static int epw_in = 0;
+    thread_t* c0 = thread_current();
+    vnode_t* n0 = NULL;
+    fd_t* f0 = thread_find_fd_id(c0, epfd);
+    if (f0 != NULL) {
+      n0 = (vnode_t*)f0->data;
+    }
+    ep = (struct epoll_k*)evfd_priv(epfd, EPOLL_K_MAGIC);
+    if (epw_in++ < 30) {
+      log_error("EPWAIT-IN tid=%d epfd=%d ev=%x max=%d tmo=%d ep=%x magic=%x\n",
+                c0 != NULL ? (int)c0->id : -1, epfd, (u32)(uintptr_t)events,
+                maxevents, timeout, (u32)(uintptr_t)ep,
+                (n0 != NULL && n0->device != NULL) ? ((u32*)n0->device)[0] : 0);
+    }
+  }
   int ready = 0;
   int i;
   (void)sigmask;
@@ -294,6 +318,22 @@ int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
   }
   if (events == NULL || maxevents <= 0) {
     return -22;
+  }
+  {
+    /* 【诊断·可删】wait 时把集合内容打出来：监听 fd 在不在、就绪判定 */
+    static int epw_dbg = 0;
+    if (epw_dbg++ < 12) {
+      thread_t* c = thread_current();
+      for (i = 0; i < EPOLL_MAX_ITEMS; i++) {
+        if (!ep->items[i].used) {
+          continue;
+        }
+        log_error("EPWAIT tid=%d n=%d fd=%d ev=%x listen=%d pend_r=%d\n",
+                  c != NULL ? (int)c->id : -1, ep->nitems, ep->items[i].fd,
+                  ep->items[i].events, unix_fd_is_listener(ep->items[i].fd),
+                  sys_fd_ready(ep->items[i].fd, 1, 0));
+      }
+    }
   }
   for (i = 0; i < EPOLL_MAX_ITEMS && ready < maxevents; i++) {
     u32 want;

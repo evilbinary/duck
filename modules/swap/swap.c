@@ -726,6 +726,39 @@ void swap_conf_attach(void) {}
  *   1) 向内核注册换出/换入 hook（page_swap_ops，见 kernel/memory.h）；
  *   2) 登记 sysconf 回调，配置就绪时挂载 backing（swap_conf_attach）。
  * sysconf_apply 已跑过的情况下（异常时序）就地挂载一次兜底。 */
+/* /proc/meminfo 的 SwapTotal/SwapFree：容量 = 槽数 × 页大小，已用 =
+ * 位图里置位的槽数 × 页大小。没挂 swap（nslots/bitmap 为空）时全 0。 */
+static void swap_stat(u64* total_bytes, u64* used_bytes) {
+  u32 i;
+  u64 used_slots = 0;
+  if (total_bytes != NULL) {
+    *total_bytes = 0;
+  }
+  if (used_bytes != NULL) {
+    *used_bytes = 0;
+  }
+  if (swap_bk.nslots == 0 || swap_bk.used == NULL) {
+    return;
+  }
+  if (swap_lock_inited) {
+    rt_mutex_lock(&swap_lock);
+  }
+  for (i = 0; i < swap_bk.nslots; i++) {
+    if (swap_bit_test(i)) {
+      used_slots++;
+    }
+  }
+  if (swap_lock_inited) {
+    rt_mutex_unlock(&swap_lock);
+  }
+  if (total_bytes != NULL) {
+    *total_bytes = (u64)swap_bk.nslots * (u64)PAGE_SIZE;
+  }
+  if (used_bytes != NULL) {
+    *used_bytes = used_slots * (u64)PAGE_SIZE;
+  }
+}
+
 static const page_swap_ops_t swap_page_ops = {
     .lookup = swap_lookup,
     .forget = swap_forget,
@@ -733,6 +766,7 @@ static const page_swap_ops_t swap_page_ops = {
     .reclaim = swap_reclaim,
     .read_page = swap_read_page,
     .swapback_vm = swap_swapback_vm,
+    .stat = swap_stat,
 };
 
 int swap_init(void) {
