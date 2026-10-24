@@ -35,6 +35,16 @@
 #define MAX_FD_NUMBER 512
 #endif
 
+/* 描述符标志（fcntl F_GETFD/F_SETFD），与 Linux 取值一致 */
+#ifndef FD_CLOEXEC
+#define FD_CLOEXEC 1
+#endif
+
+/* fcntl 状态标志（F_GETFL/F_SETFL 关心的位）。fd_t.flags 里同时存
+ * FD_CLOEXEC(bit0)，而 O_WRONLY 也是 1 ⇒ 取状态标志时按这个掩码过滤，
+ * 免得把描述符标志当成访问模式返回。 */
+#define FD_STATUS_MASK (O_NONBLOCK | O_APPEND)
+
 typedef struct fd {
   u32 id;
   u32 type;  // file ,socket, pipe dir
@@ -42,7 +52,7 @@ typedef struct fd {
   u32 offset;
   u8 *name;
   u32 use_count;
-  u32 flags;
+  u32 flags; /* FD_CLOEXEC / O_NONBLOCK / O_APPEND */
 } fd_t;
 
 

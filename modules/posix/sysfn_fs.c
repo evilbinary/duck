@@ -1619,28 +1619,27 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
       log_debug("sys fcntl64 not found fd %d\n", fd);
       return -1;
     }
-    vnode_t* node = findfd->data;
-    if ((cmd == F_GETFL || cmd == F_SETFL) && node == NULL) {
-      log_error("sys fcntl64 node is null tid %d fd %d name %s ptr %x cmd %x\n",
-                current != NULL ? current->id : -1, fd,
-                findfd->name != NULL ? findfd->name : 0, findfd, cmd);
-      return -1;
-    }
+    /* 【fcntl 命令不能转发给设备 ioctl】两者命令号空间是重叠的：
+     * F_GETFL=3、F_SETFL=4 送进 vioctl 后会被设备当成自己的命令号
+     * （pipe 实测打印 "pipe ioctl unsupported cmd=3"）。fcntl 的
+     * 描述符标志/状态标志本来就属于 fd 层，这里自己保存即可。 */
     if (cmd == F_SETFD) {
-      findfd->flags = (u32)(uintptr_t)arg;
-      return fd;
+      findfd->flags = (findfd->flags & ~(u32)FD_CLOEXEC) |
+                      ((u32)(uintptr_t)arg & (u32)FD_CLOEXEC);
+      return 0;
     } else if (cmd == F_DUPFD) {
       u32 ret = sys_dup(fd);
-  
+
       return ret;
     } else if (cmd == F_GETFD) {
-      return findfd->flags;
+      return (int)(findfd->flags & (u32)FD_CLOEXEC);
     } else if (cmd == F_GETFL) {
-      u32 ret = vioctl(node, cmd, arg);
-      return ret;
+      return (int)(findfd->flags & (u32)FD_STATUS_MASK);
     } else if (cmd == F_SETFL) {
-      u32 ret = vioctl(node, cmd, arg);
-      return ret;
+      /* 只改 fd 层能表达的状态位；access mode 由 open 决定，不在这里动。 */
+      findfd->flags = (findfd->flags & ~(u32)FD_STATUS_MASK) |
+                      ((u32)(uintptr_t)arg & (u32)FD_STATUS_MASK);
+      return 0;
     } else {
       log_error("not support cmd %d\n", cmd);
     }
