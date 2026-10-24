@@ -97,6 +97,10 @@ u32 vwrite(vnode_t *node, u32 offset, u32 size, u8 *buffer);
 u32 vopen(vnode_t *node, u32 mode);
 u32 vclose(vnode_t *node);
 u32 vreaddir(vnode_t *node, vdirent_t *dirent, u32* offset, u32 count);
+/* 直接在父节点的 child 表里按名字查（不走文件系统 op）。
+ * 必须在这里声明：vfs.c 里 vunlink 会用它做"删后清缓存"，缺声明时编译器
+ * 按隐式 int 处理返回值 ⇒ 指针被截断，一解引用就 data abort。 */
+vnode_t *vfs_find_child(vnode_t *parent, char *name);
 vnode_t *vfinddir(vnode_t *node, char *name);
 vnode_t *vfind(vnode_t *node, char *name);
 int vmkdir(vnode_t *dir, const char *name, u32 mode);

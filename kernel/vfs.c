@@ -10,6 +10,10 @@
 #include "preempt.h"
 #include "rt_mutex.h"
 #include "thread.h"
+/* 【必须显式包含】少了它 kstrtok 是隐式声明（返回 int）⇒ 返回的 char* 被
+ * 截断成 32 位再符号扩展成 0xffffffff_xxxxxxxx，路径解析里一解引用就 data
+ * abort（现场 FAR=0xffffffffb00f2c28 就是这个形态）。 */
+#include "kernel/string.h"
 
 #define log_debug 
 
@@ -226,6 +230,20 @@ int vunlink(vnode_t *dir, const char *name) {
   vfs_lock();
   ret = dir->op->unlink(dir, name);
   vfs_unlock();
+  if (ret >= 0) {
+    /* 【删完必须清缓存】文件系统删掉了目录项，但 vfs 子节点表里那个 vnode
+     * 还挂着 ⇒ 之后 vfs_find_child/ vfs_find 仍能"找到"已删除的文件。
+     * Xorg 的锁文件就是被这个坑住：link 判存在（缓存命中）→ 去读却已经
+     * 没有（FAT 上已删）⇒ "Can't read lock file /tmp/.X0-lock" 直接退出。
+     * 同名节点可能有多份（历史遗留），循环摘干净，上限防死循环。 */
+    for (int guard = 0; guard < 8; guard++) {
+      vnode_t *stale = vfs_find_child(dir, (char *)name);
+      if (stale == NULL) {
+        break;
+      }
+      vfs_remove_child(dir, stale);
+    }
+  }
   return ret;
 }
 
@@ -292,20 +310,22 @@ void vfs_add_child(vnode_t *parent, vnode_t *child) {
 }
 
 void vfs_remove_child(vnode_t *parent, vnode_t *child) {
-  vnode_t *find_one = NULL;
   vfs_lock();
-  for (int i = 0; i < parent->child_number; i++) {
+  for (size_t i = 0; i < parent->child_number; i++) {
     vnode_t *n = parent->child[i];
     if (n == NULL) continue;
     if (n == child) {
-      find_one = n;
-      for (int j = i; (j + 1) < parent->child_number; j++) {
+      for (size_t j = i; (j + 1) < parent->child_number; j++) {
         parent->child[j] = parent->child[j + 1];
       }
+      /* 【必须递减】原实现只左移不记账：child_number 不变 ⇒ 末尾残留一个
+       * 重复指针，父目录遍历时同一个节点会被访问两次；而且"摘除"看起来
+       * 成功了，实际 vfs_find_child 仍能命中它后面的元素。 */
+      parent->child_number--;
+      parent->child[parent->child_number] = NULL;
       break;
     }
   }
-  (void)find_one;
   vfs_unlock();
 }
 
