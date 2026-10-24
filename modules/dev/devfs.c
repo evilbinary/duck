@@ -28,6 +28,42 @@ static vnode_t* devfs_stdout;
 static vnode_t* devfs_stderr;
 static vnode_t* devfs_console;
 
+/* ---------------- /dev/null、/dev/zero、/dev/full ----------------
+ * 这三个"零设备"没有硬件对应，也不需要 device_t：直接给节点算子。
+ * 语义按 POSIX/ Linux：
+ *   null 读 EOF、写丢弃；zero 读全 0、写丢弃；full 读全 0、写 ENOSPC。
+ * 以前 null 绑的是 DEVICE_NULL（没有设备注册，device 为 NULL ⇒ 读写都返回
+ * 0），zero/full 则完全不存在，POSIX 层只能按路径打特判。节点归到 devfs 后
+ * open/stat/readdir 走同一条 VFS 路径，各平台一致。 */
+#define DEVFS_NULL 0
+#define DEVFS_ZERO 1
+#define DEVFS_FULL 2
+
+static u32 devfs_sink_read(vnode_t* node, u32 offset, u32 size, u8* buf) {
+  (void)offset;
+  if ((u32)node->impl == DEVFS_NULL) {
+    return 0; /* EOF */
+  }
+  if (buf != NULL && size > 0) {
+    kmemset(buf, 0, size);
+  }
+  return size;
+}
+
+static u32 devfs_sink_write(vnode_t* node, u32 offset, u32 size, u8* buf) {
+  (void)offset;
+  (void)buf;
+  if ((u32)node->impl == DEVFS_FULL) {
+    return (u32)-28; /* -ENOSPC */
+  }
+  return size; /* 丢弃，报告写入长度 */
+}
+
+static voperator_t devfs_sink_ops = {
+    .read = devfs_sink_read,
+    .write = devfs_sink_write,
+};
+
 static device_t* devfs_pick_output_device(void) {
   device_t* dev = device_find(DEVICE_SERIAL);
   if (dev != NULL) {
@@ -187,11 +223,16 @@ int devfs_init(void) {
   stdout->op = &device_operator;
   stderr->op = &device_operator;
 
-  //null
-  vnode_t *null = vfs_create_node("null", V_FILE | V_BLOCKDEVICE);
-  null->device = device_find(DEVICE_NULL);
-  null->op = &device_operator;
-  vfs_mount(NULL, "/dev", null);
+  /* null / zero / full：算子见 file 头部的 devfs_sink_* */
+  {
+    static const char* sink_names[] = {"null", "zero", "full"};
+    for (u32 i = 0; i < sizeof(sink_names) / sizeof(sink_names[0]); i++) {
+      vnode_t* sink = vfs_create_node((char*)sink_names[i], V_FILE);
+      sink->impl = i; /* DEVFS_NULL / DEVFS_ZERO / DEVFS_FULL */
+      sink->op = &devfs_sink_ops;
+      vfs_mount(NULL, "/dev", sink);
+    }
+  }
 
   /* /dev/console：POSIX 里的"系统控制台"。X server 默认把日志/致命错误往它
    * 上面写（LogInit 第一选择就是 /dev/console）。此前这个节点不存在，而
