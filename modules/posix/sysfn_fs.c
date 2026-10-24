@@ -330,7 +330,11 @@ static u32 sys_open_kpath(const char* name, int attr) {
     }
     if (file == NULL) {
       log_error("sys open file %s error, attr %x \n", name, attr);
-      return -1;
+      /* 【必须回 -ENOENT，不能一律 -1】-1 会被 musl 翻成 EPERM：xtrans 的
+       * trans_mkdir 靠 "stat 失败且 errno==ENOENT" 才肯继续建 /tmp/.X11-unix，
+       * 回 EPERM 直接放弃 ⇒ X 服务器没有 unix 监听 fd，客户端全部
+       * "unable to open display"（stat/access 都经 sys_open，一并修好）。 */
+      return -2; /* -ENOENT */
     }
 
     if (fat_node_path(file, path_name, sizeof(path_name)) < 0) {
@@ -978,13 +982,27 @@ int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
     fds[i].revents = got;
   }
   if (ready == 0) {
-    /* 一个都没就绪：按超时睡，醒来返回 0（本内核不能在内核态阻塞）。 */
+    /* 一个都没就绪：按超时睡（本内核不能在内核态阻塞）。 */
+    u64 ms = 1;
     if (tmo != NULL) {
-      u64 ms = (tmo_ms == 0) ? 1 : tmo_ms;
-      schedule_sleep((int)(ms > 1000 ? 1000 : ms));
-    } else {
-      schedule_sleep(1);
+      ms = (tmo_ms == 0) ? 1 : tmo_ms;
+      if (ms > 1000) {
+        ms = 1000;
+      }
     }
+    schedule_sleep((int)ms);
+    sys_copy_to_user(ufds, fds, sizeof(struct pollfd_k) * nfds);
+    kfree(fds);
+    /* 【永久等待绝不能回 0】libxcb 的 _xcb_conn_wait() 把 poll(-1) 返回 0 当成
+     * 致命错误（ret==0 ⇒ 握手失败 ⇒ _xcb_conn_shutdown ⇒ X 客户端报
+     * "unable to open display"）。真实 Linux 上这种 poll 会一直阻塞到有事件，
+     * 永远不会返回 0。这里退化成"睡 1 tick 报一次假事件"：返回 1 但所有
+     * revents=0，libxcb 会当作无事的唤醒重新 poll（不读不写），只是多转几圈，
+     * 语义上安全。带超时的 poll 仍然正常返回 0。 */
+    if (tmo == NULL) {
+      return 1;
+    }
+    return 0;
   }
   sys_copy_to_user(ufds, fds, sizeof(struct pollfd_k) * nfds);
   kfree(fds);
@@ -1807,7 +1825,8 @@ int sys_stat(const char* path, struct stat* stat) {
     }
     int fd = sys_open(path, 0);
     if (fd < 0) {
-      return -1;
+      /* 透传 -ENOENT：xtrans/很多程序靠 errno==ENOENT 区分"不存在" */
+      return fd;
     }
     int ret = sys_fstat(fd, stat);
     sys_close(fd);
@@ -1945,6 +1964,14 @@ int sys_mkdir(const char* pathname, mode_t mode) {
     log_error("sys_mkdir: parent not found %s\n", parent);
     return -1;
   }
+  /* 【必须回 -EEXIST，不能一律 -1】调用方靠 errno 区分"已经有了"和"真失败"：
+   * Xorg 的 xtrans 建 /tmp/.X11-unix 时先 mkdir，收到 EEXIST 就再去 stat 确认
+   * 是目录然后继续；我们回 -1（clibc 一律翻成 EPERM）⇒ xtrans 认为建目录失败
+   * ⇒ "failed to create listener for unix" ⇒ X 服务器根本没有监听 fd，
+   * 客户端连上来永远没人 accept（xsetroot/xclock 报 unable to open display）。 */
+  if (vfs_find_child(dir_node, base) != NULL) {
+    return -17; /* -EEXIST */
+  }
 
   return vmkdir(dir_node, base, mode);
 }
@@ -1961,8 +1988,8 @@ int sys_mkdir(const char* pathname, mode_t mode) {
     log_debug("sys_access pathname=%x mode=%x\n", pathname, mode);
     int fd = sys_open((char*)pathname, 0);
     if (fd < 0) {
-      log_error("access faild pathname=%x\n", pathname);
-      return -1;
+      /* access(2) 语义：不存在必须报 ENOENT（musl/程序靠它区分权限问题） */
+      return fd;
     }
     sys_close(fd);
     return 0;
@@ -1981,7 +2008,7 @@ int sys_statx(int dirfd, const char* restrict pathname, int flags,
   struct stat buf;
   int ret = sys_stat(pathname, &buf);
   if (ret < 0) {
-    return -1;
+    return ret; /* 缺文件透传 -ENOENT */
   }
 
   statxbuf->stx_mode = buf.st_mode;

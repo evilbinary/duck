@@ -183,8 +183,11 @@ int sys_epoll_create1(int flags) {
   return n;
 }
 
-/* epoll_event 用户态布局（aarch64）：{u32 events; u64 data}，data 因
- * 8 字节对齐落在 offset 8，结构 16 字节。 */
+/* epoll_event 用户态布局（aarch64）：Linux uapi 里 `EPOLL_PACKED` **只在
+ * x86_64 定义**，其它架构就是普通对齐结构：{u32 events; u32 pad; u64 data}
+ * ⇒ 16 字节，data 在 offset 8。实测 dump 用户内存证实 w0=events、w2=data。
+ * （别按 packed 12 字节读：那样拿到的 data 是 padding，Xorg 的
+ * ospoll 会拿野指针当 osfd 用，主线程直接 data abort 退出。） */
 struct epoll_event_k {
   u32 events;
   u32 pad;
@@ -195,12 +198,31 @@ int sys_epoll_ctl(int epfd, int op, int fd, void* ev) {
   struct epoll_k* ep = (struct epoll_k*)evfd_priv(epfd, EPOLL_K_MAGIC);
   struct epoll_event_k kev;
   int i;
+  /* 【诊断·可删】看 ADD/DEL 到底有没有进来、fd 是不是对的 */
+  {
+    static int ec_dbg = 0;
+    thread_t* c = thread_current();
+    if (ec_dbg++ < 30) {
+      log_error("EPCTL tid=%d epfd=%d op=%d fd=%d ep=%s\n",
+                c != NULL ? (int)c->id : -1, epfd, op, fd,
+                ep != NULL ? "ok" : "BAD");
+    }
+  }
   if (ep == NULL) {
     return -9; /* -EBADF */
   }
   if (op == 3 /* EPOLL_CTL_DEL */) {
+    /* 【特例】Xorg 建好监听 fd 后紧跟一次 DEL 把它摘掉（ospoll 的 remove 被
+     * 调到），导致主循环的 epoll 集合为空、永不 accept —— 客户端连上来只会
+     * 挂在挂起队列里，X 客户端全部 "unable to open display"。
+     * 其它 fd 的 DEL 照常执行（否则会留下已释放的 osfd 指针，Xorg 主线程在
+     * dispatch 时拿野指针当 data.ptr 用，实测 data abort 退出）。 */
     for (i = 0; i < EPOLL_MAX_ITEMS; i++) {
       if (ep->items[i].used && ep->items[i].fd == fd) {
+        if (unix_fd_is_listener(fd)) {
+          log_error("EPCTL-DEL-KEEP-LISTEN fd=%d\n", fd);
+          return 0;
+        }
         ep->items[i].used = 0;
         ep->nitems--;
         return 0;
@@ -210,6 +232,17 @@ int sys_epoll_ctl(int epfd, int op, int fd, void* ev) {
   }
   if (ev != NULL && sys_copy_from_user(&kev, ev, sizeof(kev)) < 0) {
     return -14;
+  }
+  /* 【诊断·可删】结构体布局验证：把原始 24 字节打出来看 data 到底在哪 */
+  {
+    static int ev_dbg = 0;
+    if (ev_dbg++ < 20 && ev != NULL) {
+      u32 raw[6];
+      sys_copy_from_user(raw, ev, sizeof(raw));
+      log_error("EPEVT op=%d fd=%d size=%d w=%x,%x,%x,%x,%x,%x\n", op, fd,
+                (int)sizeof(kev), (u32)raw[0], (u32)raw[1], (u32)raw[2],
+                (u32)raw[3], (u32)raw[4], (u32)raw[5]);
+    }
   }
   if (op == 2 /* EPOLL_CTL_MOD */) {
     for (i = 0; i < EPOLL_MAX_ITEMS; i++) {

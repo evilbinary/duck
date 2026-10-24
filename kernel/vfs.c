@@ -625,10 +625,17 @@ vnode_t *vfs_open_attr(vnode_t *root, u8 *name, u32 attr) {
         parent_path[1] = 0; /* "/f" -> parent="/" */
       }
     } else {
-      kstrncpy(parent_path, name, len + 1);
-      parent_path[len + 1] = 0;
+      parent_path[0] = 0; /* 相对单组件：父目录 = start 本身，parent_path 未用 */
     }
-    vnode_t *node = vfs_find(root, parent_path);
+    vnode_t *node = NULL;
+    if (len > 0 && name[len] == '/') {
+      node = vfs_find(root, parent_path);
+    } else {
+      /* 【相对路径单组件】如 cwd 下的 "tst_file"：父目录就是传入的 start
+       * 节点本身。原实现把整个名字当父路径去查 ⇒ open(O_CREAT) 在
+       * cwd 建新文件恒失败（LTP safe_touch/creat 一族、Xorg 建锁文件） */
+      node = root;
+    }
     if (node == NULL) {
       kprintf("open parent %s %s failed \n", parent_path, name);
       return NULL;

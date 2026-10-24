@@ -486,6 +486,9 @@ int unix_bind(int fd, const void* addr, u32 addrlen) {
   if (rc < 0) {
     return rc;
   }
+  /* 【诊断·可删】看服务端 bind 的名字（含抽象命名空间的 \0 前缀） */
+  log_error("UXBIND fd=%d len=%d b0=%x b2=%x name=%s\n", fd, keylen, key[0],
+            key[2], (keylen > 2) ? (char*)(key + 2) : "");
   rc = unix_bind_add(sk, key, keylen);
   if (rc < 0) {
     return rc;
@@ -533,6 +536,20 @@ int unix_connect(int fd, const void* addr, u32 addrlen) {
     return rc;
   }
   ls = unix_lookup(key, keylen);
+  /* 【诊断·可删】客户端 connect 用的名字与查表结果 */
+  log_error("UXCONN fd=%d len=%d b0=%x b2=%x name=%s -> %s\n", fd, keylen,
+            key[0], key[2], (keylen > 2) ? (char*)(key + 2) : "",
+            ls != NULL ? (ls->listening ? "ok" : "not-listen") : "none");
+  /* 【诊断·可删】连到 X 服务器的进程，把它接下来的 syscall 全打出来 */
+  {
+    thread_t* c = thread_current();
+    /* X11 的连接名是 /tmp/.X11-unix/X0（可能是抽象命名空间，路径从 key+3 起），
+     * 用长度区间兜住两种写法 */
+    if (c != NULL && keylen > 10 && keylen < 30) {
+      extern void sys_probe_arm(int tid, int count);
+      sys_probe_arm((int)c->id, 40);
+    }
+  }
   if (ls == NULL || !ls->listening) {
     return -111; /* -ECONNREFUSED：名字没有被 listen 的端点占用 */
   }
@@ -580,6 +597,15 @@ int unix_accept(int fd, void* addr, u32* addrlen) {
     return -22;
   }
   srv = sk->pend_head;
+  {
+    /* 【诊断·可删】accept 到底有没有被服务端调到 */
+    static int acc_dbg = 0;
+    if (acc_dbg++ < 20) {
+      thread_t* c = thread_current();
+      log_error("UXACCEPT tid=%d fd=%d pend=%d\n", c != NULL ? (int)c->id : -1,
+                fd, (int)sk->pend_count);
+    }
+  }
   if (srv == NULL) {
     return -11; /* 暂无连接：非阻塞，用户态重试 */
   }
@@ -748,12 +774,27 @@ int unix_getsockopt(int fd, int level, int optname, void* optval,
 /* select/poll 的就绪判定（-1 表示该 fd 不是本机 socket）。
  * 读就绪：监听者有挂起连接 ‖ 收到数据 ‖ 对端关闭(EOF)；
  * 写就绪：对端在且缓冲没满。 */
+/* 该 fd 是不是一个正在 listen 的本机 unix socket（epoll 的 DEL 特例用） */
+int unix_fd_is_listener(int fd) {
+  struct unix_sock* sk = unix_fd_sock(fd);
+  return (sk != NULL && sk->listening) ? 1 : 0;
+}
+
 int unix_poll_ready(int fd, int want_read, int want_write) {
   struct unix_sock* sk = unix_fd_sock(fd);
   if (sk == NULL) {
     return -1;
   }
   if (want_read) {
+    if (sk->listening) {
+      /* 【诊断·可删】服务端有没有来问过监听 fd 的就绪状态 */
+      static int lp_dbg = 0;
+      if (lp_dbg++ < 20) {
+        thread_t* c = thread_current();
+        log_error("UXREADY tid=%d fd=%d pend=%d\n",
+                  c != NULL ? (int)c->id : -1, fd, (int)sk->pend_count);
+      }
+    }
     if (sk->listening && sk->pend_head != NULL) {
       return 1;
     }

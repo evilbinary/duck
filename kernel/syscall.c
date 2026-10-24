@@ -40,6 +40,15 @@ void sys_trace_dump(void) {
   log_info("syscall trace end\n");
 }
 
+/* 【诊断·可删】全局 syscall 探针：外部（如 unix_connect）可以把它瞄准某个 tid */
+int sys_probe_tid = -1;
+int sys_probe_left = 0;
+int sys_probe_pending = 0;
+void sys_probe_arm(int tid, int count) {
+  sys_probe_tid = tid;
+  sys_probe_left = count;
+}
+
 void* do_syscall(interrupt_context_t* ic) {
   // kprintf("syscall %d\n", context_fn(ic));
   int no = context_fn(ic);
@@ -47,16 +56,15 @@ void* do_syscall(interrupt_context_t* ic) {
    * 参数与返回值原样打出来（定位 popen/posix_spawn 失败到底失败在哪一步）。
    * 注意：参数必须在 handler 之前取——handler 会把返回码写进 x0。 */
   {
-    static int probe_tid = -1;
-    static int probe_left = 0;
     thread_t* t = thread_current();
     int tid = (t != NULL) ? (int)t->id : -1;
     if (no == 59 /* aarch64 pipe2 */) {
-      probe_tid = tid;
-      probe_left = 40;
+      sys_probe_tid = tid;
+      sys_probe_left = 40;
       log_error("PROBE pipe2 by tid=%d\n", tid);
-    } else if (probe_left > 0 && tid == probe_tid) {
-      probe_left--;
+    } else if (sys_probe_left > 0 && tid == sys_probe_tid) {
+      sys_probe_left--;
+      sys_probe_pending = 1;
       log_error("PROBE tid=%d no=%d args=%d,%x,%d\n", tid, no,
                 (int)context_arg0(ic), (u32)context_arg1(ic),
                 (int)context_arg2(ic));
@@ -73,6 +81,12 @@ void* do_syscall(interrupt_context_t* ic) {
     (void)ret;
   } else {
     log_warn("syscall did not found %d\n", context_fn(ic));
+  }
+  /* 【诊断·可删】把上面那条 PROBE 的返回值补上（handler 里会写 x0） */
+  if (sys_probe_pending) {
+    sys_probe_pending = 0;
+    log_error("PROBE-RET tid=%d no=%d ret=%d\n", sys_probe_tid, no,
+              (int)context_ret(ic));
   }
   /* 【诊断】在 handler 跑完之后记录（此时 r0 里才是真正的返回值）。 */
   {
