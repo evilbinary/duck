@@ -199,7 +199,12 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
   }
   current->exec = exec;
   current->name = exec->filename;
-  thread_fill_fd(current);
+  /* 【exec 不能覆盖已有 fd】调用方会先把管道 dup2 到 stdin/stdout 再 exec
+   * （X server 就是这么把 keymap 喂给 xkbcomp 的）。原实现调 thread_fill_fd
+   * 无条件把 0/1/2 换回全局 stdio ⇒ 子进程从串口读输入 ⇒
+   * "syntax error: line 1 of stdin"（QEMU 实测，Xorg 因此起不来键盘）。
+   * 这里只补空缺的 stdio，已有的 fd 一律保留（POSIX exec 语义）。 */
+  thread_ensure_stdio(current);
 #if defined(ARM64) || defined(__aarch64__)
   if (run_elf64_thread((long*)exec) < 0) {
     return -1;
@@ -239,7 +244,7 @@ static void sys_clear_child_tid(thread_t* current) {
 
 void sys_exit(int status) {
   thread_t* current = thread_current();
-#if PROBE_TRACE
+#if 1 /* 临时：定位 Xorg 静默退出（status/pc），查完改回 PROBE_TRACE */
   /* 线程退出打点，排查"子进程秒退零输出"时改 PROBE_TRACE=1 */
   {
     static int exit_dbg = 0;
@@ -283,7 +288,7 @@ void sys_exit(int status) {
 }
 
 void sys_exit_group(int status) {
-#if PROBE_TRACE
+#if 1 /* 临时：定位 Xorg 静默退出（status/pc），查完改回 PROBE_TRACE */
   /* 进程退出打点（tid/name/status/pc），排查退出路径时改 PROBE_TRACE=1 */
   {
     static int exitg_dbg = 0;
@@ -561,13 +566,27 @@ int sys_getpgid(int pid) {
 }
 
 int sys_kill(pid_t pid, int sig) {
+  /* 临时探针：查 Xorg "Server is already active" 的 kill(pid,0) 到底问的是谁 */
+  {
+    thread_t* f = pid > 0 ? thread_find_id(pid) : NULL;
+    log_error("KILL pid=%d sig=%d found=%d name=%s\n", (int)pid, sig,
+              f != NULL, (f != NULL && f->name != NULL) ? f->name : "-");
+  }
   if (pid <= 0) {
-    log_error("cannot kill kernel\n");
-    return -1;
+    /* 0/负数在 Linux 里指"自己的进程组"：本内核没有进程组语义，
+     * 直接当投递成功（此类调用只用于探测，不做实际动作）。 */
+    log_debug("kill pgroup %d sig=%d\n", pid, sig);
+    return 0;
   }
   thread_t* t = thread_find_id(pid);
   if (t == NULL) {
-    return -1;
+    /* 【必须返回 -ESRCH，不能返回 -1】用户态普遍用 kill(pid, 0) 探测
+     * "这个 pid 还活着吗"。返回 -1 时 musl 只能报 EPERM（dispatch 层把
+     * 非 -errno 的返回值当 EPERM），而 X server 读 /tmp/.X0-lock 后的
+     * 存活判断是 `kill(pid,0)==0 || errno==EPERM` ⇒ 残留锁文件直接把
+     * 新服务器判成"已经在跑"，报 FatalError 后 exit(1)（实测
+     * "Server is already active for display 0"，EXITG status=1）。 */
+    return -ESRCH;
   }
   /* 【内核无信号设施：非 SIGKILL 一律忽略】LTP 的 watchdog 靠子进程给父进程
    * 发 SIGUSR1 心跳（实测 clone10：tid8 kill(pid=7, SIGUSR1)）——原实现把任何

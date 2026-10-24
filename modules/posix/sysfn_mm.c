@@ -384,9 +384,13 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
       log_error("map fix %x faild out of range\n", addr);
       return MAP_FAILED;
     }
-    if (prot != 0 && valloc(addr, length) == NULL) {
-      log_error("map fix valloc failed addr=%x len=%x\n", addr, length);
-      return MAP_FAILED;
+    if (prot != 0) {
+      if (valloc(addr, length) == NULL) {
+        log_error("map fix valloc failed addr=%x len=%x\n", addr, length);
+        return MAP_FAILED;
+      }
+      /* 匿名 MAP_FIXED 与普通匿名映射一致，必须是零页（见下方 ANON 分支注释） */
+      kmemset(addr, 0, length);
     }
     if (sys_mmap_install_area(vm, addr, length, NULL, 0) < 0) {
       log_error("map fix install area failed addr=%x\n", addr);
@@ -419,6 +423,12 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
       log_error("mmap anon valloc failed addr=%x len=%x\n", start_addr, length);
       return MAP_FAILED;
     }
+    /* 【匿名映射必须清零】Linux 保证 MAP_ANONYMOUS 返回全零页。这里 valloc
+     * 拿到的是页池里回收来的物理页，里面是上一个进程留下的数据（实测被
+     * 0x33 填充过的页），Xorg 直接把 malloc 拿到的"结构体"当链表遍历 ⇒
+     * 读到 0x3333333333333333 当指针、在 PixmapSyncDirtyHelper 里 data abort。
+     * 注释一直写着"valloc+清零"，但清零这步此前漏了。 */
+    kmemset(start_addr, 0, length);
     if (sys_mmap_install_area(vm, start_addr, length, NULL, 0) < 0) {
       log_error("mmap install area failed addr=%x\n", start_addr);
       return MAP_FAILED;
