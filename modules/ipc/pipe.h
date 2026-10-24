@@ -7,11 +7,28 @@
 #define PIPE_H
 
 #include "kernel/kernel.h"
-#include "algorithm/buffer.h"
-#include "queue/rw_queue.h"
 
-#define PIPE_BUFFER 128
-#define PIPE_WAIT_QUEUE_SIZE 20
+/* 初始容量 4KB；写满自动翻倍到 PIPE_MAX_BUFFER。
+ * 为什么必须能长这么大：Xorg 把整份 keymap 文本（几十 KB）写进管道喂给
+ * xkbcomp；缓冲装不下就会短写，而 stdio 不重试短写 ⇒ 数据静默丢失。 */
+#define PIPE_BUFFER 4096
+#define PIPE_MAX_BUFFER (256 * 1024)
+
+typedef struct pipe {
+  u8* buf;   /* 环形缓冲，容量 size 字节 */
+  u32 size;  /* 当前容量 */
+  u32 head;  /* 读位置 */
+  u32 count; /* 已缓存字节数 */
+  u32 lock;  /* 缓冲自旋锁（读写端通常在不同线程） */
+  u32 ref;   /* 读写两个 vnode 的引用计数，归零才释放 */
+} pipe_t;
+
+pipe_t* pipe_create(u32 size);
+void pipe_destroy(pipe_t* pipe);
+
+/* 建一对端点：读、写各一个 vnode，共用同一个 pipe_t。两端分开是因为
+ * close 要能区分「写端全关 ⇒ 读者读到 EOF」与「读端全关 ⇒ 写者写不动」。 */
+int pipe_create_pair(u32 size, vnode_t** read_node, vnode_t** write_node);
 
 /* ===================== ioctl 命令编码 =====================
  * 与 Linux asm-generic/ioctl.h 的 _IOC 位域一致：
@@ -46,18 +63,5 @@
  * _IOR（历史实现只按 size/type/nr 匹配），两种方向都接受。 */
 #define FIONREAD_IOC_READ IOCTL_IOR('f', 3, int)  /* 0x80046603 */
 #define FIONREAD_IOC_WRITE IOCTL_IOW('f', 3, int) /* 0x40046603 */
-
-typedef struct pipe{
-    rw_queue_t* wait_queue;
-    buffer_t *buffer;
-    /* 引用计数：pipe_make 出一个节点被读写两端共 2 个 fd 引用，fd 最后
-     * 一次关闭（fd_close → vclose，fork 复制的 fd 只减 use_count）才减 1，
-     * 减到 0 才能真正释放缓冲区。 */
-    u32 ref;
-}pipe_t;
-
-pipe_t* pipe_create(u32 size);
-
-vnode_t* pipe_make(u32 size);
 
 #endif

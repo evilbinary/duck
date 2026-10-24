@@ -6,92 +6,200 @@
 #include "pipe.h"
 
 #include "kernel/kernel.h"
-#include "kernel/schedule.h"
+#include "kernel/thread.h"
 
-size_t pipe_buffer_read_wait(buffer_t* buffer) {
-  rw_queue_t* rwq = buffer->data;
-  rw_queue_read_wait(rwq);
-  return 1;
-}
+/* 【设计：内核不阻塞，缓冲按需增长】
+ * 本内核 schedule_switch() 丢弃内核调用链（线程被切走后从保存帧直接回用户
+ * 态，切换点之后的 C 代码不再执行），"睡一觉接着读"写不出来；能用的只有
+ * "唤醒方代办"那一套（waitpid 代收割）。pipe 不用这套：
+ *   读：有数据就取（可短读），没有返回 0；
+ *   写：有空间就放，满了就把缓冲翻倍（上限 PIPE_MAX_BUFFER），仍放不下才短写。
+ * 这样"先用 select/poll 等就绪再读写"的常规用法就够了，也不会因为缓冲太小
+ * 出现短写丢数据（Xorg 把整份 keymap 写进管道喂 xkbcomp 就是几十 KB）。
+ * 端口计数（readers/writers）也不做：dup2/fork 复制的 fd 槽不一定都过
+ * close，按端计数会把还没关的一端误判成关了（实测父进程关掉自己那份读端
+ * 后，写端写进来的 keymap 全被静默丢弃）。 */
 
-size_t pipe_buffer_read_notify(buffer_t* buffer) {
-  rw_queue_t* rwq = buffer->data;
-  rw_queue_read_notify(rwq);
-  return 1;
-}
+static void pipe_lock(pipe_t* p) { acquire(&p->lock); }
 
-size_t pipe_buffer_write_wait(buffer_t* buffer) {
-  rw_queue_t* rwq = buffer->data;
-  rw_queue_write_wait(rwq);
-  return 1;
-}
-
-size_t pipe_buffer_write_notify(buffer_t* buffer) {
-  rw_queue_t* rwq = buffer->data;
-  rw_queue_write_notify(rwq);
-  return 1;
-}
+static void pipe_unlock(pipe_t* p) { release(&p->lock); }
 
 pipe_t* pipe_create(u32 size) {
-  pipe_t* pipe = kmalloc(sizeof(pipe_t),KERNEL_TYPE);
-  pipe->wait_queue = rw_queue_create(PIPE_WAIT_QUEUE_SIZE);
-  /* 【不做内核阻塞】buffer_read/write 在空/满时会调用 wait 回调，而 wait 回调
-   * 走 thread_wait()→schedule_switch() 在 vread() 持有 vfs_biglock 期间阻塞：
-   * 别的线程一碰 vfs 就在 rt_mutex_lock(vfs_biglock) 里自旋死锁（system() 实测：
-   * 父进程读 pipe 阻塞并持有 vfs_biglock，子进程 exec /bin/sh 时取锁自旋卡死）。
-   * 本内核的设计本就是"内核不阻塞、等待交给调用者在用户态轮询/靠 waitpid"，
-   * 所以这里不挂阻塞回调：pipe 空读返回 0，写满就停。system()/posix_spawn 的
-   * 同步改由随后的 waitpid（schedule_switch）承担。 */
-  pipe->buffer =
-      buffer_create(size, NULL, NULL,
-                    pipe_buffer_write_notify, pipe_buffer_read_notify);
-  pipe->buffer->data = pipe->wait_queue;
-  pipe->ref = 2; /* 读端 + 写端 */
+  pipe_t* pipe = kmalloc(sizeof(pipe_t), KERNEL_TYPE);
+  if (pipe == NULL) {
+    return NULL;
+  }
+  kmemset(pipe, 0, sizeof(pipe_t));
+  pipe->size = (size > 0) ? size : (u32)PIPE_BUFFER;
+  pipe->buf = kmalloc(pipe->size, KERNEL_TYPE);
+  if (pipe->buf == NULL) {
+    kfree(pipe);
+    return NULL;
+  }
+  pipe->ref = 2; /* 读端、写端各一个 vnode */
   return pipe;
 }
 
-u32 pip_read(vnode_t* node, u32 offset, u32 size, u8* buffer) {
-  pipe_t* pipe = node->device;
+void pipe_destroy(pipe_t* pipe) {
   if (pipe == NULL) {
-    log_error("pipe read null\n");
-    return (u32)-1;
+    return;
   }
-  return buffer_read(pipe->buffer, buffer, size);
+  if (pipe->buf != NULL) {
+    kfree(pipe->buf);
+    pipe->buf = NULL;
+  }
+  kfree(pipe);
 }
 
-u32 pip_write(vnode_t* node, u32 offset, u32 size, u8* buffer) {
-  pipe_t* pipe = node->device;
-  if (pipe == NULL) {
-    log_error("pipe write null\n");
-    return (u32)-1;
+/* ---------------- 环形缓冲 ---------------- */
+
+/* 扩容：把已有内容按序搬到新缓冲（head 归零）。调用方持锁。 */
+static int pipe_grow(pipe_t* p) {
+  u32 new_size;
+  u8* nbuf;
+  u32 i;
+  u32 tail;
+  if (p->size >= (u32)PIPE_MAX_BUFFER) {
+    return -1;
   }
-  return buffer_write(pipe->buffer, buffer, size);
+  new_size = p->size * 2;
+  if (new_size > (u32)PIPE_MAX_BUFFER) {
+    new_size = (u32)PIPE_MAX_BUFFER;
+  }
+  nbuf = kmalloc(new_size, KERNEL_TYPE);
+  if (nbuf == NULL) {
+    return -1;
+  }
+  tail = p->head;
+  for (i = 0; i < p->count; i++) {
+    nbuf[i] = p->buf[tail];
+    if (++tail == p->size) {
+      tail = 0;
+    }
+  }
+  kfree(p->buf);
+  p->buf = nbuf;
+  p->size = new_size;
+  p->head = 0;
+  return 0;
 }
 
-/* 【pipe 的 ioctl】此前 op->ioctl 是 NULL，vioctl 只打一行
- *   vioctl ioctl is null node=pipe cmd=...
- * 然后返回 0 —— 调用方以为"查询成功、但可读字节数是 0"。
- * 用户态（X server 的 Xtrans、glibc 的 popen/stdio 路径等）常用
- * FIONREAD 判断管道里还有没有数据，恒返回 0 会让它们提前收工。
- * 这里至少把这三个实现掉：FIONREAD（可读字节数）、FIONBIO（本实现恒非
- * 阻塞）、TCFLSH（清空缓冲）。 */
-u32 pip_ioctl(vnode_t* node, u32 cmd, void* args) {
-  pipe_t* pipe = node->device;
-  if (pipe == NULL || pipe->buffer == NULL || pipe->buffer->buffer == NULL) {
+static u32 pipe_take(pipe_t* p, u8* dst, u32 len) {
+  u32 n = (len < p->count) ? len : p->count;
+  u32 i;
+  for (i = 0; i < n; i++) {
+    if (dst != NULL) {
+      dst[i] = p->buf[p->head];
+    }
+    if (++p->head == p->size) {
+      p->head = 0;
+    }
+  }
+  p->count -= n;
+  return n;
+}
+
+static u32 pipe_append(pipe_t* p, const u8* src, u32 len) {
+  u32 space = p->size - p->count;
+  u32 n;
+  u32 tail;
+  u32 i;
+  /* 空间不够且还能长：先扩容再放（避免短写丢数据） */
+  if (space < len && p->size < (u32)PIPE_MAX_BUFFER) {
+    while (p->size - p->count < len && p->size < (u32)PIPE_MAX_BUFFER) {
+      if (pipe_grow(p) < 0) {
+        break;
+      }
+    }
+    space = p->size - p->count;
+  }
+  n = (len < space) ? len : space;
+  tail = p->head + p->count;
+  if (tail >= p->size) {
+    tail -= p->size;
+  }
+  for (i = 0; i < n; i++) {
+    p->buf[tail] = src[i];
+    if (++tail == p->size) {
+      tail = 0;
+    }
+  }
+  p->count += n;
+  return n;
+}
+
+/* ---------------- 读端 ---------------- */
+
+static u32 pip_read(vnode_t* node, u32 offset, u32 size, u8* buffer) {
+  pipe_t* p = (node != NULL) ? node->device : NULL;
+  u32 n;
+  if (p == NULL || buffer == NULL || size == 0) {
+    return 0;
+  }
+  pipe_lock(p);
+  n = pipe_take(p, buffer, size);
+  pipe_unlock(p);
+  {
+    /* 【诊断·可删】 */
+    static int r_dbg = 0;
+    thread_t* c = thread_current();
+    if (r_dbg++ < 40) {
+      log_error("PIPR tid=%d want=%d got=%d left=%d\n", c != NULL ? c->id : -1,
+                (int)size, (int)n, (int)p->count);
+    }
+  }
+  return n;
+}
+
+/* ---------------- 写端 ---------------- */
+
+static u32 pip_write(vnode_t* node, u32 offset, u32 size, u8* buffer) {
+  pipe_t* p = (node != NULL) ? node->device : NULL;
+  u32 n;
+  if (p == NULL || buffer == NULL || size == 0) {
+    return 0;
+  }
+  pipe_lock(p);
+  n = pipe_append(p, buffer, size);
+  pipe_unlock(p);
+  {
+    /* 【诊断·可删】 */
+    static int w_dbg = 0;
+    thread_t* c = thread_current();
+    if (w_dbg++ < 40) {
+      log_error("PIPW tid=%d size=%d put=%d cap=%d\n", c != NULL ? c->id : -1,
+                (int)size, (int)n, (int)p->size);
+    }
+  }
+  return n;
+}
+
+/* ---------------- ioctl ---------------- */
+
+static u32 pip_ioctl(vnode_t* node, u32 cmd, void* args) {
+  pipe_t* p = (node != NULL) ? node->device : NULL;
+  u32 count = 0;
+  if (p == NULL) {
     return (u32)-1;
   }
+  pipe_lock(p);
+  count = p->count;
+  if (cmd == TCFLSH) {
+    p->head = 0;
+    p->count = 0;
+  }
+  pipe_unlock(p);
   switch (cmd) {
     case FIONREAD:
     case FIONREAD_IOC_READ:
     case FIONREAD_IOC_WRITE:
       if (args != NULL) {
-        *(int*)args = (int)cqueue_count(pipe->buffer->buffer);
+        *(int*)args = (int)count;
       }
       return 0;
-    case FIONBIO: /* 本内核的 pipe 本来就是非阻塞的 */
+    case FIONBIO:
       return 0;
     case TCFLSH: /* 丢弃缓冲区里未读的数据 */
-      cqueue_clear(pipe->buffer->buffer);
       return 0;
     default:
       log_debug("pipe ioctl unsupported cmd=%x\n", cmd);
@@ -99,41 +207,106 @@ u32 pip_ioctl(vnode_t* node, u32 cmd, void* args) {
   }
 }
 
-/* 【pipe 的 close】此前 op->close 是 NULL，每次关闭都在 vclose 里打
- *   pipe close is null
- * 且 pipe_t / 缓冲区永不释放（Xorg 每 fork 一次就造两条管道，长期运行
- * 会把内核堆吃掉）。node 由读写两端的 fd 共用，所以要按端计数释放。 */
-u32 pip_close(vnode_t* node) {
-  pipe_t* pipe = node->device;
-  if (pipe == NULL) {
-    return 0;
+/* ---------------- 关闭 ---------------- */
+
+/* 释放 vnode 自身：pipe 的 vnode 是临时对象（op 是静态表，
+ * name 由 vfs_create_node 分配）。 */
+static void pipe_node_free(vnode_t* node) {
+  if (node == NULL) {
+    return;
   }
-  if (pipe->ref > 0) {
-    pipe->ref--;
+  node->device = NULL;
+  node->op = NULL;
+  if (node->name != NULL) {
+    kfree(node->name);
+    node->name = NULL;
   }
-  if (pipe->ref == 0) {
-    if (pipe->buffer != NULL) {
-      buffer_destroy(pipe->buffer);
-      pipe->buffer = NULL;
+  kfree(node);
+}
+
+static u32 pipe_close_end(vnode_t* node) {
+  pipe_t* p = (node != NULL) ? node->device : NULL;
+  if (p != NULL) {
+    pipe_lock(p);
+    if (p->ref > 0) {
+      p->ref--;
     }
-    if (pipe->wait_queue != NULL) {
-      rw_queue_destroy(pipe->wait_queue);
-      pipe->wait_queue = NULL;
+    pipe_unlock(p);
+    if (p->ref == 0) {
+      pipe_destroy(p);
     }
-    kfree(pipe);
-    node->device = NULL;
   }
+  pipe_node_free(node);
   return 0;
 }
 
-vnode_t* pipe_make(u32 size) {
-  vnode_t* node = vfs_create_node("pipe", 0);
-  node->device = pipe_create(size);
-  voperator_t* op = kmalloc(sizeof(voperator_t), KERNEL_TYPE);
-  node->op = op;
-  op->read = pip_read;
-  op->write = pip_write;
-  op->ioctl = pip_ioctl;
-  op->close = pip_close;
-  return node;
+/* ---------------- 节点表 ---------------- */
+
+/* 读写两端各自的 op：read/write 只有自己那一半。 */
+static voperator_t pipe_read_ops = {
+    .read = pip_read,
+    .close = pipe_close_end,
+    .ioctl = pip_ioctl,
+};
+
+static voperator_t pipe_write_ops = {
+    .write = pip_write,
+    .close = pipe_close_end,
+    .ioctl = pip_ioctl,
+};
+
+/* ---------------- select/poll 的就绪判定 ---------------- */
+/* 返回 bit0=可读（缓冲里有数据） / bit1=可写（还有空间）；
+ * -1 表示这个 fd 不是 pipe（调用方沿用原有判定）。
+ * 用户态普遍"先 poll 再 read"，就绪状态必须真实：读空管道返回 0 会被当成
+ * EOF（Xorg 喂 keymap 给 xkbcomp 就这样失败过）。 */
+int pipe_poll_ready(int fd) {
+  thread_t* current = thread_current();
+  fd_t* f = thread_find_fd_id(current, fd);
+  vnode_t* node;
+  pipe_t* p;
+  int ready = 0;
+  if (f == NULL || f->data == NULL) {
+    return -1;
+  }
+  node = (vnode_t*)f->data;
+  if (node->op != &pipe_read_ops && node->op != &pipe_write_ops) {
+    return -1;
+  }
+  p = (pipe_t*)node->device;
+  if (p == NULL) {
+    return -1;
+  }
+  pipe_lock(p);
+  if (p->count > 0) {
+    ready |= 1;
+  }
+  if (p->count < p->size) {
+    ready |= 2;
+  }
+  pipe_unlock(p);
+  return ready;
+}
+
+int pipe_create_pair(u32 size, vnode_t** read_node, vnode_t** write_node) {
+  pipe_t* p = pipe_create(size);
+  vnode_t* r;
+  vnode_t* w;
+  if (p == NULL || read_node == NULL || write_node == NULL) {
+    pipe_destroy(p);
+    return -1;
+  }
+  r = vfs_create_node("pipe-r", 0);
+  w = vfs_create_node("pipe-w", 0);
+  if (r == NULL || w == NULL) {
+    pipe_destroy(p);
+    return -1;
+  }
+  r->device = p;
+  r->op = &pipe_read_ops;
+  w->device = p;
+  w->op = &pipe_write_ops;
+  *read_node = r;
+  *write_node = w;
+  return 0;
 }

@@ -18,6 +18,10 @@
 #include "kernel/vfs.h"
 #include "../loader/loader.h"
 
+/* pipe 实现在 modules/ipc/pipe.c：posix 模块的头文件搜索路径里没有 ipc
+ * 目录，跨模块符号按本文件既有做法直接声明（同 sysfn_fs.c 里的 pip_read）。 */
+extern int pipe_create_pair(u32 size, vnode_t** read_node, vnode_t** write_node);
+
 #define log_debug
 
 extern vnode_t* root_node;
@@ -162,6 +166,19 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
             exec->argc,
             exec->argv != NULL && exec->argv[0] != NULL ? exec->argv[0] : "-",
             exec->argc > 1 && exec->argv[1] != NULL ? exec->argv[1] : "-");
+  {
+    /* 【诊断·可删】完整命令行：确认外部程序是怎么被调起来的 */
+    static int ex_dbg = 0;
+    if (ex_dbg++ < 24) {
+      log_error("EXEC tid=%d %s | [%s][%s][%s][%s][%s]\n", current->id,
+                exec->filename,
+                exec->argc > 0 && exec->argv[0] ? exec->argv[0] : "-",
+                exec->argc > 1 && exec->argv[1] ? exec->argv[1] : "-",
+                exec->argc > 2 && exec->argv[2] ? exec->argv[2] : "-",
+                exec->argc > 3 && exec->argv[3] ? exec->argv[3] : "-",
+                exec->argc > 4 && exec->argv[4] ? exec->argv[4] : "-");
+    }
+  }
 
   int fd = (int)sys_open_kernel(exec->filename, 0);
   if (fd < 0) {
@@ -244,6 +261,14 @@ static void sys_clear_child_tid(thread_t* current) {
 
 void sys_exit(int status) {
   thread_t* current = thread_current();
+  {
+    /* 【诊断·可删】谁以什么码退出 */
+    static int xdbg = 0;
+    if (xdbg++ < 12) {
+      log_error("EXIT tid=%d code=%d name=%s\n", current != NULL ? current->id : -1,
+                status, current != NULL && current->name ? current->name : "?");
+    }
+  }
 #if PROBE_TRACE
   /* 线程退出打点，排查"子进程秒退零输出"时改 PROBE_TRACE=1 */
   {
@@ -288,6 +313,15 @@ void sys_exit(int status) {
 }
 
 void sys_exit_group(int status) {
+  {
+    /* 【诊断·可删】谁以什么码退出（进程级） */
+    static int xgdbg = 0;
+    thread_t* cur = thread_current();
+    if (xgdbg++ < 12) {
+      log_error("EXITG tid=%d code=%d name=%s\n", cur != NULL ? cur->id : -1,
+                status, cur != NULL && cur->name ? cur->name : "?");
+    }
+  }
 #if PROBE_TRACE
   /* 进程退出打点（tid/name/status/pc），排查退出路径时改 PROBE_TRACE=1 */
   {
@@ -485,9 +519,18 @@ int sys_fork() {
 
 int sys_pipe(int fds[2]) {
   thread_t* current = thread_current();
-  vnode_t* node = pipe_make(PAGE_SIZE);
-  fd_t* fd0 = fd_open(node, DEVICE_TYPE_VIRTUAL, "/dev/pipe/pipe0");
-  fd_t* fd1 = fd_open(node, DEVICE_TYPE_VIRTUAL, "dev/pipe/pipe1");
+  vnode_t* rnode = NULL;
+  vnode_t* wnode = NULL;
+  fd_t* fd0;
+  fd_t* fd1;
+  if (fds == NULL || pipe_create_pair(PAGE_SIZE, &rnode, &wnode) < 0) {
+    return -1;
+  }
+  fd0 = fd_open(rnode, DEVICE_TYPE_VIRTUAL, "/dev/pipe/pipe0");
+  fd1 = fd_open(wnode, DEVICE_TYPE_VIRTUAL, "dev/pipe/pipe1");
+  if (fd0 == NULL || fd1 == NULL) {
+    return -1;
+  }
   fds[0] = thread_add_fd(current, fd0);
   fds[1] = thread_add_fd(current, fd1);
   return 0;
@@ -653,6 +696,21 @@ int sys_setgroups(int size, const gid_t* list) {
 
 /* ===================== wait ===================== */
 
+extern void sys_trace_dump(void);
+
+static pid_t sys_waitpid_trace(pid_t pid, int options, pid_t ret) {
+  /* 【诊断·可删】把 Xorg 等子进程的 waitpid 结果与之前的 syscall 序列打出来 */
+  static int wp_dbg = 0;
+  thread_t* current = thread_current();
+  if (wp_dbg++ < 6) {
+    log_error("WAITP tid=%d pid=%d opt=%d ret=%d\n",
+              current != NULL ? (int)current->id : -1, (int)pid, options,
+              (int)ret);
+    sys_trace_dump();
+  }
+  return ret;
+}
+
 pid_t sys_waitpid(pid_t pid, int* wstatus, int options) {
   thread_t* current = thread_current();
   if (current == NULL) {
@@ -677,16 +735,16 @@ pid_t sys_waitpid(pid_t pid, int* wstatus, int options) {
       /* Detach from parent so the same zombie is not returned forever
        * (shell reap_zombies would spin and freeze input). */
       child->pid = (u32)-1;
-      return ret;
+      return sys_waitpid_trace(pid, options, ret);
     }
     if (!thread_child_exists((int)current->id, (int)pid)) {
       /* 还没有子进程。WNOHANG 必须返回 0：返回 -1 时 musl 会把 errno
        * 设成 EPERM，把前面 accept 的 EAGAIN 盖掉，test-vnc 就退出了。 */
-      if (options & WNOHANG) return 0;
-      return -ECHILD;
+      if (options & WNOHANG) return sys_waitpid_trace(pid, options, 0);
+      return sys_waitpid_trace(pid, options, -ECHILD);
     }
     if (options & WNOHANG) {
-      return 0;
+      return sys_waitpid_trace(pid, options, 0);
     }
     /* 阻塞：置 WAITING 后直接切出去（schedule_switch 交换中断帧，
      * 子进程得以运行）；被 thread_exit 唤醒后继续本循环重试。 */

@@ -89,6 +89,7 @@ typedef struct thread {
   void* tinfo;
   void* user_tp;
   void* clear_child_tid;
+  int last_no; /* 诊断：最后进入的 syscall 号（-1 表示还没进过） */
 } thread_t;
 
 void thread_init();

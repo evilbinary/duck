@@ -15,6 +15,9 @@
 #endif
 
 extern u32 pip_read(vnode_t* node, u32 offset, u32 size, u8* buffer);
+/* pipe 的真实就绪状态（modules/ipc/pipe.c）：bit0=可读 bit1=可写，
+ * 返回 -1 表示该 fd 不是 pipe。 */
+extern int pipe_poll_ready(int fd);
 
 #define log_debug 
 
@@ -746,6 +749,23 @@ int sys_close(u32 fd) {
     log_error("close not found fd %d tid %d\n", fd, current->id);
     return 0;
   }
+  {
+    /* 【诊断·可删】只看管道 fd 的关闭 */
+    static int sc_dbg = 0;
+    int is_pipe = 0;
+    if (f->name != NULL) {
+      for (int i = 0; f->name[i] != '\0' && i < 40; i++) {
+        if (f->name[i] == 'p' && f->name[i + 1] == 'i' &&
+            f->name[i + 2] == 'p' && f->name[i + 3] == 'e') {
+          is_pipe = 1;
+          break;
+        }
+      }
+    }
+    if (is_pipe && sc_dbg++ < 40) {
+      log_error("SC tid=%d fd=%d name=%s\n", current->id, fd, f->name);
+    }
+  }
   // fd_close already calls vclose and sets fd->data = NULL.
   thread_set_fd(current, fd, NULL);
   return fd_close(f);
@@ -768,6 +788,22 @@ static int sys_fd_set_copy_out(void* user, const unsigned long* kset) {
   return sys_copy_to_user(user, kset, SYS_FD_SET_WORDS * sizeof(unsigned long));
 }
 
+/* 一个 fd 在某方向上的就绪判定：
+ *   pipe       → 看缓冲/端口真实状态（读端会阻塞，必须真实）
+ *   本机 socket → unix_poll_ready
+ *   其它       → 沿用老规则"存在即就绪" */
+static int sys_fd_ready(int fd, int want_read, int want_write) {
+  int pr;
+  if (thread_find_fd_id(thread_current(), fd) == NULL) {
+    return 0;
+  }
+  pr = pipe_poll_ready(fd);
+  if (pr >= 0) {
+    return want_read ? ((pr & 1) ? 1 : 0) : ((pr & 2) ? 1 : 0);
+  }
+  return unix_poll_ready(fd, want_read, want_write) != 0;
+}
+
 static int sys_fd_set_poll(unsigned long* rset, unsigned long* wset,
                            unsigned long* eset, int nfds, int* ready) {
   thread_t* current = thread_current();
@@ -779,16 +815,14 @@ static int sys_fd_set_poll(unsigned long* rset, unsigned long* wset,
     int word = fd / bits;
     int present = thread_find_fd_id(current, fd) != NULL;
     if (rset != NULL && (rset[word] & mask)) {
-      /* 本机(AF_UNIX) socket 有真实就绪状态（收到数据/有待 accept 的连接），
-       * 其它 fd 沿用"存在即就绪"。 */
-      if (present && unix_poll_ready(fd, 1, 0) != 0) {
+      if (sys_fd_ready(fd, 1, 0)) {
         (*ready)++;
       } else {
         rset[word] &= ~mask;
       }
     }
     if (wset != NULL && (wset[word] & mask)) {
-      if (present && unix_poll_ready(fd, 0, 1) != 0) {
+      if (sys_fd_ready(fd, 0, 1)) {
         (*ready)++;
       } else {
         wset[word] &= ~mask;
@@ -931,11 +965,10 @@ int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
     if (thread_find_fd_id(current, fds[i].fd) == NULL) {
       got = POLLNVAL_;
     } else {
-      /* 本机(AF_UNIX) socket 有真实就绪状态；其它 fd 沿用"存在即就绪" */
-      if ((want & POLLIN_) && unix_poll_ready(fds[i].fd, 1, 0) != 0) {
+      if ((want & POLLIN_) && sys_fd_ready(fds[i].fd, 1, 0)) {
         got |= POLLIN_;
       }
-      if ((want & POLLOUT_) && unix_poll_ready(fds[i].fd, 0, 1) != 0) {
+      if ((want & POLLOUT_) && sys_fd_ready(fds[i].fd, 0, 1)) {
         got |= POLLOUT_;
       }
       if (want & POLLPRI_) got |= POLLPRI_;
@@ -971,6 +1004,17 @@ size_t sys_write(u32 fd, void* buf, size_t nbytes) {
   if (buf == NULL || nbytes == 0) {
     return 0;
   }
+  {
+    /* 【诊断·可删】只看"像 keymap 的写"和"写管道" */
+    static int sw_dbg = 0;
+    int is_pipe = node->name != NULL && node->name[0] == 'p' &&
+                  node->name[1] == 'i' && node->name[2] == 'p';
+    if ((is_pipe || nbytes >= 256) && sw_dbg++ < 40) {
+      log_error("SW tid=%d fd=%d name=%s node=%s size=%d\n", current->id, fd,
+                f->name != NULL ? f->name : "?",
+                node->name != NULL ? node->name : "?", (int)nbytes);
+    }
+  }
 
   u8* write_buf = (u8*)buf;
   u8* tmp_buf = NULL;
@@ -997,29 +1041,6 @@ size_t sys_write(u32 fd, void* buf, size_t nbytes) {
   }
   if (ret > 0) {
     f->offset += ret;
-  }
-  return ret;
-}
-
-/* 【管道读的等待语义放在 syscall 层】POSIX 里 pipe 空读不是 EOF：只有写端
- * 全部关闭才返回 0。以前这里直接返回 vread 的 0，于是 Xorg 通过 popen 把
- * keymap 喂给 xkbcomp 时，xkbcomp 一启动就读到 EOF，解析空输入：
- *   syntax error: line 1 of stdin
- *   (EE) XKB: Could not invoke xkbcomp / Couldn't compile keymap
- * 随后 X server FatalError 退出。
- *
- * 为什么不写在 vfs/pipe 里：一次 vread 会持有 vfs_biglock，跨调用的等待
- * 如果留在锁内，写端（另一个进程）拿锁就会被我们卡住 → 互等死锁（历史上
- * 正是因此把 pipe 改成"空读返回 0"）。所以等待只在 syscall 层做：每次
- * vread 都是一次完整的"加锁-读-解锁"，空读之间用 schedule_switch() 让出
- * CPU，写端就有机会把数据放进缓冲区。 */
-static u32 sys_pipe_wait_read(vnode_t* node, u32 offset, u32 nbytes, u8* buf) {
-  u32 ret = vread(node, offset, nbytes, buf);
-  for (int i = 0; ret == 0 && i < 4000; i++) {
-    if (i >= 8) {
-      schedule_switch();
-    }
-    ret = vread(node, offset, nbytes, buf);
   }
   return ret;
 }
@@ -1067,11 +1088,7 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
   }
 
   u32 ret;
-  if (node->op != NULL && (void*)node->op->read == (void*)pip_read) {
-    ret = sys_pipe_wait_read(node, f->offset, nbytes, read_buf);
-  } else {
-    ret = vread(node, f->offset, nbytes, read_buf);
-  }
+  ret = vread(node, f->offset, nbytes, read_buf);
   {
     /* 【探针·可删】.so 读追踪：定位库内容截断点 */
     const char* nm = f->name != NULL ? f->name : "?";
@@ -1634,7 +1651,14 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
     } else if (cmd == F_GETFD) {
       return (int)(findfd->flags & (u32)FD_CLOEXEC);
     } else if (cmd == F_GETFL) {
-      return (int)(findfd->flags & (u32)FD_STATUS_MASK);
+      /* 【必须报告访问模式】glibc 的 fdopen() 会用 F_GETFL 校验方向：
+       *   (flags & O_ACCMODE) == O_RDONLY 时 fdopen(fd, "w") 直接返回 NULL。
+       * 本内核不记录每个 fd 的访问模式，统一按 O_RDWR 报告（读写两个方向
+       * 都成立），状态标志照常带上。曾经返回 0（=O_RDONLY）导致
+       * popen("...", "w") 恒失败：Xorg 的 xkbcomp 拉起后一个字节都写不进
+       * 管道，于是 "Could not invoke xkbcomp" + "syntax error: line 1 of
+       * stdin"。 */
+      return (int)((u32)O_RDWR | (findfd->flags & (u32)FD_STATUS_MASK));
     } else if (cmd == F_SETFL) {
       /* 只改 fd 层能表达的状态位；access mode 由 open 决定，不在这里动。 */
       findfd->flags = (findfd->flags & ~(u32)FD_STATUS_MASK) |

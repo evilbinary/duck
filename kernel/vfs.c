@@ -137,6 +137,16 @@ u32 vwrite(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
      * 因为写失败进入重试/报错循环（Xorg 写 /dev/console 的日志就是这种）。 */
     log_debug("node %s write not implemented, dropped %d bytes\n", node->name,
               size);
+    {
+      /* 【诊断·可删】pipe 写端选错 fd 时会静默落到这里 */
+      static int bh_dbg = 0;
+      thread_t* cur = thread_current();
+      if (bh_dbg++ < 24) {
+        log_error("VW-BLACKHOLE node=%s size=%d tid=%d\n",
+                  node->name != NULL ? node->name : "?", (int)size,
+                  cur != NULL ? (int)cur->id : -1);
+      }
+    }
     return size;
   }
 }

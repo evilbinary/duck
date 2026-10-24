@@ -88,6 +88,7 @@ void thread_init_default(thread_t* thread, u32 level, u32* entry, void* data) {
   thread->ticks = 0;
   thread->clear_child_tid = NULL;
   thread->user_tp = NULL;
+  thread->last_no = -1;
 }
 
 thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
@@ -898,6 +899,15 @@ void thread_exit(thread_t* thread, int code) {
        * 不匹配的 child 不收割也不唤醒父：留 recycle 队列当僵尸，由父后续
        * 对应的 waitpid 首轮 reap 收割。 */
       long want = (long)context_arg0(pic);
+      {
+        /* 【诊断·可删】代收割：父在等谁、退出的子是谁、退出码多少 */
+        static int reap_dbg = 0;
+        if (reap_dbg++ < 24) {
+          log_error("REAP parent=%d want=%d child=%d code=%d sno=%d arg1=%lx\n",
+                    parent->id, (int)want, thread->id, code,
+                    (int)context_fn(pic), (u64)context_arg1(pic));
+        }
+      }
       if (want < 0 || want == (long)thread->id) {
         thread->pid = (u32)-1; /* 1) 收割，recycle 下一轮放行 */
         int* wstatus = (int*)(unsigned long)context_arg1(pic);
@@ -1220,7 +1230,7 @@ void thread_dumps() {
 
   kprintf(
       "id   pid  name                 state     cpu  cpu%%  count  "
-      "  vm   pm   nstack  file  sleep  level  faults ticks\n");
+      "  vm   pm   nstack  file  sleep  level  faults ticks  last\n");
   for (i = 0; i < MAX_CPU; i++) {
     for (thread_t* p = schedulable_head_thread[i]; p != NULL; p = p->next) {
       u32 pct = 0;
@@ -1250,13 +1260,13 @@ void thread_dumps() {
       } else {
         kprintf("%-20s ", "");
       }
-      kprintf("%-8s %4d %4d%% %6d %4dk %4dk %4dk %6d %6d %6d  %4d %6d\n", str,
+      kprintf("%-8s %4d %4d%% %6d %4dk %4dk %4dk %6d %6d %6d  %4d %6d  %4d\n", str,
               p->cpu_id, pct, p->counter,
               p->vm != NULL && p->vm->vma != NULL
                   ? p->vm->vma->alloc_size / 1024
                   : 0,
               p->mem / 1024, p->ctx->usp_size / 1024, p->fd_number,
-              p->sleep_counter, p->level, p->faults, p->ticks);
+              p->sleep_counter, p->level, p->faults, p->ticks, p->last_no);
     }
   }
 }
