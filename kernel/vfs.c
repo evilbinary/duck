@@ -96,15 +96,26 @@ size_t vioctl(vnode_t *node, u32 cmd, void *args) {
   }
 }
 
+/* 【自递归闸门】default_operator 把 read/write/close 都指回 vfs_read/vfs_write/
+ * vfs_close 本身（见文件开头的 default_operator 定义），用来表示"这个节点没有
+ * 自己的实现，交给通用逻辑"。但 vread/vwrite/vclose 又无条件调用
+ * node->op->xxx ⇒ 碰到仍然是 default_operator 的节点就【无限自递归】：
+ *     vwrite → node->op->write(=vfs_write) → vwrite → ...
+ * 实测后果：Xorg 打开不存在的 /dev/console 时按 O_CREAT 建出名为 "console"
+ * 的节点（op 还是 default_operator），随后写 X 日志（"[    58.671] " 这种行）
+ * 直接把这棵调用链压进死循环，内核栈写爆 ⇒ 各 CPU 的 current 变成垃圾值、
+ * scheduler 找不到可运行线程、整机挂死（gdb 现场：CPU0 栈上是
+ * vwrite/vfs_write 交替几十层）。
+ * vfs_open 早就用 `node->op->open != &vfs_open` 这种方式防过，这里补齐同款。 */
 u32 vread(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
-  if (node->op->read != NULL) {
+  if (node->op->read != NULL && (void *)node->op->read != (void *)vfs_read) {
     u32 ret;
     vfs_lock();
     ret = node->op->read(node, offset, size, buffer);
     vfs_unlock();
     return ret;
   } else {
-    log_error("node %s read is null\n", node->name);
+    log_debug("node %s read not implemented\n", node->name);
     return 0;
   }
 }
@@ -115,15 +126,18 @@ u32 vwrite(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
      * 回写 flush 再写只会刷出 reopen 失败噪音。 */
     return 0;
   }
-  if (node->op->write != NULL) {
+  if (node->op->write != NULL && (void *)node->op->write != (void *)vfs_write) {
     u32 ret;
     vfs_lock();
     ret = node->op->write(node, offset, size, buffer);
     vfs_unlock();
     return ret;
   } else {
-    log_error("node %s write is null\n", node->name);
-    return 0;
+    /* 没有写实现的节点按"黑洞"处理：假装收下（返回字节数），免得调用方
+     * 因为写失败进入重试/报错循环（Xorg 写 /dev/console 的日志就是这种）。 */
+    log_debug("node %s write not implemented, dropped %d bytes\n", node->name,
+              size);
+    return size;
   }
 }
 
@@ -144,9 +158,13 @@ u32 vclose(vnode_t *node) {
     log_error("vclose bad node %x\n", node);
     return (u32)-1;
   }
-  if (node->op == NULL || node->op->close == NULL) {
-    log_error("node %s close is null\n", node->name != NULL ? node->name : "<null>");
-    return (u32)-1;
+  if (node->op == NULL || node->op->close == NULL ||
+      (void *)node->op->close == (void *)vfs_close) {
+    /* 同 vread/vwrite：default_operator.close 指向 vfs_close 自身，
+     * 直接调用就是无限自递归。没有自己的 close 就当无事发生。 */
+    log_debug("node %s close not implemented\n",
+              node->name != NULL ? node->name : "<null>");
+    return 0;
   }
   {
     u32 ret;
@@ -157,7 +175,8 @@ u32 vclose(vnode_t *node) {
   }
 }
 u32 vreaddir(vnode_t *node, vdirent_t *dirent, u32 *offset, u32 count) {
-  if (node->op->readdir != NULL) {
+  if (node->op->readdir != NULL &&
+      (void *)node->op->readdir != (void *)vfs_readdir) {
     if ((node->flags & V_DIRECTORY) == V_DIRECTORY) {
       u32 ret;
       vfs_lock();
