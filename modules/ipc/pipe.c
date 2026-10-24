@@ -6,6 +6,7 @@
 #include "pipe.h"
 
 #include "kernel/kernel.h"
+#include "kernel/schedule.h"
 
 size_t pipe_buffer_read_wait(buffer_t* buffer) {
   rw_queue_t* rwq = buffer->data;
@@ -51,31 +52,26 @@ pipe_t* pipe_create(u32 size) {
 u32 pip_read(vnode_t* node, u32 offset, u32 size, u8* buffer) {
   pipe_t* pipe = node->device;
   if (pipe == NULL) {
-    kprintf("pipe read null\n");
-    return -1;
+    log_error("pipe read null\n");
+    return (u32)-1;
   }
-  u32 ret = 0;
-  ret = buffer_read(pipe->buffer, buffer, size);
-  kprintf("pipe read: %s size:%d ret %d\n", buffer,size, ret);
-  return ret;
+  return buffer_read(pipe->buffer, buffer, size);
 }
 
 u32 pip_write(vnode_t* node, u32 offset, u32 size, u8* buffer) {
   pipe_t* pipe = node->device;
   if (pipe == NULL) {
-    kprintf("pipe write null\n");
-    return -1;
+    log_error("pipe write null\n");
+    return (u32)-1;
   }
-  kprintf("pipe write: %s size:%d\n",buffer, size);
-  u32 ret = buffer_write(pipe->buffer, buffer, size);
-  return ret;
+  return buffer_write(pipe->buffer, buffer, size);
 }
 
 vnode_t* pipe_make(u32 size) {
   vnode_t* node = vfs_create_node("pipe", 0);
   node->device = pipe_create(size);
-  voperator_t* op=kmalloc(sizeof(voperator_t),KERNEL_TYPE);
-  node->op=op;
+  voperator_t* op = kmalloc(sizeof(voperator_t), KERNEL_TYPE);
+  node->op = op;
   op->read = pip_read;
   op->write = pip_write;
   return node;

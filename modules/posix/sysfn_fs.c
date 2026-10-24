@@ -14,6 +14,8 @@
 #include "lwip_port.h"
 #endif
 
+extern u32 pip_read(vnode_t* node, u32 offset, u32 size, u8* buffer);
+
 #define log_debug 
 
 extern vnode_t* root_node;
@@ -999,6 +1001,29 @@ size_t sys_write(u32 fd, void* buf, size_t nbytes) {
   return ret;
 }
 
+/* 【管道读的等待语义放在 syscall 层】POSIX 里 pipe 空读不是 EOF：只有写端
+ * 全部关闭才返回 0。以前这里直接返回 vread 的 0，于是 Xorg 通过 popen 把
+ * keymap 喂给 xkbcomp 时，xkbcomp 一启动就读到 EOF，解析空输入：
+ *   syntax error: line 1 of stdin
+ *   (EE) XKB: Could not invoke xkbcomp / Couldn't compile keymap
+ * 随后 X server FatalError 退出。
+ *
+ * 为什么不写在 vfs/pipe 里：一次 vread 会持有 vfs_biglock，跨调用的等待
+ * 如果留在锁内，写端（另一个进程）拿锁就会被我们卡住 → 互等死锁（历史上
+ * 正是因此把 pipe 改成"空读返回 0"）。所以等待只在 syscall 层做：每次
+ * vread 都是一次完整的"加锁-读-解锁"，空读之间用 schedule_switch() 让出
+ * CPU，写端就有机会把数据放进缓冲区。 */
+static u32 sys_pipe_wait_read(vnode_t* node, u32 offset, u32 nbytes, u8* buf) {
+  u32 ret = vread(node, offset, nbytes, buf);
+  for (int i = 0; ret == 0 && i < 4000; i++) {
+    if (i >= 8) {
+      schedule_switch();
+    }
+    ret = vread(node, offset, nbytes, buf);
+  }
+  return ret;
+}
+
 size_t sys_read(u32 fd, void* buf, size_t nbytes) {
   thread_t* current = thread_current();
   fd_t* f = thread_find_fd_id(current, fd);
@@ -1041,7 +1066,12 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
     }
   }
 
-  u32 ret = vread(node, f->offset, nbytes, read_buf);
+  u32 ret;
+  if (node->op != NULL && (void*)node->op->read == (void*)pip_read) {
+    ret = sys_pipe_wait_read(node, f->offset, nbytes, read_buf);
+  } else {
+    ret = vread(node, f->offset, nbytes, read_buf);
+  }
   {
     /* 【探针·可删】.so 读追踪：定位库内容截断点 */
     const char* nm = f->name != NULL ? f->name : "?";
