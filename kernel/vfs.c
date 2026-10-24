@@ -158,13 +158,9 @@ u32 vclose(vnode_t *node) {
     log_error("vclose bad node %x\n", node);
     return (u32)-1;
   }
-  if (node->op == NULL || node->op->close == NULL ||
-      (void *)node->op->close == (void *)vfs_close) {
-    /* 同 vread/vwrite：default_operator.close 指向 vfs_close 自身，
-     * 直接调用就是无限自递归。没有自己的 close 就当无事发生。 */
-    log_debug("node %s close not implemented\n",
-              node->name != NULL ? node->name : "<null>");
-    return 0;
+  if (node->op == NULL || node->op->close == NULL) {
+    log_error("node %s close is null\n", node->name != NULL ? node->name : "<null>");
+    return (u32)-1;
   }
   {
     u32 ret;
@@ -175,8 +171,7 @@ u32 vclose(vnode_t *node) {
   }
 }
 u32 vreaddir(vnode_t *node, vdirent_t *dirent, u32 *offset, u32 count) {
-  if (node->op->readdir != NULL &&
-      (void *)node->op->readdir != (void *)vfs_readdir) {
+  if (node->op->readdir != NULL) {
     if ((node->flags & V_DIRECTORY) == V_DIRECTORY) {
       u32 ret;
       vfs_lock();
