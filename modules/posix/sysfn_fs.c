@@ -676,12 +676,18 @@ int sys_linkat(int olddirfd, const char* oldpath, int newdirfd,
       sys_copy_user_string(newpath, knew, sizeof(knew)) < 0) {
     return -14;
   }
-  /* 源不存在 → ENOENT；目标已存在 → EEXIST（Xorg 靠它判断"已有服务器在跑"） */
+  /* 源不存在 → ENOENT；目标已存在 → EEXIST（Xorg 靠它判断"已有服务器在跑"）。
+   * 目标存在性用"真的打开一次"来探：vfs_find_relative 会命中 vfs 缓存里
+   * 残留的已删节点，报 EEXIST 之后调用方去读又读不到，自相矛盾。 */
   if (vfs_find_relative(current->vfs->root, current->vfs->pwd, kold) == NULL) {
     return -2;
   }
-  if (vfs_find_relative(current->vfs->root, current->vfs->pwd, knew) != NULL) {
-    return -17;
+  {
+    int probe = (int)sys_open_kpath(knew, O_RDONLY);
+    if (probe >= 0) {
+      sys_close((u32)probe);
+      return -17;
+    }
   }
 
   ofd = (int)sys_open_kpath(kold, O_RDONLY);
@@ -1053,7 +1059,7 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
       u64 lr = (current->ctx != NULL && current->ctx->ic != NULL)
                    ? current->ctx->ic->lr
                    : 0;
-      log_error("RDCHK %s off=%x req=%x ret=%x tid=%d name=%s pc=%x lr=%x\n",
+      log_debug("RDCHK %s off=%x req=%x ret=%x tid=%d name=%s pc=%x lr=%x\n",
                 nm, (u32)f->offset, (u32)nbytes, ret, current->id,
                 current->name != NULL ? current->name : "?", (u32)pc,
                 (u32)lr);

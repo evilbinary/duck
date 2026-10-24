@@ -361,7 +361,7 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
     }
     {
       u8* p = (u8*)map_at;
-      log_error("MMAPCHK %s off=%x len=%x filled=%x hdr=%02x%02x%02x%02x\n",
+      log_debug("MMAPCHK %s off=%x len=%x filled=%x hdr=%02x%02x%02x%02x\n",
                 f->name != NULL ? f->name : "?", (u32)off, (u32)length,
                 filled, p[0], p[1], p[2], p[3]);
     }

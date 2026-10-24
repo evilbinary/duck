@@ -242,8 +242,13 @@ enum {
   SYS_TGKILL = 131,
   SYS_GETRANDOM = 278,
   SYS_SETRLIMIT = 164,
-  SYS_SETUID = 105,
-  SYS_SETGID = 106,
+  /* 【aarch64 真实编号】105/106 是 init_module/delete_module，不是 setuid/setgid。
+   * 写错时 Xorg 的子线程调 setgid 直接 "syscall 144 not found handler"。 */
+  SYS_SETGID = 144,
+  SYS_SETREUID = 145,
+  SYS_SETUID = 146,
+  SYS_SETRESUID = 147,
+  SYS_SETRESGID = 149,
   SYS_SETGROUPS = 81,
   SYS_VHANGUP = 159,
   SYS_EVENTFD2 = 19,
