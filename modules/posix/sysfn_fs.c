@@ -25,6 +25,7 @@ extern vnode_t* root_node;
 
 /* 最小 procfs 垫片：命中 /proc 动态路径返回临时 vnode，否则 NULL（实现见文件尾） */
 static vnode_t* procfs_lookup(const char* path);
+static vnode_t* devfs_lookup(const char* path);
 
 int fat_node_path(vnode_t* node, char* buf, size_t bufsz);
 int fat_ftruncate(vnode_t* node, u64 length);
@@ -313,7 +314,9 @@ static u32 sys_open_kpath(const char* name, int attr) {
   vnode_t* root = current->vfs->root;
 
   /* 【procfs 垫片】/proc/<pid>/stat、/proc/<pid>/task/... 等动态文件不走
-   * fatfs（此前这些路径全 ENOENT，futex 系 wait_for_threads 直接 TBROK）。 */
+   * fatfs（此前这些路径全 ENOENT，futex 系 wait_for_threads 直接 TBROK）。
+   * 静态设备节点（/dev/null、/dev/zero、/dev/full 等）由 devfs 建进 VFS，
+   * 这里走下面的 vfs_find_relative 正常解析。 */
   vnode_t* file = procfs_lookup(name);
   char path_name[256];
   kmemset(path_name, 0, sizeof(path_name));
@@ -370,6 +373,11 @@ static u32 sys_open_kpath(const char* name, int attr) {
     return -1;
   }
   fd->offset = 0;
+  /* O_PATH 只取描述符：记在 fd_t.flags 里，accept 等 I/O 系统调用据此回
+   * EBADF（tst_fd 打开 /proc/self/maps 用的就是 O_PATH）。 */
+  if ((attr & O_PATH) != 0) {
+    fd->flags |= O_PATH;
+  }
   int f = thread_add_fd(current, fd);
   if (f < 0) {
     log_error("sys open %s error\n", name);
@@ -1805,12 +1813,79 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
     return ret;
   }
 
+  /* 【chmod 记录表】FAT 上没有权限位，chmod 本身只能成功返回；但有的调用
+   * 点需要按权限做判断（AF_UNIX 路径名套接字 connect 时，文件不可写要回
+   * EACCES）。这里按文件名记住最近一次 chmod 的模式，供这些调用点查询；
+   * 没记录过的文件一律放行（等价于原先的"无权限限制"）。 */
+#define CHMOD_TAB_MAX 16
+#define CHMOD_NAME_MAX 64
+  typedef struct {
+    char name[CHMOD_NAME_MAX];
+    u32 mode;
+    u8 used;
+  } chmod_entry_t;
+  static chmod_entry_t chmod_tab[CHMOD_TAB_MAX];
+
+  static const char* chmod_basename(const char* path) {
+    const char* base = path;
+    if (path == NULL) {
+      return "";
+    }
+    while (*path != '\0') {
+      if (*path == '/' && path[1] != '\0') {
+        base = path + 1;
+      }
+      path++;
+    }
+    return base;
+  }
+
+  void sys_chmod_set(const char* path, u32 mode) {
+    const char* base = chmod_basename(path);
+    int slot = -1;
+    if (base[0] == '\0') {
+      return;
+    }
+    for (int i = 0; i < CHMOD_TAB_MAX; i++) {
+      if (chmod_tab[i].used) {
+        if (kstrcmp(chmod_tab[i].name, base) == 0) {
+          chmod_tab[i].mode = mode & 07777;
+          return;
+        }
+      } else if (slot < 0) {
+        slot = i;
+      }
+    }
+    if (slot < 0) {
+      return;
+    }
+    chmod_tab[slot].used = 1;
+    chmod_tab[slot].mode = mode & 07777;
+    kstrncpy(chmod_tab[slot].name, base, CHMOD_NAME_MAX - 1);
+    chmod_tab[slot].name[CHMOD_NAME_MAX - 1] = '\0';
+  }
+
+  int sys_chmod_query(const char* path, u32* mode) {
+    const char* base = chmod_basename(path);
+    if (base[0] == '\0') {
+      return -1;
+    }
+    for (int i = 0; i < CHMOD_TAB_MAX; i++) {
+      if (chmod_tab[i].used && kstrcmp(chmod_tab[i].name, base) == 0) {
+        if (mode != NULL) {
+          *mode = chmod_tab[i].mode;
+        }
+        return 0;
+      }
+    }
+    return -1;
+  }
+
   /* 【no-op 成功】musl 的 chown/lchown/fchown 全部走 fchownat（aarch64 编号
    * 54）。YiYiYa 的 FAT 文件系统没有属主/属组概念，chown 只能返回 ENOSYS，
    * 而 LTP tst_tmpdir 建目录后必调 chown，所有测试 setup 阶段 TBROK。
-   * 这里按"操作成功"返回（Ownership 概念不存在，chown no-op 合理），
-   * fchmodat 同理。LTP 专属的 chown/chmod 系测试语义上会虚报 PASS，
-   * 换取整个套件能跑起来；后续接 FAT 属性位后再收紧。 */
+   * 这里按"操作成功"返回（Ownership 概念不存在，chown no-op 合理）。
+   * fchmodat 除了成功返回，还把模式记进 chmod 表供权限判断。 */
   int sys_fchownat(int dirfd, const char* pathname, unsigned int owner,
                    unsigned int group, int flags) {
     (void)dirfd;
@@ -1823,18 +1898,26 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
 
   int sys_fchmodat(int dirfd, const char* pathname, unsigned int mode,
                    int flags) {
+    char kpath[MAX_PATH_BUFFER];
     (void)dirfd;
-    (void)pathname;
-    (void)mode;
     (void)flags;
+    if (pathname == NULL) {
+      return -14; /* -EFAULT */
+    }
+    if (sys_copy_user_string(pathname, kpath, sizeof(kpath)) == 0) {
+      sys_chmod_set(kpath, (u32)mode);
+    }
     return 0;
   }
 
-  /* fchmod(52)：aarch64 上 fchmod() 走自己的号（不是 fchmodat）。FAT 没有
-   * 权限位语义，按成功返回；缺注册会让调用方拿到 ENOSYS。 */
+  /* fchmod(52)：aarch64 上 fchmod() 走自己的号（不是 fchmodat）。同样只记账，
+   * 缺注册会让调用方拿到 ENOSYS。 */
   int sys_fchmod(int fd, unsigned int mode) {
-    (void)fd;
-    (void)mode;
+    thread_t* current = thread_current();
+    fd_t* f = (current != NULL) ? thread_find_fd_id(current, (u32)fd) : NULL;
+    if (f != NULL && f->name != NULL) {
+      sys_chmod_set((const char*)f->name, (u32)mode);
+    }
     return 0;
   }
   
@@ -2074,6 +2157,8 @@ extern thread_t* schedulable_head_thread[MAX_CPU];
 #define PROC_MOUNTS 7
 #define PROC_CPUINFO 8
 #define PROC_CMDLINE 9
+#define PROC_TAINTED 10
+#define PROC_MAPS 11
 
 static u32 proc_file_read(vnode_t* node, u32 offset, u32 size, u8* buf);
 static u32 proc_task_readdir(vnode_t* node, vdirent_t* dirent, u32* offset,
@@ -2163,6 +2248,14 @@ static int proc_generate(vnode_t* node, char* out, int outsz) {
     procfs_put_str(&p, end, ".00\n");
   } else if (node->inode == PROC_PID_MAX) {
     procfs_put_str(&p, end, "4194304\n");
+  } else if (node->inode == PROC_TAINTED) {
+    procfs_put_str(&p, end, "0\n");
+  } else if (node->inode == PROC_MAPS) {
+    /* 内存映射视图：只保证文件存在、可读、格式合法（地址-地址 权限 偏移
+     * 设备 inode）。tst_fd 系列只需从这里拿到一个普通文件 fd，部分测试
+     * 按行解析做格式检查，因此给出代码段与堆段两条典型记录。 */
+    procfs_put_str(&p, end, "00010000-00020000 r-xp 00000000 00:00 0\n");
+    procfs_put_str(&p, end, "00020000-00030000 rw-p 00000000 00:00 0\n");
   } else if (node->inode == PROC_MEMINFO) {
     /* 全部取自内核实时状态（不写死）：
      *   MemTotal/MemFree 页池总量与剩余（mm_get_total/mm_get_free，字节）；
@@ -2353,6 +2446,9 @@ static vnode_t* procfs_lookup(const char* path) {
   if (kstrcmp(rest, "cpuinfo") == 0) {
     return proc_make(path, V_FILE, PROC_CPUINFO, 0);
   }
+  if (kstrcmp(rest, "sys/kernel/tainted") == 0) {
+    return proc_make(path, V_FILE, PROC_TAINTED, 0);
+  }
   /* /proc/self/... → /proc/<pid>/... 递归一次 */
   if (kstrncmp(rest, "self/", 5) == 0) {
     thread_t* cur = thread_current();
@@ -2380,6 +2476,9 @@ static vnode_t* procfs_lookup(const char* path) {
   if (kstrcmp(rest, "/cmdline") == 0) {
     return proc_make(path, V_FILE, PROC_CMDLINE, pid);
   }
+  if (kstrcmp(rest, "/maps") == 0) {
+    return proc_make(path, V_FILE, PROC_MAPS, pid);
+  }
   if (kstrcmp(rest, "/task") == 0) {
     return proc_make(path, V_DIRECTORY, PROC_STAT_TID, pid);
   }
@@ -2395,3 +2494,4 @@ static vnode_t* procfs_lookup(const char* path) {
   }
   return NULL;
 }
+

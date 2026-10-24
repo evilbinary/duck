@@ -452,15 +452,19 @@ static void unix_discard(struct unix_sock* sk) {
 
 /* ===================== syscall 实现 ===================== */
 
+/* 定义见文件后部（socketpair 附近），socket()/socketpair() 共用 */
+static void unix_fd_apply_flags(int fd, int type_flags);
+
 int unix_socket(int type, int protocol) {
   struct unix_sock* sk;
   int fd;
+  int type_flags = type & (0x800 | 0x80000);
   (void)protocol;
   /* 去掉 SOCK_NONBLOCK(0x800) / SOCK_CLOEXEC(0x80000)：本通道恒为非阻塞，
-   * close-on-exec 在当前内核无 exec 关闭语义（与 lwIP 分支一致）。 */
+   * 标志位只记进 fd 层供 fcntl(F_GETFD/F_GETFL) 查询（exec 不关闭 fd）。 */
   type &= ~(0x800 | 0x80000);
   if (type != SOCK_STREAM && type != SOCK_DGRAM) {
-    return -91; /* -EPROTONOSUPPORT */
+    return -93; /* -EPROTONOSUPPORT（91 是 EPROTOTYPE，别混用） */
   }
   sk = unix_sock_new(type);
   if (sk == NULL) {
@@ -475,6 +479,7 @@ int unix_socket(int type, int protocol) {
     unix_discard(sk);
     return fd;
   }
+  unix_fd_apply_flags(fd, type_flags);
   return fd;
 }
 
@@ -559,6 +564,26 @@ int unix_connect(int fd, const void* addr, u32 addrlen) {
   }
   if (ls == NULL || !ls->listening) {
     return -111; /* -ECONNREFUSED：名字没有被 listen 的端点占用 */
+  }
+  /* 【写权限】路径名套接字要先过文件权限这一关：本内核没有真实权限位，
+   * 用 chmod 记录表里该路径最近一次设置的模式判断（没有记录 ⇒ 放行）。
+   * 抽象命名空间（key[2] == '\0'）没有文件，直接跳过。 */
+  {
+    char spath[128];
+    u32 n = (keylen > 2) ? (keylen - 2) : 0;
+    u32 mode = 0;
+    if (n > sizeof(spath) - 1) {
+      n = sizeof(spath) - 1;
+    }
+    kmemcpy(spath, key + 2, n);
+    spath[n] = '\0';
+    if (spath[0] != '\0' && sys_chmod_query(spath, &mode) == 0 &&
+        (mode & 0200) == 0) {
+      return -13; /* -EACCES：套接字文件不可写 */
+    }
+  }
+  if (ls->type != sk->type) {
+    return -91; /* -EPROTOTYPE：类型不匹配（数据报连到流式端点） */
   }
   if (ls->pend_count >= ls->backlog) {
     return -11; /* 队列满 */
@@ -651,14 +676,38 @@ int unix_accept(int fd, void* addr, u32* addrlen) {
   return nfd;
 }
 
+/* 把 socket()/socketpair() 类型里带的标志位落到 fd 层（F_GETFD/F_GETFL 可查） */
+static void unix_fd_apply_flags(int fd, int type_flags) {
+  thread_t* current = thread_current();
+  fd_t* f;
+  if (current == NULL || fd < 0) {
+    return;
+  }
+  f = thread_find_fd_id(current, (u32)fd);
+  if (f == NULL) {
+    return;
+  }
+  if ((type_flags & 0x80000) != 0) {
+    f->flags |= FD_CLOEXEC;
+  }
+  if ((type_flags & 0x800) != 0) {
+    f->flags |= O_NONBLOCK;
+  }
+}
+
 int unix_socketpair(int type, int protocol, int* sv) {
   struct unix_sock* a;
   struct unix_sock* b;
   int pair[2];
   int fda;
+  int type_flags = type & (0x800 | 0x80000);
   (void)protocol;
   if (sv == NULL) {
     return -14;
+  }
+  type &= ~(0x800 | 0x80000);
+  if (type != SOCK_STREAM && type != SOCK_DGRAM) {
+    return -22; /* -EINVAL：本机套接字只支持流/数据报 */
   }
   a = unix_sock_new(type);
   b = unix_sock_new(type);
@@ -699,6 +748,8 @@ int unix_socketpair(int type, int protocol, int* sv) {
     return pair[1];
   }
   sys_copy_to_user(sv, pair, sizeof(pair));
+  unix_fd_apply_flags(pair[0], type_flags);
+  unix_fd_apply_flags(pair[1], type_flags);
   return 0;
 }
 

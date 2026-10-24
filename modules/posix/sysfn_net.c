@@ -191,35 +191,37 @@ int sys_socket(int domain, int type, int protocol) {
   return fd_id;
 }
 
+/* socket()/socketpair() 共用的类型标志位（musl 直接按位或进 type） */
+#define SOCKPAIR_NONBLOCK 0x800
+#define SOCKPAIR_CLOEXEC 0x80000
+
 int sys_socketpair(int domain, int type, int protocol, int sv[2]) {
+  int base = type & ~(SOCKPAIR_NONBLOCK | SOCKPAIR_CLOEXEC);
+
+  /* 用户指针先校验：Linux 对空指针/未对齐指针一律 EFAULT，且不写入 */
+  if (sv == NULL || (((uintptr_t)sv) & 3) != 0) {
+    return -14; /* -EFAULT */
+  }
   if (domain == AF_UNIX) {
     return unix_socketpair(type, protocol, sv);
   }
-#ifdef NET_DRIVER
-  (void)domain;
-  (void)type;
-  (void)protocol;
-  (void)sv;
-  return -95; /* EOPNOTSUPP */
-#endif
-  log_debug("sys_socketpair domain=%d type=%d\n", domain, type);
-
-  // Create two connected sockets
-  int s1 = sys_socket(domain, type, protocol);
-  if (s1 < 0) return -1;
-
-  int s2 = sys_socket(domain, type, protocol);
-  if (s2 < 0) {
-    sys_close(s1);
-    return -1;
+  /* 其余地址族：本内核只有本机（AF_UNIX）这条配对通路。这里按 Linux 的
+   * errno 语义给出确定答案（调用方逐项核对错误码），而不是一律 EOPNOTSUPP。 */
+  if (domain != AF_INET) {
+    return -97; /* -EAFNOSUPPORT：未知地址族 */
   }
-
-  // For AF_UNIX, connect them directly
-  // For now, just return the pair
-  sv[0] = s1;
-  sv[1] = s2;
-
-  return 0;
+  if (base == SOCK_RAW) {
+    return -93; /* -EPROTONOSUPPORT：非特权用户不能建原始套接字 */
+  }
+  if (base != SOCK_STREAM && base != SOCK_DGRAM) {
+    return -22; /* -EINVAL：未知类型 */
+  }
+  /* INET 不支持 socketpair：类型与协议配套 ⇒ EOPNOTSUPP（协议本身没问题），
+   * 不配套（TCP+DGRAM / ICMP+STREAM）⇒ EPROTONOSUPPORT。 */
+  if (base == SOCK_DGRAM) {
+    return (protocol == IPPROTO_UDP) ? -95 : -93;
+  }
+  return (protocol == IPPROTO_TCP) ? -95 : -93;
 }
 
 int sys_bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
@@ -297,6 +299,15 @@ int sys_listen(int sockfd, int backlog) {
 }
 
 int sys_accept(int sockfd, struct sockaddr* addr, socklen_t* addrlen) {
+  /* O_PATH 描述符不具备任何 I/O 能力：Linux 在参数校验阶段就判 EBADF，
+   * 不会走到"不是套接字"的 ENOTSOCK（tst_fd 系用例按此期望）。 */
+  {
+    thread_t* cur = thread_current();
+    fd_t* ofd = (cur != NULL) ? thread_find_fd_id(cur, sockfd) : NULL;
+    if (ofd != NULL && (ofd->flags & O_PATH) != 0) {
+      return -9; /* -EBADF */
+    }
+  }
   if (unix_owns(sockfd)) {
     return unix_accept(sockfd, (void*)addr, (u32*)addrlen);
   }

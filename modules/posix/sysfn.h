@@ -446,6 +446,10 @@ int sys_fchownat(int dirfd, const char* pathname, unsigned int owner,
                  unsigned int group, int flags);
 int sys_fchmodat(int dirfd, const char* pathname, unsigned int mode, int flags);
 int sys_fchmod(int fd, unsigned int mode);
+/* chmod 记录表：FAT 无权限位，chmod 只记模式；权限敏感的调用点（AF_UNIX
+ * connect 的写权限判断）用它查询。未记录过返回 -1（视为无限制）。 */
+void sys_chmod_set(const char* path, u32 mode);
+int sys_chmod_query(const char* path, u32* mode);
 int sys_ftruncate(int fd, off_t length);
 int sys_mkdir(const char* pathname, mode_t mode);
 int sys_access(const char* pathname, int mode);

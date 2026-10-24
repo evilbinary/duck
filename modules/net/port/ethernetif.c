@@ -42,6 +42,9 @@ static err_t low_level_output(struct netif* netif, struct pbuf* p) {
 err_t ethernetif_init(struct netif* netif) {
   device_t* dev;
   if (netif == NULL) return ERR_ARG;
+  /* 名字必须给：netif 列表/日志/多网卡路由靠它区分（之前是空的） */
+  netif->name[0] = 'e';
+  netif->name[1] = 't';
   netif->hwaddr_len = ETH_HWADDR_LEN;
   netif->mtu = 1500;
   netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_ETHERNET;
@@ -117,6 +120,18 @@ static void lwip_netif_bringup(void* arg) {
   lwip_netif_ready = 1;
   kprintf("lwip: %u.%u.%u.%u/24 gw %u.%u.%u.%u\n", LWIP_IP_A, LWIP_IP_B, LWIP_IP_C,
           LWIP_IP_D, LWIP_IP_A, LWIP_IP_B, LWIP_IP_C, LWIP_GW_D);
+  /* 【诊断·可删】启动时列出 netif_list：确认 loopif(127.0.0.1) 是否建好并 UP
+   * （127.0.0.1 的 connect 返回 EHOSTUNREACH 就是路由找不到 loopif）。 */
+  {
+    struct netif* n;
+    for (n = netif_list; n != NULL; n = n->next) {
+      u32_t a = netif_ip4_addr(n)->addr;
+      kprintf("  netif [%c%c] hlen=%d fl=%x up=%d ip=%d.%d.%d.%d\n", n->name[0],
+              n->name[1], (int)n->hwaddr_len, (unsigned)n->flags,
+              netif_is_up(n), (int)(a & 0xff), (int)((a >> 8) & 0xff),
+              (int)((a >> 16) & 0xff), (int)((a >> 24) & 0xff));
+    }
+  }
 }
 
 void lwip_netif_start(void) { tcpip_init(lwip_netif_bringup, NULL); }

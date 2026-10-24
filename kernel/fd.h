@@ -30,6 +30,9 @@
 #define O_DIRECTORY  040000
 #define O_NOFOLLOW  0100000
 #define O_CLOEXEC  02000000
+/* 只取描述符、不做任何 I/O（Linux 语义）：带此标志的 fd 不能读/写/收发。
+ * 存在 fd_t.flags 里供各 syscall 判定（accept 必须据此回 EBADF）。 */
+#define O_PATH     010000000
 
 #ifndef MAX_FD_NUMBER
 #define MAX_FD_NUMBER 512
