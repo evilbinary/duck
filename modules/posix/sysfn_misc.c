@@ -138,13 +138,29 @@ int sys_prctl(int option, unsigned long a2, unsigned long a3,
   if (option == PR_SET_NAME_ && a2 != 0) {
     /* 线程名最长 16 字节（含 '\0'） */
     char name[16];
+    u32 len;
+    char* nn;
     if (sys_copy_from_user(name, (void*)(unsigned long)a2, sizeof(name)) < 0) {
       return -1;
     }
     name[sizeof(name) - 1] = '\0';
-    if (current->name != NULL) {
-      kstrncpy(current->name, name, kstrlen(name));
+    len = kstrlen(name);
+    /* 【绝不能就地写 current->name】那个指针可能是：
+     *   - fork/clone 时从父线程继承的同一块内存（thread_init_vm 里
+     *     copy->name = thread->name），就地写会把父进程的名字改掉：Xorg 的
+     *     InputThread 改名后 ps 里进程名变成 "InputThreadrg/Xorg"；
+     *   - exec 的 exec_params->filename（改它等于改 exec 参数）；
+     *   - 内核线程的静态字面量（"idle"/"tcpip"，写进只读区直接炸）；
+     *   - 父进程名长度决定的缓冲（新名更长还会堆溢出）。
+     * 所以照 Linux 语义：改名的线程换一块自己的缓冲（TASK_COMM_LEN 16 字节
+     * 上限，内存极小）。fork 不做分配 —— 那是热路径，且改名后指针会被这里
+     * 换成新块，父子自然分开。 */
+    nn = kmalloc(len + 1, KERNEL_TYPE);
+    if (nn == NULL) {
+      return -1;
     }
+    kmemcpy(nn, name, len + 1);
+    current->name = (u8*)nn;
     return 0;
   }
   if (option == PR_GET_NAME_ && a2 != 0) {

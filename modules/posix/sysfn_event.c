@@ -239,6 +239,15 @@ int sys_epoll_ctl(int epfd, int op, int fd, void* ev) {
   return -22;
 }
 
+/* epoll 事件位（与用户态 EPOLLIN/EPOLLOUT 一致） */
+#define EPOLLIN_ 0x001
+#define EPOLLOUT_ 0x004
+
+/* 就绪判据必须真实：原先"注册的 fd 还在表里就算 ready"会让
+ * ospoll_wait/epoll_wait 永不阻塞地立刻返回 ⇒ Xorg 的 InputThread 拿着
+ * 假事件空转（实测 400 次/秒 write 一个字节进 hotplug 管道、烧 24% CPU），
+ * 主线程也在 epoll_pwait 里 300+ 次/秒打转。这里改走 sys_fd_ready：
+ * pipe/本机 socket 按真实缓冲状态，普通文件/网络 socket 仍是"存在即就绪"。 */
 int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
                     void* sigmask, size_t sigsetsize) {
   struct epoll_k* ep = (struct epoll_k*)evfd_priv(epfd, EPOLL_K_MAGIC);
@@ -254,14 +263,30 @@ int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
     return -22;
   }
   for (i = 0; i < EPOLL_MAX_ITEMS && ready < maxevents; i++) {
+    u32 want;
+    int want_r;
+    int want_w;
+    int ok_r;
+    int ok_w;
     if (!ep->items[i].used) {
       continue;
     }
-    /* 就绪判据 = 目标 fd 仍在调用者 fd 表里 */
+    /* 目标 fd 已被关闭：跳过（下次 ctl 会清掉） */
     if (thread_find_fd_id(thread_current(), ep->items[i].fd) == NULL) {
       continue;
     }
-    out.events = ep->items[i].events;
+    want = ep->items[i].events;
+    want_r = (want & EPOLLIN_) != 0;
+    want_w = (want & EPOLLOUT_) != 0;
+    if (!want_r && !want_w) {
+      want_r = 1; /* 只关心 ERR/HUP 之类：按可读侧判 */
+    }
+    ok_r = want_r ? sys_fd_ready(ep->items[i].fd, 1, 0) : 0;
+    ok_w = want_w ? sys_fd_ready(ep->items[i].fd, 0, 1) : 0;
+    if (!ok_r && !ok_w) {
+      continue;
+    }
+    out.events = (ok_r ? EPOLLIN_ : 0) | (ok_w ? EPOLLOUT_ : 0);
     out.pad = 0;
     out.data = ep->items[i].data;
     sys_copy_to_user((void*)((char*)events + ready * sizeof(out)), &out,
@@ -271,8 +296,18 @@ int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
   if (ready > 0) {
     return ready;
   }
-  /* 无就绪：按 timeout 睡（ms；-1/0 都睡 1 tick 轮询兜底） */
-  schedule_sleep(timeout > 0 ? (timeout > 1000 ? 1000 : timeout) : 1);
+  /* 无就绪：按 timeout 睡（ms）。本内核在内核态不能真阻塞（见
+   * schedule_sleep 的说明），timeout<0 只能退化成轮询：
+   *   - 集合为空 ⇒ 永远等不到事件，睡 100ms（10 次/秒）
+   *   - 有注册项 ⇒ 睡 5ms，兼顾输入延迟与开销
+   * Xorg 的 InputThread 就是"空 epoll + 无限超时"，不这样它会 5ms 一次空转。 */
+  if (timeout < 0) {
+    schedule_sleep(ep->nitems == 0 ? 100 : 5);
+  } else if (timeout == 0) {
+    schedule_sleep(1);
+  } else {
+    schedule_sleep(timeout > 1000 ? 1000 : timeout);
+  }
   return 0;
 }
 

@@ -791,8 +791,9 @@ static int sys_fd_set_copy_out(void* user, const unsigned long* kset) {
 /* 一个 fd 在某方向上的就绪判定：
  *   pipe       → 看缓冲/端口真实状态（读端会阻塞，必须真实）
  *   本机 socket → unix_poll_ready
- *   其它       → 沿用老规则"存在即就绪" */
-static int sys_fd_ready(int fd, int want_read, int want_write) {
+ *   其它       → 沿用老规则"存在即就绪"
+ * 跨文件可见（epoll 也要用同一套判据，见 sysfn.h）。 */
+int sys_fd_ready(int fd, int want_read, int want_write) {
   int pr;
   if (thread_find_fd_id(thread_current(), fd) == NULL) {
     return 0;
@@ -943,18 +944,15 @@ int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
     kfree(fds);
     return -14; /* -EFAULT */
   }
-  /* 【超时】16B {i64 sec,i64 nsec} timespec；换算 ms（ceil） */
+  /* 【超时】16B {i64 sec,i64 nsec} timespec；换算 ms（ceil）。
+   * 先扫 fd、真有就绪就立刻返回；一个都没有才睡（旧实现先睡满再看，
+   * 数据早就绪也要等满超时，Xorg 的 ospoll/ppoll 循环因此被拉长）。 */
+  u64 tmo_ms = 0;
   if (tmo != NULL) {
     i64 sec64 = *(volatile i64*)tmo;
     i64 nsec64 = *(volatile i64*)((char*)tmo + 8);
-    u64 ms = (u64)(sec64 > 0 ? sec64 : 0) * 1000ull +
+    tmo_ms = (u64)(sec64 > 0 ? sec64 : 0) * 1000ull +
              ((u64)(nsec64 > 0 ? nsec64 : 0) + 999999ull) / 1000000ull;
-    if (ms == 0) {
-      ms = 1;
-    }
-    schedule_sleep((int)(ms > 1000 ? 1000 : ms));
-  } else {
-    schedule_sleep(1); /* 永久等待：1 tick 轮询兜底 */
   }
   for (i = 0; i < nfds; i++) {
     short want = fds[i].events;
@@ -978,6 +976,15 @@ int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
       ready++;
     }
     fds[i].revents = got;
+  }
+  if (ready == 0) {
+    /* 一个都没就绪：按超时睡，醒来返回 0（本内核不能在内核态阻塞）。 */
+    if (tmo != NULL) {
+      u64 ms = (tmo_ms == 0) ? 1 : tmo_ms;
+      schedule_sleep((int)(ms > 1000 ? 1000 : ms));
+    } else {
+      schedule_sleep(1);
+    }
   }
   sys_copy_to_user(ufds, fds, sizeof(struct pollfd_k) * nfds);
   kfree(fds);

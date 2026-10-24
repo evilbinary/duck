@@ -510,6 +510,9 @@ int unix_setsockopt(int fd, int level, int optname, const void* optval,
 int unix_getsockopt(int fd, int level, int optname, void* optval, u32* optlen);
 /* select/poll 就绪判定：1 就绪 / 0 未就绪 / -1 不是本机 socket */
 int unix_poll_ready(int fd, int want_read, int want_write);
+/* 统一的 fd 就绪判定（sysfn_fs.c）：pipe/本机 socket 按真实状态，其余沿用
+ * "存在即就绪"。poll/select/epoll 必须共用同一判据。 */
+int sys_fd_ready(int fd, int want_read, int want_write);
 
 void sys_fn_init();
 void sys_fn_net_init(void** syscall_table);
