@@ -645,17 +645,66 @@ int sys_utimensat(int dirfd, const char* pathname, const void* times, int flags)
   return 0;
 }
 
-/* 37 = linkat。FAT 没有硬链接，按 POSIX "目标文件系统不支持链接" 返回
- * EPERM（-1 在本框架里就是 EPERM，musl 侧看到 errno=1），不要返回 ENOSYS ——
- * 部分库会把 ENOSYS 当作"内核太老"再降级重试一轮。 */
+/* 37 = linkat。FAT 没有硬链接，这里用"复制内容"模拟：
+ * X server 的 LockServer() 必须靠
+ *     link("/tmp/.tX0-lock", "/tmp/.X0-lock")
+ * 原子地占住显示号，失败就直接
+ *     Fatal server error: Linking lock file (/tmp/.X0-lock) in place failed
+ * （QEMU 实测就是这个错，Xorg 因此退出）。ENOSYS 还会让部分库走"内核太老"的
+ * 降级分支，所以也不能返回 ENOSYS。
+ *
+ * 语义折中：两个名字各自独立（写一个不影响另一个），退出时各删各的。对锁文件、
+ * 临时占位这类"只用来占名"的用法足够；真正的多链接共享 inode 在 FAT 上做不到。 */
 int sys_linkat(int olddirfd, const char* oldpath, int newdirfd,
                const char* newpath, int flags) {
+  thread_t* current = thread_current();
+  char kold[MAX_PATH_BUFFER];
+  char knew[MAX_PATH_BUFFER];
+  u8 buf[512];
+  ssize_t n;
+  int ofd;
+  int nfd;
+
   (void)olddirfd;
-  (void)oldpath;
   (void)newdirfd;
-  (void)newpath;
   (void)flags;
-  return -1;
+  if (current == NULL || current->vfs == NULL || oldpath == NULL ||
+      newpath == NULL) {
+    return -14; /* -EFAULT */
+  }
+  if (sys_copy_user_string(oldpath, kold, sizeof(kold)) < 0 ||
+      sys_copy_user_string(newpath, knew, sizeof(knew)) < 0) {
+    return -14;
+  }
+  /* 源不存在 → ENOENT；目标已存在 → EEXIST（Xorg 靠它判断"已有服务器在跑"） */
+  if (vfs_find_relative(current->vfs->root, current->vfs->pwd, kold) == NULL) {
+    return -2;
+  }
+  if (vfs_find_relative(current->vfs->root, current->vfs->pwd, knew) != NULL) {
+    return -17;
+  }
+
+  ofd = (int)sys_open_kpath(kold, O_RDONLY);
+  if (ofd < 0) {
+    return -2;
+  }
+  nfd = (int)sys_open_kpath(knew, O_CREAT | O_WRONLY);
+  if (nfd < 0) {
+    sys_close((u32)ofd);
+    return -13; /* -EACCES */
+  }
+  for (;;) {
+    n = (ssize_t)sys_read((u32)ofd, buf, sizeof(buf));
+    if (n <= 0) {
+      break;
+    }
+    if ((ssize_t)sys_write((u32)nfd, buf, (size_t)n) != n) {
+      break;
+    }
+  }
+  sys_close((u32)ofd);
+  sys_close((u32)nfd);
+  return 0;
 }
 
 int sys_newfstatat(int dirfd, const char* pathname, struct stat* stat,

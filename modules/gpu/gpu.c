@@ -538,7 +538,23 @@ int gpu_init(void) {
     gpu_create_display(i, nd, dv);
   }
 #else
-  gpu_create_display(0, "fb", "vga");
+  /* 单屏：历史节点名是 /dev/fb（xwin/libgui 等都按它找）。
+   * 【再给一个 /dev/fb0 别名】Xorg 的 fbdev 驱动写死了只认 /dev/fb0，
+   * 没有它就直接 "Fatal server error: no screens found"（QEMU 实测）。
+   * 两个节点指向同一个 device，ioctl/mmap 行为完全一致。 */
+  {
+    device_t* disp = gpu_create_display(0, "fb", "vga");
+    if (disp != NULL) {
+      vnode_t* alias = vfs_create_node("fb0", V_FILE);
+      if (alias != NULL) {
+        vfs_mount(NULL, "/dev", alias);
+        alias->device = disp;
+        alias->op = &device_operator;
+      } else {
+        log_error("gpu: create node fb0 failed\n");
+      }
+    }
+  }
 #endif
 
 #ifdef SYSCONF_MODULE
