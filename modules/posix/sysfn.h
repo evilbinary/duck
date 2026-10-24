@@ -552,6 +552,7 @@ int sys_nanosleep(struct timespec* req, struct timespec* rem);
 int sys_clock_nanosleep(int clock, int flag, struct timespec* req,
                         struct timespec* rem);
 int sys_clock_gettime64(clockid_t clockid, struct timespec* ts);
+int sys_clock_getres(clockid_t clockid, struct timespec* res);
 u32 sys_time(time_t* t);
 int sys_setitimer(int which, void* new_val, void* old_val);
 int sys_mem_info();

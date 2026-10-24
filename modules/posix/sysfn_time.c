@@ -298,3 +298,16 @@ int sys_clock_gettime64(clockid_t clockid, struct timespec* ts) {
   log_warn("clock not support %d\n", clockid);
   return -1;
 }
+
+/* 【clock_getres(114)】aarch64 的 114 是 clock_getres（113 才是 clock_gettime）。
+ * 之前没注册：调用方拿到 ENOSYS，部分定时器/休眠实现会直接放弃。返回本内核
+ * 的时钟粒度：tick 计时精度即 1ms 级别，但 Linux 惯例是 1ns，调用方只用它
+ * 做"最小可睡眠单位"的粗估，写 1ns 更安全（不会把调用方推向毫秒级空转）。 */
+int sys_clock_getres(clockid_t clockid, struct timespec* res) {
+  (void)clockid;
+  if (res == NULL) { /* Linux：NULL 合法（只查询不改值） */
+    return 0;
+  }
+  sys_time64_write(res, 0, 1);
+  return 0;
+}
