@@ -207,8 +207,13 @@ static size_t evdev_ioctl(device_t* dev, u32 cmd, void* args) {
     }
     kmemset(out, 0, size);
     if (ev == EV_SYN) {
-      evdev_set_bit(out, size, SYN_REPORT);
-      evdev_set_bit(out, size, SYN_DROPPED);
+      /* EVIOCGBIT(0) 返回的是"支持哪些事件类型"的位图：bit N 对应 EV_N。
+       * 这里必须点亮 EV_SYN/EV_KEY/EV_REL 本身，而不是 SYN_REPORT/SYN_DROPPED
+       * 这两个 SYN 代码位——写错会让驱动认为设备既无按键也无相对轴，
+       * 直接报 "Don't know how to use device" 把设备丢掉。 */
+      evdev_set_bit(out, size, EV_SYN);
+      evdev_set_bit(out, size, EV_KEY);
+      evdev_set_bit(out, size, EV_REL);
     } else if (ev == EV_KEY) {
       evdev_set_bit(out, size, BTN_LEFT);
       evdev_set_bit(out, size, BTN_RIGHT);
