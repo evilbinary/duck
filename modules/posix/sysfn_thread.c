@@ -220,7 +220,7 @@ static u32 futex_waiter_wake(u32* addr, u32 max_wake) {
     /* 【诊断·可删】wake03 冻结点定位 */
     static int wk_dbg = 0;
     if (wk_dbg++ < 60) {
-      log_error("WK enter addr=%x max=%d tid=%d\n", (u32)(uintptr_t)addr,
+      log_debug("WK enter addr=%x max=%d tid=%d\n", (u32)(uintptr_t)addr,
                 (int)max_wake,
                 thread_current() != NULL ? (int)thread_current()->id : -1);
     }

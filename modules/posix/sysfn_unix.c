@@ -563,7 +563,7 @@ int unix_connect(int fd, const void* addr, u32 addrlen) {
   }
   ls = unix_lookup(key, keylen);
   /* 【诊断·可删】客户端 connect 用的名字与查表结果 */
-  log_error("UXCONN fd=%d addrlen=%d len=%d b0=%x b2=%x name=%s -> %s\n", fd,
+  log_debug("UXCONN fd=%d addrlen=%d len=%d b0=%x b2=%x name=%s -> %s\n", fd,
             addrlen, keylen, key[0], key[2],
             (keylen > 3 && key[2] == 0) ? (char*)(key + 3)
                                         : ((keylen > 2) ? (char*)(key + 2) : ""),
@@ -651,7 +651,7 @@ int unix_accept(int fd, void* addr, u32* addrlen) {
     static int acc_dbg = 0;
     if (acc_dbg++ < 20) {
       thread_t* c = thread_current();
-      log_error("UXACCEPT tid=%d fd=%d pend=%d\n", c != NULL ? (int)c->id : -1,
+      log_debug("UXACCEPT tid=%d fd=%d pend=%d\n", c != NULL ? (int)c->id : -1,
                 fd, (int)sk->pend_count);
     }
   }
@@ -900,7 +900,7 @@ int unix_poll_ready(int fd, int want_read, int want_write) {
       static int lp_dbg = 0;
       if (lp_dbg++ < 100) {
         thread_t* c = thread_current();
-        log_error("UXREADY-PEND tid=%d fd=%d pend=%d\n",
+        log_debug("UXREADY-PEND tid=%d fd=%d pend=%d\n",
                   c != NULL ? (int)c->id : -1, fd, (int)sk->pend_count);
       }
     }

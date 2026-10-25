@@ -142,7 +142,7 @@ u32 vwrite(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
       static int bh_dbg = 0;
       thread_t* cur = thread_current();
       if (bh_dbg++ < 24) {
-        log_error("VW-BLACKHOLE node=%s size=%d tid=%d\n",
+        log_debug("VW-BLACKHOLE node=%s size=%d tid=%d\n",
                   node->name != NULL ? node->name : "?", (int)size,
                   cur != NULL ? (int)cur->id : -1);
       }

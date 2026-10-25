@@ -144,7 +144,7 @@ static u32 pip_read(vnode_t* node, u32 offset, u32 size, u8* buffer) {
     static int r_dbg = 0;
     thread_t* c = thread_current();
     if (r_dbg++ < 40) {
-      log_error("PIPR tid=%d want=%d got=%d left=%d\n", c != NULL ? c->id : -1,
+      log_debug("PIPR tid=%d want=%d got=%d left=%d\n", c != NULL ? c->id : -1,
                 (int)size, (int)n, (int)p->count);
     }
   }
@@ -167,7 +167,7 @@ static u32 pip_write(vnode_t* node, u32 offset, u32 size, u8* buffer) {
     static int w_dbg = 0;
     thread_t* c = thread_current();
     if (w_dbg++ < 40) {
-      log_error("PIPW tid=%d size=%d put=%d cap=%d\n", c != NULL ? c->id : -1,
+      log_debug("PIPW tid=%d size=%d put=%d cap=%d\n", c != NULL ? c->id : -1,
                 (int)size, (int)n, (int)p->size);
     }
   }

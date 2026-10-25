@@ -216,7 +216,7 @@ void* ya_sbrk(size_t size) {
     static int probe_carve_n = 0;
     if (probe_carve_n < 20) {
       probe_carve_n++;
-      log_error("PROBE sbrk big carve size=%d ra=%x carved=%dM cnt=%d\n",
+      log_debug("PROBE sbrk big carve size=%d ra=%x carved=%dM cnt=%d\n",
                 (int)size, (u32)(uintptr_t)__builtin_return_address(0),
                 (int)(sbrk_carved_total >> 20), (int)sbrk_carve_count);
     }

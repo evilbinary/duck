@@ -212,7 +212,7 @@ int sys_epoll_ctl(int epfd, int op, int fd, void* ev) {
       u64 lr = (c != NULL && c->ctx != NULL && c->ctx->ic != NULL)
                    ? c->ctx->ic->lr
                    : 0;
-      log_error("EPCTL tid=%d epfd=%d op=%d fd=%d ep=%s pc=%x lr=%x\n",
+      log_debug("EPCTL tid=%d epfd=%d op=%d fd=%d ep=%s pc=%x lr=%x\n",
                 c != NULL ? (int)c->id : -1, epfd, op, fd,
                 ep != NULL ? "ok" : "BAD", (u32)pc, (u32)lr);
     }
@@ -245,7 +245,7 @@ int sys_epoll_ctl(int epfd, int op, int fd, void* ev) {
     if (ev_dbg++ < 20 && ev != NULL) {
       u32 raw[6];
       sys_copy_from_user(raw, ev, sizeof(raw));
-      log_error("EPEVT op=%d fd=%d size=%d w=%x,%x,%x,%x,%x,%x\n", op, fd,
+      log_debug("EPEVT op=%d fd=%d size=%d w=%x,%x,%x,%x,%x,%x\n", op, fd,
                 (int)sizeof(kev), (u32)raw[0], (u32)raw[1], (u32)raw[2],
                 (u32)raw[3], (u32)raw[4], (u32)raw[5]);
     }
@@ -303,7 +303,7 @@ int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
     }
     ep = (struct epoll_k*)evfd_priv(epfd, EPOLL_K_MAGIC);
     if (epw_in++ < 30) {
-      log_error("EPWAIT-IN tid=%d epfd=%d ev=%x max=%d tmo=%d ep=%x magic=%x\n",
+      log_debug("EPWAIT-IN tid=%d epfd=%d ev=%x max=%d tmo=%d ep=%x magic=%x\n",
                 c0 != NULL ? (int)c0->id : -1, epfd, (u32)(uintptr_t)events,
                 maxevents, timeout, (u32)(uintptr_t)ep,
                 (n0 != NULL && n0->device != NULL) ? ((u32*)n0->device)[0] : 0);
@@ -347,7 +347,7 @@ int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
         }
         if (sys_fd_ready(ep->items[i].fd, 1, 0)) {
           epw_dbg++;
-          log_error("EPWAIT-RDY tid=%d fd=%d ev=%x listen=%d\n",
+          log_debug("EPWAIT-RDY tid=%d fd=%d ev=%x listen=%d\n",
                     c != NULL ? (int)c->id : -1, ep->items[i].fd,
                     ep->items[i].events, unix_fd_is_listener(ep->items[i].fd));
           break;

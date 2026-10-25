@@ -15,7 +15,11 @@
 /* 每个线程的 fd 表大小（fd_size）。ARM64 上应用（如 VNC/网络服务）会同时
  * 打开较多 socket/文件，40 不够，默认给到 80。 */
 #define THREAD_MAX_FD_NUMBER 80
-#define MAX_PHDR 12
+/* ELF program header 上限：现代发行版 PIE 程序常有 13~16 个 phdr
+ * （PT_PHDR/PT_INTERP/PT_LOAD×N/PT_DYNAMIC/PT_NOTE/PT_GNU_EH_FRAME/
+ *  PT_GNU_STACK/PT_GNU_RELRO/PT_TLS/PT_GNU_PROPERTY），12 会把它们判成
+ * "bad phdr table" 拒绝执行。数组在栈上，32×56B=1.8KB 对内核栈安全。 */
+#define MAX_PHDR 32
 #define MAX_SHDR 25
 
 #define MAX_DEVICE 40
@@ -78,7 +82,11 @@
 
 #define MAX_FD_NUMBER 64
 #define THREAD_MAX_FD_NUMBER 64
-#define MAX_PHDR 12
+/* ELF program header 上限：现代发行版 PIE 程序常有 13~16 个 phdr
+ * （PT_PHDR/PT_INTERP/PT_LOAD×N/PT_DYNAMIC/PT_NOTE/PT_GNU_EH_FRAME/
+ *  PT_GNU_STACK/PT_GNU_RELRO/PT_TLS/PT_GNU_PROPERTY），12 会把它们判成
+ * "bad phdr table" 拒绝执行。数组在栈上，32×56B=1.8KB 对内核栈安全。 */
+#define MAX_PHDR 32
 #define MAX_SHDR 25
 
 #define MAX_DEVICE 40
@@ -97,7 +105,11 @@
 
 #define MAX_FD_NUMBER 64
 #define THREAD_MAX_FD_NUMBER 64
-#define MAX_PHDR 12
+/* ELF program header 上限：现代发行版 PIE 程序常有 13~16 个 phdr
+ * （PT_PHDR/PT_INTERP/PT_LOAD×N/PT_DYNAMIC/PT_NOTE/PT_GNU_EH_FRAME/
+ *  PT_GNU_STACK/PT_GNU_RELRO/PT_TLS/PT_GNU_PROPERTY），12 会把它们判成
+ * "bad phdr table" 拒绝执行。数组在栈上，32×56B=1.8KB 对内核栈安全。 */
+#define MAX_PHDR 32
 #define MAX_SHDR 25
 
 #define MAX_DEVICE 40
@@ -116,7 +128,11 @@
 
 #define MAX_FD_NUMBER 64
 #define THREAD_MAX_FD_NUMBER 40
-#define MAX_PHDR 12
+/* ELF program header 上限：现代发行版 PIE 程序常有 13~16 个 phdr
+ * （PT_PHDR/PT_INTERP/PT_LOAD×N/PT_DYNAMIC/PT_NOTE/PT_GNU_EH_FRAME/
+ *  PT_GNU_STACK/PT_GNU_RELRO/PT_TLS/PT_GNU_PROPERTY），12 会把它们判成
+ * "bad phdr table" 拒绝执行。数组在栈上，32×56B=1.8KB 对内核栈安全。 */
+#define MAX_PHDR 32
 #define MAX_SHDR 25
 
 #define MAX_DEVICE 40

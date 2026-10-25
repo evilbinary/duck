@@ -903,7 +903,7 @@ void thread_exit(thread_t* thread, int code) {
         /* 【诊断·可删】代收割：父在等谁、退出的子是谁、退出码多少 */
         static int reap_dbg = 0;
         if (reap_dbg++ < 24) {
-          log_error("REAP parent=%d want=%d child=%d code=%d sno=%d arg1=%lx\n",
+          log_debug("REAP parent=%d want=%d child=%d code=%d sno=%d arg1=%lx\n",
                     parent->id, (int)want, thread->id, code,
                     (int)context_fn(pic), (u64)context_arg1(pic));
         }

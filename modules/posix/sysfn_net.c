@@ -126,7 +126,7 @@ int sys_socket(int domain, int type, int protocol) {
     thread_t* t = thread_current();
     int tid = (t != NULL) ? (int)t->id : -1;
     if (tid >= 6 && s_dbg++ < 40) {
-      log_error("SOCK2 tid=%d dom=%d type=%d\n", tid, domain, type);
+      log_debug("SOCK2 tid=%d dom=%d type=%d\n", tid, domain, type);
     }
   }
   /* AF_UNIX：lwIP 没有本机域，走内核内存通道（sysfn_unix.c） */
@@ -136,7 +136,7 @@ int sys_socket(int domain, int type, int protocol) {
     static int s_dbg = 0;
     if (s_dbg++ < 20) {
       thread_t* t = thread_current();
-      log_error("USOCK tid=%d type=%d -> fd=%d\n",
+      log_debug("USOCK tid=%d type=%d -> fd=%d\n",
                 t != NULL ? (int)t->id : -1, type, n);
     }
     return n;
@@ -372,7 +372,7 @@ int sys_connect(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
       u16 fam = (addr != NULL && addrlen >= 2)
                     ? *(volatile u16*)addr
                     : 0xffff;
-      log_error("SCONN tid=%d fd=%d unix=%d fam=%d len=%d\n",
+      log_debug("SCONN tid=%d fd=%d unix=%d fam=%d len=%d\n",
                 t != NULL ? (int)t->id : -1, sockfd, unix_owns(sockfd), (int)fam,
                 (int)addrlen);
     }
@@ -553,7 +553,7 @@ ssize_t sys_recvfrom(int sockfd, void* buf, size_t len, int flags,
     thread_t* t = thread_current();
     int tid = (t != NULL) ? (int)t->id : -1;
     if (tid >= 6 && r_dbg++ < 200) {
-      log_error("SRECV tid=%d fd=%d unix=%d\n", tid, sockfd, unix_owns(sockfd));
+      log_debug("SRECV tid=%d fd=%d unix=%d\n", tid, sockfd, unix_owns(sockfd));
     }
   }
   if (unix_owns(sockfd)) {

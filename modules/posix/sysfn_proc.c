@@ -265,7 +265,7 @@ void sys_exit(int status) {
     /* 【诊断·可删】谁以什么码退出 */
     static int xdbg = 0;
     if (xdbg++ < 12) {
-      log_error("EXIT tid=%d code=%d name=%s\n", current != NULL ? current->id : -1,
+      log_debug("EXIT tid=%d code=%d name=%s\n", current != NULL ? current->id : -1,
                 status, current != NULL && current->name ? current->name : "?");
     }
   }
@@ -318,7 +318,7 @@ void sys_exit_group(int status) {
     static int xgdbg = 0;
     thread_t* cur = thread_current();
     if (xgdbg++ < 12) {
-      log_error("EXITG tid=%d code=%d name=%s\n", cur != NULL ? cur->id : -1,
+      log_debug("EXITG tid=%d code=%d name=%s\n", cur != NULL ? cur->id : -1,
                 status, cur != NULL && cur->name ? cur->name : "?");
     }
   }
@@ -329,7 +329,7 @@ void sys_exit_group(int status) {
     thread_t* dbg_t = thread_current();
     if (dbg_t != NULL && exitg_dbg++ < 4000) {
       u64 pc = (dbg_t->ctx != NULL && dbg_t->ctx->ic != NULL) ? dbg_t->ctx->ic->pc : 0;
-      log_error("EXITG tid=%d name=%s status=%d pc=%x\n", dbg_t->id,
+      log_debug("EXITG tid=%d name=%s status=%d pc=%x\n", dbg_t->id,
                 dbg_t->name != NULL ? dbg_t->name : "?", status, (u32)pc);
     }
   }
@@ -768,7 +768,7 @@ static pid_t sys_waitpid_trace(pid_t pid, int options, pid_t ret) {
   static int wp_dbg = 0;
   thread_t* current = thread_current();
   if (wp_dbg++ < 6) {
-    log_error("WAITP tid=%d pid=%d opt=%d ret=%d\n",
+    log_debug("WAITP tid=%d pid=%d opt=%d ret=%d\n",
               current != NULL ? (int)current->id : -1, (int)pid, options,
               (int)ret);
     sys_trace_dump();

@@ -775,7 +775,7 @@ int sys_close(u32 fd) {
       }
     }
     if (is_pipe && sc_dbg++ < 40) {
-      log_error("SC tid=%d fd=%d name=%s\n", current->id, fd, f->name);
+      log_debug("SC tid=%d fd=%d name=%s\n", current->id, fd, f->name);
     }
   }
   // fd_close already calls vclose and sets fd->data = NULL.
@@ -954,7 +954,7 @@ int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
         fd0 = k0.fd;
         ev0 = k0.events;
       }
-      log_error("PPOLL tid=%d nfds=%u fd0=%d ev0=%x tmo=%x\n", tid, nfds, (int)fd0,
+      log_debug("PPOLL tid=%d nfds=%u fd0=%d ev0=%x tmo=%x\n", tid, nfds, (int)fd0,
                 (int)ev0, (u32)(uintptr_t)tmo);
     }
   }
@@ -1060,7 +1060,7 @@ size_t sys_write(u32 fd, void* buf, size_t nbytes) {
     int is_pipe = node->name != NULL && node->name[0] == 'p' &&
                   node->name[1] == 'i' && node->name[2] == 'p';
     if ((is_pipe || nbytes >= 256) && sw_dbg++ < 40) {
-      log_error("SW tid=%d fd=%d name=%s node=%s size=%d\n", current->id, fd,
+      log_debug("SW tid=%d fd=%d name=%s node=%s size=%d\n", current->id, fd,
                 f->name != NULL ? f->name : "?",
                 node->name != NULL ? node->name : "?", (int)nbytes);
     }

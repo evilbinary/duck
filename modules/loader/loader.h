@@ -6,8 +6,9 @@
 #ifndef __LOAER_H__
 #define __LOAER_H__
 
+/* 兜底值与 kernel/config.h 保持一致（现代 PIE 程序 phdr 数量 13~16 很常见） */
 #ifndef MAX_PHDR
-#define MAX_PHDR 12
+#define MAX_PHDR 32
 #endif
 
 #ifndef MAX_SHDR

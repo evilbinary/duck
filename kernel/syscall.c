@@ -97,11 +97,11 @@ void* do_syscall(interrupt_context_t* ic) {
     if (0 && no == 59 /* aarch64 pipe2 */) {
       sys_probe_tid = tid;
       sys_probe_left = 40;
-      log_error("PROBE pipe2 by tid=%d\n", tid);
+      log_debug("PROBE pipe2 by tid=%d\n", tid);
     } else if (sys_probe_left > 0 && tid == sys_probe_tid) {
       sys_probe_left--;
       sys_probe_pending = 1;
-      log_error("PROBE tid=%d no=%d args=%d,%x,%d\n", tid, no,
+      log_debug("PROBE tid=%d no=%d args=%d,%x,%d\n", tid, no,
                 (int)context_arg0(ic), (u32)context_arg1(ic),
                 (int)context_arg2(ic));
     }
@@ -121,7 +121,7 @@ void* do_syscall(interrupt_context_t* ic) {
   /* 【诊断·可删】把上面那条 PROBE 的返回值补上（handler 里会写 x0） */
   if (sys_probe_pending) {
     sys_probe_pending = 0;
-    log_error("PROBE-RET tid=%d no=%d ret=%d\n", sys_probe_tid, no,
+    log_debug("PROBE-RET tid=%d no=%d ret=%d\n", sys_probe_tid, no,
               (int)context_ret(ic));
   }
   /* 【诊断】在 handler 跑完之后记录（此时 r0 里才是真正的返回值）。 */
