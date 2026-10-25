@@ -10,6 +10,10 @@
 #include "kernel/thread.h"
 #include "kernel/vfs.h"
 #include "../loader/loader.h" /* exec_params_t：/proc/self/exe 取 exec->filename */
+/* VGA_IOC_READ_FRAMBUFFER_WIDTH/HEIGHT/BPP：sysfs 垫片要报 /sys 里的显示
+ * 几何（modes/virtual_size/stride/bits_per_pixel），只借这三个 ioctl 命令号，
+ * 不碰驱动的结构体 —— 显示设备到底怎么实现与本层无关。 */
+#include "../vga/vga.h"
 #include "sysfn.h"
 #ifdef NET_DRIVER
 #include "lwip_port.h"
@@ -27,6 +31,13 @@ extern vnode_t* root_node;
 /* 最小 procfs 垫片：命中 /proc 动态路径返回临时 vnode，否则 NULL（实现见文件尾） */
 static vnode_t* procfs_lookup(const char* path);
 static vnode_t* devfs_lookup(const char* path);
+
+/* 最小 sysfs 垫片（实现见文件尾）：只补 /sys/class/graphics/fbN 这一片，
+ *   sysfs_lookup          → open/stat/access/readdir 用（sys_open_kpath 先问）；
+ *   sysfs_readlink_magic  → readlink 用（.../fb0/device/subsystem 这类软链接）。 */
+static vnode_t* sysfs_lookup(const char* path);
+static int sysfs_readlink_magic(const char* path, char* out, size_t outsz,
+                                size_t* olen);
 
 int fat_node_path(vnode_t* node, char* buf, size_t bufsz);
 int fat_ftruncate(vnode_t* node, u64 length);
@@ -339,6 +350,10 @@ static u32 sys_open_kpath(const char* name, int attr) {
    * 静态设备节点（/dev/null、/dev/zero、/dev/full 等）由 devfs 建进 VFS，
    * 这里走下面的 vfs_find_relative 正常解析。 */
   vnode_t* file = procfs_lookup(name);
+  if (file == NULL) {
+    /* 【sysfs 垫片】/sys/class/graphics/fbN 及其软链接（见文件尾） */
+    file = sysfs_lookup(name);
+  }
   char path_name[256];
   kmemset(path_name, 0, sizeof(path_name));
   if (file != NULL) {
@@ -1275,6 +1290,19 @@ static ssize_t sys_readlink_common(int dirfd, const char* pathname, char* buf,
     if (dir != NULL && kpath[0] != '/' && (dir->flags & 0xFF) != V_DIRECTORY) {
       ret = -ENOTDIR; /* dirfd 是普通文件，相对路径无法解析 */
       goto done;
+    }
+
+    {
+      size_t tlen = 0;
+      int magic = sysfs_readlink_magic(kpath, target, SYSLINK_PATH_MAX, &tlen);
+      if (magic > 0) {
+        ret = sys_readlink_write(target, tlen, buf, bufsiz);
+        goto done;
+      }
+      if (magic < 0) {
+        ret = -ENOENT;
+        goto done;
+      }
     }
 
     {
@@ -3103,5 +3131,607 @@ static vnode_t* procfs_lookup(const char* path) {
     }
   }
   return NULL;
+}
+
+/* ===================== 最小 sysfs 垫片 =====================
+ * /sys 是 Linux 的 sysfs：内核把"设备 ↔ 总线 ↔ 驱动"的关系导出成一棵目录
+ * 树，用户态靠 readlink 那些软链接判断设备的来源与归属。典型用法：
+ *
+ *     readlink("/sys/class/graphics/fb0/device/subsystem", buf, sizeof(buf))
+ *
+ * 拿到总线名（"pci"/"platform"/"drm"…）后再决定怎么打开 /dev/fb0。这条链接
+ * 不存在时，程序会直接判"没有可用显示设备"—— /dev/fb0 明明能 open/ioctl，
+ * Xorg 却报 "No devices detected"，根因就在这里。
+ *
+ * 本内核没有设备模型，这里只补 /sys/class/graphics/fbN 这一小片，形状与
+ * Linux 一致（相对链接的层数也对得上，所以 realpath() 也能走通）：
+ *
+ *   /sys                                     目录
+ *   /sys/class | /sys/bus | /sys/devices     三套并行视图的骨架
+ *   /sys/class/graphics                      按功能分类视图
+ *   /sys/class/graphics/fbD                  目录，属性见下
+ *     name / dev / modes / virtual_size / stride / bits_per_pixel /
+ *     blank / rotate / uevent
+ *     subsystem        → /sys/class/graphics
+ *     device           → ../../../devices/platform/fbD      （相对链接）
+ *     device/subsystem → /sys/bus/platform                ← 应用真正读的那条
+ *     device/driver    → /sys/bus/platform/drivers/fb
+ *   /sys/devices/platform/fbD                同一设备的"物理"视图
+ *   /sys/bus/platform[/drivers/fb[/fbD]]     按总线分类视图
+ *
+ * 实现方式与上面的 procfs 垫片同构：节点是 kmalloc 的临时 vnode
+ * （name=访问路径、inode=条目种类、impl=fb 编号），read 现场生成内容、
+ * close 自释放；目录树不真的挂进 VFS —— sys_open_kpath 先问这里，命中就
+ * 不再落 fatfs。好处是内容永远反映设备当前状态（分辨率会被 [hdmi]/[vga]
+ * 配置改），不必在内核各处维护一份副本。
+ *
+ * 哪些 fb 存在、分辨率是多少，都去问 /dev/fbN 自己：节点在不在用
+ * vfs_find_child 探（不打印错误日志），几何走 gpu 驱动既有的
+ * VGA_IOC_READ_FRAMBUFFER_WIDTH/HEIGHT/BPP。 */
+
+#define SYSFS_FB_MAX 4
+
+/* 条目种类 */
+#define SYSFS_ENT_DIR 1
+#define SYSFS_ENT_FILE 2
+#define SYSFS_ENT_LINK 3
+
+/* 目录/属性的种类（存进 node->inode，read/readdir 据此决定内容） */
+enum {
+  SYSFS_DIR_ROOT = 1,
+  SYSFS_DIR_CLASS,
+  SYSFS_DIR_GRAPHICS,
+  SYSFS_DIR_BUS,
+  SYSFS_DIR_BUS_PLATFORM,
+  SYSFS_DIR_BUS_DRIVERS,
+  SYSFS_DIR_DRIVER_FB,
+  SYSFS_DIR_DEVICES,
+  SYSFS_DIR_DEVICES_PLATFORM,
+  SYSFS_DIR_FB,
+  SYSFS_DIR_FB_DEV, /* 设备本体（.../fbN/device 与 /sys/devices/platform/fbN） */
+  SYSFS_ATTR_NAME,
+  SYSFS_ATTR_DEV,
+  SYSFS_ATTR_MODES,
+  SYSFS_ATTR_VIRTUAL_SIZE,
+  SYSFS_ATTR_STRIDE,
+  SYSFS_ATTR_BPP,
+  SYSFS_ATTR_BLANK,
+  SYSFS_ATTR_ROTATE,
+  SYSFS_ATTR_UEVENT
+};
+
+typedef struct {
+  const char* path;   /* 'D' = fb 编号占位（匹配 1 位以上十进制数字） */
+  u8 kind;            /* SYSFS_ENT_* */
+  u8 content;         /* SYSFS_DIR_* / SYSFS_ATTR_* */
+  const char* target; /* 仅 LINK：目标串（'D' 同样换成编号） */
+} sysfs_entry_t;
+
+static const sysfs_entry_t sysfs_table[] = {
+    /* 目录骨架 */
+    {"/sys", SYSFS_ENT_DIR, SYSFS_DIR_ROOT, NULL},
+    {"/sys/class", SYSFS_ENT_DIR, SYSFS_DIR_CLASS, NULL},
+    {"/sys/class/graphics", SYSFS_ENT_DIR, SYSFS_DIR_GRAPHICS, NULL},
+    {"/sys/bus", SYSFS_ENT_DIR, SYSFS_DIR_BUS, NULL},
+    {"/sys/bus/platform", SYSFS_ENT_DIR, SYSFS_DIR_BUS_PLATFORM, NULL},
+    {"/sys/bus/platform/drivers", SYSFS_ENT_DIR, SYSFS_DIR_BUS_DRIVERS, NULL},
+    {"/sys/bus/platform/drivers/fb", SYSFS_ENT_DIR, SYSFS_DIR_DRIVER_FB, NULL},
+    {"/sys/devices", SYSFS_ENT_DIR, SYSFS_DIR_DEVICES, NULL},
+    {"/sys/devices/platform", SYSFS_ENT_DIR, SYSFS_DIR_DEVICES_PLATFORM, NULL},
+
+    /* 按功能分类视图：/sys/class/graphics/fbD */
+    {"/sys/class/graphics/fbD", SYSFS_ENT_DIR, SYSFS_DIR_FB, NULL},
+    {"/sys/class/graphics/fbD/name", SYSFS_ENT_FILE, SYSFS_ATTR_NAME, NULL},
+    {"/sys/class/graphics/fbD/dev", SYSFS_ENT_FILE, SYSFS_ATTR_DEV, NULL},
+    {"/sys/class/graphics/fbD/modes", SYSFS_ENT_FILE, SYSFS_ATTR_MODES, NULL},
+    {"/sys/class/graphics/fbD/virtual_size", SYSFS_ENT_FILE,
+     SYSFS_ATTR_VIRTUAL_SIZE, NULL},
+    {"/sys/class/graphics/fbD/stride", SYSFS_ENT_FILE, SYSFS_ATTR_STRIDE, NULL},
+    {"/sys/class/graphics/fbD/bits_per_pixel", SYSFS_ENT_FILE, SYSFS_ATTR_BPP,
+     NULL},
+    {"/sys/class/graphics/fbD/blank", SYSFS_ENT_FILE, SYSFS_ATTR_BLANK, NULL},
+    {"/sys/class/graphics/fbD/rotate", SYSFS_ENT_FILE, SYSFS_ATTR_ROTATE, NULL},
+    {"/sys/class/graphics/fbD/uevent", SYSFS_ENT_FILE, SYSFS_ATTR_UEVENT, NULL},
+    {"/sys/class/graphics/fbD/subsystem", SYSFS_ENT_LINK, 0,
+     "/sys/class/graphics"},
+    {"/sys/class/graphics/fbD/device", SYSFS_ENT_LINK, SYSFS_DIR_FB_DEV,
+     "../../../devices/platform/fbD"},
+    {"/sys/class/graphics/fbD/device/subsystem", SYSFS_ENT_LINK, 0,
+     "/sys/bus/platform"},
+    {"/sys/class/graphics/fbD/device/driver", SYSFS_ENT_LINK, 0,
+     "/sys/bus/platform/drivers/fb"},
+    {"/sys/class/graphics/fbD/device/name", SYSFS_ENT_FILE, SYSFS_ATTR_NAME,
+     NULL},
+
+    /* 物理视图：/sys/devices/platform/fbD */
+    {"/sys/devices/platform/fbD", SYSFS_ENT_DIR, SYSFS_DIR_FB_DEV, NULL},
+    {"/sys/devices/platform/fbD/name", SYSFS_ENT_FILE, SYSFS_ATTR_NAME, NULL},
+    {"/sys/devices/platform/fbD/subsystem", SYSFS_ENT_LINK, 0,
+     "/sys/bus/platform"},
+    {"/sys/devices/platform/fbD/driver", SYSFS_ENT_LINK, 0,
+     "/sys/bus/platform/drivers/fb"},
+
+    /* 总线视图：/sys/bus/platform/drivers/fb/fbD → 回到 class */
+    {"/sys/bus/platform/drivers/fb/fbD", SYSFS_ENT_LINK, 0,
+     "/sys/class/graphics/fbD"},
+};
+
+static u32 sysfs_readdir(vnode_t* node, vdirent_t* dirent, u32* offset,
+                         u32 count);
+static u32 sysfs_file_read(vnode_t* node, u32 offset, u32 size, u8* buf);
+static size_t sysfs_ioctl(vnode_t* node, u32 cmd, void* args);
+
+static voperator_t sysfs_dir_ops = {
+    .readdir = sysfs_readdir,
+    .ioctl = sysfs_ioctl,
+    .close = proc_node_close, /* 临时节点：close 自释放（与 procfs 垫片共用） */
+};
+
+static voperator_t sysfs_file_ops = {
+    .read = sysfs_file_read,
+    .ioctl = sysfs_ioctl,
+    .close = proc_node_close,
+};
+
+/* 模板匹配：'D' 吃掉 1 位以上十进制数字（写回 *idx），其余必须逐字符相同，
+ * 并且整串要恰好对完（"/sys" 不能匹配 "/sys/class"）。 */
+static int sysfs_match(const char* path, const char* tmpl, u32* idx) {
+  u32 v = 0;
+  int digits = 0;
+
+  while (*tmpl != '\0' && *tmpl != 'D') {
+    if (*path != *tmpl) {
+      return 0;
+    }
+    path++;
+    tmpl++;
+  }
+  if (*tmpl == '\0') {
+    return *path == '\0';
+  }
+  tmpl++; /* 跳过 'D' */
+  while (*path >= '0' && *path <= '9' && digits < 4) {
+    v = v * 10 + (u32)(*path - '0');
+    path++;
+    digits++;
+  }
+  if (digits == 0) {
+    return 0;
+  }
+  *idx = v;
+  while (*tmpl != '\0') {
+    if (*path != *tmpl) {
+      return 0;
+    }
+    path++;
+    tmpl++;
+  }
+  return *path == '\0';
+}
+
+static const sysfs_entry_t* sysfs_resolve(const char* path, u32* idx) {
+  u32 i;
+
+  if (path == NULL) {
+    return NULL;
+  }
+  for (i = 0; i < sizeof(sysfs_table) / sizeof(sysfs_table[0]); i++) {
+    u32 v = 0;
+    if (sysfs_match(path, sysfs_table[i].path, &v)) {
+      if (idx != NULL) {
+        *idx = v;
+      }
+      return &sysfs_table[i];
+    }
+  }
+  return NULL;
+}
+
+/* 模板里带 'D' ⇒ 这条条目依赖"第 N 块显示"是否存在 */
+static int sysfs_entry_uses_fb(const sysfs_entry_t* e) {
+  const char* s;
+
+  if (e == NULL || e->path == NULL) {
+    return 0;
+  }
+  for (s = e->path; *s != '\0'; s++) {
+    if (*s == 'D') {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/* 本表里是否还有以 path + "/" 开头的条目。
+ * 用途：.../fbN/device 是软链接，但它下面还有 subsystem/driver/name ——
+ * Linux 上 open() 会跟随软链接，于是 opendir(".../fbN/device") 能列出内容；
+ * 这里据此把这类"有子路径的链接"同时当成目录开放（readlink 仍按链接答）。 */
+static int sysfs_has_children(const char* path) {
+  size_t len;
+  u32 i;
+
+  if (path == NULL) {
+    return 0;
+  }
+  len = kstrlen(path);
+  for (i = 0; i < sizeof(sysfs_table) / sizeof(sysfs_table[0]); i++) {
+    const char* p = sysfs_table[i].path;
+    if (p == NULL) {
+      continue;
+    }
+    if (kstrncmp(p, path, len) == 0 && p[len] == '/') {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/* 剥掉尾部 '/'（opendir("/sys/class/graphics/") 会带）；path 太长时放弃剥离 */
+static const char* sysfs_trim(const char* path, char* buf, size_t bufsz) {
+  u32 len;
+
+  if (path == NULL) {
+    return NULL;
+  }
+  len = kstrlen(path);
+  if (len <= 1 || path[len - 1] != '/' || len >= bufsz) {
+    return path;
+  }
+  kmemcpy(buf, path, len + 1);
+  while (len > 1 && buf[len - 1] == '/') {
+    buf[--len] = '\0';
+  }
+  return buf;
+}
+
+/* 只接管 /sys（"/sysfoo" 这种前缀相同的普通路径不算） */
+static int sysfs_is_sys(const char* path) {
+  return kstrncmp(path, "/sys", 4) == 0 && (path[4] == '\0' || path[4] == '/');
+}
+
+/* 目标串展开：'D' 换成 fb 编号，返回长度 */
+static int sysfs_expand(const char* tmpl, u32 idx, char* out, size_t outsz) {
+  char* p = out;
+  char* end = out + outsz - 1;
+  const char* s;
+
+  for (s = tmpl; *s != '\0'; s++) {
+    if (*s == 'D') {
+      procfs_put_dec(&p, end, idx);
+    } else if (p < end) {
+      *p++ = *s;
+    }
+  }
+  *p = '\0';
+  return (int)(p - out);
+}
+
+/* /dev/fbN 节点存在即表示第 N 块显示可用。vfs_find_child 找不到时不打印
+ * 错误（适合探存在性，vfs_find 会打 "cannot found file"）。
+ * 单屏平台只建 /dev/fb + /dev/fb0 别名，没有 fb0 的旧平台回落到 /dev/fb。 */
+static vnode_t* sysfs_fb_node(u32 idx) {
+  vnode_t* devdir;
+  vnode_t* node;
+  char name[8];
+
+  if (idx >= SYSFS_FB_MAX) {
+    return NULL;
+  }
+  devdir = vfs_find_child(root_node, "dev");
+  if (devdir == NULL) {
+    return NULL;
+  }
+  name[0] = 'f';
+  name[1] = 'b';
+  name[2] = (char)('0' + idx);
+  name[3] = '\0';
+  node = vfs_find_child(devdir, name);
+  if (node == NULL && idx == 0) {
+    node = vfs_find_child(devdir, "fb");
+  }
+  return node;
+}
+
+/* 当前显示几何：只认 gpu 驱动"返回值即数据"的三个 ioctl（vga.h）。走 vioctl
+ * 而不是直接读 device->data，pid 层就不必知道驱动的结构体布局。 */
+static int sysfs_fb_geometry(u32 idx, u32* w, u32* h, u32* bpp) {
+  vnode_t* node = sysfs_fb_node(idx);
+
+  if (node == NULL) {
+    return -1;
+  }
+  *w = (u32)vioctl(node, VGA_IOC_READ_FRAMBUFFER_WIDTH, NULL);
+  *h = (u32)vioctl(node, VGA_IOC_READ_FRAMBUFFER_HEIGHT, NULL);
+  *bpp = (u32)vioctl(node, VGA_IOC_READ_FRAMBUFFER_BPP, NULL);
+  return (*w != 0 && *h != 0) ? 0 : -1;
+}
+
+/* 属性文件内容（现场生成，与 /dev/fbN 的 ioctl 永远一致） */
+static int sysfs_generate(vnode_t* node, char* out, int outsz) {
+  char* p = out;
+  char* end = out + outsz - 1;
+  u32 idx = node->impl;
+  u32 w = 0;
+  u32 h = 0;
+  u32 bpp = 0;
+
+  switch (node->inode) {
+    case SYSFS_ATTR_NAME:
+      procfs_put_str(&p, end, "yiyiya-fb");
+      procfs_put_dec(&p, end, idx);
+      procfs_put_char(&p, end, '\n');
+      break;
+    case SYSFS_ATTR_DEV:
+      /* Linux 里 fb 的主设备号固定 29，次设备号就是编号 */
+      procfs_put_str(&p, end, "29:");
+      procfs_put_dec(&p, end, idx);
+      procfs_put_char(&p, end, '\n');
+      break;
+    case SYSFS_ATTR_UEVENT:
+      procfs_put_str(&p, end, "MAJOR=29\nMINOR=");
+      procfs_put_dec(&p, end, idx);
+      procfs_put_str(&p, end, "\nDEVNAME=fb");
+      procfs_put_dec(&p, end, idx);
+      procfs_put_char(&p, end, '\n');
+      break;
+    default:
+      /* 其余属性都要几何；取不到就按 0 输出（文件仍可读，别让 stat/open 挂） */
+      sysfs_fb_geometry(idx, &w, &h, &bpp);
+      if (node->inode == SYSFS_ATTR_MODES) {
+        procfs_put_dec(&p, end, w);
+        procfs_put_char(&p, end, 'x');
+        procfs_put_dec(&p, end, h);
+        procfs_put_char(&p, end, '\n');
+      } else if (node->inode == SYSFS_ATTR_VIRTUAL_SIZE) {
+        procfs_put_dec(&p, end, w);
+        procfs_put_char(&p, end, ',');
+        procfs_put_dec(&p, end, h);
+        procfs_put_char(&p, end, '\n');
+      } else if (node->inode == SYSFS_ATTR_STRIDE) {
+        procfs_put_dec(&p, end, w * bpp / 8);
+        procfs_put_char(&p, end, '\n');
+      } else if (node->inode == SYSFS_ATTR_BPP) {
+        procfs_put_dec(&p, end, bpp);
+        procfs_put_char(&p, end, '\n');
+      } else if (node->inode == SYSFS_ATTR_ROTATE ||
+                 node->inode == SYSFS_ATTR_BLANK) {
+        procfs_put_char(&p, end, '0');
+        procfs_put_char(&p, end, '\n');
+      } else {
+        return -1;
+      }
+      break;
+  }
+  *p = '\0';
+  return (int)(p - out);
+}
+
+static u32 sysfs_file_read(vnode_t* node, u32 offset, u32 size, u8* buf) {
+  char tmp[128];
+  int len;
+  u32 avail;
+  u32 n;
+
+  if (node == NULL || buf == NULL) {
+    return 0;
+  }
+  len = sysfs_generate(node, tmp, sizeof(tmp));
+  if (len <= 0 || offset >= (u32)len) {
+    return 0;
+  }
+  avail = (u32)len - offset;
+  n = size < avail ? size : avail;
+  kmemcpy(buf, tmp + offset, n);
+  return n;
+}
+
+/* 目录枚举：按 *offset 取第 N 项，命中就写一条并推进偏移（与 procfs 同约定） */
+static int sysfs_dir_emit(vdirent_t* dirent, u32* offset, u32 want, u32* idx,
+                          const char* name, u8 type) {
+  if (*idx != want) {
+    (*idx)++;
+    return 0;
+  }
+  kmemset(dirent, 0, sizeof(vdirent_t));
+  dirent->ino = want + 1;
+  kstrncpy(dirent->name, name, sizeof(dirent->name) - 1);
+  dirent->type = type;
+  *offset = want + 1;
+  return 1;
+}
+
+static u32 sysfs_fb_entry(vdirent_t* dirent, u32* offset, u32 want, u32* idx,
+                          u32 fb, u8 type) {
+  char name[8];
+
+  name[0] = 'f';
+  name[1] = 'b';
+  name[2] = (char)('0' + fb);
+  name[3] = '\0';
+  return (u32)sysfs_dir_emit(dirent, offset, want, idx, name, type);
+}
+
+static u32 sysfs_readdir(vnode_t* node, vdirent_t* dirent, u32* offset,
+                         u32 count) {
+  static const char* const fb_attrs[] = {
+      "name",  "dev",   "modes",  "virtual_size", "stride", "bits_per_pixel",
+      "blank", "rotate", "uevent", "subsystem",    "device"};
+  const sysfs_entry_t* e;
+  u32 want;
+  u32 idx = 0;
+  u32 i;
+  u32 fb;
+
+  (void)count;
+  if (node == NULL || dirent == NULL || offset == NULL) {
+    return 0;
+  }
+  want = *offset;
+  e = sysfs_resolve(node->name, NULL);
+
+  switch (e != NULL ? e->content : 0) {
+    case SYSFS_DIR_ROOT:
+      if (sysfs_dir_emit(dirent, offset, want, &idx, "class", V_DIRECTORY)) {
+        return 1;
+      }
+      if (sysfs_dir_emit(dirent, offset, want, &idx, "bus", V_DIRECTORY)) {
+        return 1;
+      }
+      if (sysfs_dir_emit(dirent, offset, want, &idx, "devices", V_DIRECTORY)) {
+        return 1;
+      }
+      break;
+    case SYSFS_DIR_CLASS:
+      if (sysfs_dir_emit(dirent, offset, want, &idx, "graphics", V_DIRECTORY)) {
+        return 1;
+      }
+      break;
+    case SYSFS_DIR_BUS:
+      if (sysfs_dir_emit(dirent, offset, want, &idx, "platform", V_DIRECTORY)) {
+        return 1;
+      }
+      break;
+    case SYSFS_DIR_DEVICES:
+      if (sysfs_dir_emit(dirent, offset, want, &idx, "platform", V_DIRECTORY)) {
+        return 1;
+      }
+      break;
+    case SYSFS_DIR_BUS_PLATFORM:
+      if (sysfs_dir_emit(dirent, offset, want, &idx, "drivers", V_DIRECTORY)) {
+        return 1;
+      }
+      break;
+    case SYSFS_DIR_BUS_DRIVERS:
+      if (sysfs_dir_emit(dirent, offset, want, &idx, "fb", V_DIRECTORY)) {
+        return 1;
+      }
+      break;
+    case SYSFS_DIR_GRAPHICS:
+    case SYSFS_DIR_DEVICES_PLATFORM:
+    case SYSFS_DIR_DRIVER_FB:
+      /* 只列真实存在的显示（/dev/fbN 在不在） */
+      for (fb = 0; fb < SYSFS_FB_MAX; fb++) {
+        if (sysfs_fb_node(fb) == NULL) {
+          continue;
+        }
+        if (sysfs_fb_entry(dirent, offset, want, &idx, fb, V_DIRECTORY)) {
+          return 1;
+        }
+      }
+      break;
+    case SYSFS_DIR_FB:
+      for (i = 0; i < sizeof(fb_attrs) / sizeof(fb_attrs[0]); i++) {
+        if (sysfs_dir_emit(dirent, offset, want, &idx, fb_attrs[i], V_FILE)) {
+          return 1;
+        }
+      }
+      break;
+    case SYSFS_DIR_FB_DEV:
+      /* 设备本体：Linux 上这里是 name/subsystem/driver/uevent */
+      if (sysfs_dir_emit(dirent, offset, want, &idx, "name", V_FILE)) {
+        return 1;
+      }
+      if (sysfs_dir_emit(dirent, offset, want, &idx, "subsystem", V_FILE)) {
+        return 1;
+      }
+      if (sysfs_dir_emit(dirent, offset, want, &idx, "driver", V_FILE)) {
+        return 1;
+      }
+      break;
+    default:
+      break;
+  }
+  return 0;
+}
+
+/* stat：目录/普通属性/软链接三种模式各按 Linux 语义报（软链接用 lstat 语义） */
+static size_t sysfs_ioctl(vnode_t* node, u32 cmd, void* args) {
+  struct stat* st;
+  char tmp[128];
+  int n;
+
+  if (node == NULL || cmd != IOC_STAT || args == NULL) {
+    return 0;
+  }
+  st = (struct stat*)args;
+  if ((node->flags & V_DIRECTORY) == V_DIRECTORY) {
+    st->st_mode = S_IFDIR | 0555;
+    st->st_nlink = 2;
+    st->st_size = 0;
+  } else {
+    const sysfs_entry_t* e = sysfs_resolve(node->name, NULL);
+    if (e != NULL && e->kind == SYSFS_ENT_LINK) {
+      st->st_mode = S_IFLNK | 0777;
+      st->st_nlink = 1;
+      st->st_size = kstrlen(e->target);
+    } else {
+      n = sysfs_generate(node, tmp, sizeof(tmp));
+      st->st_mode = S_IFREG | 0444;
+      st->st_nlink = 1;
+      st->st_size = (n > 0) ? n : 0;
+    }
+  }
+  st->st_uid = 0;
+  st->st_gid = 0;
+  st->st_blksize = 4096;
+  return 0;
+}
+
+/* open/stat/access/opendir 的统一入口：命中 /sys 条目就造一个临时 vnode */
+static vnode_t* sysfs_lookup(const char* path) {
+  char buf[192];
+  const sysfs_entry_t* e;
+  vnode_t* node;
+  u32 idx = 0;
+  int as_dir;
+
+  path = sysfs_trim(path, buf, sizeof(buf));
+  if (path == NULL || !sysfs_is_sys(path)) {
+    return NULL;
+  }
+  e = sysfs_resolve(path, &idx);
+  if (e == NULL) {
+    return NULL;
+  }
+  if (sysfs_entry_uses_fb(e) && sysfs_fb_node(idx) == NULL) {
+    return NULL; /* 没有第 idx 块屏：这条路径确实不存在 */
+  }
+  as_dir = (e->kind == SYSFS_ENT_DIR) || sysfs_has_children(path);
+  node = vfs_create_node((u8*)path, as_dir ? V_DIRECTORY : V_FILE);
+  if (node == NULL) {
+    return NULL;
+  }
+  node->inode = e->content;
+  node->impl = idx;
+  node->op = as_dir ? &sysfs_dir_ops : &sysfs_file_ops;
+  return node;
+}
+
+/* readlink 用：返回 >0 = 目标长度；0 = 不是 /sys 的软链接（交给通用解析）；
+ * -1 = 是软链接但目标不可得（例如那块屏根本不存在 ⇒ 上层报 ENOENT）。 */
+static int sysfs_readlink_magic(const char* path, char* out, size_t outsz,
+                                size_t* olen) {
+  char buf[192];
+  const sysfs_entry_t* e;
+  u32 idx = 0;
+  int n;
+
+  path = sysfs_trim(path, buf, sizeof(buf));
+  if (path == NULL || !sysfs_is_sys(path)) {
+    return 0;
+  }
+  e = sysfs_resolve(path, &idx);
+  if (e == NULL || e->kind != SYSFS_ENT_LINK) {
+    return 0;
+  }
+  if (sysfs_entry_uses_fb(e) && sysfs_fb_node(idx) == NULL) {
+    return -1;
+  }
+  n = sysfs_expand(e->target, idx, out, outsz);
+  if (n <= 0) {
+    return -1;
+  }
+  *olen = (size_t)n;
+  return n;
 }
 
