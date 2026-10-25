@@ -40,6 +40,7 @@ enum {
   DEVICE_JOYSTICK, /* /dev/joystick：GPIO 手柄（miyoomini 等），上报 KEY_* 码流 */
   DEVICE_FAN, /* /dev/fan：Pi5 RP1 PWM1 风扇（modules/fan，1 字节 level） */
   DEVICE_CPU, /* /dev/cpu：固件 mailbox 温度，read 返回 4 字节毫摄氏度 */
+  DEVICE_EVDEV, /* /dev/input/event0：Linux input 事件流（相对鼠标） */
 };
 
 enum {
