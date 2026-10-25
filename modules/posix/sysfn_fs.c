@@ -354,6 +354,10 @@ static u32 sys_open_kpath(const char* name, int attr) {
     /* 【sysfs 垫片】/sys/class/graphics/fbN 及其软链接（见文件尾） */
     file = sysfs_lookup(name);
   }
+  if (file == NULL) {
+    /* 【/dev 垫片】切根后设备节点仍要从全局根的 /dev 找（见文件尾） */
+    file = devfs_lookup(name);
+  }
   char path_name[256];
   kmemset(path_name, 0, sizeof(path_name));
   if (file != NULL) {
@@ -2724,7 +2728,15 @@ int sys_mkdir(const char* pathname, mode_t mode) {
     return -17; /* -EEXIST */
   }
 
-  return vmkdir(dir_node, base, mode);
+  {
+    int ret = vmkdir(dir_node, base, mode);
+    if (ret < 0) {
+      /* 失败必须留下名字：调用方（如 xtrans 建 /tmp/.X11-unix）只会报一个
+       * 被 musl 翻成 EPERM 的 errno，看不出是哪一层拒绝的。 */
+      log_error("sys_mkdir failed parent=%s base=%s ret=%d\n", parent, base, ret);
+    }
+    return ret;
+  }
 }
   
   int sys_access(const char* pathname, int mode) {
@@ -3342,38 +3354,38 @@ static int sysfs_entry_uses_fb(const sysfs_entry_t* e) {
   return 0;
 }
 
-/* 模板匹配"path 的一段前缀"：模板对完之后 path 要么正好结束、要么紧跟 '/'。
+/* path 是不是模板 tmpl 的"严格目录前缀"（模板比 path 长，且 path 正好在
+ * 组件边界结束）。判断"这条路径下面是目录、还有子项"就靠它。
  * （不能直接用 kstrncmp 比前缀：模板里 'D' 是占位符，
- *   "/sys/.../fbD/device" 与 "/sys/.../fb0/device" 字面比较必然不等。） */
+ *   "/sys/.../fbD/device" 与 "/sys/.../fb0/device" 字面比较必然不等。）
+ * 【必须严格】相等不算前缀 —— 早先的实现在"正好相等"时也回 1，于是
+ *   /sys/class/graphics/fb0/modes 这种普通属性文件被当成目录造出节点
+ *   （node->op=dir_ops），read 走不到 sysfs_file_read ⇒ cat/ls 全是空。
+ * 反过来，真正的祖先（"/sys/.../fb0/device" 之于模板
+ *   ".../fbD/device/subsystem"）走的是"path 先结束、模板未结束"分支，
+ *   现在也能正确命中。 */
 static int sysfs_match_prefix(const char* path, const char* tmpl) {
-  int digits = 0;
-
-  while (*tmpl != '\0' && *tmpl != 'D') {
-    if (*path != *tmpl) {
+  while (*path != '\0') {
+    if (*tmpl == 'D') {
+      int digits = 0;
+      tmpl++;
+      while (*path >= '0' && *path <= '9' && digits < 4) {
+        path++;
+        digits++;
+      }
+      if (digits == 0) {
+        return 0;
+      }
+      continue;
+    }
+    if (*tmpl == '\0' || *path != *tmpl) {
       return 0;
     }
     path++;
     tmpl++;
   }
-  if (*tmpl == '\0') {
-    return *path == '\0' || *path == '/';
-  }
-  tmpl++; /* 跳过 'D' */
-  while (*path >= '0' && *path <= '9' && digits < 4) {
-    path++;
-    digits++;
-  }
-  if (digits == 0) {
-    return 0;
-  }
-  while (*tmpl != '\0') {
-    if (*path != *tmpl) {
-      return 0;
-    }
-    path++;
-    tmpl++;
-  }
-  return *path == '\0' || *path == '/';
+  /* path 走完了：模板若还以 '/' 继续，说明下面还有子项 */
+  return *tmpl == '/';
 }
 
 /* 本表里是否还有以 path + "/" 开头的条目。
@@ -3762,5 +3774,56 @@ static int sysfs_readlink_magic(const char* path, char* out, size_t outsz,
   }
   *olen = (size_t)n;
   return n;
+}
+
+/* ===================== /dev 全局可见垫片 =====================
+ * exec 时 vfs_chroot_mount() 会把进程根换成"程序所在的那个挂载点"（SD 卡上
+ * 的 rootfs 与内核根不是同一棵树）。设备节点是内核建在【全局根】的 /dev
+ * 下的，切根之后 "/dev/fb0" 会落到 rootfs 自己的 dev 目录里（空）⇒ Xorg
+ * 报 "cannot found file /dev/fb0"，fbdev 驱动随即
+ * "Fatal server error: no screens found"。
+ *
+ * 这里在路径解析前按字符串拦截 /dev/*，一律从全局根的 /dev 往下查：
+ *   · 命中 → 返回真实设备节点，open/ioctl/mmap 与没切根时完全一致；
+ *   · 未命中 → 返回 NULL，落回进程自己的根（在 /dev 下建文件的语义不变）。
+ * /proc、(sysfs 垫片) /sys 早已按字符串接管，三者行为一致。
+ * 逐段用 vfs_find_child 查（不走 vfs_find）避免"不存在"刷错误日志。 */
+static vnode_t* devfs_lookup(const char* path) {
+  vnode_t* cur;
+  const char* p;
+
+  if (path == NULL || kstrncmp(path, "/dev", 4) != 0) {
+    return NULL;
+  }
+  if (path[4] != '\0' && path[4] != '/') {
+    return NULL; /* "/device"、"/devxxx" 这类只是前缀相同的普通路径 */
+  }
+  cur = vfs_find_child(root_node, "dev");
+  if (cur == NULL) {
+    return NULL;
+  }
+  p = path + 4;
+  while (*p != '\0') {
+    char name[64];
+    int n = 0;
+    while (*p == '/') {
+      p++; /* 跳过 '/'（含尾部多余斜杠） */
+    }
+    if (*p == '\0') {
+      break;
+    }
+    while (*p != '\0' && *p != '/') {
+      if (n < (int)sizeof(name) - 1) {
+        name[n++] = *p;
+      }
+      p++;
+    }
+    name[n] = '\0';
+    cur = vfs_find_child(cur, name);
+    if (cur == NULL) {
+      return NULL;
+    }
+  }
+  return cur;
 }
 
