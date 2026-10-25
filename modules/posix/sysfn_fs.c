@@ -1292,6 +1292,7 @@ static ssize_t sys_readlink_common(int dirfd, const char* pathname, char* buf,
       }
     }
 
+
     {
       vnode_t* root = root_node;
       vnode_t* pwd = root;
@@ -1320,15 +1321,6 @@ static ssize_t sys_readlink_common(int dirfd, const char* pathname, char* buf,
   }
 
 done:
-  /* 【诊断·临时】记录前 64 次 readlink（含成功），用于定位启动期卡点 */
-  {
-    static int rl_dbg = 0;
-    if (rl_dbg < 64) {
-      rl_dbg++;
-      log_debug("readlink dirfd=%d bufsiz=%ld ulen=%d path=%s -> %d\n", dirfd,
-                (long)bufsiz, ulen, kpath != NULL ? kpath : "?", (int)ret);
-    }
-  }
   if (kpath != NULL) {
     kfree(kpath);
   }

@@ -87,20 +87,6 @@ void sys_fn_call_handler(int no, interrupt_context_t* ic) {
     last_no = (int)context_fn(ic);
   }
 #endif
-  /* 【诊断·可删】只追踪 Xorg 的系统调用序列，定位启动期卡住的最后一个调用。
-   * 本文件的 log_debug 被空宏屏蔽，这里临时取回真正的 debug 级日志。 */
-#undef log_debug
-  {
-    static int xdbg = 0;
-    if (xdbg < 400 && current != NULL && current->name != NULL &&
-        kstrncmp(current->name, "/usr/lib/xorg", 13) == 0) {
-      xdbg++;
-      log_debug("XSC %d tid=%d no=%d a0=%lx a1=%lx a2=%lx\n", xdbg, current->id,
-                (int)context_fn(ic), (u64)context_arg0(ic),
-                (u64)context_arg1(ic), (u64)context_arg2(ic));
-    }
-  }
-#define log_debug
   void* fn = syscall_table[context_fn(ic)];
   if (fn != NULL) {
     if (context_fn(ic) == SYS_EXEC) {
