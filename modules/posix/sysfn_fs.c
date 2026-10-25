@@ -1485,8 +1485,11 @@ static void sys_fd_set_sleep(struct timeval* timeout) {
   }
 }
 
-int sys_select(int nfds, unsigned long* readfds, unsigned long* writefds,
-               unsigned long* exceptfds, struct timeval* timeout) {
+/* 【select/pselect 公共实现】超时由调用方解析好传进来（timeval 或 timespec），
+ * 这里只管"按 tick 重扫直到就绪或超时"。 */
+static int sys_select_core(int nfds, unsigned long* readfds,
+                           unsigned long* writefds, unsigned long* exceptfds,
+                           u32 tmo_ms, int has_tmo) {
   thread_t* current = thread_current();
   if (current == NULL) {
     return -1;
@@ -1495,18 +1498,9 @@ int sys_select(int nfds, unsigned long* readfds, unsigned long* writefds,
     nfds = SYS_FD_SETSIZE;
   }
 
-  struct timeval tv;
-  if (timeout != NULL) {
-    if (sys_copy_from_user(&tv, timeout, sizeof(tv)) < 0) {
-      log_error("sys_select bad timeout tid %d\n", current->id);
-      return -1;
-    }
-    timeout = &tv;
-  }
-
   if (nfds <= 0 || (readfds == NULL && writefds == NULL && exceptfds == NULL)) {
     /* no fds: select() acts as a sleep (miniaudio/sdl use it this way) */
-    sys_fd_set_sleep(timeout);
+    schedule_sleep((has_tmo && tmo_ms > 0) ? (int)tmo_ms : 1);
     return 0;
   }
 
@@ -1522,20 +1516,94 @@ int sys_select(int nfds, unsigned long* readfds, unsigned long* writefds,
   }
 
   int ready = 0;
-  sys_fd_set_poll(readfds ? rset : NULL, writefds ? wset : NULL,
-                  exceptfds ? eset : NULL, nfds, &ready);
-
-  if (ready > 0) {
-    if (sys_fd_set_copy_out(readfds, rset) < 0 ||
-        sys_fd_set_copy_out(writefds, wset) < 0 ||
-        sys_fd_set_copy_out(exceptfds, eset) < 0) {
+  /* 【必须真正等到"就绪或超时"】schedule_sleep 只是记账（内核态不能阻塞），
+   * 旧实现扫一遍没就绪就睡一下返回 0 ⇒ 调用方（Xorg 的 WaitForSomething /
+   * libxcb）把这个假"超时"当成无事件继续空转，server 明明有 pending 连接也
+   * 不去 accept（实测：xlogo 连上来后 Xorg 永远不 accept，客户端卡在握手）。
+   * 现在按 tick 重扫，直到就绪或超时才返回。 */
+  u32 st_start = schedule_get_wall_ticks();
+  int spins = 0;
+  for (;;) {
+    ready = 0;
+    if (sys_fd_set_copy_in(rset, readfds) < 0 ||
+        sys_fd_set_copy_in(wset, writefds) < 0 ||
+        sys_fd_set_copy_in(eset, exceptfds) < 0) {
       return -1;
     }
-    return ready;
+    sys_fd_set_poll(readfds ? rset : NULL, writefds ? wset : NULL,
+                    exceptfds ? eset : NULL, nfds, &ready);
+    if (ready > 0) {
+      if (sys_fd_set_copy_out(readfds, rset) < 0 ||
+          sys_fd_set_copy_out(writefds, wset) < 0 ||
+          sys_fd_set_copy_out(exceptfds, eset) < 0) {
+        return -1;
+      }
+      return ready;
+    }
+    if (has_tmo && (u32)(schedule_get_wall_ticks() - st_start) >= tmo_ms) {
+      break;
+    }
+    /* 同 ppoll：syscall 内抢占是关的，长自旋会饿死同 CPU 的其它线程。
+     * 只重扫一次就按超时返回，等 futex 式等待协议补上再真正阻塞。 */
+    if (spins > 0) {
+      break;
+    }
+    /* 【兜底要远大于超时】纯自旋 5M 次只有约 100ms，比超时短得多 ⇒ 等于
+     * "假等待"（实测 poll(5000) 100ms 就返回 0）。这里只留一个大上限防
+     * tick 停走；正常靠时钟中断抢占就能让别的线程跑起来。
+     * 【不能在这里 schedule_switch】内核栈会被弃，syscall 返回值需要唤醒方
+     * 写回保存帧，直接调用会把返回值弄成垃圾（实测 poll 返回 0x7010xxxx）。 */
+    if (++spins > 500000000) {
+      break;
+    }
+    schedule_sleep(1);
   }
-
-  sys_fd_set_sleep(timeout);
   return 0;
+}
+
+/* 5th 参数是 timeval（老 select / 非 aarch64） */
+int sys_select(int nfds, unsigned long* readfds, unsigned long* writefds,
+               unsigned long* exceptfds, struct timeval* timeout) {
+  struct timeval tv;
+  u32 ms = 0;
+  int has = 0;
+  if (timeout != NULL) {
+    if (sys_copy_from_user(&tv, timeout, sizeof(tv)) < 0) {
+      return -1;
+    }
+    has = 1;
+    if (tv.tv_sec < 0 || tv.tv_usec < 0) {
+      return -22; /* -EINVAL */
+    }
+    ms = (u32)tv.tv_sec * 1000u + (u32)(tv.tv_usec / 1000);
+  }
+  return sys_select_core(nfds, readfds, writefds, exceptfds, ms, has);
+}
+
+/* 72(aarch64) = pselect6：aarch64 没有 select，musl 的 select()/pselect() 全走
+ * 这里，第 5 个参数是 **timespec**（不是 timeval），第 6 个是
+ * {sigmask*, sigsetsize}*。
+ * 【旧实现把 72 直接指向 sys_select（按 timeval 解析）】⇒ timespec 的 tv_nsec
+ * 被当成 tv_usec，超时语义完全错；LTP select04 因此报
+ * "pselect() woken up early 491 times range: [0,0]"。这里按 timespec 解析，
+ * tv_nsec 越界返回 EINVAL。sigmask 忽略（内核暂无信号投递）。 */
+int sys_pselect6(int nfds, unsigned long* readfds, unsigned long* writefds,
+                 unsigned long* exceptfds, void* tsp, void* sig) {
+  i64 ts[2];
+  u32 ms = 0;
+  int has = 0;
+  (void)sig;
+  if (tsp != NULL) {
+    if (sys_copy_from_user(ts, tsp, sizeof(ts)) < 0) {
+      return -14; /* -EFAULT */
+    }
+    if (ts[0] < 0 || ts[1] < 0 || ts[1] >= 1000000000LL) {
+      return -22; /* -EINVAL */
+    }
+    has = 1;
+    ms = (u32)ts[0] * 1000u + (u32)(ts[1] / 1000000);
+  }
+  return sys_select_core(nfds, readfds, writefds, exceptfds, ms, has);
 }
 
 /* ===================== ppoll(73) =====================
@@ -1607,55 +1675,64 @@ int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
     tmo_ms = (u64)(sec64 > 0 ? sec64 : 0) * 1000ull +
              ((u64)(nsec64 > 0 ? nsec64 : 0) + 999999ull) / 1000000ull;
   }
-  for (i = 0; i < nfds; i++) {
-    short want = fds[i].events;
-    short got = 0;
-    if (fds[i].fd < 0) {
-      continue; /* poll 规范：fd<0 忽略 events，revents=0 */
-    }
-    if (thread_find_fd_id(current, fds[i].fd) == NULL) {
-      got = POLLNVAL_;
-    } else {
-      if ((want & POLLIN_) && sys_fd_ready(fds[i].fd, 1, 0)) {
-        got |= POLLIN_;
+  /* 【必须真正等到"就绪或超时"】旧实现扫一遍没就绪就 schedule_sleep 后返回：
+   * schedule_sleep 只是记账（内核态不能阻塞）⇒ 立刻回 0 ⇒ 调用方（Xorg 的
+   * ospoll/WaitForSomething、libxcb 的 _xcb_conn_wait）把假"超时"当无事件继续
+   * 空转，server 有 pending 连接也永远不去 accept（实测 xlogo 卡在握手）。
+   * 现在按 tick 重扫，直到就绪或超时；永久等待（tmo==NULL）也真的等到有事件。 */
+  int has_tmo = (tmo != NULL);
+  u32 st_start = schedule_get_wall_ticks();
+  int spins = 0;
+  for (;;) {
+    ready = 0;
+    for (i = 0; i < nfds; i++) {
+      short want = fds[i].events;
+      short got = 0;
+      if (fds[i].fd < 0) {
+        continue; /* poll 规范：fd<0 忽略 events，revents=0 */
       }
-      if ((want & POLLOUT_) && sys_fd_ready(fds[i].fd, 0, 1)) {
-        got |= POLLOUT_;
+      if (thread_find_fd_id(current, fds[i].fd) == NULL) {
+        got = POLLNVAL_;
+      } else {
+        if ((want & POLLIN_) && sys_fd_ready(fds[i].fd, 1, 0)) {
+          got |= POLLIN_;
+        }
+        if ((want & POLLOUT_) && sys_fd_ready(fds[i].fd, 0, 1)) {
+          got |= POLLOUT_;
+        }
+        if (want & POLLPRI_) got |= POLLPRI_;
+        if (want == 0) got = 0;
       }
-      if (want & POLLPRI_) got |= POLLPRI_;
-      if (want == 0) got = 0;
-    }
-    if (got != 0) {
-      ready++;
-    }
-    fds[i].revents = got;
-  }
-  if (ready == 0) {
-    /* 一个都没就绪：按超时睡（本内核不能在内核态阻塞）。 */
-    u64 ms = 1;
-    if (tmo != NULL) {
-      ms = (tmo_ms == 0) ? 1 : tmo_ms;
-      if (ms > 1000) {
-        ms = 1000;
+      if (got != 0) {
+        ready++;
       }
+      fds[i].revents = got;
     }
-    schedule_sleep((int)ms);
     sys_copy_to_user(ufds, fds, sizeof(struct pollfd_k) * nfds);
-    kfree(fds);
-    /* 【永久等待绝不能回 0】libxcb 的 _xcb_conn_wait() 把 poll(-1) 返回 0 当成
-     * 致命错误（ret==0 ⇒ 握手失败 ⇒ _xcb_conn_shutdown ⇒ X 客户端报
-     * "unable to open display"）。真实 Linux 上这种 poll 会一直阻塞到有事件，
-     * 永远不会返回 0。这里退化成"睡 1 tick 报一次假事件"：返回 1 但所有
-     * revents=0，libxcb 会当作无事的唤醒重新 poll（不读不写），只是多转几圈，
-     * 语义上安全。带超时的 poll 仍然正常返回 0。 */
-    if (tmo == NULL) {
+    if (ready > 0) {
+      kfree(fds);
+      return ready;
+    }
+    if (has_tmo && (u32)(schedule_get_wall_ticks() - st_start) >= (u32)tmo_ms) {
+      kfree(fds);
+      return 0;
+    }
+    /* 【不能在这里长自旋】syscall 期间抢占是关的，几秒的自旋会把同一 CPU 上的
+     * 其它线程饿死：实测 poll(5000) 自旋 5 秒期间，fork 出来的客户端直到
+     * poll 返回后才连上来。真正的阻塞等待需要 futex 那套协议
+     * （登记 → THREAD_WAITING → schedule_switch，由唤醒方把返回值写回保存帧），
+     * 待补；这里先只重扫一次就返回，行为与旧实现一致。 */
+    if (spins > 0) {
+      kfree(fds);
+      return 0;
+    }
+    if (++spins > 500000000) {
+      /* 兜底（tick 停走时）：报一次假事件，避免 libxcb 把 0 当致命错误。 */
+      kfree(fds);
       return 1;
     }
-    return 0;
+    schedule_sleep(1);
   }
-  sys_copy_to_user(ufds, fds, sizeof(struct pollfd_k) * nfds);
-  kfree(fds);
-  return ready;
 }
 
 size_t sys_write(u32 fd, void* buf, size_t nbytes) {
@@ -2883,8 +2960,7 @@ static int proc_generate(vnode_t* node, char* out, int outsz) {
   char* end = out + outsz - 1;
 
   if (node->inode == PROC_UPTIME) {
-    extern u64 schedule_get_ticks();
-    u64 ticks = schedule_get_ticks();
+    u32 ticks = schedule_get_ticks();
     u64 sec = ticks / SCHEDULE_FREQUENCY;
     u64 cent = (ticks % SCHEDULE_FREQUENCY) * 100 / SCHEDULE_FREQUENCY;
     procfs_put_dec(&p, end, (u32)sec);

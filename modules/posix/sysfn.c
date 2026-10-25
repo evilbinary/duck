@@ -165,6 +165,12 @@ void sys_fn_init() {
   syscall_table[24] = &sys_dup2;
   syscall_table[SYS_READDIR] = &sys_readdir;
   syscall_table[SYS_NEWSELECT] = &sys_select;
+#if defined(ARM64) || defined(__aarch64__)
+  /* 【aarch64】72 = pselect6，第 5 参数是 timespec（不是 timeval）。
+   * 必须覆盖成专用实现，否则超时被按 timeval 解析、timespec 的 tv_nsec 被
+   * 当成 tv_usec（LTP select04: "pselect() woken up early"）。 */
+  syscall_table[72] = &sys_pselect6;
+#endif
   syscall_table[SYS_BRK] = &sys_brk;
 
   syscall_table[SYS_READV] = &sys_readv;

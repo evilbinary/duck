@@ -42,6 +42,21 @@ u32 schedule_get_ticks_cpu(int cpu) {
   return timer_ticks[cpu];
 }
 
+/* 【全局墙钟 tick】每个 CPU 各自累加 timer_ticks[cpu]，读"自己 CPU"的那一份
+ * 在跨核迁移时会倒退（另一核计数更小）⇒ (now - start) 无符号下溢成巨大值，
+ * 于是"等到超时"的循环（select/poll）第一次比较就判定超时，立刻返回 0 ——
+ * LTP select04 的 "pselect() woken up early"、以及 Xorg 拿到假超时不 accept
+ * 都是这个坑。取所有 CPU 的最大值：只要有一颗核在走就单调不减。 */
+u32 schedule_get_wall_ticks(void) {
+  u32 m = 0;
+  for (int i = 0; i < MAX_CPU; i++) {
+    if (timer_ticks[i] > m) {
+      m = timer_ticks[i];
+    }
+  }
+  return m;
+}
+
 int schedule_state(int cpu) {
   int count = 0;
   thread_t* v = thread_head();

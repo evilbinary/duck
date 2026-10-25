@@ -370,6 +370,9 @@ u64 sys_readlink_dispatch(sys_arg_t a0, sys_arg_t a1, sys_arg_t a2,
 int sys_close(u32 fd);
 size_t sys_write(u32 fd, void* buf, size_t nbytes);
 size_t sys_read(u32 fd, void* buf, size_t nbytes);
+int sys_pselect6(int nfds, unsigned long* readfds, unsigned long* writefds,
+                 unsigned long* exceptfds, void* tsp, void* sig);
+
 int sys_select(int nfds, unsigned long* readfds, unsigned long* writefds,
                unsigned long* exceptfds, struct timeval* timeout);
 size_t sys_yeild();
