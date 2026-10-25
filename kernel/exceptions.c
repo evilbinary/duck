@@ -127,6 +127,12 @@ void *exception_process(interrupt_context_t *ic) {
       if (was_irq) {
         interrupt_ack_pending();
       }
+      /* 【回用户态钩子】即将 eret 前叫一声（具体做什么由注册者决定，
+       * 当前是 posix 的信号投递）。放在 preempt_on_return_user 之后：若它切到
+       * 了别的线程，此时的 thread_current() 与 ret 才是"真正要跑的那一方"。
+       * 阻塞型 syscall（poll/futex/waitpid…）不走这条路径，它们的恢复点是
+       * schedule_switch，那里有同一个调用。 */
+      thread_user_return_run(thread_current(), ret);
       return ret;
     }
   } else {

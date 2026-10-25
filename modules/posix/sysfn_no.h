@@ -247,6 +247,8 @@ enum {
   SYS_PRCTL = 167,
   SYS_SIGALTSTACK = 132,
   SYS_TGKILL = 131,
+  /* 【tkill=130】musl 的 raise()/pthread_kill() 走的是 tkill，不是 tgkill */
+  SYS_TKILL = 130,
   SYS_GETRANDOM = 278,
   SYS_SETRLIMIT = 164,
   /* 【aarch64 真实编号】105/106 是 init_module/delete_module，不是 setuid/setgid。
@@ -275,6 +277,10 @@ enum {
   SYS_CLOSE_RANGE = 436,
   SYS_SET_ROBUST_LIST = 99,
   SYS_RSEQ = 293,
+  /* 【rt_sigreturn=139】信号 handler 的返回通道：libc 的 restorer
+   * （musl aarch64 的 __restore/__restore_rt）就是 `mov x8,#139; svc 0`，
+   * 内核在这一步把 handler 之前的现场从信号帧里恢复回去。 */
+  SYS_RT_SIGRETURN = 139,
 
   SYS_MADVISE = 233,
   SYS_WAITID = 95,

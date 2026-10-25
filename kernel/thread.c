@@ -513,13 +513,9 @@ int thread_signal_send(thread_t* t, int sig) {
     thread_wake_ex(t, WAKE_SIGNAL);
     return 0;
   }
-  /* 目标没停在可中断等待里（正在跑，或阻塞在不可打断的点）：Linux 上这个
-   * 信号会在"回到用户态"时执行 handler 并就地消费；本内核不执行 handler，
-   * 于是等价于"已投递完毕"——必须清掉 pending，否则它会一直挂到下一个
-   * 等待点，把毫不相干的 syscall 打成 EINTR（LTP ppoll01：MASK_SIGNAL 用例
-   * 屏蔽期间的 SIGINT 被后面的 TIMEOUT 用例捡到）。默认动作（SIG_DFL/
-   * SIG_IGN，handler<=1）不消费，保持原行为。 */
-  thread_signal_flush_handled(t);
+  /* 目标没停在可中断等待里（正在跑，或阻塞在不可打断的点）：位图留着，
+   * 等它"回用户态"时由 thread_signal_deliver_if_needed 真正投递
+   * （有 handler ⇒ 建信号帧跑 handler；SIG_IGN/SIG_DFL ⇒ 就地消费）。 */
   return 0;
 }
 
@@ -549,28 +545,24 @@ int thread_signal_take(thread_t* t) {
   return 0;
 }
 
-void thread_signal_flush_handled(thread_t* t) {
-  struct thread_sigaction* acts;
-  u64 avail;
-  int sig;
-  if (t == NULL || t->sig_acts == NULL) {
+/* ===================== 回用户态钩子 =====================
+ * 通用扩展点：所有 eret 到用户态的出口都过 thread_user_return_run()。
+ * 内核本身不知道"信号""ptrace"这些概念，只负责"最后一刻叫一声"。
+ * 详见 thread.h 的说明。 */
+void (*thread_user_return_hook)(thread_t* t, void* ic) = NULL;
+
+void thread_user_return_run(thread_t* t, void* ic) {
+  u32 mode;
+  if (thread_user_return_hook == NULL || t == NULL || ic == NULL) {
     return;
   }
-  acts = (struct thread_sigaction*)t->sig_acts;
-  avail = t->sig_pending & ~t->sig_blocked;
-  if (avail == 0) {
+  /* 只有"要回用户态"的帧才叫钩子：PSTATE.M 的 EL0t(0x0) / EL1t(0x4)。
+   * EL1h(0x5) 是内核线程的帧 —— 往它上面写用户栈是错的。 */
+  mode = ((interrupt_context_t*)ic)->psr & 0xF;
+  if (mode != 0x0 && mode != 0x4) {
     return;
   }
-  for (sig = 1; sig < THREAD_NSIG; sig++) {
-    if ((avail & THREAD_SIGBIT(sig)) == 0) {
-      continue;
-    }
-    /* handler 是用户态函数地址才算"装了 handler"；SIG_DFL(0)/SIG_IGN(1)
-     * 的默认动作本内核不实现，留着位图不消费（保持原行为）。 */
-    if ((u64)acts[sig].handler > 1) {
-      t->sig_pending &= ~THREAD_SIGBIT(sig);
-    }
-  }
+  thread_user_return_hook(t, ic);
 }
 
 void thread_wake(thread_t* thread) { thread_wake_ex(thread, 0); }

@@ -179,6 +179,8 @@ void sys_fn_init() {
   syscall_table[SYS_MMAP2] = &sys_mmap2;
   syscall_table[SYS_MPROTECT] = &sys_mprotect;
   syscall_table[SYS_RT_SIGPROCMASK] = &sys_rt_sigprocmask;
+  /* 信号 handler 的返回通道（libc 的 restorer 发这个号），见 sysfn_signal.c */
+  syscall_table[SYS_RT_SIGRETURN] = &sys_rt_sigreturn;
   syscall_table[SYS_RT_SIGACTION] = &sys_rt_sigaction;
 
   syscall_table[SYS_ALARM] = &sys_alarm;
@@ -347,6 +349,7 @@ void sys_fn_init() {
   syscall_table[SYS_PRCTL] = &sys_prctl;
   syscall_table[SYS_SIGALTSTACK] = &sys_sigaltstack;
   syscall_table[SYS_TGKILL] = &sys_tgkill;
+  syscall_table[SYS_TKILL] = &sys_tkill;
   syscall_table[SYS_GETRANDOM] = &sys_getrandom;
   syscall_table[SYS_SETRLIMIT] = &sys_setrlimit;
   syscall_table[SYS_SETUID] = &sys_setuid;
@@ -383,6 +386,8 @@ void sys_fn_init() {
   /* 【等待协议钩子】poll/select/epoll 的阻塞等待与超时回落注册到调度层
    * （schedule.h 的 thread_wait_*_hook），一次性完成。 */
   poll_wait_init();
+  /* 【信号投递钩子】回用户态前在用户栈上建信号帧并跳 handler（sysfn_signal.c） */
+  sysfn_signal_init();
 
   // Initialize network syscalls
   sys_fn_net_init((void**)syscall_table);

@@ -336,3 +336,16 @@ uint64_t cpu_read_ms(void) {
   u64 freq = read_cntfrq();
   return read_cntvct() / (freq / 1000ULL);
 }
+
+/* ---- 信号 handler 的兜底 restorer（armv8-a 专用） ------------------------
+ * 用裸 syscall 装 handler 的程序（LTP 的 rt_sigaction01/02/03）不给
+ * sa_restorer，真 Linux 在 arm64 上用 vDSO 的 __kernel_rt_sigreturn 兜底。
+ * 本内核没有 vDSO，但本架构的用户线程是跑在 EL1t 的（context_init 里
+ * pstate=0x004），内核代码段也在用户页表里有映射 ⇒ 用户可以执行内核里的这段
+ * 桩。序列必须与 libc 的 __restore 一致：x8 = SYS_rt_sigreturn(139)，svc #0。
+ * 其它架构没有这个前提，走 arch.c 的弱符号（返回 0，不兜底）。 */
+__attribute__((naked)) static void signal_restorer_stub(void) {
+  __asm__ volatile("mov x8, #139\n\t" "svc #0\n\t" "brk #0\n\t");
+}
+
+u64 cpu_signal_restorer(void) { return (u64)(uintptr_t)&signal_restorer_stub; }

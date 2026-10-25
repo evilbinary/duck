@@ -191,6 +191,9 @@ void schedule_switch() {
   thread_t* next_thread = schedule_next(cpu);
 
   if (next_thread == NULL || next_thread == current_thread) {
+    /* 没有可切换的线程：直接从当前帧 eret 回用户态（调用方预期的"不该发生"
+     * 分支），同样是回用户态落点，钩子照叫。 */
+    thread_user_return_run(current_thread, ic);
     interrupt_exit_context(ic);
     return;
   }
@@ -207,6 +210,11 @@ void schedule_switch() {
 #ifdef VM_ENABLE
   context_switch_page(next_thread->ctx, next_thread->vm->upage);
 #endif
+  /* 【回用户态钩子】被事件/信号/超时唤醒的线程从这里直接 eret（内核调用链已被
+   * 弃，不经过 exception_process）⇒ 这是另一个"回用户态"落点，必须同样叫一次
+   * 钩子。此时页表已切到 next_thread 的用户页表，注册者（信号帧）能正常写
+   * 它的用户栈。 */
+  thread_user_return_run(next_thread, next_ic);
   interrupt_exit_context(next_ic);
 }
 

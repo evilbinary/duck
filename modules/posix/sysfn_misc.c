@@ -110,10 +110,12 @@ int sys_self(void* t) {
 }
 
 /* ===================== 信号 =====================
- * 内核侧只维护"每个线程一份 sigaction 表 + pending/blocked 位图"：
- * 投递路径由 thread.c 的 thread_signal_send 完成（挂 pending 并唤醒阻塞中的
- * syscall 返回 -EINTR）。用户态 handler 的真正执行（信号帧 + sigreturn）尚未
- * 实现，见 sysfn.c 的说明。 */
+ * 这里只维护"每个线程一份 sigaction 表 + pending/blocked 位图"。
+ * 真正的投递分两步：
+ *   1) thread_signal_send（kernel/thread.c）挂 pending，并唤醒阻塞在可中断
+ *      等待点上的 syscall 返回 -EINTR（位图不消费）；
+ *   2) 回用户态前由投递钩子建信号帧、跳 handler（sysfn_signal.c），
+ *      handler 末尾的 restorer 发 rt_sigreturn(139) 恢复现场。 */
 
 #define SIG_BLOCK_ 0
 #define SIG_UNBLOCK_ 1
@@ -157,10 +159,10 @@ int sys_rt_sigprocmask(int how, void* set, void* old_set) {
     } else {
       return -22; /* -EINVAL */
     }
-    /* 注意：【不要】在这里消费 pending。LTP ppoll01 的 SEND_SIGINT_RACE_TEST
-     * 依赖"屏蔽期间被挡住的 SIGINT 在 ppoll 临时解除屏蔽后才投递"⇒ 必须在
-     * ppoll 里看到 pending 才能返回 EINTR。真正该消费的时机在投递侧（目标没
-     * 停在可中断等待里时由 thread_signal_send 直接消费）。 */
+    /* 注意：【不要】在这里消费 pending：解除屏蔽后这些信号要在"回用户态"
+     * 那一刻真正执行 handler（sysfn_signal.c 的投递钩子负责建帧并清位）。
+     * LTP ppoll01 的 SEND_SIGINT_RACE_TEST 也依赖"屏蔽期间被挡住的 SIGINT
+     * 仍挂在 pending 上"，ppoll 才能看到它并返回 EINTR。 */
   }
   return 0;
 }
@@ -177,6 +179,13 @@ int sys_rt_sigaction(int signum, const struct sigaction* restrict act,
     return -1;
   }
   if (signum <= 0 || signum >= THREAD_NSIG) {
+    return -22; /* -EINVAL */
+  }
+  /* 【SIGKILL/SIGSTOP 不可捕获、不可忽略、不可设默认】POSIX/Linux 一律
+   * EINVAL（LTP signal01 逐条校验：signal(SIGKILL, SIG_IGN/SIG_DFL/handler)
+   * 都必须失败）。放过去的话 handler 表里会存下 SIGKILL 的"handler"，而
+   * sys_kill 对 9 走的是进程级终止，两者语义会打架。 */
+  if (signum == 9 /* SIGKILL */ || signum == 19 /* SIGSTOP */) {
     return -22; /* -EINVAL */
   }
   acts = sig_acts_of(t);

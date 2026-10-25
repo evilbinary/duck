@@ -343,15 +343,14 @@ static void pollw_epoll_release(void* a) {
   /* 【恢复 epoll_pwait 的临时 sigmask】Linux 语义：epoll_pwait 的 sigmask 只在
    * 本次调用期间【替换】当前掩码，返回时恢复原值。ppoll 走的是同一套协议
    * （见 sys_ppoll / pollw_poll_release）。
-   * 恢复后顺手消费"屏蔽期间攒下的、有 handler 的"pending 位：内核不执行
-   * handler，等价于它已经跑过；不消费会让它们挂到下一个等待点造成假 EINTR。 */
+   * 屏蔽期间攒下的 pending 位不在这里消费：解除屏蔽后要真正执行 handler
+   * （见 sysfn_signal.c 的投递钩子）。 */
   struct pollw_epoll* s = (struct pollw_epoll*)a;
   if (s == NULL) {
     return;
   }
   if (s->owner != NULL) {
     s->owner->sig_blocked = s->saved_blocked;
-    thread_signal_flush_handled(s->owner);
   }
   kfree(a);
 }

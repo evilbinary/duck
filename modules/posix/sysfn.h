@@ -614,6 +614,7 @@ int sys_copy_from_user(void* kbuf, const void* user, size_t size);
 int sys_copy_to_user(void* user, const void* kbuf, size_t size);
 int sys_setsid(void);
 int sys_tgkill(int tgid, int tid, int sig);
+int sys_tkill(int tid, int sig);
 int sys_setuid(uid_t uid);
 int sys_setgid(gid_t gid);
 int sys_setgroups(int size, const gid_t* list);
@@ -638,5 +639,11 @@ int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
 int sys_inotify_init1(int flags);
 int sys_inotify_add_watch(int fd, const char* pathname, u32 mask);
 int sys_inotify_rm_watch(int fd, int wd);
+
+/* ---- sysfn_signal.c：信号 handler 的真实执行（信号帧 + rt_sigreturn） ----
+ * 返回值必须是 u64：dispatch 是 u64(*)(u64×6)，而 sigreturn 返回的就是
+ * "被信号打断时的 x0"（可能是指针），用 int 会截断。 */
+u64 sys_rt_sigreturn(void);
+void sysfn_signal_init(void);
 
 #endif

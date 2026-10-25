@@ -58,6 +58,12 @@ __attribute__((weak)) void cpu_cache_selftest(void) {}
  * 自旋（完整现象见 libs/libkernelcommon/io.c）。 */
 __attribute__((weak)) int cpu_page_enabled(void) { return 1; }
 
+/* 【信号 handler 兜底 restorer 的默认实现（弱符号）】
+ * 只有"用户态能执行内核代码"的架构才给强实现（当前仅 armv8-a：用户线程跑在
+ * EL1t）。返回 0 ⇒ posix 层放弃给"没带 restorer 的 handler"投递信号，
+ * 避免用户跳到内核代码而 fault。 */
+__attribute__((weak)) u64 cpu_signal_restorer(void) { return 0; }
+
 void context_inherit_live(context_t* child, interrupt_context_t* live) {
   if (child == NULL || live == NULL) {
     return;

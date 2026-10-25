@@ -171,14 +171,14 @@ int poll_wait_suspend(int (*recheck)(void*), long (*result)(void*),
     return (int)v;
   }
 
-  /* 【可中断点】确实没有事件、马上就要睡下时才检查信号：已有事件优先返回，
-   * 否则宿主的信号残留会让每次 poll 都立刻 EINTR（LTP 里上一用例的 SIGINT
-   * 就曾把后面所有用例打断）。消费掉该信号位，避免同一信号反复打断。 */
+  /* 【可中断点】确实没有事件、马上就要睡下时才检查信号：已有事件优先返回。
+   * 这里【不消费】pending 位：本函数返回后紧接着就是"回用户态"，投递钩子
+   * 会把它变成一次真正的 handler 调用（Linux 语义：handler 先跑，syscall
+   * 再以 EINTR 返回给用户）。 */
   if (thread_signal_pending(current)) {
     if (release != NULL && arg != NULL) {
       release(arg);
     }
-    thread_signal_take(current);
     return -4; /* -EINTR */
   }
 
@@ -264,7 +264,9 @@ void poll_wait_notify(void) {
  * 按 futex 语义处理）。
  * 超时路径【不调用 recheck】：tick 上下文切用户页表代价大且没必要 ——
  * 挂起前已把用户态 revents/集合清 0，超时语义只需返回 0。
- * 信号路径回 -EINTR 并消费掉那个信号位（否则会反复打断同一个 syscall）。 */
+ * 信号路径回 -EINTR，但【不消费】pending 位 —— 该位要留给"回用户态前"的
+ * 真正投递（sysfn_signal.c 建帧跑 handler），在 Linux 上 handler 就是紧跟
+ * EINTR 返回执行的。消费掉的话 handler 永远不会跑。 */
 static int pollw_fill(thread_t* t, int reason) {
   struct pollw_ent* e = pollw_find(t);
   long ret;
@@ -273,7 +275,6 @@ static int pollw_fill(thread_t* t, int reason) {
   }
   if (reason == WAKE_SIGNAL) {
     ret = -4; /* -EINTR */
-    thread_signal_take(t);
   } else if (reason == WAKE_TIMEOUT) {
     ret = 0;
   } else {

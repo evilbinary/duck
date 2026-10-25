@@ -744,14 +744,24 @@ int sys_setsid(void) {
 }
 
 /* 【tgkill(131)】向线程发信号（pthread_kill 底座）。内核无定向线程
- * 信号：sig!=SIGKILL 与 sys_kill 同款忽略，SIGKILL 按进程级处理
- * （目标 tgid 的整个进程）。 */
+ * 信号：tid 忽略，按 tgid 找线程（本内核里"进程 id"就是主线程 id）。 */
 int sys_tgkill(int tgid, int tid, int sig) {
   if (tgid <= 0) {
     return -1;
   }
   (void)tid; /* 无线程级信号设施，退化为进程级 */
   return sys_kill(tgid, sig);
+}
+
+/* 【tkill(130)】musl 的 raise()/pthread_kill() 实际走的是这个号
+ * （src/signal/raise.c、src/thread/pthread_kill.c），不是 tgkill！缺了它
+ * LTP 里"自己给自己发信号"的用例整片失效：syscall 130 返回 ENOSYS，
+ * 信号根本没发出去（日志 "syscall 130 not found handler"）。 */
+int sys_tkill(int tid, int sig) {
+  if (tid <= 0) {
+    return -1;
+  }
+  return sys_kill(tid, sig);
 }
 
 /* 【setuid/setgid/setgroups】单用户内核：恒成功恒 0（调用方的凭据

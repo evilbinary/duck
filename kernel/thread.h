@@ -156,13 +156,26 @@ int thread_signal_send(thread_t* t, int sig);
 int thread_signal_pending(thread_t* t);
 /* 取走一个待投递信号号（0 = 没有） */
 int thread_signal_take(thread_t* t);
-/* 【消费掉"已装 handler"的待投递信号】用户态 handler 的执行（信号帧 +
- * sigreturn）尚未实现，但这些信号在 Linux 上一定是"投递即执行"，不会残留到
- * 下一次 syscall —— 若不清掉，被临时 sigmask 挡住的那一个 SIGINT 会一直挂在
- * pending 上，把后面所有可中断等待点都打成 EINTR。在"解除屏蔽"的时刻
- * （ppoll 返回恢复 sigmask、rt_sigprocmask 放开）调用它，语义上等价于
- * "handler 已经跑完了"。默认动作（SIG_DFL/SIG_IGN）不在这里处理。 */
-void thread_signal_flush_handled(thread_t* t);
+
+/* ===================== 回用户态钩子（通用扩展点） =====================
+ * 内核里"即将 eret 到用户态"的出口有两个 C 级落点：
+ *   1) exception_process —— syscall/IRQ 正常返回（汇编里 interrupt_exit_ret 做 eret）
+ *   2) schedule_switch   —— 阻塞型 syscall 被唤醒后，函数内部直接 eret
+ * 两者都调 thread_user_return_run(t, ic)，把"回用户态前要做的最后一件事"
+ * 交给注册者处理。ic 是即将生效的那份 interrupt_context_t，注册者可以就地
+ * 改它（改 pc/sp/寄存器 ⇒ 改变用户态恢复现场）。
+ *
+ * 语义上它就是一个【线程切换/返回钩子】：不做任何领域判断，谁需要谁注册。
+ * 当前唯一使用者是 posix 的信号投递（modules/posix/sysfn_signal.c：在用户栈
+ * 建信号帧、跳 handler）。以后的 ptrace/seccomp/单步调试也挂这里。
+ *
+ * 返回值：无。多个模块要同时挂时，请在自己的钩子里链式调用上一个
+ * （thread_user_return_hook 是普通函数指针，先存旧值再赋值即可）。
+ * 调用时保证：ic 是用户态帧（PSTATE.M == EL0t/EL1t）、当前用户页表已生效。 */
+extern void (*thread_user_return_hook)(thread_t* t, void* ic);
+
+/* 唯一的调用入口：判空 + 判"这帧是不是回用户态"（内核线程的帧直接跳过）。 */
+void thread_user_return_run(thread_t* t, void* ic);
 
 /* 【等待协议钩子】由 posix 层（sysfn_pollwait.c）在 sys_fn_init 里注册：
  *   thread_wait_fill_hook：thread_wake 内部调用（reason 见 WAKE_*）。返回 1

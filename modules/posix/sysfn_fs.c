@@ -1713,12 +1713,11 @@ static void pollw_poll_release(void* a) {
     return;
   }
   /* ppoll 的 sigmask 只在调用期间生效：无论正常返回、超时还是被信号打断，
-   * 都在这里恢复（release 由 pollw_clear 统一调用）。恢复前按 Linux 语义
-   * 消费掉"屏蔽期间攒下有 handler"的信号——它们的 handler 在这里等于已经
-   * 跑完，不能残留 pending 去打断下一次等待。 */
+   * 都在这里恢复（release 由 pollw_clear 统一调用）。
+   * 【不要在这里消费 pending】屏蔽期间攒下的信号，解除屏蔽后要在"回用户态"
+   * 那一刻真正执行 handler（sysfn_signal.c）——由投递钩子消费位图。 */
   if (p->owner != NULL) {
     p->owner->sig_blocked = p->saved_blocked;
-    thread_signal_flush_handled(p->owner);
   }
   kfree(p->fds);
   kfree(p);

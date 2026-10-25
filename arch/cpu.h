@@ -109,6 +109,20 @@ void cpu_cache_selftest(void);
  * 普通自旋（见 libs/include/kernel/io.h 的 io_print_lock_set_atomic）。 */
 int cpu_page_enabled(void);
 
+/* ---- 信号 handler 的"兜底 restorer"（跨架构可选能力） --------------------
+ * 信号投递要在 handler 的返回地址（lr）上放一段"发 rt_sigreturn"的桩：
+ *   · 正常 libc 会通过 SA_RESTORER 自带（musl 的 __restore），不需要内核；
+ *   · 用裸 syscall 装 handler 的程序不给 restorer，真 Linux 用 vDSO 里的
+ *     __kernel_rt_sigreturn 兜底。
+ * 本内核没有 vDSO，能不能提供兜底完全取决于架构（用户态能否执行内核代码、
+ * syscall 指令与 rt_sigreturn 号）：
+ *   · armv8-a：用户线程跑在 EL1t、内核代码段也在用户页表里可执行 ⇒ 给强实现
+ *     （内核里一小段 `mov x8,#139; svc #0`）；
+ *   · 其它架构：弱符号返回 0 ⇒ 调用方（posix 信号投递）放弃投递该信号并
+ *     消费位图，绝不能让用户跳到内核代码里（armv7/x86 会直接 fault）。
+ * 返回 0 表示"本平台不提供"。 */
+u64 cpu_signal_restorer(void);
+
 typedef uint32_t phys_address_t;
 typedef uint32_t virtual_address_t;
 
