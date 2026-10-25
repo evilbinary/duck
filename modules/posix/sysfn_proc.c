@@ -170,7 +170,7 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     /* 【诊断·可删】完整命令行：确认外部程序是怎么被调起来的 */
     static int ex_dbg = 0;
     if (ex_dbg++ < 24) {
-      log_error("EXEC tid=%d %s | [%s][%s][%s][%s][%s]\n", current->id,
+      log_debug("EXEC tid=%d %s | [%s][%s][%s][%s][%s]\n", current->id,
                 exec->filename,
                 exec->argc > 0 && exec->argv[0] ? exec->argv[0] : "-",
                 exec->argc > 1 && exec->argv[1] ? exec->argv[1] : "-",
