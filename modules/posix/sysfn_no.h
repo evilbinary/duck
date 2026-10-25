@@ -187,6 +187,7 @@ enum {
   SYS_DUP3 = 24,      // ARM64: use dup3 instead of dup2
   SYS_PIPE = 59,      // ARM64: pipe2 not available, use standard pipe
   SYS_UNLINK = 35,
+  SYS_SYMLINKAT = 36,  // aarch64 真实编号：musl symlink() -> symlinkat
   SYS_RENAME = 38,
   SYS_MKDIR = 34,
   SYS_LINKAT = 37,     // aarch64 无 link，只有 linkat；37 与 SYS_ALARM 同号

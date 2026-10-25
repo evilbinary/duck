@@ -9,6 +9,7 @@
 #include "kernel/memory.h"
 #include "kernel/thread.h"
 #include "kernel/vfs.h"
+#include "../loader/loader.h" /* exec_params_t：/proc/self/exe 取 exec->filename */
 #include "sysfn.h"
 #ifdef NET_DRIVER
 #include "lwip_port.h"
@@ -29,6 +30,9 @@ static vnode_t* devfs_lookup(const char* path);
 
 int fat_node_path(vnode_t* node, char* buf, size_t bufsz);
 int fat_ftruncate(vnode_t* node, u64 length);
+/* vfs.c 提供：自 node 向上拼出绝对路径（readlink 的 /proc 魔链接要用）。
+ * 必须在头部显式声明 —— vfs.h 里没有原型，隐式声明会按 int 处理返回值。 */
+int vfs_path_append(vnode_t* node, char* name, char* buf);
 
 static int sys_user_page_mapped(u32 va) {
   thread_t* current = thread_current();
@@ -245,6 +249,23 @@ size_t sys_ioctl(u32 fd, u32 cmd, void* args) {
     log_error("ioctl not found fd %d\n", fd);
     return 0;
   }
+  /* FIONBIO：fd 级非阻塞开关（aarch64 上 glibc 用 _IOW('f',3,int)=0x40046603，
+   * 个别库用 _IOW('f',126,int)=0x4004667e）。绝大多数节点没有 op->ioctl，
+   * 落到 vioctl 只会 warn 并返回 0 —— 假成功，标志根本没设。Xorg/xclock 连接
+   * X 之前都靠它把 socket 设为非阻塞，所以必须在 fd 层真正落地，
+   * 语义与 fcntl(F_SETFL, O_NONBLOCK) 一致。 */
+  if (cmd == 0x40046603u || cmd == 0x4004667eu) {
+    u32 on = 0;
+    if (args == NULL || sys_copy_from_user(&on, args, sizeof(on)) >= 0) {
+      if (on) {
+        f->flags |= O_NONBLOCK;
+      } else {
+        f->flags &= ~(u32)O_NONBLOCK;
+      }
+      return 0;
+    }
+    return -EINVAL;
+  }
   vnode_t* node = f->data;
   if (node == NULL) {
     log_error("sys ioctl node is null tid %d fd %d name %s ptr %x cmd %x\n",
@@ -340,7 +361,13 @@ static u32 sys_open_kpath(const char* name, int attr) {
       return -2; /* -ENOENT */
     }
 
-    if (fat_node_path(file, path_name, sizeof(path_name)) < 0) {
+    /* 内存符号链接的 data 是目标串，不是 fatfs 的 file_info —— 绝不能交给
+     * fat_node_path 解引用（会把字符串当结构体读，实测直接崩）。 */
+    if ((file->flags & 0xFF) == V_SYMLINK) {
+      if (vfs_path_append(file, "", path_name) < 0) {
+        kstrncpy(path_name, name, sizeof(path_name) - 1);
+      }
+    } else if (fat_node_path(file, path_name, sizeof(path_name)) < 0) {
       if (vfs_path_append(file, "", path_name) < 0) {
         log_error("sys open path append failed name=%s file=%x\n", name, file);
         return -1;
@@ -651,6 +678,101 @@ int sys_renameat2(int olddirfd, const char* oldpath, int newdirfd,
   return -22; /* -EINVAL */
 }
 
+/* 36 = symlinkat（aarch64 没有 symlink）。FAT 本身无法存符号链接，节点只
+ * 建在 VFS 缓存里：data = 目标串（kmalloc）、length = 长度、flags =
+ * V_SYMLINK。同进程树内创建后立刻 readlink/readlinkat 可读到；重启即丢，
+ * 对 LTP 的 readlink 系列和"临时软链"用法足够。
+ * errno：父目录不存在 → ENOENT；父路径不是目录 → ENOTDIR；
+ *        同名已存在 → EEXIST。 */
+int sys_symlinkat(const char* target, int newdirfd, const char* linkpath) {
+  thread_t* current = thread_current();
+  if (current == NULL || target == NULL || linkpath == NULL) {
+    return -EFAULT;
+  }
+  if (current->vfs == NULL) {
+    return -ENOENT;
+  }
+  char ktarget[MAX_PATH_BUFFER];
+  char klink[MAX_PATH_BUFFER];
+  kmemset(ktarget, 0, sizeof(ktarget));
+  kmemset(klink, 0, sizeof(klink));
+  if (sys_copy_user_string(target, ktarget, sizeof(ktarget)) < 0 ||
+      sys_copy_user_string(linkpath, klink, sizeof(klink)) < 0) {
+    return -EFAULT;
+  }
+  if (klink[0] == '\0') {
+    return -ENOENT;
+  }
+  while (kstrlen(klink) > 1 && klink[kstrlen(klink) - 1] == '/') {
+    klink[kstrlen(klink) - 1] = '\0';
+  }
+
+  /* 拆出父目录与新名字 */
+  char parent[MAX_PATH_BUFFER];
+  const char* base;
+  char* slash;
+  kstrcpy(parent, klink);
+  slash = parent + kstrlen(parent);
+  while (slash > parent && *slash != '/') {
+    slash--;
+  }
+  if (*slash == '/') {
+    base = slash + 1;
+    *slash = '\0';
+    if (parent[0] == '\0') {
+      parent[0] = '/';
+      parent[1] = '\0';
+    }
+  } else {
+    base = klink;
+    parent[0] = '\0';
+  }
+  if (base[0] == '\0') {
+    return -ENOENT;
+  }
+
+  sys_vfs_prepare(current->vfs);
+  vnode_t* root = current->vfs->root;
+  vnode_t* pwd = current->vfs->pwd;
+  if (newdirfd != -100 && klink[0] != '/') {
+    fd_t* f = thread_find_fd_id(current, (u32)newdirfd);
+    if (f == NULL || f->data == NULL) {
+      return -EBADF;
+    }
+    pwd = (vnode_t*)f->data;
+    if ((pwd->flags & 0xFF) != V_DIRECTORY) {
+      return -ENOTDIR;
+    }
+  }
+
+  vnode_t* dir_node = vfs_find_relative(root, pwd, parent);
+  if (!vfs_node_is_valid(dir_node)) {
+    return -ENOENT;
+  }
+  if ((dir_node->flags & 0xFF) != V_DIRECTORY) {
+    return -ENOTDIR;
+  }
+  if (vfs_find_child(dir_node, (char*)base) != NULL) {
+    return -EEXIST;
+  }
+
+  vnode_t* node = vfs_create_node((u8*)base, V_SYMLINK);
+  if (node == NULL) {
+    return -ENOMEM;
+  }
+  size_t tl = kstrlen(ktarget);
+  node->data = kmalloc(tl + 1, KERNEL_TYPE);
+  if (node->data == NULL) {
+    kfree(node->name);
+    kfree(node);
+    return -ENOMEM;
+  }
+  kstrcpy(node->data, ktarget);
+  node->length = (u32)tl;
+  vfs_add_child(dir_node, node);
+  return 0;
+}
+
 /* 88 = utimensat。FAT 的时间戳精度/写入路径都没接，直接成功返回：
  * 语义上"设置访问/修改时间"失败会让调用方误判文件不可写（tst_test 的
  * SAFE_UTIMES 就是 TBROK），而时间戳在 FAT 上并非可靠信息。 */
@@ -737,10 +859,488 @@ int sys_newfstatat(int dirfd, const char* pathname, struct stat* stat,
   return sys_stat(pathname, stat);
 }
 
+/* ===================== readlink =====================
+ * 本文件系统自身没有符号链接（FAT 无 symlink），但 readlink 必须实现成
+ * 真语义而不是恒失败/恒成功：
+ *   - /proc/<pid|self>/{exe,cwd,root} 与 /proc/<pid|self>/fd/<n> 是"魔链接"，
+ *     由内核按当前进程状态生成目标；
+ *   - 普通节点只有 flags 为 V_SYMLINK（data = 目标字符串、length = 长度）
+ *     时才算链接，其余一律 EINVAL；
+ *   - 路径不存在返回 ENOENT。
+ * 三类返回值混用是致命 bug：返回 bufsiz（假成功）会让调用方以为链接目标
+ * 长 bufsiz（fontconfig 因此按 512MB 分配，把 xclock 推到 1GB mmap 失败）；
+ * 恒返回 ENOENT 又会让依赖魔链接的程序（Xorg 探测设备/fd 路径）走失败分支。 */
+
+/* 把链接目标写进用户缓冲：不追加 NUL、超长静默截断、返回写入字节数。 */
+static ssize_t sys_readlink_write(const char* target, size_t len, char* buf,
+                                  size_t bufsiz) {
+  if (target == NULL) {
+    return -ENOENT;
+  }
+  if (buf == NULL || bufsiz == 0) {
+    return -EINVAL;
+  }
+  if (len > bufsiz) {
+    len = bufsiz;
+  }
+  if (!sys_user_range_mapped(buf, len) ||
+      sys_copy_to_user(buf, target, len) < 0) {
+    return -EFAULT;
+  }
+  return (ssize_t)len;
+}
+
+/* 只量用户串长度（不拷贝），最多探测 limit 字节；-1 表示用户页不可访问。
+ * readlink 需要它来判断 ENAMETOOLONG：sys_copy_user_string 会把超长路径
+ * 截断到内核缓冲，截断后"路径不存在"会被错报成 ENOENT。 */
+static int sys_user_strnlen(const char* user, size_t limit) {
+  thread_t* current = thread_current();
+  if (user == NULL || limit == 0) {
+    return -1;
+  }
+#ifdef VM_ENABLE
+  if (current != NULL && current->vm != NULL && current->vm->upage != NULL) {
+    context_switch_page(current->ctx, (u32)(uintptr_t)current->vm->upage);
+  }
+#endif
+  size_t n = 0;
+  u32 last_page = ~0U;
+  while (n < limit) {
+    u32 page = ((u32)(user + n)) & ~(PAGE_SIZE - 1);
+    if (page != last_page) {
+      if (!sys_user_page_mapped(page)) {
+        return -1;
+      }
+      last_page = page;
+    }
+    if (user[n] == '\0') {
+      return (int)n;
+    }
+    n++;
+  }
+  return (int)limit;
+}
+
+/* PATH_MAX = 4096：LTP readlink03 专门喂 4097 字节的路径（期望
+ * ENAMETOOLONG）和 40 多次符号链接循环（期望 ELOOP，路径本身 474 字节
+ * 仍是合法的）。缓冲必须按 PATH_MAX 给，否则长但合法的路径会被错报成
+ * ENAMETOOLONG。两个 4KB 缓冲放堆上——内核栈只有 8KB。 */
+#define SYSLINK_PATH_MAX 4096
+#define SYSLINK_MAX_DEPTH 40
+
+/* 按 POSIX 语义走路径，跟随【中间组件】里的符号链接：
+ *   · 中间组件是符号链接 → 展开其目标（相对目标相对链接所在目录）
+ *   · 展开次数 > 40 → ELOOP
+ *   · 中间组件存在但不是目录 → ENOTDIR
+ *   · 组件不存在 → ENOENT
+ * 最后一段不跟随：若它是符号链接，*is_link=1、目标写入 out/*outlen
+ * （这正是 readlink 的语义——拿到的必须是链接本身的内容）。
+ * 返回 0 成功，否则 -errno。 */
+static int sys_path_walk(vnode_t* root, vnode_t* base, const char* path,
+                         char* out, size_t outsz, size_t* outlen,
+                         int* is_link) {
+  int ret = 0;
+  if (is_link != NULL) {
+    *is_link = 0;
+  }
+  if (outlen != NULL) {
+    *outlen = 0;
+  }
+  if (root == NULL) {
+    root = root_node;
+  }
+  if (path == NULL) {
+    return -ENOENT;
+  }
+  size_t plen = kstrlen(path);
+  if (plen >= SYSLINK_PATH_MAX) {
+    return -ENAMETOOLONG;
+  }
+
+  char* work = kmalloc(SYSLINK_PATH_MAX, KERNEL_TYPE);
+  char* merged = kmalloc(SYSLINK_PATH_MAX, KERNEL_TYPE);
+  if (work == NULL || merged == NULL) {
+    if (work != NULL) {
+      kfree(work);
+    }
+    if (merged != NULL) {
+      kfree(merged);
+    }
+    return -ENOMEM;
+  }
+  kmemcpy(work, path, plen + 1);
+
+  vnode_t* cur = (path[0] == '/') ? root : (base != NULL ? base : root);
+  char* p = work;
+  int depth = 0;
+
+  for (;;) {
+    while (*p == '/') {
+      p++;
+    }
+    if (*p == '\0') {
+      break; /* 落在某个目录节点上：调用方按"不是链接"处理 */
+    }
+    char* tok = p;
+    while (*p != '\0' && *p != '/') {
+      p++;
+    }
+    char saved = *p;
+    *p = '\0';
+
+    const char* q = p + ((saved != '\0') ? 1 : 0);
+    while (*q == '/') {
+      q++;
+    }
+    int last = (*q == '\0');
+
+    if (kstrcmp(tok, ".") == 0 || kstrcmp(tok, "..") == 0) {
+      if (tok[0] == '.' && tok[1] == '.' && cur != root &&
+          vfs_node_is_valid(cur->parent)) {
+        cur = cur->parent;
+      }
+      *p = saved;
+      if (last) {
+        break;
+      }
+      p += (saved != '\0') ? 1 : 0;
+      continue;
+    }
+
+    vnode_t* found = vfs_find_child(cur, tok);
+    if (found == NULL) {
+      vnode_t* op_node = vfs_node_is_valid(cur->super) ? cur->super : cur;
+      found = vfind(op_node, tok);
+      if (found != NULL) {
+        vfs_add_child(cur, found);
+      }
+    }
+    if (found == NULL) {
+      *p = saved;
+      /* 中间组件不是目录时子查找必然失败：ENOTDIR 比 ENOENT 准确 */
+      ret = ((cur->flags & 0xFF) != V_DIRECTORY) ? -ENOTDIR : -ENOENT;
+      goto out;
+    }
+
+    int link = ((found->flags & 0xFF) == V_SYMLINK);
+
+    if (last) {
+      *p = saved;
+      if (!link || found->data == NULL) {
+        break; /* 存在但不是符号链接（上层返回 EINVAL） */
+      }
+      size_t l = (found->length > 0) ? (size_t)found->length
+                                     : kstrlen((const char*)found->data);
+      if (l >= outsz) {
+        l = outsz - 1;
+      }
+      kmemcpy(out, found->data, l);
+      out[l] = '\0';
+      if (outlen != NULL) {
+        *outlen = l;
+      }
+      if (is_link != NULL) {
+        *is_link = 1;
+      }
+      break;
+    }
+
+    if (link) {
+      if (++depth > SYSLINK_MAX_DEPTH) {
+        *p = saved;
+        ret = -ELOOP;
+        goto out;
+      }
+      const char* target = (const char*)found->data;
+      if (target == NULL) {
+        *p = saved;
+        ret = -ENOENT;
+        goto out;
+      }
+      const char* rest = p + ((saved != '\0') ? 1 : 0);
+      while (*rest == '/') {
+        rest++;
+      }
+      size_t tl = kstrlen(target);
+      size_t rl = kstrlen(rest);
+      if (tl + 1 + rl >= SYSLINK_PATH_MAX) {
+        *p = saved;
+        ret = -ENAMETOOLONG;
+        goto out;
+      }
+      kmemcpy(merged, target, tl);
+      if (rl > 0) {
+        merged[tl] = '/';
+        kmemcpy(merged + tl + 1, rest, rl + 1);
+      } else {
+        merged[tl] = '\0';
+      }
+      if (target[0] == '/') {
+        cur = root;
+      } else {
+        cur = vfs_node_is_valid(found->parent) ? found->parent : cur;
+      }
+      kmemcpy(work, merged, tl + 1 + rl + 1);
+      p = work;
+      continue;
+    }
+
+    if ((found->flags & 0xFF) != V_DIRECTORY) {
+      *p = saved;
+      ret = -ENOTDIR;
+      goto out;
+    }
+    cur = found;
+    *p = saved;
+    p += (saved != '\0') ? 1 : 0;
+  }
+
+out:
+  kfree(work);
+  kfree(merged);
+  return ret;
+}
+
+/* 解析 /proc 魔链接。返回 >0：目标长度（写进 out/*olen）；
+ * 0：不是魔链接（交给普通路径解析）；-1：是魔链接但目标不可得。 */
+static int sys_readlink_proc_magic(thread_t* current, const char* path,
+                                   char* out, size_t outsz, size_t* olen) {
+  if (current == NULL || kstrncmp(path, "/proc/", 6) != 0) {
+    return 0;
+  }
+  const char* rest = path + 6;
+  int self = 0;
+  if (kstrncmp(rest, "self/", 5) == 0) {
+    self = 1;
+    rest += 4; /* → "/exe" */
+  } else {
+    u32 pid = 0;
+    int digits = 0;
+    while (rest[digits] >= '0' && rest[digits] <= '9') {
+      pid = pid * 10 + (u32)(rest[digits] - '0');
+      digits++;
+    }
+    if (digits == 0 || rest[digits] != '/') {
+      return 0;
+    }
+    self = (pid == current->id);
+    rest += digits;
+  }
+
+  if (kstrcmp(rest, "/exe") == 0) {
+    if (!self) {
+      return -1;
+    }
+    const char* exe = (current->exec != NULL && current->exec->filename != NULL)
+                          ? current->exec->filename
+                          : current->name;
+    if (exe == NULL) {
+      return -1;
+    }
+    size_t n = kstrlen(exe);
+    if (n >= outsz) {
+      n = outsz - 1;
+    }
+    kmemcpy(out, exe, n);
+    out[n] = '\0';
+    *olen = n;
+    return (int)n;
+  }
+  if (kstrcmp(rest, "/cwd") == 0 || kstrcmp(rest, "/root") == 0) {
+    if (!self) {
+      return -1;
+    }
+    vnode_t* base = root_node;
+    if (rest[1] == 'c' && current->vfs != NULL && current->vfs->pwd != NULL) {
+      base = current->vfs->pwd;
+    }
+    int n = vfs_path_append(base, "", out);
+    if (n <= 0) {
+      return -1;
+    }
+    *olen = (size_t)n;
+    return n;
+  }
+  if (kstrncmp(rest, "/fd/", 4) == 0) {
+    u32 fdno = 0;
+    int digits = 0;
+    while (rest[4 + digits] >= '0' && rest[4 + digits] <= '9') {
+      fdno = fdno * 10 + (u32)(rest[4 + digits] - '0');
+      digits++;
+    }
+    if (digits == 0 || rest[4 + digits] != '\0') {
+      return 0; /* /proc/<pid>/fd 目录本身不是链接 */
+    }
+    if (!self) {
+      return -1;
+    }
+    fd_t* f = thread_find_fd_id(current, fdno);
+    if (f == NULL || f->name == NULL) {
+      return -1;
+    }
+    size_t n = kstrlen((const char*)f->name);
+    if (n >= outsz) {
+      n = outsz - 1;
+    }
+    kmemcpy(out, f->name, n);
+    out[n] = '\0';
+    *olen = n;
+    return (int)n;
+  }
+  return 0; /* /proc/<pid>/stat 等是普通文件，走通用解析返回 EINVAL */
+}
+
+/* dirfd = -100（AT_FDCWD）时从进程 cwd 开始。errno 语义按 Linux：
+ *   · dirfd 不是有效 fd → EBADF
+ *   · dirfd 不是目录且 pathname 是相对路径 → ENOTDIR
+ *   · pathname 为空且 dirfd 指向符号链接 → 读该链接本身（AT_EMPTY_PATH）
+ *   · pathname 为空（其他情况）→ ENOENT */
+static ssize_t sys_readlink_common(int dirfd, const char* pathname, char* buf,
+                                   size_t bufsiz) {
+  thread_t* current = thread_current();
+  ssize_t ret = -ENOENT;
+  char* kpath = NULL;
+  char* target = NULL;
+  int ulen = -1;
+
+  if (current == NULL || pathname == NULL || buf == NULL) {
+    return -EINVAL;
+  }
+  if (bufsiz == 0) {
+    return -EINVAL; /* POSIX：bufsiz 必须为正 */
+  }
+  /* 【musl 兼容】musl 的 readlink/readlinkat 在 bufsiz==0 时会改用栈上一字节
+   * dummy 缓冲、把请求改写成 bufsiz=1，并在 r>0 时把结果改成 0 —— 内核就
+   * 永远看不到 bufsiz==0，Linux 的 EINVAL 语义（LTP readlink03/readlinkat02
+   * 的专门用例）随之丢失。识别办法：buf 指向调用者栈帧顶端（距陷阱帧里的
+   * 用户 SP 不超过 64 字节）且 bufsiz==1，即 musl 的 dummy。 */
+  if (bufsiz == 1 && current->ctx != NULL && current->ctx->ic != NULL) {
+    u64 usp = current->ctx->ic->sp;
+    u64 ubuf = (u64)(uintptr_t)buf;
+    /* 实测 musl 的 dummy 位于 SP+104（musl readlink 栈帧内），真实调用者的
+     * 1 字节缓冲在更外侧的帧里，取 128 作阈值。 */
+    if (usp > PAGE_SIZE && ubuf > PAGE_SIZE && ubuf >= usp &&
+        (ubuf - usp) <= 128) {
+      return -EINVAL;
+    }
+  }
+
+  ulen = sys_user_strnlen(pathname, SYSLINK_PATH_MAX);
+  if (ulen < 0) {
+    return -EFAULT;
+  }
+  if (ulen >= SYSLINK_PATH_MAX) {
+    return -ENAMETOOLONG;
+  }
+
+  kpath = kmalloc(SYSLINK_PATH_MAX, KERNEL_TYPE);
+  target = kmalloc(SYSLINK_PATH_MAX, KERNEL_TYPE);
+  if (kpath == NULL || target == NULL) {
+    ret = -ENOMEM;
+    goto done;
+  }
+  kmemset(kpath, 0, SYSLINK_PATH_MAX);
+  kmemset(target, 0, SYSLINK_PATH_MAX);
+  /* 【空路径不能走 sys_copy_user_string】它对空串返回 -1（通用 open 路径
+   * 需要这个防呆），会把 readlink("") 的 ENOENT 变成 EFAULT。
+   * readlink 的空路径有独立语义：dirfd 指向符号链接时读该链接。 */
+  if (ulen > 0 && sys_copy_user_string(pathname, kpath, SYSLINK_PATH_MAX) < 0) {
+    ret = -EFAULT;
+    goto done;
+  }
+
+  {
+    vnode_t* dir = NULL;
+    int dir_is_link = 0;
+    if (dirfd != -100) {
+      fd_t* f = thread_find_fd_id(current, (u32)dirfd);
+      if (f == NULL || f->data == NULL) {
+        ret = -EBADF;
+        goto done;
+      }
+      dir = (vnode_t*)f->data;
+      dir_is_link = ((dir->flags & 0xFF) == V_SYMLINK);
+    }
+
+    if (kpath[0] == '\0') {
+      /* 空路径只在 dirfd 本身是符号链接时有意义 */
+      if (dir_is_link && dir->data != NULL) {
+        const char* link = (const char*)dir->data;
+        size_t len = (dir->length > 0) ? (size_t)dir->length : kstrlen(link);
+        ret = sys_readlink_write(link, len, buf, bufsiz);
+      }
+      goto done;
+    }
+
+    if (dir != NULL && kpath[0] != '/' && (dir->flags & 0xFF) != V_DIRECTORY) {
+      ret = -ENOTDIR; /* dirfd 是普通文件，相对路径无法解析 */
+      goto done;
+    }
+
+    {
+      size_t tlen = 0;
+      int magic =
+          sys_readlink_proc_magic(current, kpath, target, SYSLINK_PATH_MAX,
+                                  &tlen);
+      if (magic < 0) {
+        ret = -ENOENT;
+        goto done;
+      }
+      if (magic > 0) {
+        ret = sys_readlink_write(target, tlen, buf, bufsiz);
+        goto done;
+      }
+    }
+
+    {
+      vnode_t* root = root_node;
+      vnode_t* pwd = root;
+      size_t tlen = 0;
+      int is_link = 0;
+      if (current->vfs != NULL) {
+        sys_vfs_prepare(current->vfs);
+        root = current->vfs->root;
+        pwd = current->vfs->pwd;
+      }
+      if (dir != NULL && kpath[0] != '/') {
+        pwd = dir;
+      }
+      int rc = sys_path_walk(root, pwd, kpath, target, SYSLINK_PATH_MAX, &tlen,
+                             &is_link);
+      if (rc < 0) {
+        ret = rc; /* ENOENT / ENOTDIR / ELOOP / ENAMETOOLONG */
+        goto done;
+      }
+      if (!is_link) {
+        ret = -EINVAL; /* 存在但不是符号链接（Linux 语义） */
+        goto done;
+      }
+      ret = sys_readlink_write(target, tlen, buf, bufsiz);
+    }
+  }
+
+done:
+  /* 只记录非 ENOENT 的失败（缺文件太常见），限 16 条避免刷屏 */
+  {
+    static int rl_dbg = 0;
+    if (rl_dbg < 16 && ret < 0 && ret != -ENOENT) {
+      rl_dbg++;
+      log_error("readlink dirfd=%d bufsiz=%ld ulen=%d path=%s -> %d\n", dirfd,
+                (long)bufsiz, ulen, kpath != NULL ? kpath : "?", (int)ret);
+    }
+  }
+  if (kpath != NULL) {
+    kfree(kpath);
+  }
+  if (target != NULL) {
+    kfree(target);
+  }
+  return ret;
+}
+
 ssize_t sys_readlinkat(int dirfd, const char* restrict pathname,
                        char* restrict buf, size_t bufsiz) {
-  (void)dirfd;
-  return sys_readlink(pathname, buf, bufsiz);
+  return sys_readlink_common(dirfd, pathname, buf, bufsiz);
 }
 
 int sys_faccessat(int dirfd, const char* pathname, int mode, int flags) {
@@ -1457,6 +2057,23 @@ int sys_unlink(const char* pathname) {
     return -1;
   }
 
+  /* 内存符号链接不在 FAT 上，直接摘链并释放节点（交给 fatfs 只会报
+   * "not found"，tst_rmdir 因此留下垃圾节点、同名重建会 EEXIST）。 */
+  {
+    vnode_t* victim = vfs_find_child(dir_node, (char*)base);
+    if (victim != NULL && (victim->flags & 0xFF) == V_SYMLINK) {
+      vfs_remove_child(dir_node, victim);
+      if (victim->data != NULL) {
+        kfree(victim->data);
+      }
+      if (victim->name != NULL) {
+        kfree(victim->name);
+      }
+      kfree(victim);
+      return 0;
+    }
+  }
+
   return vunlink(dir_node, base);
 }
   
@@ -2136,8 +2753,9 @@ int sys_statx(int dirfd, const char* restrict pathname, int flags,
 
 ssize_t sys_readlink(const char* restrict pathname, char* restrict buf,
                      size_t bufsiz) {
-  log_debug("sys readlink not impl %s\n", pathname);
-  return bufsiz;
+  /* 实现在文件前部（sys_readlink_common）：这里只保留非 readlinkat 形态的
+   * 入口，起始目录取进程 cwd（AT_FDCWD = -100）。 */
+  return sys_readlink_common(-100, pathname, buf, bufsiz);
 }
 
 /* ===================== 最小 procfs 垫片 =====================

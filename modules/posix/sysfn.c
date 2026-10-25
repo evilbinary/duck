@@ -190,6 +190,9 @@ void sys_fn_init() {
    * setitimer）。要写在 SYS_ALARM 之后才不会被同号的 alarm 覆盖。
    * 276 = renameat2，flags 只支持 0，等价 renameat。 */
   syscall_table[SYS_LINKAT] = &sys_linkat;
+  /* 36 = symlinkat（aarch64 无 symlink）。FAT 不落盘，节点只存在于 VFS
+   * 缓存里；readlink 的就是它。 */
+  syscall_table[SYS_SYMLINKAT] = &sys_symlinkat;
   syscall_table[SYS_RENAMEAT2] = &sys_renameat2;
   syscall_table[SYS_UTIMENSAT] = &sys_utimensat;
 #endif

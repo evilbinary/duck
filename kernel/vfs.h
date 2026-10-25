@@ -19,6 +19,9 @@
 #define V_BLOCKDEVICE 0x08
 #define V_PIPE 0x0c
 #define V_UNLINKED 0x100 /* 文件已从目录删除（LTP IPC mmap 后 unlink），vwrite 拒绝 */
+/* 符号链接节点约定：data = kmalloc 的链接目标字符串（NUL 结尾），
+ * length = 目标字节数。sys_readlink 只对 flags 为 V_SYMLINK 的节点返回目标，
+ * 其他类型按 POSIX 返回 EINVAL。 */
 #define V_SYMLINK 0x14
 #define V_MOUNTPOINT 0x18
 

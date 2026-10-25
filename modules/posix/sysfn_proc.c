@@ -200,6 +200,18 @@ u32 sys_exec(char* filename, char* const argv[], char* const envp[]) {
     exec_params_free(exec);
     return -1;
   }
+  /* 【/proc/self/exe 数据来源】open 时已把解析后的绝对路径存进 fd->name，
+   * 在这里固化成 exec->filename：exec("./a.out") 之后 readlink
+   * /proc/self/exe 也必须给出绝对路径（Linux 语义）。argv[0] 保持原样。 */
+  if (f->name != NULL && f->name[0] == '/') {
+    char* abs_path = exec_dup_string((const char*)f->name);
+    if (abs_path != NULL) {
+      if (exec->filename != NULL) {
+        kfree(exec->filename);
+      }
+      exec->filename = abs_path;
+    }
+  }
   sys_close(fd);
 
   if (current->vfs != NULL) {
