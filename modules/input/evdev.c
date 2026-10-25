@@ -113,7 +113,11 @@ static size_t evdev_read(device_t* dev, void* buf, size_t len) {
   if (evdev_head == evdev_tail) {
     evdev_pull();
     if (evdev_head == evdev_tail) {
-      return 0; /* 没有事件：调用方（libevdev/Xorg）按非阻塞轮询处理 */
+      /* 非阻塞字符设备的语义：没数据要返回 -EAGAIN，不能返回 0。
+       * 返回 0 会被 Xorg 的 evdev 驱动当成 EOF（设备断开），它读到一次就
+       * 把设备从 select 集合里摘掉，之后鼠标再怎么动也没人去 read。
+       * 上层 sys_read 看到负值会符号扩展成 -1/errno=EAGAIN。 */
+      return (size_t)-11;
     }
   }
   input_event_t* out = (input_event_t*)buf;

@@ -109,10 +109,12 @@ static void usb_mouse_push_event(u8 buttons, i8 dx, i8 dy, i8 wheel) {
     event_queue[event_head].wheel = wheel;
     event_head = next_head;
 
-    /* 只在有实际动作时打印：设备在指针静止时也会周期性上报全零报告 */
+    /* 只在有实际动作时打印：设备在指针静止时也会周期性上报全零报告。
+     * 用 USB_DEBUG（level 3）而不是 USB_INFO：鼠标移动时每秒几十份报告，
+     * 逐份走 115200 串口会把 guest 拖到没法处理输入。 */
     if (buttons != 0 || dx != 0 || dy != 0 || wheel != 0) {
-        USB_INFO("USB Mouse: buttons=%02x dx=%d dy=%d wheel=%d\n", buttons, dx,
-                 dy, wheel);
+        USB_DEBUG("USB Mouse: buttons=%02x dx=%d dy=%d wheel=%d\n", buttons, dx,
+                  dy, wheel);
     }
 }
 
