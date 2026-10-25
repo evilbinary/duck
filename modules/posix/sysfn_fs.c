@@ -1320,12 +1320,12 @@ static ssize_t sys_readlink_common(int dirfd, const char* pathname, char* buf,
   }
 
 done:
-  /* 只记录非 ENOENT 的失败（缺文件太常见），限 16 条避免刷屏 */
+  /* 【诊断·临时】记录前 64 次 readlink（含成功），用于定位启动期卡点 */
   {
     static int rl_dbg = 0;
-    if (rl_dbg < 16 && ret < 0 && ret != -ENOENT) {
+    if (rl_dbg < 64) {
       rl_dbg++;
-      log_error("readlink dirfd=%d bufsiz=%ld ulen=%d path=%s -> %d\n", dirfd,
+      log_debug("readlink dirfd=%d bufsiz=%ld ulen=%d path=%s -> %d\n", dirfd,
                 (long)bufsiz, ulen, kpath != NULL ? kpath : "?", (int)ret);
     }
   }
