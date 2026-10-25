@@ -465,7 +465,7 @@ int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
     pw->maxevents = maxevents;
     pw->ep = ep;
     return poll_wait_suspend(
-        pollw_epoll_recheck, pollw_epoll_release, pw,
+        pollw_epoll_recheck, NULL, pollw_epoll_release, pw,
         (u32)(timeout > 0x7fffffff ? 0x7fffffff : timeout), (timeout > 0));
   }
 }

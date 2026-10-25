@@ -538,11 +538,18 @@ int sys_fd_ready(int fd, int want_read, int want_write);
 int sys_fd_ready_t(thread_t* owner, int fd, int want_read, int want_write);
 int unix_poll_ready_t(thread_t* owner, int fd, int want_read, int want_write);
 
-/* ===== poll/select/epoll 的阻塞等待（sysfn_pollwait.c）=====
+/* ===== poll/select/epoll/read 的阻塞等待（sysfn_pollwait.c）=====
  * 登记 recheck → THREAD_WAITING → schedule_switch；唤醒方（unix/pipe 事件）
- * 调 poll_wait_notify 重算并写回保存帧。详见文件头注释。 */
-int poll_wait_suspend(int (*recheck)(void* arg), void (*release)(void* arg),
-                      void* arg, u32 tmo_ms, int has_tmo);
+ * 调 poll_wait_notify 重算并写回保存帧。详见文件头注释。
+ *   recheck(arg) > 0：就绪（0 表示未就绪）
+ *   recheck(arg) == 0：未就绪
+ *   recheck(arg) < 0：放弃等待，该值直接作为 syscall 返回值（如 -EBADF）
+ *   result(arg)：可选，就绪时真正的 syscall 返回值。poll/select/epoll 传 NULL
+ *     （就绪数就是 recheck 的返回值）；read 传它（读到 0 字节的 EOF 也是就绪，
+ *     不能用 0/非 0 区分）。 */
+int poll_wait_suspend(int (*recheck)(void* arg), long (*result)(void* arg),
+                      void (*release)(void* arg), void* arg, u32 tmo_ms,
+                      int has_tmo);
 void poll_wait_notify(void);
 void poll_wait_init(void);
 

@@ -30,10 +30,19 @@
 struct pollw_ent {
   thread_t* t;
   int (*recheck)(void* arg); /* 重算就绪并写回用户态，返回 ready 数 */
+  long (*result)(void* arg); /* 可选：真正的 syscall 返回值（read 用） */
   void (*release)(void* arg); /* 释放 arg */
   void* arg;
   long ready; /* notify 已算出的就绪数，留给 thread_wake 回填用 */
 };
+
+/* 就绪时的 syscall 返回值：有 result 回调就用它，否则用 recheck 的返回值 */
+static long pollw_value(struct pollw_ent* e, long ready) {
+  if (e->result != NULL) {
+    return e->result(e->arg);
+  }
+  return ready;
+}
 
 static struct pollw_ent* pollw_tab = NULL;
 
@@ -91,6 +100,7 @@ static void pollw_clear(struct pollw_ent* e) {
   }
   e->t = NULL;
   e->recheck = NULL;
+  e->result = NULL;
   e->release = NULL;
   e->arg = NULL;
   e->ready = 0;
@@ -125,13 +135,15 @@ static int pollw_recheck_in(thread_t* t, int (*recheck)(void*), void* arg) {
 }
 
 /* 挂起等待。
- *   recheck(arg) > 0  有事件（返回值即就绪个数）
+ *   recheck(arg) > 0  有事件（0 表示未就绪）
  *   recheck(arg) == 0 无事件
  *   recheck(arg) < 0  放弃等待（返回值即负错误码）
- * 返回：本来/刚刚就绪时返回就绪数；真挂起后【不返回】（由唤醒方写保存帧）。
+ * result(arg)：可选，就绪时真正的 syscall 返回值（read 的 0 字节 EOF 用）。
+ * 返回：本来/刚刚就绪时返回结果；真挂起后【不返回】（由唤醒方写保存帧）。
  * has_tmo=0 表示无限等，只能靠事件唤醒。 */
-int poll_wait_suspend(int (*recheck)(void*), void (*release)(void*), void* arg,
-                      u32 tmo_ms, int has_tmo) {
+int poll_wait_suspend(int (*recheck)(void*), long (*result)(void*),
+                      void (*release)(void*), void* arg, u32 tmo_ms,
+                      int has_tmo) {
   thread_t* current = thread_current();
   struct pollw_ent* e;
   int ready;
@@ -145,11 +157,18 @@ int poll_wait_suspend(int (*recheck)(void*), void (*release)(void*), void* arg,
 
   /* 绝大多数调用在这里就返回：本来就有事件，不进等待表 */
   ready = pollw_recheck_in(current, recheck, arg);
-  if (ready != 0) {
+  if (ready < 0) {
     if (release != NULL && arg != NULL) {
       release(arg);
     }
     return ready;
+  }
+  if (ready > 0) {
+    long v = (result != NULL) ? result(arg) : (long)ready;
+    if (release != NULL && arg != NULL) {
+      release(arg);
+    }
+    return (int)v;
   }
 
   e = pollw_slot(current);
@@ -162,6 +181,7 @@ int poll_wait_suspend(int (*recheck)(void*), void (*release)(void*), void* arg,
   }
   e->t = current;
   e->recheck = recheck;
+  e->result = result;
   e->release = release;
   e->arg = arg;
   e->ready = 0;
@@ -173,12 +193,17 @@ int poll_wait_suspend(int (*recheck)(void*), void (*release)(void*), void* arg,
   current->state = THREAD_WAITING;
   ready = pollw_recheck_in(current, recheck, arg);
   if (ready != 0) {
+    long v = (ready < 0) ? (long)ready : pollw_value(e, ready);
     pollw_clear(e);
     current->state = THREAD_RUNNING;
-    return ready;
+    return (int)v;
   }
   if (has_tmo) {
-    current->sleep_counter = (int)(tmo_ms > 0 ? tmo_ms : 1);
+    /* 【+1 抵消 schedule_switch 里的那次递减】schedule_switch() 在切换前会
+     * 调 schedule_state()，刚设的 sleep_counter 立刻被减 1 ⇒ 直接设 tmo_ms
+     * 实际只睡 tmo_ms-1 个 tick（LTP 定时测试实测每次少 1ms：请求 2000us
+     * 只睡 1000us、5000us 只睡 4000us）。+1 之后精确等于请求的 ms 数。 */
+    current->sleep_counter = (int)(tmo_ms > 0 ? tmo_ms : 1) + 1;
   }
   schedule_switch();
   /* 【正常不可达】唤醒方已回填结果并清槽。只有"本 CPU 没有其它可运行线程"
@@ -214,7 +239,8 @@ void poll_wait_notify(void) {
     if (ready == 0) {
       continue; /* 事件与这个等待者无关 */
     }
-    e->ready = ready;
+    /* ready < 0：等待已无意义（如 fd 被关），唤醒让 syscall 返回该错误 */
+    e->ready = (ready < 0) ? ready : pollw_value(e, ready);
     thread_wake(t); /* thread_wake_ex 内部回调 pollw_fill 写 x0 并清槽 */
   }
 }

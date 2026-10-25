@@ -1510,6 +1510,15 @@ static void pollw_select_release(void* a) {
   kfree(a);
 }
 
+/* 【纯定时等待】没有 fd 的 select/pselect/ppoll 就是"睡满 timeout"
+ * （LTP 的 tst_timer_test 全系列这么用）。恒不就绪 ⇒ 只能靠 tick 超时唤醒，
+ * 醒来 x0=0。旧实现走 schedule_sleep（只记账）⇒ 立刻返回 0，
+ * 测试判 "pselect() woken up early"。 */
+static int pollw_idle_recheck(void* a) {
+  (void)a;
+  return 0;
+}
+
 /* 【select/pselect 公共实现】超时由调用方解析好传进来（timeval 或 timespec），
  * 无就绪时交给 poll_wait_suspend 真正挂起（THREAD_WAITING + schedule_switch），
  * 由 unix/pipe 的事件唤醒并写回结果。 */
@@ -1525,9 +1534,9 @@ static int sys_select_core(int nfds, unsigned long* readfds,
   }
 
   if (nfds <= 0 || (readfds == NULL && writefds == NULL && exceptfds == NULL)) {
-    /* no fds: select() acts as a sleep (miniaudio/sdl use it this way) */
-    schedule_sleep((has_tmo && tmo_ms > 0) ? (int)tmo_ms : 1);
-    return 0;
+    /* 无 fd：select() 就是定时等待（miniaudio/sdl/LTP 定时框架都这么用） */
+    return poll_wait_suspend(pollw_idle_recheck, NULL, NULL, NULL, tmo_ms,
+                             has_tmo);
   }
 
   struct pollw_select* s = kmalloc(sizeof(*s), KERNEL_TYPE);
@@ -1555,8 +1564,8 @@ static int sys_select_core(int nfds, unsigned long* readfds,
   sys_fd_set_copy_out(readfds, zeros);
   sys_fd_set_copy_out(writefds, zeros);
   sys_fd_set_copy_out(exceptfds, zeros);
-  return poll_wait_suspend(pollw_select_recheck, pollw_select_release, s, tmo_ms,
-                          has_tmo);
+  return poll_wait_suspend(pollw_select_recheck, NULL, pollw_select_release, s,
+                           tmo_ms, has_tmo);
 }
 
 /* 5th 参数是 timeval（老 select / 非 aarch64） */
@@ -1699,12 +1708,45 @@ int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
                 (int)ev0, (u32)(uintptr_t)tmo);
     }
   }
+  /* 【nfds 越界是 EINVAL】Linux 语义（超过 RLIMIT_NOFILE）；这里用
+   * PPOLL_NFDS_MAX 等价。**不能钳位**：ppoll01 的 INVALID_NFDS（nfds=-1
+   * 即 0xffffffff）期望 -1/EINVAL，钳到上限会变成正常扫描并返回 3。 */
   if (nfds > PPOLL_NFDS_MAX) {
-    nfds = PPOLL_NFDS_MAX;
+    return -22; /* -EINVAL */
+  }
+  /* 【超时】两种 timespec 布局（与 futex 同款启发式）：
+   *   a) 16B {i64 sec, i64 nsec}：内核/现代 libc；
+   *   b) 8B old_timespec32 {i32 sec, i32 nsec}：LTP 的 "old kernel spec" 变体。
+   * 区分：16B 的小正数 sec 高 32 位恒 0 ⇒ offset4 处的 i32 恒 0；
+   * 8B 的 nsec32 几乎总非 0。**必须走 copy_from_user**：8B 布局下直接读
+   * tmo+8 会碰到用户态未映射页（内核 fault）。
+   * tmo==NULL 表示永久等待（Linux 语义）。 */
+  u64 tmo_ms = 0;
+  if (tmo != NULL) {
+    i32 ts32[2];
+    i64 ts64[2];
+    if (sys_copy_from_user(ts64, tmo, sizeof(ts64)) < 0) {
+      return -14; /* -EFAULT */
+    }
+    if (sys_copy_from_user(ts32, tmo, sizeof(ts32)) < 0) {
+      return -14;
+    }
+    if (ts32[1] != 0) {
+      /* 8B 布局 */
+      tmo_ms = (u64)(ts32[0] > 0 ? (u32)ts32[0] : 0) * 1000ull +
+               ((u64)(ts32[1] > 0 ? (u32)ts32[1] : 0) + 999999ull) / 1000000ull;
+    } else {
+      if (ts64[0] < 0 || ts64[1] < 0 || ts64[1] >= 1000000000LL) {
+        return -22; /* -EINVAL */
+      }
+      tmo_ms = (u64)ts64[0] * 1000ull + ((u64)ts64[1] + 999999ull) / 1000000ull;
+    }
   }
   if (nfds == 0) {
-    schedule_sleep(1);
-    return 0;
+    /* 无 fd 的 poll = 定时等待：必须真睡满 timeout，不能立刻返回 0 */
+    return poll_wait_suspend(
+        pollw_idle_recheck, NULL, NULL, NULL,
+        (u32)(tmo_ms > 0x7fffffffull ? 0x7fffffffull : tmo_ms), (tmo != NULL));
   }
   fds = kmalloc(sizeof(struct pollfd_k) * nfds, KERNEL_TYPE);
   if (fds == NULL) {
@@ -1713,15 +1755,6 @@ int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
   if (sys_copy_from_user(fds, ufds, sizeof(struct pollfd_k) * nfds) < 0) {
     kfree(fds);
     return -14; /* -EFAULT */
-  }
-  /* 【超时】16B {i64 sec,i64 nsec} timespec；换算 ms（ceil）。
-   * tmo==NULL 表示永久等待（Linux 语义）。 */
-  u64 tmo_ms = 0;
-  if (tmo != NULL) {
-    i64 sec64 = *(volatile i64*)tmo;
-    i64 nsec64 = *(volatile i64*)((char*)tmo + 8);
-    tmo_ms = (u64)(sec64 > 0 ? sec64 : 0) * 1000ull +
-             ((u64)(nsec64 > 0 ? nsec64 : 0) + 999999ull) / 1000000ull;
   }
   /* 挂起前把用户态 revents 全清 0：超时路径（tick 只写保存帧 x0=0）
    * 不再碰用户内存，语义上"未就绪的 fd revents=0"也正合规范。 */
@@ -1740,7 +1773,7 @@ int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
     pw->nfds = (int)nfds;
     pw->fds = fds;
     return poll_wait_suspend(
-        pollw_poll_recheck, pollw_poll_release, pw,
+        pollw_poll_recheck, NULL, pollw_poll_release, pw,
         (u32)(tmo_ms > 0x7fffffffull ? 0x7fffffffull : tmo_ms), (tmo != NULL));
   }
 }
@@ -1808,6 +1841,45 @@ size_t sys_write(u32 fd, void* buf, size_t nbytes) {
     f->offset += ret;
   }
   return ret;
+}
+
+/* ===== 阻塞读的等待参数（注册给 poll_wait_suspend）=====
+ * vread 自己就把数据写进用户 buffer，所以唤醒方只要在【等待者页表】下
+ * 重试一次同样的 vread 即可，不需要额外的数据搬运。 */
+struct pollw_read {
+  thread_t* owner;
+  int fd;
+  void* buf;
+  size_t nbytes;
+  long ret; /* 读到的字节数（0 = EOF） */
+};
+
+/* 返回 1 就绪 / 0 仍无数据 / 负值 放弃等待并作为 syscall 返回值 */
+static int pollw_read_recheck(void* a) {
+  struct pollw_read* r = (struct pollw_read*)a;
+  fd_t* f = thread_find_fd_id(r->owner, r->fd);
+  u32 n;
+  if (f == NULL || f->data == NULL) {
+    return -9; /* -EBADF */
+  }
+  n = vread((vnode_t*)f->data, f->offset, r->nbytes, (u8*)r->buf);
+  if ((int)n == -11) {
+    return 0; /* 还是没数据（EAGAIN） */
+  }
+  if ((int)n < 0) {
+    return (int)n; /* EPIPE 之类：放弃等待，让用户态拿到真实错误 */
+  }
+  sys_user_dcache_sync(r->buf, n);
+  r->ret = (long)n;
+  return 1;
+}
+
+static long pollw_read_result(void* a) {
+  return ((struct pollw_read*)a)->ret;
+}
+
+static void pollw_read_release(void* a) {
+  kfree(a);
 }
 
 size_t sys_read(u32 fd, void* buf, size_t nbytes) {
@@ -1884,6 +1956,24 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
   if ((int)ret < 0) {
     if (tmp_buf != NULL) {
       kfree(tmp_buf);
+    }
+    /* 【阻塞读】本机 socket 且没设 O_NONBLOCK：没有数据就挂起，等对端写入
+     * 时由 poll_wait_notify 唤醒并重试读取。数据落点就是用户 buffer
+     * （vread 直写），所以唤醒方只要在等待者页表下重跑一次 vread。
+     * 只处理"数据直读用户 buf"的情况：tmp_buf 路径需要重新分配，交给
+     * 用户态重试（返回 EAGAIN），避免在等待表里持有大块内核缓冲。 */
+    if ((int)ret == -11 && tmp_buf == NULL && buf != NULL && nbytes > 0 &&
+        (f->flags & O_NONBLOCK) == 0 && unix_owns(fd)) {
+      struct pollw_read* r = kmalloc(sizeof(*r), KERNEL_TYPE);
+      if (r != NULL) {
+        r->owner = current;
+        r->fd = (int)fd;
+        r->buf = buf;
+        r->nbytes = nbytes;
+        r->ret = 0;
+        return (size_t)poll_wait_suspend(pollw_read_recheck, pollw_read_result,
+                                         pollw_read_release, r, 0, 0);
+      }
     }
     return (size_t)(long)(int)ret;
   }
