@@ -368,7 +368,7 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
     /* 【诊断·可删】大文件映射：确认一次性读入是否真的读满（读不满时后面
      * 是零页，动态链接器会报 undefined symbol）。 */
     if (length >= 8 * 1024 * 1024) {
-      log_error("MMAPBIG %s off=%x len=%x filled=%x\n",
+      log_debug("MMAPBIG %s off=%x len=%x filled=%x\n",
                 f->name != NULL ? f->name : "?", (u32)off, (u32)length, filled);
     }
     /* 【登记 file_node】仅 MAP_SHARED 登记：MAP_PRIVATE（ld.so 的 libc）
