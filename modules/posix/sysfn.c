@@ -360,6 +360,7 @@ void sys_fn_init() {
   syscall_table[SYS_SETRESGID] = &sys_setgid;
   syscall_table[SYS_SETREUID] = &sys_setuid;
   syscall_table[SYS_SETGROUPS] = &sys_setgroups;
+  syscall_table[SYS_GETGROUPS] = &sys_getgroups;
   syscall_table[SYS_VHANGUP] = &sys_setsid;
   syscall_table[SYS_EVENTFD2] = &sys_eventfd2;
   syscall_table[SYS_EPOLL_CREATE1] = &sys_epoll_create1;

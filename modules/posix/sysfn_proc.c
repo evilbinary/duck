@@ -782,6 +782,15 @@ int sys_setgroups(int size, const gid_t* list) {
   return 0;
 }
 
+/* 【getgroups(158)】单用户内核：进程没有附加组。size==0 是"查询需要多大"，
+ * 两者都返回 0（0 个组）。缺了它 glibc 启动链（initgroups/NSS）会吃 ENOSYS
+ * —— openbox 启动日志里就有 "syscall 158 not found handler"。 */
+int sys_getgroups(int size, gid_t* list) {
+  (void)size;
+  (void)list;
+  return 0;
+}
+
 /* ===================== wait ===================== */
 
 extern void sys_trace_dump(void);
