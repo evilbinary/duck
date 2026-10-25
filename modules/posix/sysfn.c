@@ -379,6 +379,10 @@ void sys_fn_init() {
   syscall_table[SYS_SENDMSG] = &sys_sendmsg;
   syscall_table[SYS_RECVMSG] = &sys_recvmsg;
 
+  /* 【等待协议钩子】poll/select/epoll 的阻塞等待与超时回落注册到调度层
+   * （schedule.h 的 thread_wait_*_hook），一次性完成。 */
+  poll_wait_init();
+
   // Initialize network syscalls
   sys_fn_net_init((void**)syscall_table);
 #ifdef PERF_MODULE

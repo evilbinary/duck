@@ -282,6 +282,66 @@ int sys_epoll_ctl(int epfd, int op, int fd, void* ev) {
 #define EPOLLIN_ 0x001
 #define EPOLLOUT_ 0x004
 
+/* ===== epoll_pwait 的等待参数（注册给 poll_wait_suspend）=====
+ * 直接引用内核 epoll 对象：等待者自己睡着，期间没人能 close 掉最后一份
+ * fd 引用（close 只减 use_count，vclose 要等引用归零），指针不会悬空。 */
+struct pollw_epoll {
+  thread_t* owner;
+  int epfd;
+  void* uevents;
+  int maxevents;
+  struct epoll_k* ep;
+};
+
+/* 在等待者页表下执行（切页表由 poll_wait_suspend/poll_wait_notify 负责） */
+static int pollw_epoll_recheck(void* a) {
+  struct pollw_epoll* s = (struct pollw_epoll*)a;
+  struct epoll_event_k out;
+  int ready = 0;
+  int i;
+  if (thread_find_fd_id(s->owner, s->epfd) == NULL) {
+    return -9; /* epfd 已关：唤醒并让 epoll_wait 返回 EBADF */
+  }
+  for (i = 0; i < EPOLL_MAX_ITEMS; i++) {
+    int want;
+    int want_r;
+    int want_w;
+    int ok_r;
+    int ok_w;
+    if (!s->ep->items[i].used) {
+      continue;
+    }
+    if (thread_find_fd_id(s->owner, s->ep->items[i].fd) == NULL) {
+      continue; /* 目标 fd 已关闭 */
+    }
+    want = s->ep->items[i].events;
+    want_r = (want & EPOLLIN_) != 0;
+    want_w = (want & EPOLLOUT_) != 0;
+    if (!want_r && !want_w) {
+      want_r = 1; /* 只关心 ERR/HUP：按可读侧判 */
+    }
+    ok_r = want_r ? sys_fd_ready_t(s->owner, s->ep->items[i].fd, 1, 0) : 0;
+    ok_w = want_w ? sys_fd_ready_t(s->owner, s->ep->items[i].fd, 0, 1) : 0;
+    if (!ok_r && !ok_w) {
+      continue;
+    }
+    out.events = (ok_r ? EPOLLIN_ : 0) | (ok_w ? EPOLLOUT_ : 0);
+    out.pad = 0;
+    out.data = s->ep->items[i].data;
+    sys_copy_to_user((void*)((char*)s->uevents + ready * sizeof(out)), &out,
+                     sizeof(out));
+    ready++;
+    if (ready >= s->maxevents) {
+      break;
+    }
+  }
+  return ready;
+}
+
+static void pollw_epoll_release(void* a) {
+  kfree(a);
+}
+
 /* 就绪判据必须真实：原先"注册的 fd 还在表里就算 ready"会让
  * ospoll_wait/epoll_wait 永不阻塞地立刻返回 ⇒ Xorg 的 InputThread 拿着
  * 假事件空转（实测 400 次/秒 write 一个字节进 hotplug 管道、烧 24% CPU），
@@ -389,19 +449,25 @@ int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
   if (ready > 0) {
     return ready;
   }
-  /* 无就绪：按 timeout 睡（ms）。本内核在内核态不能真阻塞（见
-   * schedule_sleep 的说明），timeout<0 只能退化成轮询：
-   *   - 集合为空 ⇒ 永远等不到事件，睡 100ms（10 次/秒）
-   *   - 有注册项 ⇒ 睡 5ms，兼顾输入延迟与开销
-   * Xorg 的 InputThread 就是"空 epoll + 无限超时"，不这样它会 5ms 一次空转。 */
-  if (timeout < 0) {
-    schedule_sleep(ep->nitems == 0 ? 100 : 5);
-  } else if (timeout == 0) {
-    schedule_sleep(1);
-  } else {
-    schedule_sleep(timeout > 1000 ? 1000 : timeout);
+  if (timeout == 0) {
+    return 0; /* 非阻塞轮询：立刻返回（Linux 语义） */
   }
-  return 0;
+  /* 无就绪：真正挂起（THREAD_WAITING + schedule_switch），由 unix/pipe 的
+   * 事件唤醒并重算 —— 与 select/ppoll 共用同一套协议（sysfn_pollwait.c）。 */
+  {
+    struct pollw_epoll* pw = kmalloc(sizeof(*pw), KERNEL_TYPE);
+    if (pw == NULL) {
+      return -12;
+    }
+    pw->owner = thread_current();
+    pw->epfd = epfd;
+    pw->uevents = events;
+    pw->maxevents = maxevents;
+    pw->ep = ep;
+    return poll_wait_suspend(
+        pollw_epoll_recheck, pollw_epoll_release, pw,
+        (u32)(timeout > 0x7fffffff ? 0x7fffffff : timeout), (timeout > 0));
+  }
 }
 
 /* epoll_pwait2(441)：与 epoll_pwait 相同，但超时是 timespec（纳秒精度）。

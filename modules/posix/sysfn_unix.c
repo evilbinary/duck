@@ -182,6 +182,8 @@ static void unix_sock_close_peer_links(struct unix_sock* sk) {
   if (sk->rx != NULL) {
     sk->rx->reader_closed = 1;
   }
+  /* 半关闭会改变对端的可读（EOF）/可写状态，必须唤醒等在那里的线程 */
+  poll_wait_notify();
 }
 
 static void unix_bind_remove(struct unix_sock* sk) {
@@ -252,6 +254,8 @@ static u32 unix_op_read(vnode_t* node, u32 offset, u32 size, u8* buffer) {
   }
   n = unix_ring_read(sk->rx, buffer, size);
   if (n > 0) {
+    /* 读走数据 ⇒ 对端变可写：唤醒等 POLLOUT 的线程 */
+    poll_wait_notify();
     return n;
   }
   if (sk->rx != NULL && sk->rx->writer_closed) {
@@ -277,6 +281,9 @@ static u32 unix_op_write(vnode_t* node, u32 offset, u32 size, u8* buffer) {
   if (n == 0) {
     return (u32)-11; /* EAGAIN：缓冲满 */
   }
+  /* 写进数据 ⇒ 对端变可读：这是 Xorg 服务端 accept 之后收到客户端
+   * setup 请求包的关键唤醒点（不唤醒则对端 poll 永远等不到）。 */
+  poll_wait_notify();
   return n;
 }
 
@@ -325,16 +332,17 @@ static int unix_install(struct unix_sock* sk, const char* name) {
   return n;
 }
 
-/* 取 fd 对应的本机 socket（不是 AF_UNIX 的返回 NULL） */
-static struct unix_sock* unix_fd_sock(int fd) {
-  thread_t* current = thread_current();
+/* 取 fd 对应的本机 socket（不是 AF_UNIX 的返回 NULL）
+ * owner 必须显式给：poll/select/epoll 的唤醒方是【别的线程】，
+ * 替等待者查就绪时不能用自己的 fd 表。 */
+static struct unix_sock* unix_fd_sock_t(thread_t* owner, int fd) {
   fd_t* f;
   vnode_t* node;
   struct unix_sock* sk;
-  if (current == NULL) {
+  if (owner == NULL) {
     return NULL;
   }
-  f = thread_find_fd_id(current, fd);
+  f = thread_find_fd_id(owner, fd);
   if (f == NULL || f->data == NULL) {
     return NULL;
   }
@@ -344,6 +352,10 @@ static struct unix_sock* unix_fd_sock(int fd) {
     return NULL;
   }
   return sk;
+}
+
+static struct unix_sock* unix_fd_sock(int fd) {
+  return unix_fd_sock_t(thread_current(), fd);
 }
 
 int unix_owns(int fd) { return unix_fd_sock(fd) != NULL; }
@@ -632,6 +644,9 @@ int unix_connect(int fd, const void* addr, u32 addrlen) {
   }
   ls->pend_tail = srv;
   ls->pend_count++;
+  /* 【accept 的唤醒点】服务端（Xorg）此刻正挂在 poll/epoll 上等监听 fd，
+   * 这里不唤醒它就会一直睡到超时 —— 客户端则卡在握手第一阶段。 */
+  poll_wait_notify();
   return 0;
 }
 
@@ -800,6 +815,7 @@ int unix_shutdown(int fd, int how) {
       sk->tx->writer_closed = 1;
     }
   }
+  poll_wait_notify();
   return 0;
 }
 
@@ -888,8 +904,8 @@ int unix_fd_is_listener(int fd) {
   return (sk != NULL && sk->listening) ? 1 : 0;
 }
 
-int unix_poll_ready(int fd, int want_read, int want_write) {
-  struct unix_sock* sk = unix_fd_sock(fd);
+int unix_poll_ready_t(thread_t* owner, int fd, int want_read, int want_write) {
+  struct unix_sock* sk = unix_fd_sock_t(owner, fd);
   if (sk == NULL) {
     return -1;
   }
@@ -920,4 +936,8 @@ int unix_poll_ready(int fd, int want_read, int want_write) {
     }
   }
   return 0;
+}
+
+int unix_poll_ready(int fd, int want_read, int want_write) {
+  return unix_poll_ready_t(thread_current(), fd, want_read, want_write);
 }

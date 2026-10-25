@@ -6,6 +6,7 @@
 #include "pipe.h"
 
 #include "kernel/kernel.h"
+#include "kernel/schedule.h"
 #include "kernel/thread.h"
 
 /* 【设计：内核不阻塞，缓冲按需增长】
@@ -148,6 +149,11 @@ static u32 pip_read(vnode_t* node, u32 offset, u32 size, u8* buffer) {
                 (int)size, (int)n, (int)p->count);
     }
   }
+  /* 读走数据 ⇒ 写端可能变可写、读端可能变可读（缓冲里还有）：唤醒等待者。
+   * 必须在 pipe_unlock 之后调（重算就绪要再拿这把锁）。 */
+  if (n > 0 && thread_wait_notify_hook != NULL) {
+    thread_wait_notify_hook();
+  }
   return n;
 }
 
@@ -170,6 +176,11 @@ static u32 pip_write(vnode_t* node, u32 offset, u32 size, u8* buffer) {
       log_debug("PIPW tid=%d size=%d put=%d cap=%d\n", c != NULL ? c->id : -1,
                 (int)size, (int)n, (int)p->size);
     }
+  }
+  /* 写进数据 ⇒ 读端变可读：Xorg 就是把 keymap 写进管道喂 xkbcomp，
+   * 不唤醒会让对端一直等到超时。 */
+  if (n > 0 && thread_wait_notify_hook != NULL) {
+    thread_wait_notify_hook();
   }
   return n;
 }
@@ -260,12 +271,17 @@ static voperator_t pipe_write_ops = {
  * -1 表示这个 fd 不是 pipe（调用方沿用原有判定）。
  * 用户态普遍"先 poll 再 read"，就绪状态必须真实：读空管道返回 0 会被当成
  * EOF（Xorg 喂 keymap 给 xkbcomp 就这样失败过）。 */
-int pipe_poll_ready(int fd) {
-  thread_t* current = thread_current();
-  fd_t* f = thread_find_fd_id(current, fd);
+/* 【owner 版】唤醒方替等待者重算就绪时必须查等待者的 fd 表，
+ * 不能用 thread_current()（那是写方/连接方的表）。 */
+int pipe_poll_ready_t(thread_t* owner, int fd) {
+  fd_t* f;
   vnode_t* node;
   pipe_t* p;
   int ready = 0;
+  if (owner == NULL) {
+    return -1;
+  }
+  f = thread_find_fd_id(owner, fd);
   if (f == NULL || f->data == NULL) {
     return -1;
   }
@@ -286,6 +302,10 @@ int pipe_poll_ready(int fd) {
   }
   pipe_unlock(p);
   return ready;
+}
+
+int pipe_poll_ready(int fd) {
+  return pipe_poll_ready_t(thread_current(), fd);
 }
 
 int pipe_create_pair(u32 size, vnode_t** read_node, vnode_t** write_node) {

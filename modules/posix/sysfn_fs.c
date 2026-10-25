@@ -21,8 +21,9 @@
 
 extern u32 pip_read(vnode_t* node, u32 offset, u32 size, u8* buffer);
 /* pipe 的真实就绪状态（modules/ipc/pipe.c）：bit0=可读 bit1=可写，
- * 返回 -1 表示该 fd 不是 pipe。 */
+ * 返回 -1 表示该 fd 不是 pipe。_t 版本按显式 owner 查 fd 表（唤醒方用）。 */
 extern int pipe_poll_ready(int fd);
+extern int pipe_poll_ready_t(thread_t* owner, int fd);
 
 #define log_debug 
 
@@ -1429,64 +1430,89 @@ static int sys_fd_set_copy_out(void* user, const unsigned long* kset) {
  *   本机 socket → unix_poll_ready
  *   其它       → 沿用老规则"存在即就绪"
  * 跨文件可见（epoll 也要用同一套判据，见 sysfn.h）。 */
-int sys_fd_ready(int fd, int want_read, int want_write) {
+int sys_fd_ready_t(thread_t* owner, int fd, int want_read, int want_write) {
   int pr;
-  if (thread_find_fd_id(thread_current(), fd) == NULL) {
+  if (owner == NULL || thread_find_fd_id(owner, fd) == NULL) {
     return 0;
   }
-  pr = pipe_poll_ready(fd);
+  pr = pipe_poll_ready_t(owner, fd);
   if (pr >= 0) {
     return want_read ? ((pr & 1) ? 1 : 0) : ((pr & 2) ? 1 : 0);
   }
-  return unix_poll_ready(fd, want_read, want_write) != 0;
+  return unix_poll_ready_t(owner, fd, want_read, want_write) != 0;
 }
 
-static int sys_fd_set_poll(unsigned long* rset, unsigned long* wset,
-                           unsigned long* eset, int nfds, int* ready) {
-  thread_t* current = thread_current();
+int sys_fd_ready(int fd, int want_read, int want_write) {
+  return sys_fd_ready_t(thread_current(), fd, want_read, want_write);
+}
+
+/* ===== select/pselect 的等待参数（注册给 poll_wait_suspend）=====
+ * 原始集合必须由内核保存：唤醒方重算就绪时会就地清掉未就绪位，
+ * 没有原集合就无法重复扫描（也看不到"哪些 fd 是用户关心的"）。 */
+struct pollw_select {
+  thread_t* owner;
+  int nfds;
+  void* uread;
+  void* uwrite;
+  void* uexcept;
+  unsigned long oread[SYS_FD_SET_WORDS];
+  unsigned long owrite[SYS_FD_SET_WORDS];
+  unsigned long oexcept[SYS_FD_SET_WORDS];
+};
+
+/* 在等待者页表下执行（poll_wait_suspend/poll_wait_notify 负责切页表） */
+static int pollw_select_recheck(void* a) {
+  struct pollw_select* s = (struct pollw_select*)a;
+  unsigned long rset[SYS_FD_SET_WORDS];
+  unsigned long wset[SYS_FD_SET_WORDS];
+  unsigned long eset[SYS_FD_SET_WORDS];
   int bits = sizeof(unsigned long) * 8;
+  int ready = 0;
   int fd;
-  *ready = 0;
-  for (fd = 0; fd < nfds; fd++) {
+  kmemcpy(rset, s->oread, sizeof(rset));
+  kmemcpy(wset, s->owrite, sizeof(wset));
+  kmemcpy(eset, s->oexcept, sizeof(eset));
+  for (fd = 0; fd < s->nfds; fd++) {
     unsigned long mask = 1UL << (fd % bits);
     int word = fd / bits;
-    int present = thread_find_fd_id(current, fd) != NULL;
-    if (rset != NULL && (rset[word] & mask)) {
-      if (sys_fd_ready(fd, 1, 0)) {
-        (*ready)++;
+    int present = thread_find_fd_id(s->owner, fd) != NULL;
+    if (s->uread != NULL && (rset[word] & mask)) {
+      if (sys_fd_ready_t(s->owner, fd, 1, 0)) {
+        ready++;
       } else {
         rset[word] &= ~mask;
       }
     }
-    if (wset != NULL && (wset[word] & mask)) {
-      if (sys_fd_ready(fd, 0, 1)) {
-        (*ready)++;
+    if (s->uwrite != NULL && (wset[word] & mask)) {
+      if (sys_fd_ready_t(s->owner, fd, 0, 1)) {
+        ready++;
       } else {
         wset[word] &= ~mask;
       }
     }
-    if (eset != NULL && (eset[word] & mask)) {
+    if (s->uexcept != NULL && (eset[word] & mask)) {
       if (present) {
-        (*ready)++;
+        ready++;
       } else {
         eset[word] &= ~mask;
       }
     }
   }
-  return 0;
+  if (ready > 0) {
+    sys_copy_to_user(s->uread, rset, sizeof(rset));
+    sys_copy_to_user(s->uwrite, wset, sizeof(wset));
+    sys_copy_to_user(s->uexcept, eset, sizeof(eset));
+  }
+  return ready;
 }
 
-static void sys_fd_set_sleep(struct timeval* timeout) {
-  if (timeout != NULL) {
-    schedule_sleep(SECOND_TO_TICK(timeout->tv_sec) +
-                   (timeout->tv_usec / (1000000 / SCHEDULE_FREQUENCY)));
-  } else {
-    schedule_sleep(SECOND_TO_TICK(0) + (1000000 / SCHEDULE_FREQUENCY));
-  }
+static void pollw_select_release(void* a) {
+  kfree(a);
 }
 
 /* 【select/pselect 公共实现】超时由调用方解析好传进来（timeval 或 timespec），
- * 这里只管"按 tick 重扫直到就绪或超时"。 */
+ * 无就绪时交给 poll_wait_suspend 真正挂起（THREAD_WAITING + schedule_switch），
+ * 由 unix/pipe 的事件唤醒并写回结果。 */
 static int sys_select_core(int nfds, unsigned long* readfds,
                            unsigned long* writefds, unsigned long* exceptfds,
                            u32 tmo_ms, int has_tmo) {
@@ -1504,61 +1530,33 @@ static int sys_select_core(int nfds, unsigned long* readfds,
     return 0;
   }
 
-  unsigned long rset[SYS_FD_SET_WORDS];
-  unsigned long wset[SYS_FD_SET_WORDS];
-  unsigned long eset[SYS_FD_SET_WORDS];
+  struct pollw_select* s = kmalloc(sizeof(*s), KERNEL_TYPE);
+  unsigned long zeros[SYS_FD_SET_WORDS];
 
-  if (sys_fd_set_copy_in(rset, readfds) < 0 ||
-      sys_fd_set_copy_in(wset, writefds) < 0 ||
-      sys_fd_set_copy_in(eset, exceptfds) < 0) {
+  if (s == NULL) {
+    return -12;
+  }
+  kmemset(s, 0, sizeof(*s));
+  s->owner = current;
+  s->nfds = nfds;
+  s->uread = readfds;
+  s->uwrite = writefds;
+  s->uexcept = exceptfds;
+  if (sys_fd_set_copy_in(s->oread, readfds) < 0 ||
+      sys_fd_set_copy_in(s->owrite, writefds) < 0 ||
+      sys_fd_set_copy_in(s->oexcept, exceptfds) < 0) {
     log_error("sys_select copy in faild tid %d\n", current->id);
+    kfree(s);
     return -1;
   }
-
-  int ready = 0;
-  /* 【必须真正等到"就绪或超时"】schedule_sleep 只是记账（内核态不能阻塞），
-   * 旧实现扫一遍没就绪就睡一下返回 0 ⇒ 调用方（Xorg 的 WaitForSomething /
-   * libxcb）把这个假"超时"当成无事件继续空转，server 明明有 pending 连接也
-   * 不去 accept（实测：xlogo 连上来后 Xorg 永远不 accept，客户端卡在握手）。
-   * 现在按 tick 重扫，直到就绪或超时才返回。 */
-  u32 st_start = schedule_get_wall_ticks();
-  int spins = 0;
-  for (;;) {
-    ready = 0;
-    if (sys_fd_set_copy_in(rset, readfds) < 0 ||
-        sys_fd_set_copy_in(wset, writefds) < 0 ||
-        sys_fd_set_copy_in(eset, exceptfds) < 0) {
-      return -1;
-    }
-    sys_fd_set_poll(readfds ? rset : NULL, writefds ? wset : NULL,
-                    exceptfds ? eset : NULL, nfds, &ready);
-    if (ready > 0) {
-      if (sys_fd_set_copy_out(readfds, rset) < 0 ||
-          sys_fd_set_copy_out(writefds, wset) < 0 ||
-          sys_fd_set_copy_out(exceptfds, eset) < 0) {
-        return -1;
-      }
-      return ready;
-    }
-    if (has_tmo && (u32)(schedule_get_wall_ticks() - st_start) >= tmo_ms) {
-      break;
-    }
-    /* 同 ppoll：syscall 内抢占是关的，长自旋会饿死同 CPU 的其它线程。
-     * 只重扫一次就按超时返回，等 futex 式等待协议补上再真正阻塞。 */
-    if (spins > 0) {
-      break;
-    }
-    /* 【兜底要远大于超时】纯自旋 5M 次只有约 100ms，比超时短得多 ⇒ 等于
-     * "假等待"（实测 poll(5000) 100ms 就返回 0）。这里只留一个大上限防
-     * tick 停走；正常靠时钟中断抢占就能让别的线程跑起来。
-     * 【不能在这里 schedule_switch】内核栈会被弃，syscall 返回值需要唤醒方
-     * 写回保存帧，直接调用会把返回值弄成垃圾（实测 poll 返回 0x7010xxxx）。 */
-    if (++spins > 500000000) {
-      break;
-    }
-    schedule_sleep(1);
-  }
-  return 0;
+  /* 【超时路径不碰用户内存】tick 到期只把保存帧 x0 写 0，所以挂起前先把
+   * 用户集合清零：select 超时返回 0 时集合内容本就未定义，清零符合预期。 */
+  kmemset(zeros, 0, sizeof(zeros));
+  sys_fd_set_copy_out(readfds, zeros);
+  sys_fd_set_copy_out(writefds, zeros);
+  sys_fd_set_copy_out(exceptfds, zeros);
+  return poll_wait_suspend(pollw_select_recheck, pollw_select_release, s, tmo_ms,
+                          has_tmo);
 }
 
 /* 5th 参数是 timeval（老 select / 非 aarch64） */
@@ -1623,11 +1621,62 @@ struct pollfd_k {
   short revents;
 };
 
+/* ===== ppoll 的等待参数（注册给 poll_wait_suspend）===== */
+struct pollw_poll {
+  thread_t* owner;
+  void* ufds;
+  int nfds;
+  struct pollfd_k* fds; /* 内核副本（含用户 events） */
+};
+
+/* 在等待者页表下执行（切页表由 poll_wait_suspend/poll_wait_notify 负责） */
+static int pollw_poll_recheck(void* a) {
+  struct pollw_poll* p = (struct pollw_poll*)a;
+  int ready = 0;
+  int i;
+  for (i = 0; i < p->nfds; i++) {
+    short want = p->fds[i].events;
+    short got = 0;
+    if (p->fds[i].fd < 0) {
+      p->fds[i].revents = 0; /* poll 规范：fd<0 忽略 events，revents=0 */
+      continue;
+    }
+    if (thread_find_fd_id(p->owner, p->fds[i].fd) == NULL) {
+      got = POLLNVAL_;
+    } else {
+      if ((want & POLLIN_) && sys_fd_ready_t(p->owner, p->fds[i].fd, 1, 0)) {
+        got |= POLLIN_;
+      }
+      if ((want & POLLOUT_) && sys_fd_ready_t(p->owner, p->fds[i].fd, 0, 1)) {
+        got |= POLLOUT_;
+      }
+      if (want & POLLPRI_) got |= POLLPRI_;
+      if (want == 0) got = 0;
+    }
+    p->fds[i].revents = got;
+    if (got != 0) {
+      ready++;
+    }
+  }
+  if (ready > 0) {
+    sys_copy_to_user(p->ufds, p->fds, sizeof(struct pollfd_k) * p->nfds);
+  }
+  return ready;
+}
+
+static void pollw_poll_release(void* a) {
+  struct pollw_poll* p = (struct pollw_poll*)a;
+  if (p == NULL) {
+    return;
+  }
+  kfree(p->fds);
+  kfree(p);
+}
+
 int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
   thread_t* current = thread_current();
   struct pollfd_k* ufds = (struct pollfd_k*)u_ufds;
   struct pollfd_k* fds = NULL;
-  int ready = 0;
   unsigned int i;
   (void)sigmask;
   if (current == NULL) {
@@ -1666,8 +1715,7 @@ int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
     return -14; /* -EFAULT */
   }
   /* 【超时】16B {i64 sec,i64 nsec} timespec；换算 ms（ceil）。
-   * 先扫 fd、真有就绪就立刻返回；一个都没有才睡（旧实现先睡满再看，
-   * 数据早就绪也要等满超时，Xorg 的 ospoll/ppoll 循环因此被拉长）。 */
+   * tmo==NULL 表示永久等待（Linux 语义）。 */
   u64 tmo_ms = 0;
   if (tmo != NULL) {
     i64 sec64 = *(volatile i64*)tmo;
@@ -1675,63 +1723,25 @@ int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
     tmo_ms = (u64)(sec64 > 0 ? sec64 : 0) * 1000ull +
              ((u64)(nsec64 > 0 ? nsec64 : 0) + 999999ull) / 1000000ull;
   }
-  /* 【必须真正等到"就绪或超时"】旧实现扫一遍没就绪就 schedule_sleep 后返回：
-   * schedule_sleep 只是记账（内核态不能阻塞）⇒ 立刻回 0 ⇒ 调用方（Xorg 的
-   * ospoll/WaitForSomething、libxcb 的 _xcb_conn_wait）把假"超时"当无事件继续
-   * 空转，server 有 pending 连接也永远不去 accept（实测 xlogo 卡在握手）。
-   * 现在按 tick 重扫，直到就绪或超时；永久等待（tmo==NULL）也真的等到有事件。 */
-  int has_tmo = (tmo != NULL);
-  u32 st_start = schedule_get_wall_ticks();
-  int spins = 0;
-  for (;;) {
-    ready = 0;
-    for (i = 0; i < nfds; i++) {
-      short want = fds[i].events;
-      short got = 0;
-      if (fds[i].fd < 0) {
-        continue; /* poll 规范：fd<0 忽略 events，revents=0 */
-      }
-      if (thread_find_fd_id(current, fds[i].fd) == NULL) {
-        got = POLLNVAL_;
-      } else {
-        if ((want & POLLIN_) && sys_fd_ready(fds[i].fd, 1, 0)) {
-          got |= POLLIN_;
-        }
-        if ((want & POLLOUT_) && sys_fd_ready(fds[i].fd, 0, 1)) {
-          got |= POLLOUT_;
-        }
-        if (want & POLLPRI_) got |= POLLPRI_;
-        if (want == 0) got = 0;
-      }
-      if (got != 0) {
-        ready++;
-      }
-      fds[i].revents = got;
-    }
-    sys_copy_to_user(ufds, fds, sizeof(struct pollfd_k) * nfds);
-    if (ready > 0) {
+  /* 挂起前把用户态 revents 全清 0：超时路径（tick 只写保存帧 x0=0）
+   * 不再碰用户内存，语义上"未就绪的 fd revents=0"也正合规范。 */
+  for (i = 0; i < nfds; i++) {
+    fds[i].revents = 0;
+  }
+  sys_copy_to_user(ufds, fds, sizeof(struct pollfd_k) * nfds);
+  {
+    struct pollw_poll* pw = kmalloc(sizeof(*pw), KERNEL_TYPE);
+    if (pw == NULL) {
       kfree(fds);
-      return ready;
+      return -12;
     }
-    if (has_tmo && (u32)(schedule_get_wall_ticks() - st_start) >= (u32)tmo_ms) {
-      kfree(fds);
-      return 0;
-    }
-    /* 【不能在这里长自旋】syscall 期间抢占是关的，几秒的自旋会把同一 CPU 上的
-     * 其它线程饿死：实测 poll(5000) 自旋 5 秒期间，fork 出来的客户端直到
-     * poll 返回后才连上来。真正的阻塞等待需要 futex 那套协议
-     * （登记 → THREAD_WAITING → schedule_switch，由唤醒方把返回值写回保存帧），
-     * 待补；这里先只重扫一次就返回，行为与旧实现一致。 */
-    if (spins > 0) {
-      kfree(fds);
-      return 0;
-    }
-    if (++spins > 500000000) {
-      /* 兜底（tick 停走时）：报一次假事件，避免 libxcb 把 0 当致命错误。 */
-      kfree(fds);
-      return 1;
-    }
-    schedule_sleep(1);
+    pw->owner = current;
+    pw->ufds = ufds;
+    pw->nfds = (int)nfds;
+    pw->fds = fds;
+    return poll_wait_suspend(
+        pollw_poll_recheck, pollw_poll_release, pw,
+        (u32)(tmo_ms > 0x7fffffffull ? 0x7fffffffull : tmo_ms), (tmo != NULL));
   }
 }
 

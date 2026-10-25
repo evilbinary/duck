@@ -9,6 +9,7 @@
 #include "kernel/error.h"
 #include "kernel/event.h"
 #include "kernel/kernel.h"
+#include "kernel/thread.h"
 #include "kernel/sysinfo.h"
 #include "kernel/time.h"
 #include "kernel/type.h"
@@ -532,6 +533,18 @@ int unix_fd_is_listener(int fd);
 /* 统一的 fd 就绪判定（sysfn_fs.c）：pipe/本机 socket 按真实状态，其余沿用
  * "存在即就绪"。poll/select/epoll 必须共用同一判据。 */
 int sys_fd_ready(int fd, int want_read, int want_write);
+/* 【带 owner 的版本】唤醒方（别的线程）替等待者重算就绪时不能依赖
+ * thread_current() —— fd 表属于等待者，判据也必须按等待者的 fd 查。 */
+int sys_fd_ready_t(thread_t* owner, int fd, int want_read, int want_write);
+int unix_poll_ready_t(thread_t* owner, int fd, int want_read, int want_write);
+
+/* ===== poll/select/epoll 的阻塞等待（sysfn_pollwait.c）=====
+ * 登记 recheck → THREAD_WAITING → schedule_switch；唤醒方（unix/pipe 事件）
+ * 调 poll_wait_notify 重算并写回保存帧。详见文件头注释。 */
+int poll_wait_suspend(int (*recheck)(void* arg), void (*release)(void* arg),
+                      void* arg, u32 tmo_ms, int has_tmo);
+void poll_wait_notify(void);
+void poll_wait_init(void);
 
 void sys_fn_init();
 void sys_fn_net_init(void** syscall_table);
