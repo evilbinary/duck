@@ -33,6 +33,11 @@ extern vnode_t* root_node;
 static vnode_t* procfs_lookup(const char* path);
 static vnode_t* devfs_lookup(const char* path);
 
+/* 阻塞读写（实现见 sys_read 之前）：sys_write 定义更早，必须先声明 */
+static int sys_unix_blockable(u32 fd, fd_t* f);
+static int sys_rw_wait(thread_t* current, u32 fd, void* buf, size_t nbytes,
+                       int is_write);
+
 /* 最小 sysfs 垫片（实现见文件尾）：只补 /sys/class/graphics/fbN 这一片，
  *   sysfs_lookup          → open/stat/access/readdir 用（sys_open_kpath 先问）；
  *   sysfs_readlink_magic  → readlink 用（.../fb0/device/subsystem 这类软链接）。 */
@@ -1830,12 +1835,21 @@ size_t sys_write(u32 fd, void* buf, size_t nbytes) {
   }
 
   u32 ret = vwrite(node, f->offset, nbytes, write_buf);
+  if ((int)ret < 0) {
+    if (tmp_buf != NULL) {
+      kfree(tmp_buf);
+    }
+    /* 【阻塞写】本机 socket 且未设 O_NONBLOCK：对端缓冲满就挂起，等它读走
+     * 数据（unix_op_read → poll_wait_notify）后重试。 */
+    if ((int)ret == -11 && tmp_buf == NULL && buf != NULL && nbytes > 0 &&
+        sys_unix_blockable(fd, f)) {
+      return (size_t)sys_rw_wait(current, fd, buf, nbytes, 1);
+    }
+    /* 同 sys_read：-EAGAIN/-EPIPE 必须符号扩展，否则用户态看到的是天文数字 */
+    return (size_t)(long)(int)ret;
+  }
   if (tmp_buf != NULL) {
     kfree(tmp_buf);
-  }
-  /* 同 sys_read：-EAGAIN/-EPIPE 必须符号扩展，否则用户态看到的是天文数字 */
-  if ((int)ret < 0) {
-    return (size_t)(long)(int)ret;
   }
   if (ret > 0) {
     f->offset += ret;
@@ -1843,43 +1857,77 @@ size_t sys_write(u32 fd, void* buf, size_t nbytes) {
   return ret;
 }
 
-/* ===== 阻塞读的等待参数（注册给 poll_wait_suspend）=====
- * vread 自己就把数据写进用户 buffer，所以唤醒方只要在【等待者页表】下
- * 重试一次同样的 vread 即可，不需要额外的数据搬运。 */
-struct pollw_read {
+/* ===== 阻塞读/写的等待参数（注册给 poll_wait_suspend）=====
+ * vread/vwrite 本来就作用于用户 buffer，所以唤醒方只要在【等待者页表】下
+ * 重试一次同样的操作即可，不需要额外的数据搬运。 */
+struct pollw_rw {
   thread_t* owner;
   int fd;
   void* buf;
   size_t nbytes;
-  long ret; /* 读到的字节数（0 = EOF） */
+  int is_write;
+  long ret; /* 实际完成的字节数（读时为 0 表示 EOF） */
 };
 
-/* 返回 1 就绪 / 0 仍无数据 / 负值 放弃等待并作为 syscall 返回值 */
-static int pollw_read_recheck(void* a) {
-  struct pollw_read* r = (struct pollw_read*)a;
+/* 返回 1 就绪 / 0 仍不可用（EAGAIN）/ 负值 放弃等待并作为 syscall 返回值 */
+static int pollw_rw_recheck(void* a) {
+  struct pollw_rw* r = (struct pollw_rw*)a;
   fd_t* f = thread_find_fd_id(r->owner, r->fd);
   u32 n;
   if (f == NULL || f->data == NULL) {
     return -9; /* -EBADF */
   }
-  n = vread((vnode_t*)f->data, f->offset, r->nbytes, (u8*)r->buf);
+  if (r->is_write) {
+    n = vwrite((vnode_t*)f->data, f->offset, r->nbytes, (u8*)r->buf);
+  } else {
+    n = vread((vnode_t*)f->data, f->offset, r->nbytes, (u8*)r->buf);
+  }
   if ((int)n == -11) {
-    return 0; /* 还是没数据（EAGAIN） */
+    return 0; /* 还是不可用（EAGAIN：无数据 / 缓冲满） */
   }
   if ((int)n < 0) {
     return (int)n; /* EPIPE 之类：放弃等待，让用户态拿到真实错误 */
   }
-  sys_user_dcache_sync(r->buf, n);
+  if (r->is_write) {
+    if (n > 0) {
+      f->offset += n;
+    }
+  } else {
+    sys_user_dcache_sync(r->buf, n);
+  }
   r->ret = (long)n;
   return 1;
 }
 
-static long pollw_read_result(void* a) {
-  return ((struct pollw_read*)a)->ret;
+static long pollw_rw_result(void* a) {
+  return ((struct pollw_rw*)a)->ret;
 }
 
-static void pollw_read_release(void* a) {
+static void pollw_rw_release(void* a) {
   kfree(a);
+}
+
+/* 本机 socket 且未设 O_NONBLOCK 才允许阻塞（Xorg 用 FIONBIO 把自己设成
+ * 非阻塞，行为必须保持 EAGAIN）。 */
+static int sys_unix_blockable(u32 fd, fd_t* f) {
+  return f != NULL && unix_owns(fd) && (f->flags & O_NONBLOCK) == 0;
+}
+
+/* 挂起等 read/write 可用；返回实际字节数（不可达时为 0） */
+static int sys_rw_wait(thread_t* current, u32 fd, void* buf, size_t nbytes,
+                       int is_write) {
+  struct pollw_rw* r = kmalloc(sizeof(*r), KERNEL_TYPE);
+  if (r == NULL) {
+    return -12; /* -ENOMEM */
+  }
+  r->owner = current;
+  r->fd = (int)fd;
+  r->buf = buf;
+  r->nbytes = nbytes;
+  r->is_write = is_write;
+  r->ret = 0;
+  return poll_wait_suspend(pollw_rw_recheck, pollw_rw_result, pollw_rw_release,
+                           r, 0, 0);
 }
 
 size_t sys_read(u32 fd, void* buf, size_t nbytes) {
@@ -1963,17 +2011,8 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
      * 只处理"数据直读用户 buf"的情况：tmp_buf 路径需要重新分配，交给
      * 用户态重试（返回 EAGAIN），避免在等待表里持有大块内核缓冲。 */
     if ((int)ret == -11 && tmp_buf == NULL && buf != NULL && nbytes > 0 &&
-        (f->flags & O_NONBLOCK) == 0 && unix_owns(fd)) {
-      struct pollw_read* r = kmalloc(sizeof(*r), KERNEL_TYPE);
-      if (r != NULL) {
-        r->owner = current;
-        r->fd = (int)fd;
-        r->buf = buf;
-        r->nbytes = nbytes;
-        r->ret = 0;
-        return (size_t)poll_wait_suspend(pollw_read_recheck, pollw_read_result,
-                                         pollw_read_release, r, 0, 0);
-      }
+        sys_unix_blockable(fd, f)) {
+      return (size_t)sys_rw_wait(current, fd, buf, nbytes, 0);
     }
     return (size_t)(long)(int)ret;
   }
