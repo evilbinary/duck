@@ -157,9 +157,10 @@ int sys_rt_sigprocmask(int how, void* set, void* old_set) {
     } else {
       return -22; /* -EINVAL */
     }
-    /* 屏蔽解除 ⇒ 期间攒下的"有 handler"的信号按 Linux 是立刻投递执行，
-     * 这里等价消费掉，免得它们残留 pending 把后续等待点都打成 EINTR。 */
-    thread_signal_flush_handled(t);
+    /* 注意：【不要】在这里消费 pending。LTP ppoll01 的 SEND_SIGINT_RACE_TEST
+     * 依赖"屏蔽期间被挡住的 SIGINT 在 ppoll 临时解除屏蔽后才投递"⇒ 必须在
+     * ppoll 里看到 pending 才能返回 EINTR。真正该消费的时机在投递侧（目标没
+     * 停在可中断等待里时由 thread_signal_send 直接消费）。 */
   }
   return 0;
 }

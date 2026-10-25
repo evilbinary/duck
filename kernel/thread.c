@@ -197,6 +197,14 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
   copy->sleep_counter = 0;
   copy->dump_count = 0;
   copy->ticks = 0;
+  /* 【子线程的 pending 信号必须清空】Linux 语义：fork/clone 出来的新进程/
+   * 新线程，其 pending 集合初始为空（掩码与 sigaction 才继承）。父进程在
+   * fork 期间会被 musl 短暂屏蔽全部信号，那段时间到达的信号只能挂 pending，
+   * 一旦被子进程带走就会变成"凭空出现的陈旧信号"——LTP 的心跳 SIGUSR1
+   * （子进程里是 SIG_DFL，没有 handler 就不会被投递侧消费）曾让 ppoll01 的
+   * 后两个变体每个用例一进来就 EINTR。 */
+  copy->sig_pending = 0;
+  copy->wait_kind = WAIT_KIND_NONE;
 
   // context init
   context_t* ctx = kmalloc(sizeof(context_t), KERNEL_TYPE);
@@ -503,7 +511,15 @@ int thread_signal_send(thread_t* t, int sig) {
   if ((t->state == THREAD_WAITING || t->state == THREAD_SLEEP) &&
       t->wait_kind == WAIT_KIND_INTR) {
     thread_wake_ex(t, WAKE_SIGNAL);
+    return 0;
   }
+  /* 目标没停在可中断等待里（正在跑，或阻塞在不可打断的点）：Linux 上这个
+   * 信号会在"回到用户态"时执行 handler 并就地消费；本内核不执行 handler，
+   * 于是等价于"已投递完毕"——必须清掉 pending，否则它会一直挂到下一个
+   * 等待点，把毫不相干的 syscall 打成 EINTR（LTP ppoll01：MASK_SIGNAL 用例
+   * 屏蔽期间的 SIGINT 被后面的 TIMEOUT 用例捡到）。默认动作（SIG_DFL/
+   * SIG_IGN，handler<=1）不消费，保持原行为。 */
+  thread_signal_flush_handled(t);
   return 0;
 }
 
