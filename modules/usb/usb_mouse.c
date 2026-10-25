@@ -5,6 +5,7 @@
  * USB Mouse Driver
  ********************************************************************/
 #include "usb.h"
+#include "usb_mouse.h"
 #include "mouse/mouse.h"
 #include "dev/devfs.h"
 #include "kernel/device.h"
@@ -115,9 +116,9 @@ static void usb_mouse_push_event(u8 buttons, i8 dx, i8 dy, i8 wheel) {
     }
 }
 
-/* 设备读取函数：真正的消费者（xinput / GUI / 以后接 evdev）read 时才
+/* 取包接口：真正的消费者（xinput / GUI / 平台 mouse 驱动转发）read 时才
  * 去轮询中断端点，没人读就什么都不做（报告在设备端自然被覆盖）。 */
-static size_t usb_mouse_read(device_t* dev, void* buf, size_t len) {
+size_t usb_mouse_read_packet(u8* buf, size_t len) {
     if (buf == NULL || len < 3) return 0;
 
     // 只在队列为空时才轮询 USB 设备
@@ -156,7 +157,13 @@ static size_t usb_mouse_read(device_t* dev, void* buf, size_t len) {
     }
 
     event_tail = (event_tail + 1) % USB_MOUSE_EVENT_QUEUE_SIZE;
-    return len;
+    return (len >= 4) ? 4 : 3;
+}
+
+/* 设备读取函数：/dev/usb_mouse 的 read 入口（若被挂载），语义同取包接口。 */
+static size_t usb_mouse_read(device_t* dev, void* buf, size_t len) {
+    (void)dev;
+    return usb_mouse_read_packet(buf, len);
 }
 
 // USB 鼠标事件回调
@@ -259,6 +266,9 @@ int usb_mouse_connect(usb_device_t* dev) {
     
     // 注册设备到 devfs
     device_t* mouse_dev = kmalloc(sizeof(device_t), KERNEL_TYPE);
+    if (mouse_dev == NULL) return -1;
+    /* kmalloc 不清零：data/index/ioctl 等字段不初始化会变成脏指针 */
+    kmemset(mouse_dev, 0, sizeof(device_t));
     mouse_dev->name = "usb_mouse";
     mouse_dev->id = DEVICE_MOUSE;
     mouse_dev->type = DEVICE_TYPE_CHAR;

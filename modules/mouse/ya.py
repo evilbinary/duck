@@ -15,6 +15,11 @@ arch=get_arch()
 arch_type=get_arch_type()
 plat=get_plat()
 
+# bcm2836.c 没有 PS/2 控制器，鼠标数据从 USB HID 驱动转发过来
+# （duck/modules/usb/usb_mouse.c 的 usb_mouse_read_packet）。
+if plat in ('raspi2', 'raspi3'):
+    add_deps('mod-usb')
+
 plat_source={
     'v3s':[
         'v3s.c',
