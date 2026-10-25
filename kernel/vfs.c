@@ -237,6 +237,14 @@ vnode_t *vfind(vnode_t *node, char *name) {
 /* 【新增】目录操作 dispatch：文件系统未实现时返回 -1（EPERM 语义） */
 int vmkdir(vnode_t *dir, const char *name, u32 mode) {
   if (dir == NULL || dir->op == NULL || dir->op->mkdir == NULL) {
+    /* 【必须留痕】这一层直接 return -1 时，调用方（xtrans 建 /tmp/.X11-unix）
+     * 只会看到一个被 musl 翻成 EPERM 的 errno，完全不知道是哪层拒的：
+     * 是父目录节点压根没有 mkdir 操作（挂载根/临时节点常见），还是文件系统
+     * 拒绝。把父节点名字和 op 打出来。 */
+    log_error("vmkdir: no mkdir op dir=%s(%x) op=%x name=%s\n",
+              (dir != NULL && dir->name != NULL) ? dir->name : "?",
+              (u32)(uintptr_t)dir, (u32)(uintptr_t)(dir != NULL ? dir->op : NULL),
+              name != NULL ? name : "?");
     return -1;
   }
   int ret;

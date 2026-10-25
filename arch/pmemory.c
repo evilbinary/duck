@@ -459,15 +459,32 @@ static block_t* ya_phys_prev(block_t* block) {
 
 block_t* ya_find_free_block(size_t size) {
   block_t* block = mmt.g_block_free;
+  block_t* prev = NULL;
   block_t* find_block = NULL;
   while (block) {
     if (!(block->magic == MAGIC_USED || block->magic == MAGIC_FREE)) {
       log_error(
           "errro find free block addr %x tid %d,magic error is %d addr %x\n",
           block, block->tid, block->magic, &block->magic);
+      /* 【定位信息】只报"链上这个地址 magic 不对"没法判断是谁把链写坏的。
+       * 把前驱节点（它的 next 指向坏块）、空闲链头尾、坏块前 8 字节都打出来：
+       *   · prev 的 next == block 且 prev 字段正常 ⇒ 是 prev 之后被人写坏；
+       *   · block-8 是完整 END 槽（magic=999999999）⇒ 链上挂的是"某块的 END
+       *     槽地址"，即某处把 header 指针算成了 +YA_END_SIZE 的偏移地址。 */
+      if (prev != NULL) {
+        log_error("  prev=%x magic=%x free=%x size=%x next=%x\n", prev,
+                  prev->magic, prev->free, prev->size, prev->next);
+      }
+      log_error("  free head=%x last=%x request=%d\n", mmt.g_block_free,
+                mmt.g_block_free_last, (int)size);
+      if ((uintptr_t)block >= 0x1000) {
+        u32* e = (u32*)((u8*)block - YA_END_SIZE);
+        log_error("  block-8: %x %x (END magic=%x)\n", e[0], e[1], MAGIC_END);
+      }
       cpu_halt();
       break;
     }
+    prev = block;
     if (block->free == BLOCK_FREE && block->size >= size) {
       find_block = block;
       break;
