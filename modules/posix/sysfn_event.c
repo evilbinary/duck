@@ -291,6 +291,7 @@ struct pollw_epoll {
   void* uevents;
   int maxevents;
   struct epoll_k* ep;
+  u64 saved_blocked; /* epoll_pwait 的临时 sigmask 之前的值（返回时恢复） */
 };
 
 /* 在等待者页表下执行（切页表由 poll_wait_suspend/poll_wait_notify 负责） */
@@ -339,6 +340,19 @@ static int pollw_epoll_recheck(void* a) {
 }
 
 static void pollw_epoll_release(void* a) {
+  /* 【恢复 epoll_pwait 的临时 sigmask】Linux 语义：epoll_pwait 的 sigmask 只在
+   * 本次调用期间【替换】当前掩码，返回时恢复原值。ppoll 走的是同一套协议
+   * （见 sys_ppoll / pollw_poll_release）。
+   * 恢复后顺手消费"屏蔽期间攒下的、有 handler 的"pending 位：内核不执行
+   * handler，等价于它已经跑过；不消费会让它们挂到下一个等待点造成假 EINTR。 */
+  struct pollw_epoll* s = (struct pollw_epoll*)a;
+  if (s == NULL) {
+    return;
+  }
+  if (s->owner != NULL) {
+    s->owner->sig_blocked = s->saved_blocked;
+    thread_signal_flush_handled(s->owner);
+  }
   kfree(a);
 }
 
@@ -455,8 +469,25 @@ int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
   /* 无就绪：真正挂起（THREAD_WAITING + schedule_switch），由 unix/pipe 的
    * 事件唤醒并重算 —— 与 select/ppoll 共用同一套协议（sysfn_pollwait.c）。 */
   {
-    struct pollw_epoll* pw = kmalloc(sizeof(*pw), KERNEL_TYPE);
+    u64 saved_blocked = thread_current()->sig_blocked;
+    u64 sm = 0;
+    struct pollw_epoll* pw;
+    /* 【临时 sigmask（替换语义）】epoll_pwait 的第 5 参：本次调用期间用
+     * sigmask 取代当前掩码，返回时由 pollw_epoll_release 恢复。
+     * LTP epoll_pwait01 的"屏蔽 SIGUSR1 后写 pipe"用例就靠它：信号被挡住只
+     * 挂 pending，pipe 可读才唤醒并返回 1；不实现时信号 10ms 后直接把等待
+     * 打成 -EINTR（实测 TFAIL "returned -1, expected 1"）。
+     * 只在"确实要睡"这条路径上替换（其它早返回路径不碰掩码），代价是入口到
+     * 这里之间存在极窄的窗口 —— 本内核不执行 handler，可接受。 */
+    if (sigmask != NULL) {
+      if (sys_copy_from_user(&sm, sigmask, sizeof(sm)) < 0) {
+        return -14; /* -EFAULT */
+      }
+      thread_current()->sig_blocked = sm;
+    }
+    pw = kmalloc(sizeof(*pw), KERNEL_TYPE);
     if (pw == NULL) {
+      thread_current()->sig_blocked = saved_blocked;
       return -12;
     }
     pw->owner = thread_current();
@@ -464,6 +495,7 @@ int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
     pw->uevents = events;
     pw->maxevents = maxevents;
     pw->ep = ep;
+    pw->saved_blocked = saved_blocked;
     return poll_wait_suspend(
         pollw_epoll_recheck, NULL, pollw_epoll_release, pw,
         (u32)(timeout > 0x7fffffff ? 0x7fffffff : timeout), (timeout > 0));

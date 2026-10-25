@@ -1534,7 +1534,13 @@ static int sys_select_core(int nfds, unsigned long* readfds,
   if (current == NULL) {
     return -1;
   }
-  if (nfds < 0 || nfds > SYS_FD_SETSIZE) {
+  /* 【负 nfds 是 EINVAL】Linux 语义（LTP pselect02 的 "nfds=-1" 用例）。
+   * 旧实现把它钳成 SYS_FD_SETSIZE ⇒ 变成"扫 1024 个 fd、无超时地等下去"，
+   * 用例直接挂死。上限仍按 FD_SETSIZE 钳位（用户态集合就这么大）。 */
+  if (nfds < 0) {
+    return -22; /* -EINVAL */
+  }
+  if (nfds > SYS_FD_SETSIZE) {
     nfds = SYS_FD_SETSIZE;
   }
 
@@ -1562,6 +1568,25 @@ static int sys_select_core(int nfds, unsigned long* readfds,
     log_error("sys_select copy in faild tid %d\n", current->id);
     kfree(s);
     return -1;
+  }
+  /* 【集合里出现未打开的 fd ⇒ EBADF】POSIX/Linux 的 select/pselect 必查，
+   * 且是"整组预检"（不做部分就绪短路）。缺这一步时 pselect02 的
+   * "read 集合里放一个已 close 的 fd、timeout=NULL" 用例会一直等下去
+   * （旧代码靠"一个假 EINTR"歪打正着返回，ppoll 语义修好后立刻挂死）。 */
+  {
+    int bits = (int)(sizeof(unsigned long) * 8);
+    int fd;
+    for (fd = 0; fd < nfds; fd++) {
+      unsigned long mask = 1UL << (fd % bits);
+      int word = fd / bits;
+      if (((s->oread[word] | s->owrite[word] | s->oexcept[word]) & mask) == 0) {
+        continue;
+      }
+      if (thread_find_fd_id(current, fd) == NULL) {
+        kfree(s);
+        return -9; /* -EBADF */
+      }
+    }
   }
   /* 【超时路径不碰用户内存】tick 到期只把保存帧 x0 写 0，所以挂起前先把
    * 用户集合清零：select 超时返回 0 时集合内容本就未定义，清零符合预期。 */
@@ -1598,7 +1623,10 @@ int sys_select(int nfds, unsigned long* readfds, unsigned long* writefds,
  * 【旧实现把 72 直接指向 sys_select（按 timeval 解析）】⇒ timespec 的 tv_nsec
  * 被当成 tv_usec，超时语义完全错；LTP select04 因此报
  * "pselect() woken up early 491 times range: [0,0]"。这里按 timespec 解析，
- * tv_nsec 越界返回 EINVAL。sigmask 忽略（内核暂无信号投递）。 */
+ * tv_nsec 越界（含负数）返回 EINVAL。
+ * 【sigmask 暂不生效】pselect 的第 6 参是 {sigmask*, sigsetsize}*；这里没有
+ * 像 ppoll 那样做临时替换——需要时按 sys_ppoll 的写法补（pollw 参数里带上
+ * saved_blocked，release 时恢复）。 */
 int sys_pselect6(int nfds, unsigned long* readfds, unsigned long* writefds,
                  unsigned long* exceptfds, void* tsp, void* sig) {
   i64 ts[2];
