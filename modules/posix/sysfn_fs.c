@@ -3342,24 +3342,53 @@ static int sysfs_entry_uses_fb(const sysfs_entry_t* e) {
   return 0;
 }
 
+/* 模板匹配"path 的一段前缀"：模板对完之后 path 要么正好结束、要么紧跟 '/'。
+ * （不能直接用 kstrncmp 比前缀：模板里 'D' 是占位符，
+ *   "/sys/.../fbD/device" 与 "/sys/.../fb0/device" 字面比较必然不等。） */
+static int sysfs_match_prefix(const char* path, const char* tmpl) {
+  int digits = 0;
+
+  while (*tmpl != '\0' && *tmpl != 'D') {
+    if (*path != *tmpl) {
+      return 0;
+    }
+    path++;
+    tmpl++;
+  }
+  if (*tmpl == '\0') {
+    return *path == '\0' || *path == '/';
+  }
+  tmpl++; /* 跳过 'D' */
+  while (*path >= '0' && *path <= '9' && digits < 4) {
+    path++;
+    digits++;
+  }
+  if (digits == 0) {
+    return 0;
+  }
+  while (*tmpl != '\0') {
+    if (*path != *tmpl) {
+      return 0;
+    }
+    path++;
+    tmpl++;
+  }
+  return *path == '\0' || *path == '/';
+}
+
 /* 本表里是否还有以 path + "/" 开头的条目。
  * 用途：.../fbN/device 是软链接，但它下面还有 subsystem/driver/name ——
  * Linux 上 open() 会跟随软链接，于是 opendir(".../fbN/device") 能列出内容；
  * 这里据此把这类"有子路径的链接"同时当成目录开放（readlink 仍按链接答）。 */
 static int sysfs_has_children(const char* path) {
-  size_t len;
   u32 i;
 
   if (path == NULL) {
     return 0;
   }
-  len = kstrlen(path);
   for (i = 0; i < sizeof(sysfs_table) / sizeof(sysfs_table[0]); i++) {
     const char* p = sysfs_table[i].path;
-    if (p == NULL) {
-      continue;
-    }
-    if (kstrncmp(p, path, len) == 0 && p[len] == '/') {
+    if (p != NULL && sysfs_match_prefix(path, p)) {
       return 1;
     }
   }
