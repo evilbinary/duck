@@ -514,7 +514,7 @@ int thread_signal_send(thread_t* t, int sig) {
     return 0;
   }
   /* 目标没停在可中断等待里（正在跑，或阻塞在不可打断的点）：位图留着，
-   * 等它"回用户态"时由 thread_signal_deliver_if_needed 真正投递
+   * 等它"回用户态"时由 thread_user_return_run 钩子真正投递
    * （有 handler ⇒ 建信号帧跑 handler；SIG_IGN/SIG_DFL ⇒ 就地消费）。 */
   return 0;
 }

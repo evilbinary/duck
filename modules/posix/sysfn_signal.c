@@ -215,6 +215,7 @@ static void signal_user_return(thread_t* t, void* vic) {
   u64 newmask;
   u64 fr_sp;
   u64 fr_pc;
+  u64 fr_x0;
   int sig;
 
   if (t == NULL || ic == NULL || t->sig_pending == 0) {
@@ -257,6 +258,7 @@ static void signal_user_return(thread_t* t, void* vic) {
 
   fr_sp = ic->sp;
   fr_pc = ic->pc;
+  fr_x0 = ic->x0;
   base = (ic->sp & ~0xFull) - (u64)SIGFRAME_SIZE;
   if (sys_copy_to_user((void*)(uintptr_t)base, fr, sizeof(*fr)) < 0) {
     /* 用户栈不可写（栈溢出/坏 sp）：不投递，消费掉避免每次回用户态重试。 */
@@ -285,9 +287,10 @@ static void signal_user_return(thread_t* t, void* vic) {
   ic->sp = base;
   /* 【诊断·可删】每次投递打一行：sp/base/pc/handler/restorer 是排查"handler
    * 跑飞/栈错位"的唯一线索。 */
-  log_error("SIGDEL tid=%d sig=%d sp=%lx base=%lx pc=%lx h=%lx r=%lx psr=%lx\n",
-            (int)t->id, sig, (u64)fr_sp, base, (u64)fr_pc, handler, restorer,
-            (u64)ic->psr);
+  log_error(
+      "SIGDEL tid=%d sig=%d sp=%lx base=%lx pc=%lx x0=%lx h=%lx r=%lx psr=%lx\n",
+      (int)t->id, sig, (u64)fr_sp, base, (u64)fr_pc, (u64)fr_x0, handler,
+      restorer, (u64)ic->psr);
 }
 
 /* ===================== rt_sigreturn(139) ===================== */

@@ -280,6 +280,9 @@ static int pollw_fill(thread_t* t, int reason) {
   } else {
     ret = e->ready;
   }
+  if (reason != WAKE_EVENT) {
+    log_error("PWFILL tid=%d reason=%d ret=%ld\n", (int)t->id, reason, ret);
+  }
   if (t->ctx != NULL && t->ctx->ksp != NULL) {
     /* ctx->ksp 是保存帧副本；ctx->ic 指向共享槽，早被别的线程覆盖了 */
     ((interrupt_context_t*)t->ctx->ksp)->x0 = (u64)ret;
