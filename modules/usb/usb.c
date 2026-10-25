@@ -194,8 +194,8 @@ usb_device_t* usb_find_device_by_vid_pid(u16 vendor, u16 product) {
 int usb_control_transfer(u8 device_address, u8 endpoint,
                         u8 request_type, u8 request,
                         u16 value, u16 index, void* data, u16 len, u32 timeout) {
-    USB_INFO("usb_control_transfer: addr=%d ep=%d req=%02x val=%04x len=%d\n",
-             device_address, endpoint, request, value, len);
+    USB_INFO("usb_control_transfer: addr=%d ep=%d type=%02x req=%02x val=%04x len=%d\n",
+             device_address, endpoint, request_type, request, value, len);
     
     urb_t urb;
     kmemset(&urb, 0, sizeof(urb));
@@ -359,6 +359,11 @@ void usb_init(void) {
     dev->id = 0;
     dev->type = DEVICE_TYPE_CHAR;
     device_add(dev);
+
+    /* usb_mouse_module 没有 REGISTER_MODULE 注册（模块表里只有 "usb"），
+     * 这里显式初始化一次驱动状态（清空设备/事件队列）。注意驱动本身不
+     * 主动消费端点：HID 报告只在有人 read 设备时才去取，没人读就丢弃。 */
+    usb_mouse_init();
 
     usb_initialized = 1;
     USB_INFO("USB core initialized\n");

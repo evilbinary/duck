@@ -123,19 +123,12 @@ static int hid_parse_report_descriptor(hid_device_t* hid, u8* desc, u32 length) 
     return 0;
 }
 
-// 获取 HID 描述符
-static int hid_get_descriptor(usb_device_t* dev, usb_hid_descriptor_t* desc) {
-    return usb_control_transfer(dev->address, 0,
-                               USB_REQUEST_TYPE_DEVICE_TO_HOST | USB_REQUEST_TYPE_CLASS | USB_REQUEST_TYPE_RECIPIENT_INTERFACE,
-                               USB_REQUEST_GET_DESCRIPTOR,
-                               (USB_DESCRIPTOR_TYPE_HID << 8) | 0,
-                               0, desc, sizeof(usb_hid_descriptor_t), 1000);
-}
-
-// 获取报告描述符
+// 获取报告描述符（标准请求：DEVICE_TO_HOST|STANDARD|DEVICE = 0x80）
 static int hid_get_report_descriptor(usb_device_t* dev, u8* buffer, u16 length) {
     return usb_control_transfer(dev->address, 0,
-                               USB_REQUEST_TYPE_DEVICE_TO_HOST | USB_REQUEST_TYPE_CLASS | USB_REQUEST_TYPE_RECIPIENT_INTERFACE,
+                               USB_REQUEST_TYPE_DEVICE_TO_HOST |
+                                   USB_REQUEST_TYPE_TYPE_STANDARD |
+                                   USB_REQUEST_TYPE_RECIPIENT_DEVICE,
                                USB_REQUEST_GET_DESCRIPTOR,
                                (USB_DESCRIPTOR_TYPE_REPORT << 8) | 0,
                                0, buffer, length, 1000);
@@ -193,22 +186,16 @@ int hid_handle_device(usb_device_t* dev) {
     hid->usb_dev = dev;
     hid->interface = 0;
 
-    // 尝试获取 HID 描述符 (可选，Boot 设备不一定需要)
-    usb_hid_descriptor_t hid_desc;
-    if (hid_get_descriptor(dev, &hid_desc) == 0) {
-        USB_INFO("HID: bcd_hid=%04x country=%d num_desc=%d\n",
-                 hid_desc.bcd_hid, hid_desc.country_code, hid_desc.num_descriptors);
-
-        // 尝试获取报告描述符
-        u16 report_desc_len = hid_desc.descriptor_length;
-        if (report_desc_len == 0) {
-            report_desc_len = 256;  // 默认最大长度
-        }
-
+    /* Boot 子类设备（subclass=1）不需要 Report Descriptor：报告长度是
+     * 固定的（鼠标 4 字节：buttons/dx/dy/wheel，键盘 8 字节）。QEMU 的
+     * boot 鼠标对 GET_DESCRIPTOR(0x22) 直接回 STALL，发了只会留下一条
+     * 误导的 "SETUP phase failed"。所以 boot 设备直接跳过，非 boot
+     * 设备才去取描述符（以后按描述符解析报告用）。 */
+    if (dev->subclass != 0x01) {
+        u16 report_desc_len = 256;
         hid->report_desc = kmalloc(report_desc_len, KERNEL_TYPE);
         if (hid->report_desc != NULL) {
             if (hid_get_report_descriptor(dev, hid->report_desc, report_desc_len) == 0) {
-                // 解析报告描述符
                 hid_parse_report_descriptor(hid, hid->report_desc, report_desc_len);
             } else {
                 kfree(hid->report_desc);
@@ -216,7 +203,7 @@ int hid_handle_device(usb_device_t* dev) {
             }
         }
     } else {
-        USB_INFO("HID descriptor not available, using Boot protocol\n");
+        USB_INFO("Boot device: skip report descriptor\n");
     }
 
     // 设置空闲速率 (中断端点轮询) - 可能失败，忽略错误

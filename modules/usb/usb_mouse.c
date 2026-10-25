@@ -108,14 +108,18 @@ static void usb_mouse_push_event(u8 buttons, i8 dx, i8 dy, i8 wheel) {
     event_queue[event_head].wheel = wheel;
     event_head = next_head;
 
-    // USB_DEBUG("USB Mouse: buttons=%02x dx=%d dy=%d wheel=%d\n",
-            //   buttons, dx, dy, wheel);
+    /* 只在有实际动作时打印：设备在指针静止时也会周期性上报全零报告 */
+    if (buttons != 0 || dx != 0 || dy != 0 || wheel != 0) {
+        USB_INFO("USB Mouse: buttons=%02x dx=%d dy=%d wheel=%d\n", buttons, dx,
+                 dy, wheel);
+    }
 }
 
-// 设备读取函数 (供 xinput 轮询)
+/* 设备读取函数：真正的消费者（xinput / GUI / 以后接 evdev）read 时才
+ * 去轮询中断端点，没人读就什么都不做（报告在设备端自然被覆盖）。 */
 static size_t usb_mouse_read(device_t* dev, void* buf, size_t len) {
     if (buf == NULL || len < 3) return 0;
-    
+
     // 只在队列为空时才轮询 USB 设备
     if (event_tail == event_head) {
         usb_mouse_poll();
@@ -341,10 +345,13 @@ void usb_mouse_poll(void) {
     }
 }
 
-// USB 鼠标初始化
+/* 后端不主动消费端点：HID 中断端点上报的是"设备端最新一份报告"，
+ * 主机不读就等于被下一份覆盖（丢弃），不需要后台线程搬运。 */
 void usb_mouse_init(void) {
     USB_INFO("USB mouse driver initializing...\n");
     usb_mice = NULL;
+    event_head = 0;
+    event_tail = 0;
     USB_INFO("USB mouse driver initialized\n");
 }
 

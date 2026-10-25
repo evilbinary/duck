@@ -129,16 +129,17 @@ static int smsc_lan95xx_init(bcm2837_net_t* net) {
 // Initialize network device
 int net_init_device(device_t* dev) {
     kprintf("[BCM2837-Net] Initializing network device\n");
-    
+
     bcm2837_net_t* net = &net_device;
     kmemset(net, 0, sizeof(bcm2837_net_t));
-    
-    // Initialize USB Host Controller
-    if(usb_host_init(net) != 0) {
-        kprintf("[BCM2837-Net] Failed to initialize USB Host\n");
-        return -1;
-    }
-    
+
+    /* 【不要在这里初始化/复位 USB 控制器】DWC2 由 mod-usb 独占管理，而 net
+     * 模块在 usb 之后初始化（app/init/module.c）；旧代码在这里写
+     * USB_CORE_RESET=1 会把 usb 刚枚举好的设备（hub/鼠标）整个清掉，
+     * 之后鼠标的中断端点传输就再也拿不到数据。
+     * 网卡走的是 lwip + 独立实现，不需要碰 USB core。 */
+    (void)usb_host_init;
+
     // Initialize SMSC LAN95xx Ethernet controller
     if(smsc_lan95xx_init(net) != 0) {
         kprintf("[BCM2837-Net] Failed to initialize SMSC LAN95xx\n");

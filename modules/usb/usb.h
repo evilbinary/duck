@@ -289,7 +289,7 @@ void hcd_register_ops(hcd_ops_t* ops);
 
 // USB 调试级别
 // 0 = 关闭所有调试, 1 = 只显示错误, 2 = 显示信息, 3 = 显示详细调试
-#define USB_DEBUG_LEVEL 1
+#define USB_DEBUG_LEVEL 2
 
 // USB 调试宏
 #if USB_DEBUG_LEVEL >= 3

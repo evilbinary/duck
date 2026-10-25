@@ -349,7 +349,14 @@ static int dwc2_wait_channel(int ch_num, u32* actual_len) {
     
     while (timeout > 0) {
         u32 hcint = dwc2_read(DWC2_HCINT(ch_num));
-        
+
+        /* NAK：中断端点没有新数据时设备就是这个反应，通道并不会 halt。
+         * 必须立刻返回，否则每次轮询都要空转满 500 次超时循环。 */
+        if ((hcint & DWC2_HCINT_NAK) && !(hcint & DWC2_HCINT_CHHLTD)) {
+            dwc2_write(DWC2_HCINT(ch_num), DWC2_HCINT_NAK);
+            return URB_NAK;
+        }
+
         // 通道停止 (CHHLTD) - 传输结束，检查结果
         if (hcint & DWC2_HCINT_CHHLTD) {
             dwc2_write(DWC2_HCINT(ch_num), hcint);  // 清除中断
