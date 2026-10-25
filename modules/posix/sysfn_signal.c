@@ -5,10 +5,11 @@
  * 信号 handler 的真实执行：信号帧 + rt_sigreturn。
  *
  * 【整体协议】
- *   · 投递点：所有"即将 eret 回用户态"的出口（exception_process 的
- *     syscall/IRQ 返回、schedule_switch 的阻塞唤醒返回）都调
- *     thread_signal_deliver_if_needed()。它只做 cheap 判断（pending 非空 +
- *     帧的 PSTATE 是用户态），真正干活的是本文件注册的钩子。
+ *   · 投递点：内核在"即将 eret 回用户态"时统一调 thread_user_return_run()
+ *     （通用钩子，见 kernel/thread.h；两个落点：exception_process 的
+ *     syscall/IRQ 返回、schedule_switch 的阻塞唤醒返回）。本文件把
+ *     signal_user_return() 挂到 thread_user_return_hook 上 —— 内核完全不知道
+ *     "信号"这个概念，只负责最后一刻叫一声。
  *   · 建帧：把当前现场（pc/psr/sp/x0..x30 + 屏蔽字）整份存到用户栈上，
  *     然后把返回现场改成"调用 handler"：
  *        x0 = signum、x1 = &siginfo、x2 = &ucontext、
