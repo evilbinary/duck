@@ -110,6 +110,21 @@ int thread_init_vm(thread_t* copy, thread_t* thread, u32 flags);
 void thread_sleep(thread_t* thread, u32 count);
 
 void thread_wake(thread_t* thread);
+/* 【带超时标记的唤醒】等待者（futex / poll / select / epoll）走的是
+ * schedule_switch 式阻塞：内核调用链已被弃，恢复后从保存帧直接回用户态
+ * ⇒ 返回值只能由唤醒方回填。所有回填逻辑统一收在 thread_wake_ex 里：
+ *   timed_out=1：poll 类回 0（无就绪），futex 类回 -ETIMEDOUT
+ *   timed_out=0：事件唤醒（futex 的 x0 已由唤醒方写好，poll 类由钩子重算） */
+void thread_wake_ex(thread_t* thread, int timed_out);
+
+/* 【等待协议钩子】由 posix 层（sysfn_pollwait.c）在 sys_fn_init 里注册：
+ *   thread_wait_fill_hook：thread_wake 内部调用。返回 1 表示"这是 poll 类
+ *     等待者，已把就绪数/超时结果写进保存帧并清掉等待登记"；返回 0 表示
+ *     普通等待者（futex/waitpid），由 thread_wake_ex 按约定处理。
+ *   thread_wait_notify_hook：事件发生（socket 连接/数据、pipe 读写）时调用，
+ *     重算所有 poll 类等待者并唤醒就绪者。未注册时为 NULL，调用方要判空。 */
+extern int (*thread_wait_fill_hook)(thread_t* t, int timed_out);
+extern void (*thread_wait_notify_hook)(void);
 
 void thread_bind_cpu(thread_t* thread, int cpu);
 /* 调度切走之后调用：把已经不该留在 from_cpu 上的线程挂到它的 cpu_id。 */

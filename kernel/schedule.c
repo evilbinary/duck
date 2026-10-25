@@ -79,10 +79,9 @@ int schedule_state(int cpu) {
        * 普通 WAITING（waitpid/thread_wait）sleep_counter 恒 0，不受影响。 */
       v->sleep_counter--;
       if (v->sleep_counter <= 0) {
-        if (v->ctx != NULL && v->ctx->ksp != NULL) {
-          ((interrupt_context_t*)v->ctx->ksp)->x0 = (u64)(long)-110;
-        }
-        thread_wake(v);
+        /* 超时唤醒：返回值（poll 类 0 / futex 类 -ETIMEDOUT）与清槽都在
+         * thread_wake_ex 里统一处理，调度层不碰保存帧。 */
+        thread_wake_ex(v, 1);
       }
     } else if (v->state == THREAD_RUNNING) {
       count++;

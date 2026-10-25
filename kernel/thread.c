@@ -445,14 +445,41 @@ void thread_wait(thread_t* thread) {
   schedule_switch();
 }
 
-void thread_wake(thread_t* thread) {
+/* 等待协议的钩子（见 thread.h）：由 posix 层在 sys_fn_init 里注册 */
+int (*thread_wait_fill_hook)(thread_t* t, int timed_out) = NULL;
+void (*thread_wait_notify_hook)(void) = NULL;
+
+void thread_wake_ex(thread_t* thread, int timed_out) {
+  if (thread == NULL) {
+    return;
+  }
 #ifdef DEBUG_THREAD
   log_debug("thread %d wake==============> %d\n", current_threads[cpu_id]->id,
             thread->id);
 #endif
+  /* 【唤醒即回填返回值】阻塞式等待（futex/poll/select/epoll）都是
+   * "登记 → THREAD_WAITING → schedule_switch"，内核调用链被弃，线程恢复后
+   * 从保存帧直接回用户态 —— 所以唤醒方必须把结果写进保存帧。
+   * 统一收在这里：调用点（socket/pipe 事件、waitpid、调度超时）只管
+   * "该醒了"，不用各写一份 x0。
+   *   poll 类：返回多少只有它自己的 recheck 知道 → 交给钩子算；
+   *   普通等待者：超时才回 -ETIMEDOUT（Linux futex 语义），事件唤醒的
+   *   x0 已由唤醒方写好在先，这里不能覆盖。 */
+  if (thread->state == THREAD_WAITING && thread->ctx != NULL &&
+      thread->ctx->ksp != NULL) {
+    int handled = 0;
+    if (thread_wait_fill_hook != NULL) {
+      handled = thread_wait_fill_hook(thread, timed_out);
+    }
+    if (!handled && timed_out) {
+      ((interrupt_context_t*)thread->ctx->ksp)->x0 = (u64)(long)-110;
+    }
+  }
   thread->state = THREAD_RUNNING;
   thread->sleep_counter = 0;
 }
+
+void thread_wake(thread_t* thread) { thread_wake_ex(thread, 0); }
 
 void thread_set_entry(thread_t* thread, void* entry) {
   if (thread == NULL) return;
