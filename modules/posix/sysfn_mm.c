@@ -57,7 +57,19 @@ static void* sys_mmap_pick_anon_addr(thread_t* current, vmemory_area_t* vm,
     return NULL;
   }
   vaddr_t try = (vm->vend - length) & ~(vaddr_t)(PAGE_SIZE - 1);
+  /* 【诊断·可删】walk 统计：openbox 报 "no free anon region len=1000" 时
+   * 需要知道它到底走了多少步、卡在哪个地址、最后一段是被谁挡住的。 */
+  int dbg_steps = 0;
+  vaddr_t dbg_first = try;
+  vaddr_t dbg_last = try;
   while (try >= vm->vaddr) {
+    dbg_steps++;
+    dbg_last = try;
+    if (dbg_steps > 200000) {
+      log_error("pick_anon: give up after %d steps len=%lx\n", dbg_steps,
+                (unsigned long)length);
+      break;
+    }
     /* 【VMA 重叠前置 + 整段跳跃】顺序反了是大坑：lazy 文件映射的 VMA
      * 没有已映射页，pages_mapped 恒 0，于是每个 4KB 步都要做一遍
      * O(length/PAGE) 的页表扫描——45MB 匿名映射在 810MB 模型 VMA 底下
@@ -70,6 +82,8 @@ static void* sys_mmap_pick_anon_addr(thread_t* current, vmemory_area_t* vm,
         return (void*)try;
       }
       if (try <= vm->vaddr) {
+        log_error("pick_anon: reach vaddr=%lx steps=%d\n", (unsigned long)try,
+                  dbg_steps);
         break;
       }
       try -= PAGE_SIZE;
@@ -77,10 +91,17 @@ static void* sys_mmap_pick_anon_addr(thread_t* current, vmemory_area_t* vm,
     }
     /* 整段跳过冲突 VMA：落到它的 vaddr 之下（页对齐） */
     if (ov->vaddr < (vaddr_t)length || ov->vaddr - length < vm->vaddr) {
+      log_error("pick_anon: blocked by vma %lx-%lx steps=%d len=%lx\n",
+                (unsigned long)ov->vaddr, (unsigned long)ov->vend, dbg_steps,
+                (unsigned long)length);
       break;
     }
     try = (ov->vaddr - length) & ~(vaddr_t)(PAGE_SIZE - 1);
   }
+  log_error("pick_anon fail len=%lx steps=%d first=%lx last=%lx vend=%lx vaddr=%lx\n",
+            (unsigned long)length, dbg_steps, (unsigned long)dbg_first,
+            (unsigned long)dbg_last, (unsigned long)vm->vend,
+            (unsigned long)vm->vaddr);
   return NULL;
 }
 
@@ -161,41 +182,51 @@ void sys_vfree(void* addr) {
  * 堆区越过 2GB 后 int/u32 承接会变负；但不能写死 u64——ARM32 的 sys_call_fn
  * 是 u32(*)(u32×6)，按「字」计参（见 sysfn.h 的 ABI 注释）。
  * 行为与旧实现一致（错误返回 -1；end==0 返回当前堆顶；越界/与 mmap 重叠拒绝）。 */
+/* 当前 program break（Linux：brk(0) 与失败时的返回值都是它）。 */
+static vaddr_t sys_brk_current(vmemory_area_t* vm) {
+  if (vm->alloc_addr == 0) {
+    vm->alloc_addr = vm->vaddr;
+  }
+  return vm->alloc_addr;
+}
+
 vaddr_t sys_brk(vaddr_t end) {
   thread_t* current = thread_current();
-  log_debug("brk tid:%d req:%lx\n", current->id, (unsigned long)end);
   vmemory_area_t* vm = vmemory_area_find_flag(current->vm->vma, MEMORY_HEAP);
+  vaddr_t cur;
   if (vm == NULL) {
     log_error("sys brk not found vm\n");
     return (vaddr_t)-1;
   }
+  cur = sys_brk_current(vm);
   if (end == 0) {
-    if (vm->alloc_addr == 0) {
-      vm->alloc_addr = vm->vaddr;
-    }
-    end = vm->alloc_addr;
-    log_debug("brk first ret:%lx\n", (unsigned long)end);
-    return end;
+    return cur;
   }
-  if (end > vm->vend) {
-    log_error("brk: end %lx exceeds heap vend %lx, returning -1\n",
-              (unsigned long)end, (unsigned long)vm->vend);
-    return (vaddr_t)-1;
+  /* 【失败必须返回"当前 break"，不能返回 -1】Linux 的 brk 语义：放不下时
+   * 返回当前的 program break（glibc 的 __brk 拿它和请求值比较来判 ENOMEM）。
+   * 旧实现返回 -1 ⇒ glibc 的 __curbrk 被写成 0xffffffffffffffff，下一次
+   * "brk(__curbrk + size)" 就是一堆垃圾地址（openbox 实测：请求 0x470151000，
+   * 高位多出 1<<34），堆彻底失控后在 libc 里 memory fault。 */
+  if (end > vm->vend || end < vm->vaddr) {
+    log_error("brk: req %lx out of heap [%lx,%lx], keep %lx\n",
+              (unsigned long)end, (unsigned long)vm->vaddr,
+              (unsigned long)vm->vend, (unsigned long)cur);
+    return cur;
   }
-  i64 size = (i64)end - (i64)vm->alloc_addr;
+  i64 size = (i64)end - (i64)cur;
   if (size > 0) {
-    if (sys_mmap_child_overlaps(vm->child, vm->alloc_addr, (size_t)size)) {
-      log_error("brk: end %lx overlaps mmap, keep %lx\n",
-                (unsigned long)end, (unsigned long)vm->alloc_addr);
-      return (vaddr_t)-1;
+    if (sys_mmap_child_overlaps(vm->child, cur, (size_t)size)) {
+      log_error("brk: end %lx overlaps mmap, keep %lx\n", (unsigned long)end,
+                (unsigned long)cur);
+      return cur;
     }
     /* Allocate physical pages for the expanded heap region so that musl
      * mallocng (and any brk-based allocator) can safely write metadata
      * and payloads without hitting unmapped pages. */
-    if (valloc((void*)vm->alloc_addr, (size_t)size) == NULL) {
-      log_error("brk: valloc failed for %lx size %lld\n",
-                (unsigned long)vm->alloc_addr, (long long)size);
-      return (vaddr_t)-1;
+    if (valloc((void*)cur, (size_t)size) == NULL) {
+      log_error("brk: valloc failed for %lx size %lld\n", (unsigned long)cur,
+                (long long)size);
+      return cur;
     }
   }
   if (size < 0) {
@@ -705,7 +736,26 @@ int sys_munmap(void* addr, size_t size) {
           continue;
         }
         /* 部分重叠 ⇒ 裁剪端点（保留剩余）✓ */
-        if (p->vaddr >= a0) {
+        if (p->vaddr < a0 && a1 < p->vend) {
+          /* 【中段挖空必须拆成两块】旧代码只做 p->vend = s0，把 [a1, 旧vend)
+           * 整段从 VMA 表里丢掉：那段 VA 页表里还映射着上一份物理页，却不再
+           * 被任何 area 覆盖 ⇒ 后续 mmap 复用该 VA 时（尤其文件映射的
+           * valloc+kmemset+读入）会写进别人还在用的物理页，造成跨映射串数据
+           * （openbox 实测：glibc 堆里出现 0x4_7013_0420 这种 bit34 指针）。
+           * 拆成"前段 + 后段"，后段的 file_off 按偏移同步。 */
+          vmemory_area_t* tail =
+              vmemory_area_create(a1, p->vend - a1, p->flags);
+          if (tail != NULL) {
+            tail->file_node = p->file_node;
+            tail->file_off = p->file_off + (u64)(vaddr_t)(a1 - p->vaddr);
+            tail->next = next;
+            p->next = tail;
+            p->vend = s0;
+            next = tail; /* 让循环接着看后段（它与本次 munmap 不相交） */
+          } else {
+            p->vend = s0;
+          }
+        } else if (p->vaddr >= a0) {
           /* 裁头：剩余区起点从旧 vaddr 前移到 s1，文件映射的
            * file_off 必须同步后移，缺页时 off=vaddr差值 才对得上。 */
           p->file_off += (u64)(vaddr_t)(s1 - p->vaddr);
