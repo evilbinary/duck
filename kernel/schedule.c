@@ -81,7 +81,7 @@ int schedule_state(int cpu) {
       if (v->sleep_counter <= 0) {
         /* 超时唤醒：返回值（poll 类 0 / futex 类 -ETIMEDOUT）与清槽都在
          * thread_wake_ex 里统一处理，调度层不碰保存帧。 */
-        thread_wake_ex(v, 1);
+        thread_wake_ex(v, WAKE_TIMEOUT);
       }
     } else if (v->state == THREAD_RUNNING) {
       count++;

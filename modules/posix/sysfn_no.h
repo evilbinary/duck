@@ -238,6 +238,11 @@ enum {
    * eventfd2=19、epoll 三件套=20/21/22、inotify=26/27/28、
    * close_range=436。sendmsg=211/recvmsg=212 宏已在网络组。 */
   SYS_PPOLL = 73,
+  /* 【ppoll_time64=414】asm-generic 的 32 位 time64 编号。aarch64 上本没有这个
+   * 号（真 Linux 返回 ENOSYS），但 LTP 的 lapi 会无条件按 414 发一遍
+   * "syscall time64 with kernel spec" 变体 ⇒ 不实现就一直 TFAIL。本内核的
+   * timespec 本来就只有 64 位布局，直接别名到 ppoll 即可。 */
+  SYS_PPOLL_TIME64 = 414,
   SYS_SETSID = 157,
   SYS_PRCTL = 167,
   SYS_SIGALTSTACK = 132,

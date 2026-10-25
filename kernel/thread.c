@@ -449,7 +449,7 @@ void thread_wait(thread_t* thread) {
 int (*thread_wait_fill_hook)(thread_t* t, int timed_out) = NULL;
 void (*thread_wait_notify_hook)(void) = NULL;
 
-void thread_wake_ex(thread_t* thread, int timed_out) {
+void thread_wake_ex(thread_t* thread, int reason) {
   if (thread == NULL) {
     return;
   }
@@ -457,26 +457,104 @@ void thread_wake_ex(thread_t* thread, int timed_out) {
   log_debug("thread %d wake==============> %d\n", current_threads[cpu_id]->id,
             thread->id);
 #endif
-  /* 【唤醒即回填返回值】阻塞式等待（futex/poll/select/epoll）都是
+  /* 【唤醒即回填返回值】阻塞式等待（futex/poll/select/epoll/read/write）都是
    * "登记 → THREAD_WAITING → schedule_switch"，内核调用链被弃，线程恢复后
    * 从保存帧直接回用户态 —— 所以唤醒方必须把结果写进保存帧。
-   * 统一收在这里：调用点（socket/pipe 事件、waitpid、调度超时）只管
+   * 统一收在这里：调用点（socket/pipe 事件、waitpid、调度超时、信号）只管
    * "该醒了"，不用各写一份 x0。
    *   poll 类：返回多少只有它自己的 recheck 知道 → 交给钩子算；
    *   普通等待者：超时才回 -ETIMEDOUT（Linux futex 语义），事件唤醒的
-   *   x0 已由唤醒方写好在先，这里不能覆盖。 */
+   *   x0 已由唤醒方写好在先，这里不能覆盖；信号打断统一回 -EINTR。 */
   if (thread->state == THREAD_WAITING && thread->ctx != NULL &&
       thread->ctx->ksp != NULL) {
     int handled = 0;
     if (thread_wait_fill_hook != NULL) {
-      handled = thread_wait_fill_hook(thread, timed_out);
+      handled = thread_wait_fill_hook(thread, reason);
     }
-    if (!handled && timed_out) {
-      ((interrupt_context_t*)thread->ctx->ksp)->x0 = (u64)(long)-110;
+    if (!handled) {
+      if (reason == WAKE_TIMEOUT) {
+        ((interrupt_context_t*)thread->ctx->ksp)->x0 = (u64)(long)-110;
+      } else if (reason == WAKE_SIGNAL) {
+        ((interrupt_context_t*)thread->ctx->ksp)->x0 = (u64)(long)-4; /* EINTR */
+      }
     }
   }
   thread->state = THREAD_RUNNING;
   thread->sleep_counter = 0;
+  thread->wait_kind = WAIT_KIND_NONE;
+}
+
+/* ===================== 信号 ===================== */
+
+int thread_signal_send(thread_t* t, int sig) {
+  if (t == NULL) {
+    return -3; /* -ESRCH */
+  }
+  if (sig <= 0 || sig >= THREAD_NSIG) {
+    return 0; /* sig=0 只是存活探测 */
+  }
+  t->sig_pending |= THREAD_SIGBIT(sig);
+  /* 被屏蔽的信号只挂 pending，不打断当前等待（Linux：解除屏蔽后才投递）。 */
+  if (t->sig_blocked & THREAD_SIGBIT(sig)) {
+    return 0;
+  }
+  /* 只有标记为"可被信号打断"的等待点（poll/select/epoll/read/write）才立刻
+   * 醒来返回 -EINTR。waitpid/futex 等不打断 —— 见 WAIT_KIND_* 的说明。 */
+  if ((t->state == THREAD_WAITING || t->state == THREAD_SLEEP) &&
+      t->wait_kind == WAIT_KIND_INTR) {
+    thread_wake_ex(t, WAKE_SIGNAL);
+  }
+  return 0;
+}
+
+int thread_signal_pending(thread_t* t) {
+  if (t == NULL) {
+    return 0;
+  }
+  return (t->sig_pending & ~t->sig_blocked) != 0;
+}
+
+int thread_signal_take(thread_t* t) {
+  int sig;
+  u64 avail;
+  if (t == NULL) {
+    return 0;
+  }
+  avail = t->sig_pending & ~t->sig_blocked;
+  if (avail == 0) {
+    return 0;
+  }
+  for (sig = 1; sig < THREAD_NSIG; sig++) {
+    if (avail & THREAD_SIGBIT(sig)) {
+      t->sig_pending &= ~THREAD_SIGBIT(sig);
+      return sig;
+    }
+  }
+  return 0;
+}
+
+void thread_signal_flush_handled(thread_t* t) {
+  struct thread_sigaction* acts;
+  u64 avail;
+  int sig;
+  if (t == NULL || t->sig_acts == NULL) {
+    return;
+  }
+  acts = (struct thread_sigaction*)t->sig_acts;
+  avail = t->sig_pending & ~t->sig_blocked;
+  if (avail == 0) {
+    return;
+  }
+  for (sig = 1; sig < THREAD_NSIG; sig++) {
+    if ((avail & THREAD_SIGBIT(sig)) == 0) {
+      continue;
+    }
+    /* handler 是用户态函数地址才算"装了 handler"；SIG_DFL(0)/SIG_IGN(1)
+     * 的默认动作本内核不实现，留着位图不消费（保持原行为）。 */
+    if ((u64)acts[sig].handler > 1) {
+      t->sig_pending &= ~THREAD_SIGBIT(sig);
+    }
+  }
 }
 
 void thread_wake(thread_t* thread) { thread_wake_ex(thread, 0); }

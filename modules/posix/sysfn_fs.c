@@ -1641,6 +1641,7 @@ struct pollw_poll {
   void* ufds;
   int nfds;
   struct pollfd_k* fds; /* 内核副本（含用户 events） */
+  u64 saved_blocked;    /* ppoll 的临时 sigmask 之前的值（返回时恢复） */
 };
 
 /* 在等待者页表下执行（切页表由 poll_wait_suspend/poll_wait_notify 负责） */
@@ -1683,6 +1684,14 @@ static void pollw_poll_release(void* a) {
   if (p == NULL) {
     return;
   }
+  /* ppoll 的 sigmask 只在调用期间生效：无论正常返回、超时还是被信号打断，
+   * 都在这里恢复（release 由 pollw_clear 统一调用）。恢复前按 Linux 语义
+   * 消费掉"屏蔽期间攒下有 handler"的信号——它们的 handler 在这里等于已经
+   * 跑完，不能残留 pending 去打断下一次等待。 */
+  if (p->owner != NULL) {
+    p->owner->sig_blocked = p->saved_blocked;
+    thread_signal_flush_handled(p->owner);
+  }
   kfree(p->fds);
   kfree(p);
 }
@@ -1692,7 +1701,6 @@ int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
   struct pollfd_k* ufds = (struct pollfd_k*)u_ufds;
   struct pollfd_k* fds = NULL;
   unsigned int i;
-  (void)sigmask;
   if (current == NULL) {
     return -1;
   }
@@ -1747,18 +1755,43 @@ int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
       tmo_ms = (u64)ts64[0] * 1000ull + ((u64)ts64[1] + 999999ull) / 1000000ull;
     }
   }
+  /* 【临时 sigmask】ppoll 的 sigmask 只在本次调用期间生效，而且是【替换】而
+   * 不是叠加（Linux：调用期间用 sigmask 取代当前掩码）——写成 |= 时"进程里
+   * 屏蔽着 SIGINT、ppoll 传空掩码"就永远解不开屏蔽，ppoll01 的
+   * SEND_SIGINT_RACE_TEST 会等满超时而不是 EINTR。恢复动作放在
+   * pollw_poll_release 里，覆盖"正常返回 / 超时 / 被信号打断"三条路径。 */
+  u64 saved_blocked = current->sig_blocked;
+  if (sigmask != NULL) {
+    u64 sm = 0;
+    if (sys_copy_from_user(&sm, sigmask, sizeof(sm)) < 0) {
+      return -14; /* -EFAULT */
+    }
+    current->sig_blocked = sm;
+  }
   if (nfds == 0) {
     /* 无 fd 的 poll = 定时等待：必须真睡满 timeout，不能立刻返回 0 */
+    struct pollw_poll* pw = kmalloc(sizeof(*pw), KERNEL_TYPE);
+    if (pw == NULL) {
+      current->sig_blocked = saved_blocked;
+      return -12;
+    }
+    pw->owner = current;
+    pw->ufds = ufds;
+    pw->nfds = 0;
+    pw->fds = NULL;
+    pw->saved_blocked = saved_blocked;
     return poll_wait_suspend(
-        pollw_idle_recheck, NULL, NULL, NULL,
+        pollw_idle_recheck, NULL, pollw_poll_release, pw,
         (u32)(tmo_ms > 0x7fffffffull ? 0x7fffffffull : tmo_ms), (tmo != NULL));
   }
   fds = kmalloc(sizeof(struct pollfd_k) * nfds, KERNEL_TYPE);
   if (fds == NULL) {
+    current->sig_blocked = saved_blocked;
     return -12; /* -ENOMEM */
   }
   if (sys_copy_from_user(fds, ufds, sizeof(struct pollfd_k) * nfds) < 0) {
     kfree(fds);
+    current->sig_blocked = saved_blocked;
     return -14; /* -EFAULT */
   }
   /* 挂起前把用户态 revents 全清 0：超时路径（tick 只写保存帧 x0=0）
@@ -1771,12 +1804,14 @@ int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
     struct pollw_poll* pw = kmalloc(sizeof(*pw), KERNEL_TYPE);
     if (pw == NULL) {
       kfree(fds);
+      current->sig_blocked = saved_blocked;
       return -12;
     }
     pw->owner = current;
     pw->ufds = ufds;
     pw->nfds = (int)nfds;
     pw->fds = fds;
+    pw->saved_blocked = saved_blocked;
     return poll_wait_suspend(
         pollw_poll_recheck, NULL, pollw_poll_release, pw,
         (u32)(tmo_ms > 0x7fffffffull ? 0x7fffffffull : tmo_ms), (tmo != NULL));

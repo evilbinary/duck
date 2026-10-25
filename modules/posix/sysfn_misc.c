@@ -109,13 +109,90 @@ int sys_self(void* t) {
   return 1;
 }
 
-int sys_rt_sigprocmask(int h, void* set, void* old_set) {
+/* ===================== 信号 =====================
+ * 内核侧只维护"每个线程一份 sigaction 表 + pending/blocked 位图"：
+ * 投递路径由 thread.c 的 thread_signal_send 完成（挂 pending 并唤醒阻塞中的
+ * syscall 返回 -EINTR）。用户态 handler 的真正执行（信号帧 + sigreturn）尚未
+ * 实现，见 sysfn.c 的说明。 */
+
+#define SIG_BLOCK_ 0
+#define SIG_UNBLOCK_ 1
+#define SIG_SETMASK_ 2
+
+static struct thread_sigaction* sig_acts_of(thread_t* t) {
+  if (t == NULL) {
+    return NULL;
+  }
+  if (t->sig_acts == NULL) {
+    t->sig_acts =
+        kmalloc(sizeof(struct thread_sigaction) * THREAD_NSIG, KERNEL_TYPE);
+    if (t->sig_acts != NULL) {
+      kmemset(t->sig_acts, 0, sizeof(struct thread_sigaction) * THREAD_NSIG);
+    }
+  }
+  return (struct thread_sigaction*)t->sig_acts;
+}
+
+int sys_rt_sigprocmask(int how, void* set, void* old_set) {
+  thread_t* t = thread_current();
+  u64 nset = 0;
+  if (t == NULL) {
+    return -1;
+  }
+  if (old_set != NULL) {
+    if (sys_copy_to_user(old_set, &t->sig_blocked, sizeof(u64)) < 0) {
+      return -14; /* -EFAULT */
+    }
+  }
+  if (set != NULL) {
+    if (sys_copy_from_user(&nset, set, sizeof(u64)) < 0) {
+      return -14;
+    }
+    if (how == SIG_BLOCK_) {
+      t->sig_blocked |= nset;
+    } else if (how == SIG_UNBLOCK_) {
+      t->sig_blocked &= ~nset;
+    } else if (how == SIG_SETMASK_) {
+      t->sig_blocked = nset;
+    } else {
+      return -22; /* -EINVAL */
+    }
+    /* 屏蔽解除 ⇒ 期间攒下的"有 handler"的信号按 Linux 是立刻投递执行，
+     * 这里等价消费掉，免得它们残留 pending 把后续等待点都打成 EINTR。 */
+    thread_signal_flush_handled(t);
+  }
   return 0;
 }
 
+/* aarch64 内核 ABI 的 struct sigaction：
+ *   { void* handler(8); u64 flags(8); void* restorer(8); u64 mask(8) } 共 32B
+ * （musl 的 __libc_sigaction 已从用户态布局转成这个格式再进内核）。 */
 int sys_rt_sigaction(int signum, const struct sigaction* restrict act,
                      struct sigaction* restrict oldact) {
-  log_debug("sys sigaction not impl\n");
+  thread_t* t = thread_current();
+  struct thread_sigaction* acts;
+  struct thread_sigaction ka;
+  if (t == NULL) {
+    return -1;
+  }
+  if (signum <= 0 || signum >= THREAD_NSIG) {
+    return -22; /* -EINVAL */
+  }
+  acts = sig_acts_of(t);
+  if (acts == NULL) {
+    return -12; /* -ENOMEM */
+  }
+  if (oldact != NULL) {
+    if (sys_copy_to_user(oldact, &acts[signum], sizeof(ka)) < 0) {
+      return -14;
+    }
+  }
+  if (act != NULL) {
+    if (sys_copy_from_user(&ka, act, sizeof(ka)) < 0) {
+      return -14;
+    }
+    acts[signum] = ka;
+  }
   return 0;
 }
 

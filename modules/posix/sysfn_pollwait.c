@@ -171,6 +171,17 @@ int poll_wait_suspend(int (*recheck)(void*), long (*result)(void*),
     return (int)v;
   }
 
+  /* 【可中断点】确实没有事件、马上就要睡下时才检查信号：已有事件优先返回，
+   * 否则宿主的信号残留会让每次 poll 都立刻 EINTR（LTP 里上一用例的 SIGINT
+   * 就曾把后面所有用例打断）。消费掉该信号位，避免同一信号反复打断。 */
+  if (thread_signal_pending(current)) {
+    if (release != NULL && arg != NULL) {
+      release(arg);
+    }
+    thread_signal_take(current);
+    return -4; /* -EINTR */
+  }
+
   e = pollw_slot(current);
   if (e == NULL) {
     /* 表满：退化成"报告未就绪"，调用方会在用户态重试（不会死等） */
@@ -191,11 +202,13 @@ int poll_wait_suspend(int (*recheck)(void*), long (*result)(void*),
    * 若 notify 来早了（当时还不是 WAITING），这次复查也能兜住。 */
   current->sleep_counter = 0;
   current->state = THREAD_WAITING;
+  current->wait_kind = WAIT_KIND_INTR; /* 允许信号打断（返回 -EINTR） */
   ready = pollw_recheck_in(current, recheck, arg);
   if (ready != 0) {
     long v = (ready < 0) ? (long)ready : pollw_value(e, ready);
     pollw_clear(e);
     current->state = THREAD_RUNNING;
+    current->wait_kind = WAIT_KIND_NONE;
     return (int)v;
   }
   if (has_tmo) {
@@ -212,6 +225,7 @@ int poll_wait_suspend(int (*recheck)(void*), long (*result)(void*),
   if (e != NULL) {
     pollw_clear(e);
   }
+  current->wait_kind = WAIT_KIND_NONE;
   return 0;
 }
 
@@ -249,15 +263,24 @@ void poll_wait_notify(void) {
  * 返回 1 表示"这是 poll 类等待者，已处理"；0 表示不是（交给 thread_wake_ex
  * 按 futex 语义处理）。
  * 超时路径【不调用 recheck】：tick 上下文切用户页表代价大且没必要 ——
- * 挂起前已把用户态 revents/集合清 0，超时语义只需返回 0。 */
-static int pollw_fill(thread_t* t, int timed_out) {
+ * 挂起前已把用户态 revents/集合清 0，超时语义只需返回 0。
+ * 信号路径回 -EINTR 并消费掉那个信号位（否则会反复打断同一个 syscall）。 */
+static int pollw_fill(thread_t* t, int reason) {
   struct pollw_ent* e = pollw_find(t);
+  long ret;
   if (e == NULL) {
     return 0;
   }
+  if (reason == WAKE_SIGNAL) {
+    ret = -4; /* -EINTR */
+    thread_signal_take(t);
+  } else if (reason == WAKE_TIMEOUT) {
+    ret = 0;
+  } else {
+    ret = e->ready;
+  }
   if (t->ctx != NULL && t->ctx->ksp != NULL) {
     /* ctx->ksp 是保存帧副本；ctx->ic 指向共享槽，早被别的线程覆盖了 */
-    long ret = timed_out ? 0 : e->ready;
     ((interrupt_context_t*)t->ctx->ksp)->x0 = (u64)ret;
   }
   pollw_clear(e);

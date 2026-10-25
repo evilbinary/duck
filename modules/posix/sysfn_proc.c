@@ -702,15 +702,16 @@ int sys_kill(pid_t pid, int sig) {
      * "Server is already active for display 0"，EXITG status=1）。 */
     return -ESRCH;
   }
-  /* 【内核无信号设施：非 SIGKILL 一律忽略】LTP 的 watchdog 靠子进程给父进程
-   * 发 SIGUSR1 心跳（实测 clone10：tid8 kill(pid=7, SIGUSR1)）——原实现把任何
-   * 信号都当立即处决，还按 thread_find_id(pid) 按【tid】匹配 ⇒ 心跳直接把
-   * 父进程杀了：thread_stop 在杀手的 CPU 上抬高 preempt 计数且永无
-   * preempt_reset ⇒ 时钟抢占永久失效，CLONE_THREAD 子线程饿死，clone10 卡死。
-   * Linux 语义：无 handler 的 SIGUSR1 默认动作是终止【收到信号的进程】，
-   * 但我们连信号投递都没有，"投递成功"的最小实现就是忽略非 KILL 信号。 */
+  /* 【非 SIGKILL 走真正的信号投递】挂到目标线程的 pending 位图，并唤醒它
+   * 阻塞中的 syscall（poll/select/epoll/read/write/futex 立刻返回 -EINTR）。
+   * 用户态 handler 的执行（信号帧 + sigreturn）尚未实现，因此这里不做
+   * "默认动作"（终止/忽略）—— 有 handler 的程序能看到 EINTR，但 handler
+   * 本身不会跑；无 handler 的信号只是被消费。
+   * 【历史坑】早期版本把任何信号都当立即处决（thread_stop），LTP watchdog 的
+   * SIGUSR1 心跳直接把父进程杀了；现在只挂 pending，不会再误杀。
+   * SIGKILL(9) 仍按"结束整个进程"处理（下面）。 */
   if (sig != 9 /* SIGKILL */) {
-    return 0;
+    return thread_signal_send(t, sig);
   }
   thread_t* current = thread_current();
   if (t == current) {

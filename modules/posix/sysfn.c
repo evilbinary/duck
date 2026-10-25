@@ -342,6 +342,7 @@ void sys_fn_init() {
 
   /* 【标准 POSIX 接口组】轮询/事件 fd/会话/杂项 */
   syscall_table[SYS_PPOLL] = &sys_ppoll;
+  syscall_table[SYS_PPOLL_TIME64] = &sys_ppoll; /* 别名，见 sysfn_no.h */
   syscall_table[SYS_SETSID] = &sys_setsid;
   syscall_table[SYS_PRCTL] = &sys_prctl;
   syscall_table[SYS_SIGALTSTACK] = &sys_sigaltstack;
