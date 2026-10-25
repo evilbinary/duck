@@ -341,6 +341,15 @@ void usb_init(void) {
     usb_devices = NULL;
     usb_next_address = 1;
 
+    /* 【必须在 hcd_init() 之前】usb_mouse_init() 会清空 usb_mice 链表和
+     * 事件队列；而 hcd_init() → dwc2_init() 会在里面立刻枚举设备并调用
+     * usb_mouse_connect() 把鼠标挂到 usb_mice 上。
+     * 顺序反了就是"刚枚举到的鼠标被立刻清空"——实测 usb_mice 恒为 NULL，
+     * usb_mouse_poll() 的 while 循环永远不执行，真实 USB 鼠标完全收不到
+     * （表现为：枚举日志一切正常、Interrupt IN 端点也找到了，但 read 永远
+     * 返回 0，HID 报告一条都取不到）。 */
+    usb_mouse_init();
+
     // 先初始化 HCD (注册 HCD 操作)
     usb_host_init();
 
@@ -359,11 +368,6 @@ void usb_init(void) {
     dev->id = 0;
     dev->type = DEVICE_TYPE_CHAR;
     device_add(dev);
-
-    /* usb_mouse_module 没有 REGISTER_MODULE 注册（模块表里只有 "usb"），
-     * 这里显式初始化一次驱动状态（清空设备/事件队列）。注意驱动本身不
-     * 主动消费端点：HID 报告只在有人 read 设备时才去取，没人读就丢弃。 */
-    usb_mouse_init();
 
     usb_initialized = 1;
     USB_INFO("USB core initialized\n");
