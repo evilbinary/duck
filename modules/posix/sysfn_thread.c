@@ -170,7 +170,6 @@ static struct {
   u32* addr;
   thread_t* t;
 } * futex_waiters = NULL;
-static u32 futex_dbg;
 
 static void futex_waiter_ensure(void) {
   if (futex_waiters != NULL) {
@@ -216,15 +215,6 @@ static u32 futex_waiter_wake(u32* addr, u32 max_wake) {
   if (futex_waiters == NULL) {
     return 0;
   }
-  {
-    /* 【诊断·可删】wake03 冻结点定位 */
-    static int wk_dbg = 0;
-    if (wk_dbg++ < 60) {
-      log_debug("WK enter addr=%x max=%d tid=%d\n", (u32)(uintptr_t)addr,
-                (int)max_wake,
-                thread_current() != NULL ? (int)thread_current()->id : -1);
-    }
-  }
   for (i = 0; i < FUTEX_WAITER_MAX && n < max_wake; i++) {
     thread_t* w = futex_waiters[i].t;
     if (w == NULL || futex_waiters[i].addr != addr) {
@@ -244,14 +234,6 @@ static u32 futex_waiter_wake(u32* addr, u32 max_wake) {
     }
     futex_waiters[i].t = NULL;
     futex_waiters[i].addr = NULL;
-  }
-  {
-    /* 【诊断·可删】 */
-    static int wk_dbg2 = 0;
-    if (wk_dbg2++ < 60) {
-      log_error("WK ret n=%d tid=%d\n", (int)n,
-                thread_current() != NULL ? (int)thread_current()->id : -1);
-    }
   }
   return n;
 }
@@ -310,26 +292,6 @@ int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
               const struct timespec* timeout, /* or: uint32_t val2 */
               uint32_t* uaddr2, uint32_t val3) {
   thread_t* current = thread_current();
-
-  /* 【诊断·可删】只打前 16 次：确认应用真的走到 futex、以及 op 类型
-   * （0=WAIT / 1=WAKE）。若 gnuboy 卡住时这里完全没有输出 ⇒ 它与 futex 无关。 */
-  {
-    /* 【定向探针·可删】全量打会淹没在框架噪音里：只打 WAKE 类（join 退出
-     * 唤醒）和 tid<=10 的主线程操作。总量有上限，长期运行不刷屏。 */
-    futex_dbg++;
-    if (futex_dbg < 400u &&
-        (((futex_op & 1u) != 0 && futex_dbg > 300u) || current->id <= 10u)) {
-      u64 pc = (current->ctx != NULL && current->ctx->ic != NULL)
-                   ? current->ctx->ic->pc
-                   : 0;
-      u64 lr = (current->ctx != NULL && current->ctx->ic != NULL)
-                   ? current->ctx->ic->lr
-                   : 0;
-      log_info("futex op=%x addr=%x val=%x tid=%d pc=%x lr=%x\n",
-               (u32)futex_op & 0xff, (u32)(uintptr_t)uaddr, val, current->id,
-               (u32)pc, (u32)lr);
-    }
-  }
 
   /* 【WAIT_BITSET(9) 不能落进 WAKE 分支】op 的位 0 是 WAIT/WAKE 位：
    * WAIT_BITSET=9、WAIT_BITSET|CLOCK_REALTIME=265 的位 0 都是 1，
