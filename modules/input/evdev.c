@@ -89,8 +89,10 @@ static void evdev_pull(void) {
     evdev_push(EV_REL, REL_X, dx);
   }
   if (dy != 0) {
-    /* PS/2 的 Y 向上为正，evdev/X11 的屏幕坐标向下为正 */
-    evdev_push(EV_REL, REL_Y, -dy);
+    /* 【不要取反】usb_mouse_read_packet 交出的 byte2 就是 USB HID 报告的
+     * dy，正向已经是屏幕方向（向下为正），与 EV_REL/REL_Y 的约定一致。
+     * 之前按"PS/2 的 Y 向上为正"在这里写成 -dy，实测光标上下相反。 */
+    evdev_push(EV_REL, REL_Y, dy);
   }
   if ((btn & 0x01) != (evdev_btn_old & 0x01)) {
     evdev_push(EV_KEY, BTN_LEFT, (btn & 0x01) ? 1 : 0);
