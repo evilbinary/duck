@@ -538,6 +538,16 @@ int sys_fd_ready(int fd, int want_read, int want_write);
 int sys_fd_ready_t(thread_t* owner, int fd, int want_read, int want_write);
 int unix_poll_ready_t(thread_t* owner, int fd, int want_read, int want_write);
 
+/* 【轮询型设备的等待周期】有些字符设备（/dev/input/event0 这类输入流）只有
+ * 被 read 时才会去问硬件有没有新数据，内核收不到任何"数据到达"通知，因此
+ * 无法被动唤醒等待者。这类 fd 出现在 select/poll/epoll 集合里时，把超时切成
+ * 这个周期的短睡：到期由 tick 唤醒并返回 0（语义等同"暂时没有事件"），
+ * 调用方重进一次就会重新问一次硬件。
+ * 代价约 1000/8 = 125 次/秒的唤醒，远低于"存在即就绪"造成的忙轮。 */
+#define SYS_POLLED_FD_RECHECK_MS 8
+/* 该 fd 是否属于上面这类设备（实现见 sysfn_fs.c）。 */
+int sys_fd_polled_t(thread_t* owner, int fd);
+
 /* ===== poll/select/epoll/read 的阻塞等待（sysfn_pollwait.c）=====
  * 登记 recheck → THREAD_WAITING → schedule_switch；唤醒方（unix/pipe 事件）
  * 调 poll_wait_notify 重算并写回保存帧。详见文件头注释。

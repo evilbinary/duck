@@ -280,9 +280,8 @@ static int pollw_fill(thread_t* t, int reason) {
   } else {
     ret = e->ready;
   }
-  if (reason != WAKE_EVENT) {
-    log_error("PWFILL tid=%d reason=%d ret=%ld\n", (int)t->id, reason, ret);
-  }
+  /* 【不在这里打日志】轮询型设备靠"短超时反复醒来"工作（见 sysfn.h 的
+   * SYS_POLLED_FD_RECHECK_MS），每次超时都打印会把串口打满并拖慢整机。 */
   if (t->ctx != NULL && t->ctx->ksp != NULL) {
     /* ctx->ksp 是保存帧副本；ctx->ic 指向共享槽，早被别的线程覆盖了 */
     ((interrupt_context_t*)t->ctx->ksp)->x0 = (u64)ret;

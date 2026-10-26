@@ -9,6 +9,7 @@
 #include "kernel/memory.h"
 #include "kernel/thread.h"
 #include "kernel/vfs.h"
+#include "kernel/device.h" /* DEVICE_EVDEV：select 就绪判定要用 device->id */
 #include "../loader/loader.h" /* exec_params_t：/proc/self/exe 取 exec->filename */
 /* VGA_IOC_READ_FRAMBUFFER_WIDTH/HEIGHT/BPP：sysfs 垫片要报 /sys 里的显示
  * 几何（modes/virtual_size/stride/bits_per_pixel），只借这三个 ioctl 命令号，
@@ -24,6 +25,10 @@ extern u32 pip_read(vnode_t* node, u32 offset, u32 size, u8* buffer);
  * 返回 -1 表示该 fd 不是 pipe。_t 版本按显式 owner 查 fd 表（唤醒方用）。 */
 extern int pipe_poll_ready(int fd);
 extern int pipe_poll_ready_t(thread_t* owner, int fd);
+/* 【轮询型输入设备的就绪判定】实现见 modules/input/evdev.c（mod-input）。
+ * 弱符号：posix 模块不应硬依赖 input 模块；未参与链接时该符号为空，
+ * 相关 fd 退回旧的"存在即就绪"规则（不会崩）。 */
+extern int evdev_poll_ready(void* dev) __attribute__((weak));
 
 #define log_debug 
 
@@ -1432,13 +1437,25 @@ static int sys_fd_set_copy_out(void* user, const unsigned long* kset) {
 
 /* 一个 fd 在某方向上的就绪判定：
  *   pipe       → 看缓冲/端口真实状态（读端会阻塞，必须真实）
+ *   轮询型设备 → 问设备自己（dev->id == DEVICE_EVDEV，见 sys_fd_polled_t）
  *   本机 socket → unix_poll_ready
  *   其它       → 沿用老规则"存在即就绪"
  * 跨文件可见（epoll 也要用同一套判据，见 sysfn.h）。 */
 int sys_fd_ready_t(thread_t* owner, int fd, int want_read, int want_write) {
   int pr;
-  if (owner == NULL || thread_find_fd_id(owner, fd) == NULL) {
+  fd_t* f;
+  if (owner == NULL || (f = thread_find_fd_id(owner, fd)) == NULL) {
     return 0;
+  }
+  /* 【轮询型输入设备必须给真实答案】这类设备只有在 read 时才去问硬件，
+   * 内核无从"被动"得知有没有数据。按老规则"存在即就绪"会让
+   * epoll_pwait/select 立刻返回 ⇒ 调用方（X 的 InputThread）read 拿到
+   * EAGAIN 后马上再进 epoll_pwait，形成 30%+ 的忙轮。 */
+  if (evdev_poll_ready != NULL && f->data != NULL) {
+    device_t* dev = (device_t*)((vnode_t*)f->data)->device;
+    if (dev != NULL && dev->id == DEVICE_EVDEV) {
+      return want_read ? (evdev_poll_ready(dev) ? 1 : 0) : 0;
+    }
   }
   pr = pipe_poll_ready_t(owner, fd);
   if (pr >= 0) {
@@ -1449,6 +1466,23 @@ int sys_fd_ready_t(thread_t* owner, int fd, int want_read, int want_write) {
 
 int sys_fd_ready(int fd, int want_read, int want_write) {
   return sys_fd_ready_t(thread_current(), fd, want_read, want_write);
+}
+
+/* 该 fd 是否"只能靠内核轮询硬件才知道就绪"（见 sysfn.h 的
+ * SYS_POLLED_FD_RECHECK_MS）。select/ppoll/epoll_pwait 挂起前用它决定
+ * 要不要把长超时切成短睡。 */
+int sys_fd_polled_t(thread_t* owner, int fd) {
+  fd_t* f;
+  device_t* dev;
+  if (owner == NULL || evdev_poll_ready == NULL) {
+    return 0;
+  }
+  f = thread_find_fd_id(owner, fd);
+  if (f == NULL || f->data == NULL) {
+    return 0;
+  }
+  dev = (device_t*)((vnode_t*)f->data)->device;
+  return (dev != NULL && dev->id == DEVICE_EVDEV) ? 1 : 0;
 }
 
 /* ===== select/pselect 的等待参数（注册给 poll_wait_suspend）=====
@@ -1586,6 +1620,28 @@ static int sys_select_core(int nfds, unsigned long* readfds,
         kfree(s);
         return -9; /* -EBADF */
       }
+    }
+  }
+  /* 【轮询型设备：把长超时切成短睡】见 sysfn.h 的 SYS_POLLED_FD_RECHECK_MS。
+   * 按用户的期望语义无限等是没有意义的——没人会来唤醒；切短后每次醒来返回
+   * 0（"没事件"），调用方重进 select 时才重新问一次硬件。 */
+  {
+    int bits = (int)(sizeof(unsigned long) * 8);
+    int fd;
+    for (fd = 0; fd < nfds; fd++) {
+      unsigned long mask = 1UL << (fd % bits);
+      int word = fd / bits;
+      if (((s->oread[word] | s->owrite[word] | s->oexcept[word]) & mask) == 0) {
+        continue;
+      }
+      if (!sys_fd_polled_t(current, fd)) {
+        continue;
+      }
+      has_tmo = 1;
+      if (tmo_ms > SYS_POLLED_FD_RECHECK_MS) {
+        tmo_ms = SYS_POLLED_FD_RECHECK_MS;
+      }
+      break;
     }
   }
   /* 【超时路径不碰用户内存】tick 到期只把保存帧 x0 写 0，所以挂起前先把
@@ -1839,9 +1895,23 @@ int sys_ppoll(void* u_ufds, unsigned int nfds, void* tmo, void* sigmask) {
     pw->nfds = (int)nfds;
     pw->fds = fds;
     pw->saved_blocked = saved_blocked;
-    return poll_wait_suspend(
-        pollw_poll_recheck, NULL, pollw_poll_release, pw,
-        (u32)(tmo_ms > 0x7fffffffull ? 0x7fffffffull : tmo_ms), (tmo != NULL));
+    /* 【轮询型设备：把超时切成短睡】见 sysfn.h 的 SYS_POLLED_FD_RECHECK_MS */
+    {
+      int has_tmo = (tmo != NULL);
+      for (i = 0; i < (int)nfds; i++) {
+        if (fds[i].fd < 0 || !sys_fd_polled_t(current, fds[i].fd)) {
+          continue;
+        }
+        has_tmo = 1;
+        if (tmo_ms > SYS_POLLED_FD_RECHECK_MS) {
+          tmo_ms = SYS_POLLED_FD_RECHECK_MS;
+        }
+        break;
+      }
+      return poll_wait_suspend(
+          pollw_poll_recheck, NULL, pollw_poll_release, pw,
+          (u32)(tmo_ms > 0x7fffffffull ? 0x7fffffffull : tmo_ms), has_tmo);
+    }
   }
 }
 

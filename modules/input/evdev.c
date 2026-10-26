@@ -14,7 +14,8 @@
  * 三字节包），因此 /dev/mouse 与 /dev/input/event0 共用同一份硬件输入。
  ********************************************************************/
 #include "kernel/kernel.h"
-#include "dev/devfs.h"
+#include "kernel/string.h" /* kstrncpy/kmemset */
+#include "dev/devfs.h"     /* device_operator：/dev/input/event0 的节点算子 */
 
 #define EVDEV_PHY_NAME "YiYiYa Virtual Mouse"
 
@@ -105,20 +106,48 @@ static void evdev_pull(void) {
   evdev_push(EV_SYN, SYN_REPORT, 0);
 }
 
+/* 【重入保护】USB 驱动不可重入，而这个抽包动作会从三个上下文发起：
+ * read（设备线程）、select/poll/epoll 的就绪判定（等待者线程）、
+ * poll_wait_notify（唤醒方线程）。同一时刻只允许一个抽包者。 */
+static volatile int evdev_pumping;
+
+static void evdev_pump(void) {
+  if (evdev_head != evdev_tail) {
+    return; /* 队列里还有未读事件，先不碰硬件 */
+  }
+  if (evdev_pumping) {
+    return;
+  }
+  evdev_pumping = 1;
+  evdev_pull();
+  evdev_pumping = 0;
+}
+
+/* 供 select/poll/epoll 判定"这个 fd 现在可不可读"。必须给真实答案：
+ * 内核 sys_fd_ready_t 对非 pipe/socket 的 fd 原本一律"存在即就绪"，
+ * 于是 epoll_pwait 立刻返回、Xorg 的 read 拿到 EAGAIN 后马上再进 epoll_pwait
+ * ——InputThread 就是这样空转烧掉 30%+ CPU 的。
+ * 由 posix 层按 device->id == DEVICE_EVDEV 调用（弱符号，见 sysfn_fs.c）。 */
+int evdev_poll_ready(void* arg) {
+  (void)arg;
+  evdev_pump();
+  return evdev_head != evdev_tail;
+}
+
 static size_t evdev_read(device_t* dev, void* buf, size_t len) {
   (void)dev;
   if (buf == NULL || len < sizeof(input_event_t)) {
     return 0;
   }
+  evdev_pump();
   if (evdev_head == evdev_tail) {
-    evdev_pull();
-    if (evdev_head == evdev_tail) {
-      /* 非阻塞字符设备的语义：没数据要返回 -EAGAIN，不能返回 0。
-       * 返回 0 会被 Xorg 的 evdev 驱动当成 EOF（设备断开），它读到一次就
-       * 把设备从 select 集合里摘掉，之后鼠标再怎么动也没人去 read。
-       * 上层 sys_read 看到负值会符号扩展成 -1/errno=EAGAIN。 */
-      return (size_t)-11;
-    }
+    /* 【不能返回 0】Xorg 的 evdev 驱动把 read()==0 当 EOF（设备断开），
+     * 读到一次就把设备从 select 集合里摘掉，之后鼠标再动也没人 read。
+     * 【不要在这里挂起】试过 poll_wait_suspend(5ms)：它和 X 自己的
+     * select 等待冲突，内核打 "PWFILL tid=N reason=1 ret=0" 后 Xorg
+     * 卡死在 LoadModule 之后。这里的 read 只做"拉一次硬件"这一件事，
+     * 降频由就绪判定 + 短周期重查负责（sysfn.h 的 SYS_POLLED_FD_RECHECK_MS）。 */
+    return (size_t)-11; /* -EAGAIN */
   }
   input_event_t* out = (input_event_t*)buf;
   *out = evdev_queue[evdev_tail];
@@ -137,12 +166,19 @@ static void evdev_set_bit(u8* buf, u32 bytes, u32 bit) {
  *   EVIOCGBIT(EV_SYN/EV_KEY/EV_REL)   → 能力位图（EV_REL+REL_X/REL_Y 是相对指针的关键）
  *   EVIOCGABS                         → 绝对设备才用，这里返回全 0
  * 命令编码按 Linux _IOC：nr=bit0-7, type=bit8-15, size=bit16-29。 */
-static size_t evdev_ioctl(device_t* dev, u32 cmd, void* args) {
+/* 签名必须与 dev_ioctl_fn（size_t (*)(device_t*, u32, ...)）一致：
+ * device_ioctl 以位置参数传用户缓冲区，这里用 va_arg 取回。 */
+static size_t evdev_ioctl(device_t* dev, u32 cmd, ...) {
   (void)dev;
   u32 nr = cmd & 0xff;
   u32 type = (cmd >> 8) & 0xff;
   u32 size = (cmd >> 16) & 0x3fff;
-  u8* out = (u8*)args;
+  u8* out;
+  va_list ap;
+
+  va_start(ap, cmd);
+  out = (u8*)va_arg(ap, void*);
+  va_end(ap);
 
   if (type != 0x45) { /* 'E' */
     return 0;
@@ -240,18 +276,20 @@ static size_t evdev_ioctl(device_t* dev, u32 cmd, void* args) {
   return 0;
 }
 
-static int evdev_init(void) {
+/* 模块 init 是 void (*)()（module.h 的 mod_init_fn）：失败只能打日志返回，
+ * 没有错误码通道。 */
+static void evdev_init(void) {
   vnode_t* dir = vfs_create_node("input", V_DIRECTORY);
   if (dir == NULL) {
     log_error("evdev: create /dev/input failed\n");
-    return -1;
+    return;
   }
   vfs_mount(NULL, "/dev", dir);
 
   device_t* dev = kmalloc(sizeof(device_t), KERNEL_TYPE);
   if (dev == NULL) {
     log_error("evdev: alloc device failed\n");
-    return -1;
+    return;
   }
   kmemset(dev, 0, sizeof(device_t));
   dev->name = "event0";
@@ -264,7 +302,7 @@ static int evdev_init(void) {
   vnode_t* node = vfs_create_node("event0", V_FILE);
   if (node == NULL) {
     log_error("evdev: create event0 node failed\n");
-    return -1;
+    return;
   }
   node->device = dev;
   node->op = &device_operator;
@@ -274,7 +312,6 @@ static int evdev_init(void) {
   evdev_tail = 0;
   evdev_btn_old = 0;
   log_info("evdev: /dev/input/event0 ready\n");
-  return 0;
 }
 
 void evdev_exit(void) { log_info("evdev exit\n"); }

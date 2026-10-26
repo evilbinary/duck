@@ -465,6 +465,21 @@ int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
   if (timeout == 0) {
     return 0; /* 非阻塞轮询：立刻返回（Linux 语义） */
   }
+  /* 【轮询型设备：无限/长超时切成短睡】见 sysfn.h 的
+   * SYS_POLLED_FD_RECHECK_MS：这类设备只在被读时才问硬件，没人能主动
+   * 唤醒等待者；切成短睡后到期返回 0，调用方重进一次即重新问一次。 */
+  for (i = 0; i < EPOLL_MAX_ITEMS; i++) {
+    if (!ep->items[i].used) {
+      continue;
+    }
+    if (!sys_fd_polled_t(thread_current(), ep->items[i].fd)) {
+      continue;
+    }
+    if (timeout < 0 || timeout > SYS_POLLED_FD_RECHECK_MS) {
+      timeout = SYS_POLLED_FD_RECHECK_MS;
+    }
+    break;
+  }
   /* 无就绪：真正挂起（THREAD_WAITING + schedule_switch），由 unix/pipe 的
    * 事件唤醒并重算 —— 与 select/ppoll 共用同一套协议（sysfn_pollwait.c）。 */
   {
