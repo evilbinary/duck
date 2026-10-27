@@ -187,11 +187,11 @@ static u32 pip_write(vnode_t* node, u32 offset, u32 size, u8* buffer) {
 
 /* ---------------- ioctl ---------------- */
 
-static u32 pip_ioctl(vnode_t* node, u32 cmd, void* args) {
+static ssize_t pip_ioctl(vnode_t* node, u32 cmd, void* args) {
   pipe_t* p = (node != NULL) ? node->device : NULL;
   u32 count = 0;
   if (p == NULL) {
-    return (u32)-1;
+    return -1;
   }
   pipe_lock(p);
   count = p->count;
@@ -215,9 +215,11 @@ static u32 pip_ioctl(vnode_t* node, u32 cmd, void* args) {
     default:
       /* 【未知命令必须报错】返回 0 = 假成功：musl 的 isatty() 靠
        * ioctl(TCGETS) 判 tty（恒 -1/ENOTTY 才对），LTP 的错误语义用例
-       * （ioctl_pidfd01）也要求未实现命令返回 ENOTTY。 */
+       * （ioctl_pidfd01）也要求未实现命令返回 ENOTTY。
+       * 【签名必须是 ssize_t】u32 返回的 -1 会零扩展成 4294967295，
+       * musl 按 int 读成 -1 后 errno 被算成 EPERM(1) 而不是真实错误码。 */
       log_debug("pipe ioctl unsupported cmd=%x\n", cmd);
-      return (u32)-1;
+      return -1;
   }
 }
 

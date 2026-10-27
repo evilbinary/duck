@@ -62,13 +62,15 @@ static u32 socket_node_write(vnode_t* node, u32 offset, u32 size, u8* buffer) {
   return (u32)n;
 }
 
-static u32 socket_node_ioctl(vnode_t* node, u32 cmd, void* args) {
+static ssize_t socket_node_ioctl(vnode_t* node, u32 cmd, void* args) {
   (void)node;
   (void)cmd;
   (void)args;
   /* 【未知命令必须报错】本节点的 ioctl 全部未实现，返回 0 是假成功
-   * （LTP ioctl_pidfd01 期望 ENOTTY；调用方会把成功误当真）。 */
-  return (u32)-1;
+   * （LTP ioctl_pidfd01 期望 ENOTTY；调用方会把成功误当真）。
+   * 【签名必须是 ssize_t】u32 返回的 -1 会零扩展成 4294967295，
+   * musl 按 int 读成 -1 后 errno 被算成 EPERM(1) 而不是真实错误码。 */
+  return -1;
 }
 
 static u32 socket_node_close(vnode_t* node) {
