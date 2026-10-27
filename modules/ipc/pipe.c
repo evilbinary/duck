@@ -213,8 +213,11 @@ static u32 pip_ioctl(vnode_t* node, u32 cmd, void* args) {
     case TCFLSH: /* 丢弃缓冲区里未读的数据 */
       return 0;
     default:
+      /* 【未知命令必须报错】返回 0 = 假成功：musl 的 isatty() 靠
+       * ioctl(TCGETS) 判 tty（恒 -1/ENOTTY 才对），LTP 的错误语义用例
+       * （ioctl_pidfd01）也要求未实现命令返回 ENOTTY。 */
       log_debug("pipe ioctl unsupported cmd=%x\n", cmd);
-      return 0;
+      return (u32)-1;
   }
 }
 

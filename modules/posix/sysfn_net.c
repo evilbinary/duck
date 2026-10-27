@@ -5,6 +5,11 @@
  ********************************************************************/
 #include "sysfn.h"
 
+/* 【与 sysfn_fs.c 同惯例】日志空宏：net 路径的每次 send/recv 都会走到，
+ * debug 内核里一条 X 协议包一行串口（115200 阻塞写）——Xorg 桌面拖个
+ * 窗口就等于往串口灌几千行，交互直接卡死。要开真日志时临时注释掉。 */
+#define log_debug
+
 #include "kernel/devfn.h"
 #include "kernel/fd.h"
 #include "kernel/kernel.h"

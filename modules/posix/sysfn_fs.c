@@ -295,6 +295,15 @@ ssize_t sys_ioctl(u32 fd, u32 cmd, void* args) {
               f->name != NULL ? f->name : 0, f, cmd);
     return 0;
   }
+  /* 【无 handler 的节点一律 ENOTTY】节点没挂 op->ioctl 时 vioctl 会 warn
+   * 并返回 0 —— 假成功：任何未知命令在 eventfd/epoll/inotify/pipe 这类
+   * 节点上都会"成功"（LTP ioctl_pidfd01 对非 pidfd fd 调
+   * PIDFD_GET_INFO 期望 EINVAL/EBADF/ENOTTY/EACCES，实测 9 个 TFAIL）。
+   * POSIX 语义：ioctl 一个不支持该命令的对象 → ENOTTY。
+   * IOC_STAT/IOC_STATFS 不走这里（fstat/statfs 直接调 vioctl）。 */
+  if (node->op == NULL || node->op->ioctl == NULL) {
+    return -ENOTTY;
+  }
   ret = vioctl(node, cmd, args);
 
   /* 处理器对未实现命令统一返回 -1：映射成 ENOTTY（POSIX 对非 tty 设备

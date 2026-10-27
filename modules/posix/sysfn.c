@@ -368,6 +368,7 @@ void sys_fn_init() {
   syscall_table[SYS_EPOLL_PWAIT] = &sys_epoll_pwait;
   syscall_table[SYS_EPOLL_PWAIT2] = &sys_epoll_pwait2;
   syscall_table[SYS_INOTIFY_INIT1] = &sys_inotify_init1;
+  syscall_table[SYS_PIDFD_OPEN] = &sys_pidfd_open;
   syscall_table[SYS_INOTIFY_ADD_WATCH] = &sys_inotify_add_watch;
   syscall_table[SYS_INOTIFY_RM_WATCH] = &sys_inotify_rm_watch;
   syscall_table[SYS_CLOSE_RANGE] = &sys_close_range;

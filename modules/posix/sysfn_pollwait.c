@@ -293,4 +293,6 @@ static int pollw_fill(thread_t* t, int reason) {
 void poll_wait_init(void) {
   thread_wait_fill_hook = pollw_fill;
   thread_wait_notify_hook = poll_wait_notify;
+  /* pidfd 退出通知（sysfn_proc.c）：目标进程退出时把状态记进 pidfd 表 */
+  thread_pidfd_exit_hook = sys_pidfd_note_exit;
 }

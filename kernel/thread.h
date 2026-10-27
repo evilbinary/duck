@@ -185,6 +185,8 @@ void thread_user_return_run(thread_t* t, void* ic);
  *     重算所有 poll 类等待者并唤醒就绪者。未注册时为 NULL，调用方要判空。 */
 extern int (*thread_wait_fill_hook)(thread_t* t, int reason);
 extern void (*thread_wait_notify_hook)(void);
+/* 【pidfd 退出通知钩子】线程退出时调用（pid, wait-status 编码），见 thread.c */
+extern void (*thread_pidfd_exit_hook)(int pid, int exit_status);
 
 void thread_bind_cpu(thread_t* thread, int cpu);
 /* 调度切走之后调用：把已经不该留在 from_cpu 上的线程挂到它的 cpu_id。 */

@@ -653,6 +653,13 @@ int sys_inotify_init1(int flags);
 int sys_inotify_add_watch(int fd, const char* pathname, u32 mask);
 int sys_inotify_rm_watch(int fd, int wd);
 
+/* ---- sysfn_proc.c：pidfd（进程引用 fd + PIDFD_GET_INFO） ----
+ * 注意 dispatch 是 u64(*)(u64×6) 按字传参，第一参用 unsigned long。 */
+int sys_pidfd_open(unsigned long pid, unsigned long flags);
+/* 线程退出通知钩子的实现（注册到 thread_pidfd_exit_hook）：
+ * pid = 退出线程 id，exit_status = wait-status 编码 (code&0xff)<<8 */
+void sys_pidfd_note_exit(int pid, int exit_status);
+
 /* ---- sysfn_signal.c：信号 handler 的真实执行（信号帧 + rt_sigreturn） ----
  * 返回值必须是 u64：dispatch 是 u64(*)(u64×6)，而 sigreturn 返回的就是
  * "被信号打断时的 x0"（可能是指针），用 int 会截断。 */

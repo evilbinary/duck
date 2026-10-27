@@ -854,3 +854,210 @@ long sys_wait4(pid_t pid, int* wstatus, int options, struct rusage* rusage) {
   (void)rusage;
   return sys_waitpid(pid, wstatus, options);
 }
+
+/* ===================== pidfd_open(434) =====================
+ * 进程引用 fd：pidfd_open(pid, flags) 返回一个指向目标进程的 fd，目标退出
+ * 后 fd 仍有效。ioctl(PIDFD_GET_INFO) 可查目标的状态（本实现只支持
+ * PIDFD_INFO_EXIT 位：目标已退出时 exit_code 带回 wait-status 编码）。
+ *
+ * 退出信息的两条来路：
+ *   1. pidfd_open 时目标已是僵尸（退出但未被 waitpid 收割）：直接从
+ *      thread->code 快照；
+ *   2. 目标在 pidfd_open 之后才退出：thread_exit 的
+ *      thread_pidfd_exit_hook（本文件 sys_pidfd_note_exit）把
+ *      (pid, wait-status) 记进登记表 —— 必须经钩子，因为目标被收割后
+ *      thread_t 会被回收释放，事后无处可查。
+ * fd 载体与 eventfd/epoll 同一套：哨兵 vnode + fd_open(VIRTUAL)，
+ * 私有数据挂 vnode->device，close 时摘表 + 释放。 */
+struct pidfd_k {
+  u32 magic;
+  int pid;         /* 目标进程 pid */
+  int exited;      /* 目标已退出 */
+  int exit_status; /* wait-status 编码 (code&0xff)<<8 */
+};
+#define PIDFD_K_MAGIC 0x0DFD0000u
+/* Linux uapi linux/pidfd.h：PIDFD_INFO_EXIT = 1UL<<3；
+ * PIDFD_GET_INFO = _IOWR(0xFF, 11, struct pidfd_info)，sizeof=72
+ * ⇒ (3<<30)|(72<<16)|(0xFF<<8)|11 = 0xc048ff0b */
+#define PIDFD_INFO_EXIT_ (1UL << 3)
+#define PIDFD_GET_INFO_ 0xc048ff0bu
+
+/* 登记表：pidfd_open 之后才退出的目标由钩子按 pid 回填 */
+#define PIDFD_TABLE_MAX 16
+struct pidfd_entry_k {
+  int used;
+  int pid;
+  int exited;
+  int exit_status;
+  vnode_t* node;
+};
+static struct pidfd_entry_k s_pidfds[PIDFD_TABLE_MAX];
+
+void sys_pidfd_note_exit(int pid, int exit_status) {
+  int i;
+  for (i = 0; i < PIDFD_TABLE_MAX; i++) {
+    if (s_pidfds[i].used && s_pidfds[i].pid == pid && !s_pidfds[i].exited) {
+      s_pidfds[i].exited = 1;
+      s_pidfds[i].exit_status = exit_status;
+    }
+  }
+}
+
+static u32 pidfd_node_close(vnode_t* node) {
+  int i;
+  if (node == NULL) {
+    return 0;
+  }
+  for (i = 0; i < PIDFD_TABLE_MAX; i++) {
+    if (s_pidfds[i].used && s_pidfds[i].node == node) {
+      s_pidfds[i].used = 0;
+      s_pidfds[i].node = NULL;
+    }
+  }
+  if (node->device != NULL) {
+    kfree(node->device);
+    node->device = NULL;
+  }
+  if (node->op != NULL) {
+    kfree(node->op);
+    node->op = NULL;
+  }
+  if (node->name != NULL) {
+    kfree(node->name);
+    node->name = NULL;
+  }
+  kfree(node);
+  return 0;
+}
+
+/* pidfd_info 用户态布局（lapi/pidfd.h，aarch64 无 packing）：mask u64 在
+ * 最前，exit_code(i32) 在 offset 60，总长 72。 */
+struct pidfd_info_k {
+  u64 mask;
+  u64 cgroupid;
+  u32 pid;
+  u32 tgid;
+  u32 ppid;
+  u32 ruid;
+  u32 rgid;
+  u32 euid;
+  u32 egid;
+  u32 suid;
+  u32 sgid;
+  u32 fsuid;
+  u32 fsgid;
+  i32 exit_code;
+  u32 coredump_mask;
+  u32 spare;
+};
+
+static ssize_t pidfd_ioctl(vnode_t* node, u32 cmd, void* args) {
+  struct pidfd_k* p;
+  struct pidfd_info_k info;
+  if (node == NULL || node->device == NULL) {
+    return -1;
+  }
+  p = (struct pidfd_k*)node->device;
+  if (p->magic != PIDFD_K_MAGIC) {
+    return -1;
+  }
+  if (cmd != PIDFD_GET_INFO_) {
+    return -1; /* 其余命令未实现 → sys_ioctl 映射 ENOTTY */
+  }
+  if (args == NULL) {
+    return -22; /* -EINVAL */
+  }
+  kmemset(&info, 0, sizeof(info));
+  if (sys_copy_from_user(&info, args, sizeof(info)) < 0) {
+    return -14; /* -EFAULT */
+  }
+  /* 只声明支持 EXIT 位；掩码取与请求的交集（Linux 语义） */
+  info.mask &= PIDFD_INFO_EXIT_;
+  info.pid = (u32)p->pid;
+  info.tgid = (u32)p->pid;
+  if (p->exited) {
+    info.exit_code = p->exit_status;
+  }
+  if (sys_copy_to_user(args, &info, sizeof(info)) < 0) {
+    return -14;
+  }
+  return 0;
+}
+
+int sys_pidfd_open(unsigned long pid_l, unsigned long flags) {
+  thread_t* current = thread_current();
+  thread_t* target = NULL;
+  vnode_t* node = NULL;
+  struct pidfd_k* p = NULL;
+  voperator_t* op = NULL;
+  fd_t* fd = NULL;
+  struct pidfd_entry_k* slot = NULL;
+  int pid = (int)pid_l;
+  int i;
+  int n;
+  if (pid <= 0 || flags != 0) {
+    return -22; /* -EINVAL */
+  }
+  if (current == NULL) {
+    return -3; /* -ESRCH */
+  }
+  /* 活线程直接找；找不到再看是不是已退出未收割的僵尸（典型时序：
+   * fork 子进程 exit 后、父进程 waitpid 之前开 pidfd） */
+  target = thread_find_id(pid);
+  if (target == NULL) {
+    target = thread_find_zombie_child((int)current->id, pid);
+  }
+  if (target == NULL) {
+    return -3; /* -ESRCH：目标进程不存在 */
+  }
+  node = vfs_create_node("pidfd", 0);
+  p = kmalloc(sizeof(struct pidfd_k), KERNEL_TYPE);
+  op = kmalloc(sizeof(voperator_t), KERNEL_TYPE);
+  if (node == NULL || p == NULL || op == NULL) {
+    kfree(p);
+    kfree(op);
+    if (node != NULL) {
+      kfree(node);
+    }
+    return -12; /* -ENOMEM */
+  }
+  kmemset(p, 0, sizeof(struct pidfd_k));
+  p->magic = PIDFD_K_MAGIC;
+  p->pid = pid;
+  p->exited = (target->state == THREAD_STOPPED) ? 1 : 0;
+  p->exit_status = p->exited ? (int)((target->code & 0xff) << 8) : 0;
+  node->device = p;
+  node->op = op;
+  op->ioctl = pidfd_ioctl;
+  op->close = pidfd_node_close;
+  for (i = 0; i < PIDFD_TABLE_MAX; i++) {
+    if (!s_pidfds[i].used) {
+      slot = &s_pidfds[i];
+      break;
+    }
+  }
+  if (slot == NULL) {
+    kfree(p);
+    kfree(op);
+    kfree(node);
+    return -12;
+  }
+  fd = fd_open(node, DEVICE_TYPE_VIRTUAL, "/dev/pidfd");
+  if (fd == NULL) {
+    kfree(p);
+    kfree(op);
+    kfree(node);
+    return -12;
+  }
+  n = thread_add_fd(current, fd);
+  if (n < 0) {
+    fd_close(fd);
+    return -12;
+  }
+  slot->used = 1;
+  slot->pid = pid;
+  slot->exited = p->exited;
+  slot->exit_status = p->exit_status;
+  slot->node = node;
+  return n;
+}

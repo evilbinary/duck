@@ -66,7 +66,9 @@ static u32 socket_node_ioctl(vnode_t* node, u32 cmd, void* args) {
   (void)node;
   (void)cmd;
   (void)args;
-  return 0;
+  /* 【未知命令必须报错】本节点的 ioctl 全部未实现，返回 0 是假成功
+   * （LTP ioctl_pidfd01 期望 ENOTTY；调用方会把成功误当真）。 */
+  return (u32)-1;
 }
 
 static u32 socket_node_close(vnode_t* node) {

@@ -456,6 +456,12 @@ void thread_wait(thread_t* thread) {
 /* 等待协议的钩子（见 thread.h）：由 posix 层在 sys_fn_init 里注册 */
 int (*thread_wait_fill_hook)(thread_t* t, int timed_out) = NULL;
 void (*thread_wait_notify_hook)(void) = NULL;
+/* 【pidfd 退出通知钩子】由 posix 层（sysfn_proc.c）在 sys_fn_init 里注册：
+ * 线程退出、code 定稿后调用一次（幂等：thread_exit 的幂等闸保证不重入），
+ * 参数 = (thread->id, (code&0xff)<<8) 的 wait-status 编码。pidfd 用它把
+ * 目标进程的退出状态记进自己的表，使 ioctl(PIDFD_GET_INFO) 在目标被
+ * waitpid 收割（thread 释放）之后仍能查到退出信息。未注册时为 NULL。 */
+void (*thread_pidfd_exit_hook)(int pid, int exit_status) = NULL;
 
 void thread_wake_ex(thread_t* thread, int reason) {
   if (thread == NULL) {
@@ -969,6 +975,11 @@ void thread_exit(thread_t* thread, int code) {
     }
   }
   thread->code = code;
+  /* 【pidfd 退出通知】退出码在此定稿（本函数幂等，不会重复触发）：
+   * posix 层的 pidfd 表据此记录目标进程的退出状态 */
+  if (thread_pidfd_exit_hook != NULL) {
+    thread_pidfd_exit_hook((int)thread->id, (int)((code & 0xff) << 8));
+  }
   u32 parent_id = thread->pid;
   /* 【MAP_SHARED 落盘】线程还活着时把文件映射区写回文件（此后线程退出、
    * 页面回收，再 flush 读它 VA 会崩）。LTP 子进程写完 IPC 文件直接 exit，

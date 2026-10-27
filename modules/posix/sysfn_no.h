@@ -264,6 +264,7 @@ enum {
   SYS_GETTIMEOFDAY = 169,   /* aarch64：169 是 gettimeofday（165 是 getrusage） */
   SYS_NAME_TO_HANDLE_AT = 264, /* udev/gio 枚举设备时用，本内核不支持 */
   SYS_CLONE3 = 435,         /* glibc 2.34+ 新线程/进程走 clone3 */
+  SYS_PIDFD_OPEN = 434,     /* pidfd_open：进程引用 fd（asm-generic 通用号） */
   /* 【aarch64 真实编号】setgroups=159、getgroups=158。旧值 81 其实是 sync，
    * 于是 glibc 的 getgroups（openbox 启动时 158 直接 ENOSYS）与
    * setgroups/initgroups 全都落空。 */
