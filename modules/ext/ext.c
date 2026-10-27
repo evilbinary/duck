@@ -1014,7 +1014,7 @@ static uint ext_op_readdir(vnode_t *node, struct vdirent *dirent, u32 *offset,
   return nbytes;
 }
 
-static size_t ext_op_ioctl(vnode_t *node, u32 cmd, void *args) {
+static ssize_t ext_op_ioctl(vnode_t *node, u32 cmd, void *args) {
   ext_node_t *n;
   struct stat *st;
   if (cmd != IOC_STAT || args == NULL) {

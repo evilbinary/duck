@@ -352,7 +352,7 @@ ssize_t sys_readlinkat(int dirfd, const char* restrict pathname,
                        char* restrict buf, size_t bufsiz);
 int sys_faccessat(int dirfd, const char* pathname, int mode, int flags);
 // size_t sys_ioctl(u32 fd, u32 cmd, ...);
-size_t sys_ioctl(u32 fd, u32 cmd, void* args);
+ssize_t sys_ioctl(u32 fd, u32 cmd, void* args);
 /* 【ABI 关键·勿改成 u64】这些 dispatch 由 sys_fn_call 经架构的 sys_call_fn
  * 函数指针调用：ARM32 = u32(*)(u32×6)，ARM64 = u64(*)(u64×6)，按「字」计参。
  * 用 u64 声明在 32 位 ARM 上会把参数槽从 6 个变成 12 个，a2 之后全读栈垃圾

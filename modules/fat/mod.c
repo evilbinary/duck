@@ -404,8 +404,8 @@ int fat_op_close(vnode_t *node) {
   return 0;
 }
 
-size_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args) {
-  u32 ret = 0;
+ssize_t fat_op_ioctl(struct vnode *node, u32 cmd, void *args) {
+  ssize_t ret = 0;
 
   if (cmd == IOC_STAT) {
     file_info_t *file_info = node->data;

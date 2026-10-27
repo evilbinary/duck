@@ -94,7 +94,7 @@ size_t service_read(vnode_t* node, void* buf, size_t len);
 
 size_t service_write(vnode_t* node, const void* buf, size_t len);
 
-size_t service_ioctl(vnode_t* node, u32 cmd, void* args);
+ssize_t service_ioctl(vnode_t* node, u32 cmd, void* args);
 
 vnode_t* service_find(vnode_t*, char* name);
 u32 service_readdir(vnode_t* node, struct vdirent* dirent, u32* offset,

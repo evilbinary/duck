@@ -260,8 +260,8 @@ static void sys_vfs_prepare(vfs_t* vfs) {
   }
 }
 
-size_t sys_ioctl(u32 fd, u32 cmd, void* args) {
-  u32 ret = 0;
+ssize_t sys_ioctl(u32 fd, u32 cmd, void* args) {
+  long ret = 0;
   thread_t* current = thread_current();
   fd_t* f = thread_find_fd_id(current, fd);
   if (f == NULL) {
@@ -269,7 +269,7 @@ size_t sys_ioctl(u32 fd, u32 cmd, void* args) {
   }
   if (f == NULL) {
     log_error("ioctl not found fd %d\n", fd);
-    return 0;
+    return -EBADF; /* POSIX：坏 fd 报 EBADF（恒 0 是"假成功"，LTP 会判错） */
   }
   /* FIONBIO：fd 级非阻塞开关（aarch64 上 glibc 用 _IOW('f',3,int)=0x40046603，
    * 个别库用 _IOW('f',126,int)=0x4004667e）。绝大多数节点没有 op->ioctl，
@@ -297,6 +297,12 @@ size_t sys_ioctl(u32 fd, u32 cmd, void* args) {
   }
   ret = vioctl(node, cmd, args);
 
+  /* 处理器对未实现命令统一返回 -1：映射成 ENOTTY（POSIX 对非 tty 设备
+   * 的 ioctl 语义），musl 才能拿到真正的 errno 而不是 -1 裸值。
+   * IOC_STAT/IOC_STATFS 的 -1 是文件系统真实失败，不走这个映射。 */
+  if (ret == -1 && cmd != IOC_STAT && cmd != IOC_STATFS) {
+    return -ENOTTY;
+  }
   // log_debug("sys ioctl fd %d %s cmd %x ret %x\n", fd, f->name, cmd, ret);
   return ret;
 }
@@ -410,6 +416,17 @@ static u32 sys_open_kpath(const char* name, int attr) {
         kstrncpy(path_name, "/", sizeof(path_name) - 1);
       }
       path_name[sizeof(path_name) - 1] = '\0';
+    }
+  }
+
+  /* 【clone-on-open】/dev/ptmx 这类"每次 open 产出一个新实例"的设备由
+   * 各自 op 的 clone_open 槽实现（pty 每 master 一份独立缓冲与从端号）。
+   * 必须放在 procfs/sysfs/devfs/vfs 全部解析路径汇合之后 —— devfs_lookup
+   * 命中 /dev/ptmx 时 file != NULL，走的是 if 分支，放分支里够不着。 */
+  if (file != NULL && file->op != NULL && file->op->clone_open != NULL) {
+    vnode_t* cloned = file->op->clone_open(file);
+    if (cloned != NULL) {
+      file = cloned;
     }
   }
 
@@ -2979,7 +2996,7 @@ int sys_stat(const char* path, struct stat* stat) {
       return -1;
     }
     u32 cmd = IOC_STAT;
-    u32 ret = vioctl(node, cmd, stat);
+    int ret = (int)vioctl(node, cmd, stat);
     return ret;
   }
 
@@ -3011,7 +3028,7 @@ int sys_stat(const char* path, struct stat* stat) {
       return -1;
     }
     u32 cmd = IOC_STATFS;
-    u32 ret = vioctl(node, cmd, stat);
+    int ret = (int)vioctl(node, cmd, stat);
     return ret;
   }
 

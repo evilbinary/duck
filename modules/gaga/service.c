@@ -145,7 +145,7 @@ void do_dump_thread() {
   }
 }
 
-size_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
+ssize_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
   u32 ret = 0;
   if (node == NULL) {
     kprintf("not found node\n");

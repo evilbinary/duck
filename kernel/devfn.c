@@ -54,8 +54,8 @@ u32 device_write(vnode_t *node, u32 offset, size_t nbytes, u8 *buffer) {
   return ret;
 }
 
-size_t device_ioctl(vnode_t *node, u32 cmd, void *args) {
-  u32 ret = 0;
+ssize_t device_ioctl(vnode_t *node, u32 cmd, void *args) {
+  long ret = 0;
   device_t *dev;
   /* 【防御 + 定位】原写法直接 `node->device`：
    *   · node 为 NULL 时解引用 0 ⇒ memory fault at 0；

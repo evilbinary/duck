@@ -73,7 +73,7 @@ voperator_t default_operator = {.write = vfs_write,
                                 .mount = vfs_mount,
                                 .readdir = vfs_readdir};
 
-size_t vioctl(vnode_t *node, u32 cmd, void *args) {
+ssize_t vioctl(vnode_t *node, u32 cmd, void *args) {
   if (node == NULL) {
     log_error("vioctl node is null cmd=%x args=%x\n", cmd, args);
     return 0;
@@ -84,7 +84,7 @@ size_t vioctl(vnode_t *node, u32 cmd, void *args) {
     return 0;
   }
   if (node->op->ioctl != NULL) {
-    u32 ret = 0;
+    ssize_t ret = 0;
     vfs_lock();
     ret = node->op->ioctl(node, cmd, args);
     vfs_unlock();

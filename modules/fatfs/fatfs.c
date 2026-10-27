@@ -795,8 +795,8 @@ int fat_op_close(vnode_t *node) {
   return 0;
 }
 
-size_t fat_op_ioctl(struct vnode *node, uint cmd, void *args) {
-  uint ret = 0;
+ssize_t fat_op_ioctl(struct vnode *node, uint cmd, void *args) {
+  long ret = 0;
   // log_debug("fat_op_ioctl %x\n", cmd);
 
   file_info_t *file_info = node->data;
@@ -856,15 +856,10 @@ size_t fat_op_ioctl(struct vnode *node, uint cmd, void *args) {
     return 0;
   }
 
-  device_t *dev = node->device;
-  if (dev == NULL) {
-    return ret;
-  }
-  // va_list args;
-  // va_start(args, cmd);
-  ret = dev->ioctl(dev, cmd, args);
-  // va_end(args);
-  return ret;
+  /* fat 卷设备节点走 device_operator，不经本 op；能走到这里的都是
+   * 普通文件/目录节点：未识别命令报 -1（sys_ioctl 映射成 ENOTTY），
+   * 不再假成功 0 —— LTP ioctl01 靠它判"普通文件不是 tty" */
+  return -1;
 }
 
 /* 【新增】在 dir_node 下建目录：拼 fat 全路径后走 f_mkdir。

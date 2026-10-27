@@ -8,6 +8,7 @@
 
 #include "arch/arch.h"
 #include "config.h"
+#include "kernel/type.h" /* ssize_t：ioctl 处理链返回类型 */
 #include "kernel/logger.h"
 #include "kernel/memory.h"
 #include "kernel/stdarg.h"
@@ -46,7 +47,10 @@ typedef u32 (*vread_t)(struct vnode *, u32, u32, u8 *);
 typedef u32 (*vwrite_t)(struct vnode *, u32, u32, u8 *);
 typedef u32 (*vopen_t)(struct vnode *, u32 mode);
 typedef u32 (*vclose_t)(struct vnode *);
-typedef size_t (*vioctl_t)(struct vnode *, u32 cmd, void *args);
+/* ioctl 处理链的返回类型 ssize_t：成功回值、失败回 -errno（-1 表未实现），
+ * 与 read/write 等 POSIX 系统调用同一约定。必须是有符号类型——用 u32 会
+ * 把错误码截成 "4294967xxx" 假成功。 */
+typedef ssize_t (*vioctl_t)(struct vnode *, u32 cmd, void *args);
 
 typedef u32 (*vreaddir_t)(struct vnode *, struct vdirent *, u32* , u32);
 typedef struct vnode *(*vfinddir_t)(struct vnode *, char *name);
@@ -73,6 +77,11 @@ typedef struct voperator {
    * 不支持。Xorg 的 LogInit()/锁文件都要用到 rename，此前 sys_rename 是
    * 恒返回 -1 的 stub，导致 "Cannot move old log file" 直接 FatalError。 */
   int (*rename)(struct vnode *dir, const char *oldname, const char *newname);
+  /* 【新增·必须追加在末尾】clone-on-open：/dev/ptmx 这类"每次 open 产出
+   * 一个新实例"的设备用。sys_open 解析到节点后调用；返回 NULL 表示普通
+   * 节点照旧，返回新节点则本次 open 的 fd 指向该私有实例（pty 每 master
+   * 一份独立缓冲与从端号）。未实现的文件系统留 NULL。 */
+  struct vnode *(*clone_open)(struct vnode *node);
 } voperator_t;
 
 typedef struct vnode {
@@ -118,7 +127,7 @@ int vunlink(vnode_t *dir, const char *name);
 int vrename(vnode_t *dir, const char *oldname, const char *newname);
 vnode_t *vcreate(u8 *name, u32 flags);
 void vmount(vnode_t *node, u8 *path, vnode_t *node1);
-size_t vioctl(vnode_t *node, u32 cmd, void *args);
+ssize_t vioctl(vnode_t *node, u32 cmd, void *args);
 
 vnode_t *vfs_find(vnode_t *root, u8 *path);
 vnode_t *vfs_find_relative(vnode_t *root, vnode_t *pwd, const char *path);
