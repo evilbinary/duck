@@ -160,48 +160,73 @@ int sys_setitimer(int which, void* new_val, void* old_val) {
 
 /* ===================== sleep ===================== */
 
+/* 【nanosleep 必须真睡】旧实现 schedule_sleep 只记账、syscall 立即回用户态
+ * ⇒ usleep 是空转：X11 桌面每个客户端主循环的 usleep(2000) 防自旋全成了
+ * 纯烧 CPU（实测 xcalc 单实例 11%+5%，窗口越多拖动越卡）。
+ * 现在用 poll_wait_suspend 纯定时等待真正挂起（与无 fd 的 select 同一套，
+ * tick 到期 WAKE_TIMEOUT 唤醒）。保险丝语义保留：单段最多睡 100 tick，
+ * 长睡眠拆成多段——单段大冻（~1.9s 手柄没反应）不会再出现，想插队的事件
+ * 每 100ms 就有机会被处理。 */
+#define NANOSLEEP_STEP_TICKS 100
+
+static int sys_sleep_rel(struct timespec* req, struct timespec* rem) {
+  ullong want;
+  ullong start;
+  ullong now;
+  if (req == NULL) {
+    return -1;
+  }
+  want = (ullong)SECOND_TO_TICK(req->tv_sec) +
+         (ullong)NANOSECOND_TO_TICK(req->tv_nsec);
+  if (want == 0) {
+    return 0;
+  }
+  start = (ullong)schedule_get_ticks();
+  for (;;) {
+    ullong left;
+    int r;
+    now = (ullong)schedule_get_ticks();
+    if (now >= start + want) {
+      break;
+    }
+    left = start + want - now;
+    if (left > NANOSLEEP_STEP_TICKS) {
+      left = NANOSLEEP_STEP_TICKS;
+    }
+    r = sys_idle_wait_ms((u32)left);
+    if (r < 0) {
+      /* 挂起前就有未决信号：POSIX 返回 -EINTR，剩余时间尽力写给 rem。
+       * （等待中途到的信号由唤醒方直接回填保存帧，走不到这里。） */
+      if (rem != NULL) {
+        ullong left2 = start + want - (ullong)schedule_get_ticks();
+        if ((long)left2 < 0) {
+          left2 = 0;
+        }
+        rem->tv_sec = (time_t)(left2 / (ullong)SCHEDULE_FREQUENCY);
+        rem->tv_nsec = (long)((left2 % (ullong)SCHEDULE_FREQUENCY) *
+                              (1000000000ull / (ullong)SCHEDULE_FREQUENCY));
+      }
+      return -4; /* -EINTR */
+    }
+  }
+  return 0;
+}
+
 /* 【重要·应用其实走的是这一路】musl 的 __clock_nanosleep 在本平台
  * （SYS_clock_nanosleep(230) != SYS_clock_nanosleep_time64(407)）且 tv_sec 为
  * 小值时，会**跳过 407 分支**、回落到 __syscall_cp(SYS_nanosleep) —— 也就是
  * 系统调用 162，进到这里。排查睡眠相关问题时务必同时覆盖这一路
  * （曾因只改 sys_clock_nanosleep 而得出"应用没发请求"的错误结论）。 */
 int sys_nanosleep(struct timespec* req, struct timespec* rem) {
-  if (req == NULL) {
-    return -1;
-  }
-  {
-    /* YiYiYa·保险丝（治标但立刻见效）：用户态有路径在传 ~1.6-1.9 秒的延时
-     * （来源未定 ✗），一睡就把整个 UI 冻住、手柄像没反应 ✗。这里把【任何】
-     * >100ms 的单次睡眠夹到 100ms：语义上只是"更频繁地醒来重新请求"（轮询 ✓），
-     * 不会漏事件 ✓，也不会再出现 1.9 秒的大冻 ✓。 */
-    u32 tick = (u32)(SECOND_TO_TICK(req->tv_sec) +
-                     NANOSECOND_TO_TICK(req->tv_nsec));
-    if (tick > 100) {
-      tick = 100;
-    }
-    schedule_sleep(tick);
-  }
-  return 0;
+  return sys_sleep_rel(req, rem);
 }
 
 int sys_clock_nanosleep(int clock, int flag, struct timespec* req,
                         struct timespec* rem) {
-  if (req == NULL) {
-    return -1;
-  }
-  {
-    /* YiYiYa·保险丝（治标但立刻见效）：用户态有路径在传 ~1.6-1.9 秒的延时
-     * （来源未定 ✗），一睡就把整个 UI 冻住、手柄像没反应 ✗。这里把【任何】
-     * >100ms 的单次睡眠夹到 100ms：语义上只是"更频繁地醒来重新请求"（轮询 ✓），
-     * 不会漏事件 ✓，也不会再出现 1.9 秒的大冻 ✓。 */
-    u32 tick = (u32)(SECOND_TO_TICK(req->tv_sec) +
-                     NANOSECOND_TO_TICK(req->tv_nsec));
-    if (tick > 100) {
-      tick = 100;
-    }
-    schedule_sleep(tick);
-  }
-  return 0;
+  /* flag（TIMER_ABSTIME）沿用旧语义：按相对时长处理 */
+  (void)clock;
+  (void)flag;
+  return sys_sleep_rel(req, rem);
 }
 
 /* ===================== time / clock ===================== */

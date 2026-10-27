@@ -601,6 +601,8 @@ int sys_msync(void* addr, size_t length, int flags);
 int sys_mlockall(int flags);
 int sys_madvice(void* addr, size_t length, int advice);
 int sys_nanosleep(struct timespec* req, struct timespec* rem);
+/* 真睡 ms 毫秒（挂起等 tick 超时；nanosleep/usleep 的底层，见 sysfn_fs.c） */
+int sys_idle_wait_ms(u32 ms);
 int sys_clock_nanosleep(int clock, int flag, struct timespec* req,
                         struct timespec* rem);
 int sys_clock_gettime64(clockid_t clockid, struct timespec* ts);

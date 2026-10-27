@@ -1558,6 +1558,15 @@ static int pollw_idle_recheck(void* a) {
   return 0;
 }
 
+/* 【真睡 ms 毫秒】给 nanosleep/usleep 用：线程挂起（THREAD_WAITING），
+ * tick 到期由调度器以 WAKE_TIMEOUT 唤醒（pollw_fill 写 x0=0）。
+ * 返回 0 = 睡满；-4 = 挂起前就有未决信号（POSIX 的 EINTR）。
+ * 旧的 schedule_sleep 只记账、syscall 立即回用户态 ⇒ usleep 是空转：
+ * X11 客户端的 usleep(2000) 防自旋全成了纯烧 CPU，窗口越多拖动越卡。 */
+int sys_idle_wait_ms(u32 ms) {
+  return poll_wait_suspend(pollw_idle_recheck, NULL, NULL, NULL, ms, 1);
+}
+
 /* 【select/pselect 公共实现】超时由调用方解析好传进来（timeval 或 timespec），
  * 无就绪时交给 poll_wait_suspend 真正挂起（THREAD_WAITING + schedule_switch），
  * 由 unix/pipe 的事件唤醒并写回结果。 */
@@ -2014,6 +2023,7 @@ static int pollw_rw_recheck(void* a) {
   } else {
     n = vread((vnode_t*)f->data, f->offset, r->nbytes, (u8*)r->buf);
   }
+
   if ((int)n == -11) {
     return 0; /* 还是不可用（EAGAIN：无数据 / 缓冲满） */
   }
@@ -2043,6 +2053,18 @@ static void pollw_rw_release(void* a) {
  * 非阻塞，行为必须保持 EAGAIN）。 */
 static int sys_unix_blockable(u32 fd, fd_t* f) {
   return f != NULL && unix_owns(fd) && (f->flags & O_NONBLOCK) == 0;
+}
+
+/* pty 从端这类 V_BLOCK_READ 节点：空读由 op 返回 -EAGAIN，这里统一挂起等
+ * 数据（与 unix socket 同一套 sys_rw_wait；op->read 里不能 thread_wait，
+ * schedule_switch 会丢弃内核调用链，见 duck/modules/pty/pty.c 头注释）。 */
+static int sys_node_blockable_read(fd_t* f) {
+  vnode_t* node;
+  if (f == NULL || f->data == NULL || (f->flags & O_NONBLOCK) != 0) {
+    return 0;
+  }
+  node = (vnode_t*)f->data;
+  return (node->flags & V_BLOCK_READ) == V_BLOCK_READ;
 }
 
 /* 挂起等 read/write 可用；返回实际字节数（不可达时为 0） */
@@ -2143,7 +2165,7 @@ size_t sys_read(u32 fd, void* buf, size_t nbytes) {
      * 只处理"数据直读用户 buf"的情况：tmp_buf 路径需要重新分配，交给
      * 用户态重试（返回 EAGAIN），避免在等待表里持有大块内核缓冲。 */
     if ((int)ret == -11 && tmp_buf == NULL && buf != NULL && nbytes > 0 &&
-        sys_unix_blockable(fd, f)) {
+        (sys_unix_blockable(fd, f) || sys_node_blockable_read(f))) {
       return (size_t)sys_rw_wait(current, fd, buf, nbytes, 0);
     }
     return (size_t)(long)(int)ret;

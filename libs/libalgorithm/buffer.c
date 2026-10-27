@@ -75,6 +75,9 @@ size_t buffer_write(buffer_t* buffer, u8* buf, size_t len) {
         buffer->write_wait(buffer);
         break;
       }
+      /* 没有等待回调（pty 等"空/满回 EAGAIN 由上层处理"的设备）：缓冲满只能
+       * 短写返回，继续循环会原地打转卡死当前线程。 */
+      break;
     }
   }
   if (i > 0) {

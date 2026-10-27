@@ -19,6 +19,12 @@
 #define V_BLOCKDEVICE 0x08
 #define V_PIPE 0x0c
 #define V_UNLINKED 0x100 /* 文件已从目录删除（LTP IPC mmap 后 unlink），vwrite 拒绝 */
+/* 阻塞读设备节点：pty 从端这类"无数据时等待"的节点。op->read 本身不阻塞
+ * （空了回 -EAGAIN），sys_read 看到 -EAGAIN 且节点带此标志时走 sys_rw_wait
+ * 挂起，由写入方 thread_wait_notify 唤醒重试 —— 和 unix socket 同一套机制。
+ * 不能在 op->read 里 thread_wait：本内核 schedule_switch 会丢弃内核调用链，
+ * 挂在 vread 中间的线程被唤醒后回不到 syscall 返回点，数据也送不回去。 */
+#define V_BLOCK_READ 0x200
 /* 符号链接节点约定：data = kmalloc 的链接目标字符串（NUL 结尾），
  * length = 目标字节数。sys_readlink 只对 flags 为 V_SYMLINK 的节点返回目标，
  * 其他类型按 POSIX 返回 EINVAL。 */
