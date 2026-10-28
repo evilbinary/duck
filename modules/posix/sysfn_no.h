@@ -276,6 +276,12 @@ enum {
   SYS_GETGROUPS = 158,
   SYS_VHANGUP = 159,
   SYS_EVENTFD2 = 19,
+  /* 【timerfd 三件套 = 85/86/87】aarch64 通用编号。libinput 的定时器子系统
+   * （timer.c）用 timerfd_create + TFD_TIMER_ABSTIME 定时，缺失时
+   * libinput_init 直接失败。 */
+  SYS_TIMERFD_CREATE = 85,
+  SYS_TIMERFD_SETTIME = 86,
+  SYS_TIMERFD_GETTIME = 87,
   SYS_EPOLL_CREATE1 = 20,
   SYS_EPOLL_CTL = 21,
   SYS_EPOLL_PWAIT = 22,

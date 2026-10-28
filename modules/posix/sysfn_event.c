@@ -1,9 +1,10 @@
-/* 事件类 fd：eventfd2/epoll/inotify（哨兵 vnode + fd 模式） */
+/* 事件类 fd：eventfd2/epoll/inotify/timerfd（哨兵 vnode + fd 模式） */
 #include "sysfn.h"
 
 #include "kernel/error.h"
 #include "kernel/kernel.h"
 #include "kernel/memory.h"
+#include "kernel/schedule.h"
 #include "kernel/thread.h"
 
 #define log_debug
@@ -596,4 +597,238 @@ int sys_inotify_rm_watch(int fd, int wd) {
     return -9;
   }
   return 0;
+}
+
+/* ===================== timerfd 三件套(85/86/87) =====================
+ * 用途：libinput 的定时器子系统（src/timer.c）用
+ * timerfd_create(CLOCK_MONOTONIC) + timerfd_settime(TFD_TIMER_ABSTIME)
+ * 驱动 tap/滚动/长按等超时逻辑，缺失时 libinput_init 直接失败。
+ *
+ * 记账时基与 clock_gettime(CLOCK_MONOTONIC) 一致（schedule_get_ticks），
+ * 单位毫秒：SCHEDULE_FREQUENCY 通常就是 1000，这里按宏换算，不假设 tick=ms。
+ *
+ * 【就绪怎么被发现】本内核的 syscall 不能睡在内核里（见 sysfn_pollwait.c），
+ * 所以 timerfd 不注册定时中断回调，而是复用 evdev 那套"SYS_POLLED_FD_RECHECK_MS
+ * 切片重查"：调用方的 select/ppoll/epoll_pwait 长超时被切成 8ms 一片，每片
+ * 都调 sys_fd_ready_t 重算一次 ⇒ 到期最迟 8ms 后被唤醒。代价是空闲期每 8ms
+ * 醒一次，收益是不必引入内核定时器回调链路。 */
+struct timerfd_k {
+  u32 magic;
+  u64 next_ms;     /* 下次到期的单调绝对毫秒；0 = 未武装 */
+  u64 interval_ms; /* 0 = 一次性 */
+  u64 expirations; /* 已到期但还没被 read 取走的次数 */
+};
+#define TIMERFD_MAGIC 0x71FD0000u
+
+/* aarch64/musl 的 struct itimerspec：it_interval 在前，it_value 在后 */
+struct tfd_itimerspec {
+  i64 interval_sec;
+  i64 interval_nsec;
+  i64 value_sec;
+  i64 value_nsec;
+};
+
+#define TFD_TIMER_ABSTIME 1
+#define TFD_TIMER_CANCEL_ON_SET 2
+
+static u64 tfd_now_ms(void) {
+  return (u64)schedule_get_ticks() * 1000ull / (u64)SCHEDULE_FREQUENCY;
+}
+
+static u64 tfd_ts_to_ms(i64 sec, i64 nsec) {
+  if (sec <= 0 && nsec <= 0) {
+    return 0;
+  }
+  if (sec < 0) {
+    sec = 0;
+  }
+  if (nsec < 0) {
+    nsec = 0;
+  }
+  /* 纳秒向上取整到毫秒：调小会让定时器"早醒"，libinput 对早于 expiry 的
+   * flush 只当没到点，等于把超时往后推一整轮。 */
+  return (u64)sec * 1000ull + ((u64)nsec + 999999ull) / 1000000ull;
+}
+
+/* 把"已经过点"折算成到期次数；一次性定时器折算完自行解除武装。
+ * 这个函数是幂等的：没到期什么都不做。 */
+static void tfd_refresh(struct timerfd_k* t) {
+  u64 now;
+  if (t == NULL || t->magic != TIMERFD_MAGIC || t->next_ms == 0) {
+    return;
+  }
+  now = tfd_now_ms();
+  if (now < t->next_ms) {
+    return;
+  }
+  if (t->interval_ms == 0) {
+    t->expirations += 1;
+    t->next_ms = 0; /* 一次性：到期即解除武装 */
+    return;
+  }
+  {
+    u64 n = (now - t->next_ms) / t->interval_ms + 1;
+    t->expirations += n;
+    t->next_ms += n * t->interval_ms;
+  }
+}
+
+/* 剩余时间（毫秒，未武装为 0）：timerfd_gettime 与 settime 的 old 共用 */
+static u64 tfd_remaining_ms(struct timerfd_k* t) {
+  u64 now;
+  if (t == NULL || t->magic != TIMERFD_MAGIC || t->next_ms == 0) {
+    return 0;
+  }
+  now = tfd_now_ms();
+  return (t->next_ms > now) ? (t->next_ms - now) : 0;
+}
+
+static int tfd_write_itimerspec(void* utmr, u64 remaining_ms, u64 interval_ms) {
+  struct tfd_itimerspec its;
+  if (utmr == NULL) {
+    return 0;
+  }
+  its.interval_sec = (i64)(interval_ms / 1000ull);
+  its.interval_nsec = (i64)((interval_ms % 1000ull) * 1000000ull);
+  its.value_sec = (i64)(remaining_ms / 1000ull);
+  its.value_nsec = (i64)((remaining_ms % 1000ull) * 1000000ull);
+  if (sys_copy_to_user(utmr, &its, sizeof(its)) < 0) {
+    return -14;
+  }
+  return 0;
+}
+
+/* 未到期 ⇒ -EAGAIN（非阻塞语义）。libinput 的 timerfd 是 TFD_NONBLOCK，
+ * 内核侧不登记阻塞等待（本内核也没有 timerfd 的唤醒源）。 */
+static u32 tfd_read(vnode_t* node, u32 offset, u32 size, u8* buffer) {
+  struct timerfd_k* t;
+  u64 v;
+  (void)offset;
+  if (node == NULL || node->device == NULL || buffer == NULL) {
+    return 0;
+  }
+  t = (struct timerfd_k*)node->device;
+  if (t->magic != TIMERFD_MAGIC || size < 8) {
+    return 0;
+  }
+  tfd_refresh(t);
+  if (t->expirations == 0) {
+    return (u32)-11; /* -EAGAIN */
+  }
+  v = t->expirations;
+  t->expirations = 0;
+  kmemcpy(buffer, &v, 8);
+  return 8;
+}
+
+static vnode_t* timerfd_make(void) {
+  vnode_t* node = vfs_create_node("timerfd", 0);
+  struct timerfd_k* t = kmalloc(sizeof(struct timerfd_k), KERNEL_TYPE);
+  voperator_t* op = kmalloc(sizeof(voperator_t), KERNEL_TYPE);
+  if (node == NULL || t == NULL || op == NULL) {
+    kfree(t);
+    kfree(op);
+    return NULL;
+  }
+  kmemset(t, 0, sizeof(*t));
+  t->magic = TIMERFD_MAGIC;
+  node->device = t;
+  node->op = op;
+  op->read = tfd_read;
+  op->close = evfd_node_close;
+  return node;
+}
+
+int sys_timerfd_create(int clockid, int flags) {
+  thread_t* current = thread_current();
+  vnode_t* node;
+  fd_t* fd;
+  (void)flags; /* TFD_NONBLOCK/TFD_CLOEXEC：本内核 fd 无隐藏标志位 */
+  /* 本内核只有"单调"和"实时"两条时基，且 timerfd 只按单调推进；
+   * CLOCK_REALTIME/CLOCK_BOOTTIME 也接受（Linux 语义里它们的定时行为等价，
+   * 差别只在系统时间被改动时的反应）。 */
+  if (clockid != 0 /*CLOCK_REALTIME*/ && clockid != 1 /*CLOCK_MONOTONIC*/ &&
+      clockid != 7 /*CLOCK_BOOTTIME*/) {
+    return -22; /* -EINVAL */
+  }
+  node = timerfd_make();
+  if (node == NULL) {
+    return -12;
+  }
+  fd = fd_open(node, DEVICE_TYPE_VIRTUAL, "/dev/timerfd");
+  if (fd == NULL) {
+    return -12;
+  }
+  return thread_add_fd(current, fd);
+}
+
+int sys_timerfd_settime(int fd, int flags, void* utmr, void* uold) {
+  struct timerfd_k* t = (struct timerfd_k*)evfd_priv(fd, TIMERFD_MAGIC);
+  struct tfd_itimerspec its;
+  u64 value_ms;
+  u64 interval_ms;
+  int rc;
+
+  if (t == NULL) {
+    return -9; /* -EBADF */
+  }
+  if (utmr == NULL) {
+    return -22; /* -EINVAL */
+  }
+  if (sys_copy_from_user(&its, utmr, sizeof(its)) < 0) {
+    return -14; /* -EFAULT */
+  }
+  /* old 是"调用前的剩余时间"，必须在改写状态之前取 */
+  rc = tfd_write_itimerspec(uold, tfd_remaining_ms(t), t->interval_ms);
+  if (rc < 0) {
+    return rc;
+  }
+
+  value_ms = tfd_ts_to_ms(its.value_sec, its.value_nsec);
+  interval_ms = tfd_ts_to_ms(its.interval_sec, its.interval_nsec);
+
+  if (value_ms == 0) {
+    t->next_ms = 0; /* 解除武装 */
+    t->interval_ms = 0;
+    t->expirations = 0;
+    return 0;
+  }
+
+  /* 周期只对"周期性定时器"有意义：Linux 上 it_value 为 0 时 it_interval
+   * 也被忽略，这里同样处理（上面已 early-return）。 */
+  t->interval_ms = interval_ms;
+
+  if (flags & TFD_TIMER_ABSTIME) {
+    t->next_ms = value_ms;
+  } else {
+    t->next_ms = tfd_now_ms() + value_ms;
+  }
+  tfd_refresh(t); /* 绝对时刻已经过去 ⇒ 立即算一次到期 */
+  return 0;
+}
+
+int sys_timerfd_gettime(int fd, void* utmr) {
+  struct timerfd_k* t = (struct timerfd_k*)evfd_priv(fd, TIMERFD_MAGIC);
+  if (t == NULL) {
+    return -9;
+  }
+  if (utmr == NULL) {
+    return -22;
+  }
+  tfd_refresh(t);
+  return tfd_write_itimerspec(utmr, tfd_remaining_ms(t), t->interval_ms);
+}
+
+/* 供 sys_fd_ready_t / sys_fd_polled_t 使用：-1 表示"不是 timerfd" */
+int sys_timerfd_node_ready(vnode_t* node) {
+  struct timerfd_k* t;
+  if (node == NULL || node->device == NULL) {
+    return -1;
+  }
+  t = (struct timerfd_k*)node->device;
+  if (t->magic != TIMERFD_MAGIC) {
+    return -1;
+  }
+  tfd_refresh(t);
+  return (t->expirations > 0) ? 1 : 0;
 }

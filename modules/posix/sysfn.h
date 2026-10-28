@@ -698,6 +698,16 @@ int sys_inotify_init1(int flags);
 int sys_inotify_add_watch(int fd, const char* pathname, u32 mask);
 int sys_inotify_rm_watch(int fd, int wd);
 
+/* ---- sysfn_event.c：timerfd（85/86/87）----
+ * 哨兵 vnode + 私有计时状态；就绪判据是"到期"，因此 poll/select/epoll 必须
+ * 问它（见 sys_fd_ready_t），并且要按 SYS_POLLED_FD_RECHECK_MS 切片重查。 */
+int sys_timerfd_create(int clockid, int flags);
+int sys_timerfd_settime(int fd, int flags, void* utmr, void* uold);
+int sys_timerfd_gettime(int fd, void* utmr);
+/* 给 sys_fd_ready_t 用：node 是 timerfd 时返回 1=到期可读 / 0=未到期，
+ * 不是 timerfd 返回 -1。会顺带把到期次数记进对象。 */
+int sys_timerfd_node_ready(vnode_t* node);
+
 /* ---- sysfn_proc.c：pidfd（进程引用 fd + PIDFD_GET_INFO） ----
  * 注意 dispatch 是 u64(*)(u64×6) 按字传参，第一参用 unsigned long。 */
 int sys_pidfd_open(unsigned long pid, unsigned long flags);

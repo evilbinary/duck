@@ -1473,6 +1473,13 @@ int sys_fd_ready_t(thread_t* owner, int fd, int want_read, int want_write) {
   if (owner == NULL || (f = thread_find_fd_id(owner, fd)) == NULL) {
     return 0;
   }
+  /* timerfd：就绪判据是"到期"（见 sysfn_event.c 的 tfd_refresh）。 */
+  {
+    int tfd = sys_timerfd_node_ready((vnode_t*)f->data);
+    if (tfd >= 0) {
+      return want_read ? tfd : 0;
+    }
+  }
   /* 【轮询型输入设备必须给真实答案】这类设备只有在 read 时才去问硬件，
    * 内核无从"被动"得知有没有数据。按老规则"存在即就绪"会让
    * epoll_pwait/select 立刻返回 ⇒ 调用方（X 的 InputThread）read 拿到
@@ -1500,11 +1507,19 @@ int sys_fd_ready(int fd, int want_read, int want_write) {
 int sys_fd_polled_t(thread_t* owner, int fd) {
   fd_t* f;
   device_t* dev;
-  if (owner == NULL || evdev_poll_ready == NULL) {
+  if (owner == NULL) {
     return 0;
   }
   f = thread_find_fd_id(owner, fd);
   if (f == NULL || f->data == NULL) {
+    return 0;
+  }
+  /* timerfd 同样"只能靠重查才知道就绪"：到期没有任何内核事件，
+   * 必须跟着 SYS_POLLED_FD_RECHECK_MS 切片一起重算。 */
+  if (sys_timerfd_node_ready((vnode_t*)f->data) >= 0) {
+    return 1;
+  }
+  if (evdev_poll_ready == NULL) {
     return 0;
   }
   dev = (device_t*)((vnode_t*)f->data)->device;
