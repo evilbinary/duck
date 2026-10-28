@@ -265,7 +265,9 @@ enum {
   SYS_NAME_TO_HANDLE_AT = 264, /* udev/gio 枚举设备时用，本内核不支持 */
   SYS_CLONE3 = 435,         /* glibc 2.34+ 新线程/进程走 clone3 */
   SYS_PIDFD_OPEN = 434,     /* pidfd_open：进程引用 fd（asm-generic 通用号） */
-  SYS_MEMFD_CREATE = 319,   /* memfd_create：匿名内存文件（wl_shm 的标准来路） */
+  /* 【aarch64 真实编号是 279】319 是 x86_64 的号；asm-generic 里
+   * 278=getrandom、279=memfd_create、280=bpf */
+  SYS_MEMFD_CREATE = 279,   /* memfd_create：匿名内存文件（wl_shm 的标准来路） */
   /* 【aarch64 真实编号】setgroups=159、getgroups=158。旧值 81 其实是 sync，
    * 于是 glibc 的 getgroups（openbox 启动时 158 直接 ENOSYS）与
    * setgroups/initgroups 全都落空。 */
