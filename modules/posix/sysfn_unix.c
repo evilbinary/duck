@@ -40,6 +40,10 @@ struct unix_ring {
   u32 head;  /* 读位置 */
   u32 count; /* 已缓存字节数 */
   u32 refs;  /* 两端各持一份引用，最后一个持有者释放 */
+  /* 累计字节数（单调递增，不受环形回绕影响）：SCM_RIGHTS 的 fd 要
+   * 绑定到字节流位置——Linux 语义是"recvmsg 读到该位置之后才交付 fd"。 */
+  u32 wtotal; /* 已写入总字节 */
+  u32 rtotal; /* 已读出总字节 */
   int writer_closed; /* 写端关闭：读空后返回 0（EOF） */
   int reader_closed; /* 读端关闭：再写返回 -EPIPE */
 };
@@ -137,6 +141,7 @@ static u32 unix_ring_write(struct unix_ring* r, const u8* src, u32 len) {
     kmemcpy(r->buf, src + first, len - first);
   }
   r->count += len;
+  r->wtotal += len;
   return len;
 }
 
@@ -158,6 +163,7 @@ static u32 unix_ring_read(struct unix_ring* r, u8* dst, u32 len) {
   }
   r->head = (r->head + len) % r->cap;
   r->count -= len;
+  r->rtotal += len;
   return len;
 }
 
@@ -980,6 +986,10 @@ int unix_poll_ready(int fd, int want_read, int want_write) {
 struct unix_cmsg {
   struct unix_cmsg* next;
   int nfds;
+  /* 该 fd 附着的字节流位置（发送方这一笔 sendmsg 的起始字节号）。
+   * 接收方只有读到 rtotal >= pos 时才交付——与 Linux 的 fd 语义一致：
+   * 提前交付会被调用方当作"本条消息的 fd"，随后被清理丢弃。 */
+  u32 pos;
   fd_t* fd[UNIX_CMSG_FD_MAX];
 };
 
@@ -1079,6 +1089,8 @@ void* unix_rights_prepare(int fd, const void* control, u32 clen, int* err) {
     *err = -107; /* -ENOTCONN */
     return NULL;
   }
+  /* 本笔 sendmsg 的数据从 tx 环当前末尾开始写 ⇒ 节点构造时记 tx->wtotal
+   * 作为 fd 的附着字节位置（见下方 c->pos） */
   while (offset + sizeof(struct cmsghdr_k) <= clen) {
     struct cmsghdr_k hdr;
     struct unix_cmsg* c = NULL;
@@ -1109,6 +1121,7 @@ void* unix_rights_prepare(int fd, const void* control, u32 clen, int* err) {
       }
       kmemset(c, 0, sizeof(*c));
       c->nfds = nfds;
+      c->pos = (sk->tx != NULL) ? sk->tx->wtotal : 0;
       for (int i = 0; i < nfds; i++) {
         int ufd;
         fd_t* f;
@@ -1223,59 +1236,55 @@ void unix_rights_rollback(int fd, void* staged) {
  * 显式传 owner，页表已由 poll_wait 机制切到等待者，用户内存可写。 */
 int unix_recv_rights_t(thread_t* owner, int fd, void* control, u32 clen) {
   struct unix_sock* sk = unix_fd_sock_t(owner, fd);
-  struct unix_cmsg* c;
   struct cmsghdr_k hdr;
-  u32 payload;
-  int nfds_out;
-  if (sk == NULL) {
-    return 0; /* 非 AF_UNIX：无控制消息 */
+  u32 used = 0;
+  u32 consumed;
+  if (sk == NULL || sk->rx == NULL || control == NULL) {
+    return 0; /* 非 AF_UNIX / 无控制缓冲：无控制消息 */
   }
-  c = unix_cmsg_dequeue(sk);
-  if (c != NULL) {
-  }
-  if (c == NULL) {
-    return 0;
-  }
-  nfds_out = c->nfds;
-  payload = (u32)nfds_out * sizeof(int);
-  if (control == NULL || clen < sizeof(hdr) + payload) {
-    /* 接收缓冲不足：fd 注入照样做（引用不丢），但报 MSG_CTRUNC 由
-     * 调用方丢弃——与 Linux"小缓冲丢 fd"语义一致，防泄漏 */
-    for (int i = 0; i < c->nfds; i++) {
-      fd_close(c->fd[i]);
-    }
-    kfree(c);
-    return -122; /* -EDOM 之外用 -ENOBUFS 更贴切：调用方映射 MSG_CTRUNC */
-  }
-  /* fd 注入接收者 fd 表（thread_add_fd 内部 use_count++，交接引用）；
-   * 收集新 fd 号，随后一次性写回用户控制缓冲 */
-  {
+  /* 【按字节位置交付】只交付"本次 recvmsg 已读过的字节范围"覆盖到的 cmsg。
+   * 提前交付会被调用方当成别的消息的 fd 并在清理时丢弃（wayland 实测：
+   * create_pool 的 fd 在前一段数据到达时就交付了，真正用到时已被清空）。 */
+  consumed = sk->rx->rtotal;
+  while (sk->cq_head != NULL && sk->cq_head->pos <= consumed) {
+    struct unix_cmsg* c = sk->cq_head;
+    u32 payload = (u32)c->nfds * sizeof(int);
+    u32 need = (u32)sizeof(hdr) + payload;
+    u32 step = (need + 7u) & ~7u; /* cmsg 之间按 CMSG_ALIGN(8) 排布 */
     int outfd[UNIX_CMSG_FD_MAX];
-    for (int i = 0; i < nfds_out; i++) {
+    int i;
+    if (used + need > clen) {
+      break; /* 控制缓冲不够：留在队列里等下一次（不丢 fd） */
+    }
+    c = unix_cmsg_dequeue(sk);
+    if (c == NULL) {
+      break;
+    }
+    /* fd 注入接收者 fd 表（thread_add_fd 内部 use_count++，交接引用） */
+    for (i = 0; i < c->nfds; i++) {
       int n = thread_add_fd(owner, c->fd[i]);
       if (n < 0) {
-        /* 表满：放掉这条引用（send 持的那份随注入失败一并归还） */
-        fd_close(c->fd[i]);
-        c->fd[i] = NULL;
+        fd_close(c->fd[i]); /* 表满：归还 send 时持的引用 */
         outfd[i] = -1;
       } else {
         outfd[i] = n;
       }
     }
-    hdr.cmsg_len = sizeof(hdr) + payload;
+    hdr.cmsg_len = need;
     hdr.cmsg_level = UNIX_SOL_SOCKET;
     hdr.cmsg_type = UNIX_SCM_RIGHTS;
-    if (sys_copy_to_user(control, &hdr, sizeof(hdr)) < 0 ||
-        sys_copy_to_user((void*)((char*)control + sizeof(hdr)), outfd,
+    if (sys_copy_to_user((void*)((char*)control + used), &hdr,
+                         sizeof(hdr)) < 0 ||
+        sys_copy_to_user((void*)((char*)control + used + sizeof(hdr)), outfd,
                          payload) < 0) {
-      /* 控制缓冲写回失败（用户指针坏）：注入已发生，fd 交给接收者
-       * 自行关闭——不回收，避免双重释放 */
+      /* 用户指针坏：注入已发生，fd 交给接收者自行关闭 */
       kfree(c);
-      return -14;
+      return used > 0 ? (int)used : -14;
     }
+    used += step;
+    kfree(c);
   }
-  kfree(c);
-  return (int)(sizeof(hdr) + payload);
+  return (int)used;
 }
 
 /* 兼容包装：普通路径（当前线程就是接收者） */
@@ -1301,6 +1310,7 @@ struct unix_recv_reg {
   u32 clen;
   void* uhdr; /* 用户 msghdr：交付后回写 controllen */
   int delivered;
+  int dlen; /* 已交付的控制消息字节数（唤醒路径交付后 sys_recvmsg 取用） */
 };
 static struct unix_recv_reg s_recv_regs[UNIX_RECV_REG_MAX];
 
@@ -1337,6 +1347,7 @@ void unix_recv_ctl_begin(int fd, void* uctl, u32 clen, void* uhdr) {
   s_recv_regs[slot].clen = clen;
   s_recv_regs[slot].uhdr = uhdr;
   s_recv_regs[slot].delivered = 0;
+  s_recv_regs[slot].dlen = 0;
 }
 
 int unix_recv_ctl_end(void) {
@@ -1347,9 +1358,14 @@ int unix_recv_ctl_end(void) {
   }
   for (i = 0; i < UNIX_RECV_REG_MAX; i++) {
     if (s_recv_regs[i].used && s_recv_regs[i].tid == (int)current->id) {
-      int d = s_recv_regs[i].delivered;
+      /* 返回【已交付的控制字节数】：唤醒路径交付时已把 controllen 写进
+       * 用户 msghdr，sys_recvmsg 必须原样沿用，不能拿自己的 0 覆盖
+       * （实测：覆盖后 wayland 的 decode_cmsg 看到 controllen=0，
+       * fd 明明注入了却报 "file descriptor expected"）。 */
+      int d = s_recv_regs[i].delivered ? s_recv_regs[i].dlen : 0;
       s_recv_regs[i].used = 0;
       s_recv_regs[i].uhdr = NULL;
+      s_recv_regs[i].dlen = 0;
       return d;
     }
   }
@@ -1383,6 +1399,7 @@ static void unix_recv_ctl_deliver(struct unix_sock* sk) {
       continue;
     }
     reg->delivered = 1;
+    reg->dlen = r;
     /* 【必须在这里回写 msghdr】阻塞唤醒后 sys_recvmsg 的写回代码不执行 */
     if (reg->uhdr != NULL) {
       struct msghdr_k hdr;

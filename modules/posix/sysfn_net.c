@@ -738,7 +738,11 @@ ssize_t sys_recvmsg(int sockfd, void* u_umsg, int flags) {
       if (unix_owns(sockfd)) {
         ctl_done = unix_recv_ctl_end();
       }
-      if (!ctl_done && total > 0) {
+      if (ctl_done > 0) {
+        /* 唤醒路径已交付：沿用它的长度（用户 msghdr 也已由它回写） */
+        msg.msg_controllen = (size_t)ctl_done;
+      }
+      if (ctl_done <= 0 && total > 0) {
         int r = unix_recv_rights(sockfd, msg.msg_control, (u32)ctl_in);
         if (r > 0) {
           msg.msg_controllen = (size_t)r;
