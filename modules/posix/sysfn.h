@@ -191,6 +191,9 @@ enum {
 #define F_SETLK 6
 #define F_SETLKW 7
 #define F_DUPFD_CLOEXEC 1030 /* aarch64 通用号：dup + FD_CLOEXEC */
+/* memfd sealing（Linux uapi，musl fcntl.h 同号；本内核为 no-op） */
+#define F_ADD_SEALS 1033
+#define F_GET_SEALS 1034
 
 #define FUTEX_WAIT 0
 #define FUTEX_WAKE 1
@@ -696,6 +699,9 @@ int sys_inotify_rm_watch(int fd, int wd);
 /* ---- sysfn_proc.c：pidfd（进程引用 fd + PIDFD_GET_INFO） ----
  * 注意 dispatch 是 u64(*)(u64×6) 按字传参，第一参用 unsigned long。 */
 int sys_pidfd_open(unsigned long pid, unsigned long flags);
+
+/* ---- sysfn_memfd.c：memfd_create（匿名内存文件，wl_shm 来路） ---- */
+int sys_memfd_create(unsigned long uname, unsigned long flags);
 /* 线程退出通知钩子的实现（注册到 thread_pidfd_exit_hook）：
  * pid = 退出线程 id，exit_status = wait-status 编码 (code&0xff)<<8 */
 void sys_pidfd_note_exit(int pid, int exit_status);

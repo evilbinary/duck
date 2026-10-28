@@ -2760,6 +2760,13 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
         }
       }
       return ret;
+    } else if (cmd == F_ADD_SEALS) {
+      /* 【memfd sealing no-op】wayland-os.c 建 wl_shm 池时对 memfd 加
+       * F_SEAL_SHRINK，失败会让整个建池失败。本内核没有 sealing，
+       * 返回成功让流程走通（shrinking 防护由调用方保证）。 */
+      return 0;
+    } else if (cmd == F_GET_SEALS) {
+      return -1; /* 无 seals：wayland-shm.c 按 0 处理 */
     } else if (cmd == F_GETFD) {
       return (int)(findfd->flags & (u32)FD_CLOEXEC);
     } else if (cmd == F_GETFL) {
@@ -2779,8 +2786,11 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
     } else {
       log_error("not support cmd %d\n", cmd);
     }
-  
-    return 1;
+
+    /* 【未知命令返回 -EINVAL】旧值 1 会被调用方当成功（wayland 建 wl_shm
+     * 池时 fcntl(F_ADD_SEALS) 判错就整体放弃）。已实现的命令在上面各分支
+     * 显式返回；漏掉的报错比假成功好排。 */
+    return -22;
   }
   
   char* sys_getcwd(char* buf, size_t size) {
