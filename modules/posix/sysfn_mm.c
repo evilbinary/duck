@@ -12,6 +12,7 @@
 #include "kernel/event.h"
 #include "kernel/fd.h"
 #include "kernel/kernel.h"
+#include "kernel/page_ref.h" /* memfd 共享页引用计数 */
 #include "kernel/thread.h"
 #include "kernel/version.h"
 #include "kernel/vfs.h"
@@ -359,6 +360,29 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
      * shell 一起就崩（实测 2026-10）。小映射（libc 几 MB）继续走旧的
      * 一次性读入路径（fd 关闭前内容已在内存）；大文件（yllm 810MB 模型，
      * wmap_open 保持 fd 打开）才走 lazy。 */
+    /* 【共享页节点（memfd 等）】直接把节点的物理页装配进本进程页表：
+     * 多进程看到同一份页，无需 valloc/预读/回写。超出对象长度的尾部
+     * 不映射，首次访问由 page.c 的缺页路径补零。 */
+    if (node->op != NULL && node->op->fault != NULL) {
+      u32 mapped = 0;
+      if (sys_mmap_install_area(vm, map_at, length, node, off) < 0) {
+        log_error("mmap shared-mem install failed addr=%x\n", map_at);
+        return MAP_FAILED;
+      }
+      for (mapped = 0; mapped + PAGE_SIZE <= (u32)length; mapped += PAGE_SIZE) {
+        void* pa = node->op->fault(node, off + (u64)mapped);
+        if (pa == NULL) {
+          continue; /* 超长部分：缺页时补零 */
+        }
+        page_ref_inc((u32)(uintptr_t)pa);
+        page_map_on((page_dir_t*)current->vm->upage,
+                    (u32)(uintptr_t)((char*)map_at + mapped),
+                    (u32)(uintptr_t)pa, PAGE_USER);
+      }
+      log_debug("mmap shared-mem addr=%x len=%x off=%x\n", map_at, (u32)length,
+                (u32)off);
+      return map_at;
+    }
     if ((flags & MAP_SHARED) == MAP_SHARED &&
         (off & ((u64)PAGE_SIZE - 1)) == 0 && length >= 16 * 1024 * 1024) {
       if (sys_mmap_install_area(vm, map_at, length, node, off) < 0) {

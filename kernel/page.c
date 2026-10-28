@@ -5,6 +5,7 @@
  ********************************************************************/
 #include "page.h"
 
+#include "memory.h" /* memfd_fault_hook（见 memory.h 钩子说明） */
 #include "page_ref.h"
 #include "vfs.h"
 
@@ -226,6 +227,21 @@ void* page_fault_handle(interrupt_context_t *ic) {
           vaddr_t page_delta =
               (vaddr_t)fault_addr & ((vaddr_t)PAGE_SIZE - 1);
           vaddr_t page_va = (vaddr_t)fault_addr - page_delta;
+          /* 【共享页节点（memfd 等）：直接映射物理页】Linux 语义是
+           * "同一 inode 的页"而不是"文件映射按需读"。节点实现了
+           * op->fault 就把它返回的页装配进当前进程页表（ref++ 防另一
+           * 进程退出时被回收），多进程看到同一份物理页；
+           * 越界/普通文件落到下面文件读取路径。 */
+          if (node->op != NULL && node->op->fault != NULL) {
+            void* pa = node->op->fault(
+                node, area->file_off + (u64)(page_va - area->vaddr));
+            if (pa != NULL) {
+              page_ref_inc((u32)(uintptr_t)pa);
+              page_map_on((u64*)current->vm->upage, (void*)page_va, (u64)pa,
+                          PAGE_USER);
+              return ic;
+            }
+          }
           /* 【块填充】单页缺页 ⇒ 按 256KB 对齐块补：一次 valloc + 一次
            * vread 顶 64 次单页往返。推理顺序触达权重，块内页迟早全用，
            * 无浪费；超出文件尾保持 0（vread 短读，与单页行为一致）。

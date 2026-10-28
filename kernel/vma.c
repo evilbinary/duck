@@ -487,6 +487,10 @@ void vmemory_flush_shared_files(vmemory_t* vm) {
         continue;
       }
       node = (vnode_t*)c->file_node;
+      /* 共享页节点（memfd 等）：映射的是共享物理页，没有文件可回写 */
+      if (node->op != NULL && node->op->fault != NULL) {
+        continue;
+      }
       for (va = c->vaddr; va < c->vend; va += PAGE_SIZE) {
         vaddr_t pa = (vaddr_t)page_v2p(vm->upage, (void*)(uintptr_t)va);
         u64 off;

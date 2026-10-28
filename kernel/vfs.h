@@ -82,6 +82,14 @@ typedef struct voperator {
    * 节点照旧，返回新节点则本次 open 的 fd 指向该私有实例（pty 每 master
    * 一份独立缓冲与从端号）。未实现的文件系统留 NULL。 */
   struct vnode *(*clone_open)(struct vnode *node);
+  /* 【新增·必须追加在末尾】共享内存文件系统接口（memfd 等）。
+   * fault：返回 off 所在页的【物理地址】；NULL = 该节点不做共享页映射
+   *   （按普通文件映射预读/回写处理）。实现此方法的节点即"共享页对象"：
+   *   mmap 直接把同一物理页装配进各进程页表（真共享），进程退出不回写。
+   * truncate：按新长度增减页；返回 0 成功、<0 = -errno。
+   * 与 vread/vwrite/vioctl 同一套分派：内核不认识具体文件系统。 */
+  void *(*fault)(struct vnode *node, u64 off);
+  int (*truncate)(struct vnode *node, u64 size);
 } voperator_t;
 
 typedef struct vnode {

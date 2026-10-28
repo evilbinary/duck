@@ -700,7 +700,9 @@ int sys_inotify_rm_watch(int fd, int wd);
  * 注意 dispatch 是 u64(*)(u64×6) 按字传参，第一参用 unsigned long。 */
 int sys_pidfd_open(unsigned long pid, unsigned long flags);
 
-/* ---- sysfn_memfd.c：memfd_create（匿名内存文件，wl_shm 来路） ---- */
+/* ---- sysfn_memfd.c：memfd_create（匿名内存文件，wl_shm 来路） ----
+ * 实现是共享页对象：vnode 的 op->fault/op->truncate 由本文件提供，
+ * 缺页/mmap 由内核按 vnode 操作表分派（无全局钩子）。 */
 int sys_memfd_create(unsigned long uname, unsigned long flags);
 /* 线程退出通知钩子的实现（注册到 thread_pidfd_exit_hook）：
  * pid = 退出线程 id，exit_status = wait-status 编码 (code&0xff)<<8 */

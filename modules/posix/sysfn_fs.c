@@ -3076,6 +3076,10 @@ int sys_ftruncate(int fd, off_t length) {
   if (node == NULL) {
     return -1;
   }
+  /* 【共享页节点（memfd 等）】按新长度增减页，不走 FAT */
+  if (node->op != NULL && node->op->truncate != NULL) {
+    return node->op->truncate(node, (u64)length);
+  }
   return fat_ftruncate(node, (u64)length);
 }
 
