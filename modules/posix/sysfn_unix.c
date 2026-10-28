@@ -24,13 +24,14 @@
 #include "kernel/thread.h"
 #include "kernel/vfs.h"
 
-#define log_debug
+// #define log_debug
 
 #define UNIX_MAGIC 0x55017E00u
 #define UNIX_RING_SIZE 16384
 #define UNIX_MAX_BIND 32
 #define UNIX_NAME_MAX 107 /* sun_path 108 字节，末字节留给 NUL */
 #define UNIX_KEY_MAX (UNIX_NAME_MAX + 2)
+
 
 /* 单向字节流 */
 struct unix_ring {
@@ -66,6 +67,13 @@ struct unix_sock {
   struct unix_sock* pend_head;
   struct unix_sock* pend_tail;
   int pend_count;
+  /* 【SCM_RIGHTS 队列】sendmsg 附着的 fd 引用，按发送顺序 FIFO；
+   * 挂在【接收端】的 unix_sock 上（数据进对端 rx，cmsg 同理）。
+   * Linux 语义简化版：不按字节边界对齐，每次 recvmsg 吐一条——
+   * wayland/X11 的用法（fd 随一条消息 sendmsg、下一条 recvmsg 收）足够。 */
+  struct unix_cmsg* cq_head;
+  struct unix_cmsg* cq_tail;
+  int cq_count;
 };
 
 struct unix_bind_slot {
@@ -155,6 +163,12 @@ static u32 unix_ring_read(struct unix_ring* r, u8* dst, u32 len) {
 
 /* ===================== socket 对象 / fd ===================== */
 
+struct unix_cmsg; /* 前置声明：SCM_RIGHTS（见文件尾） */
+static void unix_cmsg_drop_all(struct unix_sock* sk);
+static void unix_cmsg_drop_all_fds(struct unix_cmsg* c);
+/* 读到数据后按登记交付控制消息（见文件尾，unix_op_read 调用） */
+static void unix_recv_ctl_deliver(struct unix_sock* sk);
+
 static struct unix_sock* unix_sock_new(int type) {
   struct unix_sock* sk = kmalloc(sizeof(struct unix_sock), KERNEL_TYPE);
   if (sk == NULL) {
@@ -201,6 +215,9 @@ static void unix_sock_free(struct unix_sock* sk) {
   }
   unix_sock_close_peer_links(sk);
   unix_bind_remove(sk);
+  /* 未交付的 SCM_RIGHTS：放掉 sendmsg 时持住的 fd 引用
+   * （引用归零由 fd_close 正常走 vclose，不会泄漏 vnode/ring） */
+  unix_cmsg_drop_all(sk);
   /* 监听者退出：挂起的连接没人接，随它一起释放（对端会读到 EOF） */
   {
     struct unix_sock* p = sk->pend_head;
@@ -254,6 +271,12 @@ static u32 unix_op_read(vnode_t* node, u32 offset, u32 size, u8* buffer) {
   }
   n = unix_ring_read(sk->rx, buffer, size);
   if (n > 0) {
+    /* 【recvmsg 控制消息随数据交付】读到数据即按登记交付 SCM_RIGHTS：
+     * 普通 read() 没有登记（表里查不到，开销是一次空扫）；
+     * 阻塞 recvmsg 由 sys_rw_wait 的唤醒路径在等待者上下文重跑本函数，
+     * 控制上下文仍在登记表里 ⇒ 唤醒后也能补上 fd（sys_recvmsg 的栈帧
+     * 已被 schedule_switch 丢弃，不能指望它自己补）。 */
+    unix_recv_ctl_deliver(sk);
     /* 读走数据 ⇒ 对端变可写：唤醒等 POLLOUT 的线程 */
     poll_wait_notify();
     return n;
@@ -940,4 +963,435 @@ int unix_poll_ready_t(thread_t* owner, int fd, int want_read, int want_write) {
 
 int unix_poll_ready(int fd, int want_read, int want_write) {
   return unix_poll_ready_t(thread_current(), fd, want_read, want_write);
+}
+
+/* ===================== SCM_RIGHTS fd 传递 =====================
+ * wayland/X11 的命脉：客户端把 shm/pipe 的 fd 连同一条消息 sendmsg 给
+ * 合成器。实现与 Linux 的差异（够用即可，见 struct unix_sock 注释）：
+ *   · cmsg 挂在接收端 socket 的 FIFO 队列，不按字节边界对齐；
+ *   · 每次 recvmsg（读到数据时）交付一条 cmsg；
+ *   · fd 引用在 send 时 +1 持住（发送方先 close 也不丢），
+ *     recv 时注入接收者 fd 表，socket 销毁时未交付的放回引用。
+ * 用户态布局（aarch64 musl）：struct cmsghdr = {u64 len; i32 level;
+ * i32 type} 16 字节，数据紧跟其后；SCM_RIGHTS 数据是 int fd 数组。 */
+#define UNIX_CMSG_FD_MAX 16
+#define UNIX_CMSG_MAX 32 /* 每端挂起 cmsg 上限，防内存被打爆 */
+
+struct unix_cmsg {
+  struct unix_cmsg* next;
+  int nfds;
+  fd_t* fd[UNIX_CMSG_FD_MAX];
+};
+
+/* 放掉单条 cmsg 持住的 fd 引用（发送校验失败 / 注入失败路径用） */
+static void unix_cmsg_drop_all_fds(struct unix_cmsg* c) {
+  for (int i = 0; i < c->nfds; i++) {
+    if (c->fd[i] != NULL) {
+      fd_close(c->fd[i]);
+      c->fd[i] = NULL;
+    }
+  }
+  c->nfds = 0;
+}
+
+struct cmsghdr_k {
+  u64 cmsg_len;
+  int cmsg_level;
+  int cmsg_type;
+};
+#define UNIX_SOL_SOCKET 1
+#define UNIX_SCM_RIGHTS 1
+
+static void unix_cmsg_drop_all(struct unix_sock* sk) {
+  struct unix_cmsg* c = sk->cq_head;
+  while (c != NULL) {
+    struct unix_cmsg* next = c->next;
+    for (int i = 0; i < c->nfds; i++) {
+      fd_close(c->fd[i]); /* 放掉 send 时持住的引用 */
+    }
+    kfree(c);
+    c = next;
+  }
+  sk->cq_head = NULL;
+  sk->cq_tail = NULL;
+  sk->cq_count = 0;
+}
+
+static void unix_cmsg_enqueue(struct unix_sock* sk, struct unix_cmsg* c) {
+  c->next = NULL;
+  if (sk->cq_tail != NULL) {
+    sk->cq_tail->next = c;
+  } else {
+    sk->cq_head = c;
+  }
+  sk->cq_tail = c;
+  sk->cq_count++;
+}
+
+static struct unix_cmsg* unix_cmsg_dequeue(struct unix_sock* sk) {
+  struct unix_cmsg* c = sk->cq_head;
+  if (c == NULL) {
+    return NULL;
+  }
+  sk->cq_head = c->next;
+  if (sk->cq_head == NULL) {
+    sk->cq_tail = NULL;
+  }
+  sk->cq_count--;
+  c->next = NULL;
+  return c;
+}
+
+/* 统计一条待发 cmsg 链的节点数（commit 整链入队时累加计数用） */
+static int sk_count_chain(struct unix_cmsg* c) {
+  int n = 0;
+  for (; c != NULL; c = c->next) {
+    n++;
+  }
+  return n;
+}
+
+/* 【三段式收发协议·消灭竞态】sys_sendmsg 不能"先写数据再入队 cmsg"：
+ * sys_sendto 里的 poll_wait_notify() 会唤醒对端，对端若在两步之间被
+ * 调度上 CPU，recvmsg 读到数据但 cmsg 队列还是空的 ⇒ fd 永久丢失
+ * （实测间发复现）。正确顺序：
+ *   1) prepare：解析控制缓冲、持住 fd 引用，构建待发链（对端还没醒）；
+ *   2) commit：把链入队【然后才写数据】——对端被唤醒时 cmsg 必已入队；
+ *   3) rollback：仅当 send 整体失败（数据没进 ring）时摘链回滚，
+ *      防止重试发送把同一组 fd 二次入队。
+ * 与 Linux"先校验控制缓冲再发送"语义一致（EBADF 等错误时数据不发）。 */
+void* unix_rights_prepare(int fd, const void* control, u32 clen, int* err) {
+  thread_t* current = thread_current();
+  struct unix_sock* sk = unix_fd_sock_t(current, fd);
+  struct unix_cmsg* head = NULL;
+  struct unix_cmsg* tail = NULL;
+  u32 offset = 0;
+  int count = 0;
+  *err = 0;
+  if (sk == NULL) {
+    *err = 1; /* 不是 AF_UNIX socket：调用方按老路径忽略 control */
+    return NULL;
+  }
+  if (control == NULL || clen == 0) {
+    return NULL;
+  }
+  if (sk->peer == NULL) {
+    *err = -107; /* -ENOTCONN */
+    return NULL;
+  }
+  while (offset + sizeof(struct cmsghdr_k) <= clen) {
+    struct cmsghdr_k hdr;
+    struct unix_cmsg* c = NULL;
+    u32 len;
+    int nfds;
+    if (sys_copy_from_user(&hdr, (void*)((char*)control + offset),
+                           sizeof(hdr)) < 0) {
+      *err = -14; /* -EFAULT */
+      goto fail;
+    }
+    len = (u32)hdr.cmsg_len;
+    if (len < sizeof(hdr) || offset + len > clen) {
+      break; /* 控制缓冲损坏：按 Linux 语义截断收尾 */
+    }
+    if (hdr.cmsg_level == UNIX_SOL_SOCKET && hdr.cmsg_type == UNIX_SCM_RIGHTS) {
+      nfds = (int)((len - sizeof(hdr)) / sizeof(int));
+      if (nfds > UNIX_CMSG_FD_MAX) {
+        nfds = UNIX_CMSG_FD_MAX; /* 单条超出截断（正常用法 1-2 个 fd） */
+      }
+      if (sk->peer->cq_count + count >= UNIX_CMSG_MAX) {
+        *err = -105; /* -ENOBUFS */
+        goto fail;
+      }
+      c = kmalloc(sizeof(struct unix_cmsg), KERNEL_TYPE);
+      if (c == NULL) {
+        *err = -12; /* -ENOMEM */
+        goto fail;
+      }
+      kmemset(c, 0, sizeof(*c));
+      c->nfds = nfds;
+      for (int i = 0; i < nfds; i++) {
+        int ufd;
+        fd_t* f;
+        if (sys_copy_from_user(&ufd,
+                               (void*)((char*)control + offset +
+                                       sizeof(hdr) + i * sizeof(int)),
+                               sizeof(int)) < 0) {
+          *err = -14;
+          goto fail_one;
+        }
+        f = thread_find_fd_id(current, ufd);
+        if (f == NULL) {
+          *err = -9; /* -EBADF */
+          goto fail_one;
+        }
+        f->use_count++; /* 持引用：发送方 close 不影响在途传递 */
+        c->fd[i] = f;
+        continue;
+      fail_one:
+        unix_cmsg_drop_all_fds(c);
+        kfree(c);
+        goto fail;
+      }
+      /* 先挂本发送链（commit 时整链入队） */
+      c->next = NULL;
+      if (tail != NULL) {
+        tail->next = c;
+      } else {
+        head = c;
+      }
+      tail = c;
+      count++;
+    }
+    /* 下一条 cmsg：CMSG_ALIGN(8) 对齐步进 */
+    offset += (len + 7u) & ~7u;
+  }
+  return head;
+fail:
+  /* 链上已持住的引用全部放掉 */
+  while (head != NULL) {
+    struct unix_cmsg* next = head->next;
+    unix_cmsg_drop_all_fds(head);
+    kfree(head);
+    head = next;
+  }
+  return NULL;
+}
+
+void unix_rights_commit(int fd, void* staged) {
+  thread_t* current = thread_current();
+  struct unix_sock* sk = unix_fd_sock_t(current, fd);
+  struct unix_cmsg* c = (struct unix_cmsg*)staged;
+  struct unix_cmsg* last;
+  if (c == NULL || sk == NULL || sk->peer == NULL) {
+    unix_rights_rollback(fd, staged);
+    return;
+  }
+  /* 整链追加到对端（接收方）队列尾。必须在数据写进 ring 之前完成：
+   * 对端被 poll_wait_notify 唤醒跑 recvmsg 时，cmsg 必已在队列 */
+  for (last = c; last->next != NULL; last = last->next) {
+  }
+  if (sk->peer->cq_tail != NULL) {
+    sk->peer->cq_tail->next = c;
+  } else {
+    sk->peer->cq_head = c;
+  }
+  sk->peer->cq_tail = last;
+  sk->peer->cq_count += sk_count_chain(c);
+}
+
+/* 【回滚】send 整体失败（EAGAIN/EPIPE，数据没进 ring）时把刚 commit 的链
+ * 从对端队列尾摘回来并放引用——否则重试发送会二次入队，fd 被交付两次。
+ * 仅当 total==0（没有任何数据写出）时调用：部分成功时 cmsg 必须随已进
+ * ring 的数据交付，与 Linux 的字节附着语义一致。 */
+void unix_rights_rollback(int fd, void* staged) {
+  thread_t* current = thread_current();
+  struct unix_sock* sk = unix_fd_sock_t(current, fd);
+  struct unix_cmsg* c = (struct unix_cmsg*)staged;
+  int n;
+  if (c == NULL) {
+    return;
+  }
+  n = sk_count_chain(c);
+  if (sk != NULL && sk->peer != NULL) {
+    /* 摘队列尾的 n 个节点（commit 时整链追加在尾部） */
+    struct unix_cmsg* p = sk->peer->cq_head;
+    if (p == c) {
+      sk->peer->cq_head = NULL;
+      sk->peer->cq_tail = NULL;
+      sk->peer->cq_count = 0;
+    } else {
+      while (p != NULL && p->next != c) {
+        p = p->next;
+      }
+      if (p != NULL) {
+        p->next = NULL;
+        sk->peer->cq_tail = p;
+        sk->peer->cq_count -= n;
+      }
+    }
+  }
+  while (c != NULL) {
+    struct unix_cmsg* next = c->next;
+    unix_cmsg_drop_all_fds(c);
+    kfree(c);
+    c = next;
+  }
+}
+
+/* 【显式 owner 版本】唤醒路径（poll_wait_notify 的重查）在写者上下文执行：
+ * thread_current() 是写者，但 fd 表与控制缓冲属于等待者。必须由调用方
+ * 显式传 owner，页表已由 poll_wait 机制切到等待者，用户内存可写。 */
+int unix_recv_rights_t(thread_t* owner, int fd, void* control, u32 clen) {
+  struct unix_sock* sk = unix_fd_sock_t(owner, fd);
+  struct unix_cmsg* c;
+  struct cmsghdr_k hdr;
+  u32 payload;
+  int nfds_out;
+  if (sk == NULL) {
+    return 0; /* 非 AF_UNIX：无控制消息 */
+  }
+  c = unix_cmsg_dequeue(sk);
+  if (c != NULL) {
+  }
+  if (c == NULL) {
+    return 0;
+  }
+  nfds_out = c->nfds;
+  payload = (u32)nfds_out * sizeof(int);
+  if (control == NULL || clen < sizeof(hdr) + payload) {
+    /* 接收缓冲不足：fd 注入照样做（引用不丢），但报 MSG_CTRUNC 由
+     * 调用方丢弃——与 Linux"小缓冲丢 fd"语义一致，防泄漏 */
+    for (int i = 0; i < c->nfds; i++) {
+      fd_close(c->fd[i]);
+    }
+    kfree(c);
+    return -122; /* -EDOM 之外用 -ENOBUFS 更贴切：调用方映射 MSG_CTRUNC */
+  }
+  /* fd 注入接收者 fd 表（thread_add_fd 内部 use_count++，交接引用）；
+   * 收集新 fd 号，随后一次性写回用户控制缓冲 */
+  {
+    int outfd[UNIX_CMSG_FD_MAX];
+    for (int i = 0; i < nfds_out; i++) {
+      int n = thread_add_fd(owner, c->fd[i]);
+      if (n < 0) {
+        /* 表满：放掉这条引用（send 持的那份随注入失败一并归还） */
+        fd_close(c->fd[i]);
+        c->fd[i] = NULL;
+        outfd[i] = -1;
+      } else {
+        outfd[i] = n;
+      }
+    }
+    hdr.cmsg_len = sizeof(hdr) + payload;
+    hdr.cmsg_level = UNIX_SOL_SOCKET;
+    hdr.cmsg_type = UNIX_SCM_RIGHTS;
+    if (sys_copy_to_user(control, &hdr, sizeof(hdr)) < 0 ||
+        sys_copy_to_user((void*)((char*)control + sizeof(hdr)), outfd,
+                         payload) < 0) {
+      /* 控制缓冲写回失败（用户指针坏）：注入已发生，fd 交给接收者
+       * 自行关闭——不回收，避免双重释放 */
+      kfree(c);
+      return -14;
+    }
+  }
+  kfree(c);
+  return (int)(sizeof(hdr) + payload);
+}
+
+/* 兼容包装：普通路径（当前线程就是接收者） */
+int unix_recv_rights(int fd, void* control, u32 clen) {
+  return unix_recv_rights_t(thread_current(), fd, control, clen);
+}
+
+/* ===================== 阻塞 recvmsg 的控制消息交付 =====================
+ * 背景（实测根因）：unix socket 的 sys_read 空读会走 sys_rw_wait 挂起，
+ * schedule_switch 丢弃内核调用链 —— 唤醒后线程直达用户态，sys_recvmsg
+ * 的后半段（取 cmsg + 回写 msghdr）永远不执行。若读者先于写者阻塞，
+ * 数据到了、fd 却永远交付不出去（控制缓冲保持用户 memset 的全零）。
+ * 方案：sys_recvmsg 进入时把控制上下文登记到本表；unix_op_read 读到数据
+ * 时按登记交付（阻塞场景下 vread 由 poll_wait_suspend 的重查在等待者
+ * 上下文重跑，登记仍在 ⇒ 唤醒路径也能交付）。普通 read() 查不到登记，
+ * 开销只是一次空扫。 */
+#define UNIX_RECV_REG_MAX 8
+struct unix_recv_reg {
+  int used;
+  int tid;
+  int fd;
+  void* uctl;
+  u32 clen;
+  void* uhdr; /* 用户 msghdr：交付后回写 controllen */
+  int delivered;
+};
+static struct unix_recv_reg s_recv_regs[UNIX_RECV_REG_MAX];
+
+void unix_recv_ctl_begin(int fd, void* uctl, u32 clen, void* uhdr) {
+  thread_t* current = thread_current();
+  int i;
+  int slot = -1;
+  if (current == NULL || uctl == NULL || clen == 0) {
+    return;
+  }
+  /* 【先按 tid 复用】阻塞唤醒后 end() 不会执行（栈帧已丢弃），登记会以
+   * delivered=1 残留；同一线程下一次 recvmsg 必须复用它，否则槽位耗尽 */
+  for (i = 0; i < UNIX_RECV_REG_MAX; i++) {
+    if (s_recv_regs[i].used && s_recv_regs[i].tid == (int)current->id) {
+      slot = i;
+      break;
+    }
+  }
+  if (slot < 0) {
+    for (i = 0; i < UNIX_RECV_REG_MAX; i++) {
+      if (!s_recv_regs[i].used) {
+        slot = i;
+        break;
+      }
+    }
+  }
+  if (slot < 0) {
+    return;
+  }
+  s_recv_regs[slot].used = 1;
+  s_recv_regs[slot].tid = (int)current->id;
+  s_recv_regs[slot].fd = fd;
+  s_recv_regs[slot].uctl = uctl;
+  s_recv_regs[slot].clen = clen;
+  s_recv_regs[slot].uhdr = uhdr;
+  s_recv_regs[slot].delivered = 0;
+}
+
+int unix_recv_ctl_end(void) {
+  thread_t* current = thread_current();
+  int i;
+  if (current == NULL) {
+    return 0;
+  }
+  for (i = 0; i < UNIX_RECV_REG_MAX; i++) {
+    if (s_recv_regs[i].used && s_recv_regs[i].tid == (int)current->id) {
+      int d = s_recv_regs[i].delivered;
+      s_recv_regs[i].used = 0;
+      s_recv_regs[i].uhdr = NULL;
+      return d;
+    }
+  }
+  return 0;
+}
+
+static void unix_recv_ctl_deliver(struct unix_sock* sk) {
+  int i;
+  int r;
+  if (sk == NULL || sk->cq_head == NULL) {
+    return; /* 无挂起 cmsg：交回 sys_recvmsg 的正常路径处理 */
+  }
+  /* 【不能按 thread_current 匹配】poll_wait_notify 的重查在写者上下文跑
+   * （只切了页表），当前线程是写者；要用登记里的 tid 反查等待者。
+   * 同一个 socket 上可能有多个等待者，逐个尝试。 */
+  for (i = 0; i < UNIX_RECV_REG_MAX; i++) {
+    struct unix_recv_reg* reg = &s_recv_regs[i];
+    thread_t* owner;
+    if (!reg->used || reg->delivered) {
+      continue;
+    }
+    owner = thread_find_id(reg->tid);
+    if (owner == NULL) {
+      continue;
+    }
+    if (unix_fd_sock_t(owner, reg->fd) != sk) {
+      continue; /* 登记的不是本次读的 socket */
+    }
+    r = unix_recv_rights_t(owner, reg->fd, reg->uctl, reg->clen);
+    if (r <= 0) {
+      continue;
+    }
+    reg->delivered = 1;
+    /* 【必须在这里回写 msghdr】阻塞唤醒后 sys_recvmsg 的写回代码不执行 */
+    if (reg->uhdr != NULL) {
+      struct msghdr_k hdr;
+      if (sys_copy_from_user(&hdr, reg->uhdr, sizeof(hdr)) >= 0) {
+        hdr.msg_controllen = (size_t)r;
+        hdr.msg_flags = 0;
+        sys_copy_to_user(reg->uhdr, &hdr, sizeof(hdr));
+      }
+    }
+    return;
+  }
 }

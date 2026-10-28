@@ -190,6 +190,7 @@ enum {
 #define F_GETLK 5
 #define F_SETLK 6
 #define F_SETLKW 7
+#define F_DUPFD_CLOEXEC 1030 /* aarch64 通用号：dup + FD_CLOEXEC */
 
 #define FUTEX_WAIT 0
 #define FUTEX_WAKE 1
@@ -537,6 +538,45 @@ int sys_fd_ready(int fd, int want_read, int want_write);
  * thread_current() —— fd 表属于等待者，判据也必须按等待者的 fd 查。 */
 int sys_fd_ready_t(thread_t* owner, int fd, int want_read, int want_write);
 int unix_poll_ready_t(thread_t* owner, int fd, int want_read, int want_write);
+/* recvmsg/sendmsg 的内核侧 msghdr 镜像（aarch64 用户态 musl 布局：
+ * iovlen/controllen 是 32 位 + padding，与这里的 64 位读取值等价）。
+ * 定义放这里供 sysfn_net.c 与 sysfn_unix.c 共用（后者要在唤醒路径回写
+ * controllen）。 */
+struct iovec_k {
+  void* base;
+  size_t len;
+};
+
+struct msghdr_k {
+  void* msg_name;
+  socklen_t msg_namelen;
+  struct iovec_k* msg_iov;
+  size_t msg_iovlen;
+  void* msg_control;
+  size_t msg_controllen;
+  int msg_flags;
+};
+
+/* 【阻塞 recvmsg 的控制消息交付】见 sysfn_unix.c：
+ * begin 登记本次 recvmsg 的控制上下文；unix_op_read 读到数据时（含
+ * sys_rw_wait 唤醒路径在等待者上下文重跑 vread）按登记交付 cmsg；
+ * end 注销并返回 1 = 唤醒路径已交付（调用方不必再补）。 */
+void unix_recv_ctl_begin(int fd, void* uctl, u32 clen, void* umsghdr);
+int unix_recv_ctl_end(void);
+
+/* ---- SCM_RIGHTS fd 传递（sendmsg/recvmsg 控制消息，AF_UNIX 专用） ----
+ * 【三段式】prepare 解析控制缓冲并持住 fd 引用（err: 0=有/无 cmsg，
+ *   1=非 AF_UNIX socket 调用方忽略，<0=-errno）；commit 在写数据【之前】
+ *   把待发链入队（对端被数据唤醒时 cmsg 必已在队列）；rollback 仅在
+ *   send 整体失败（数据没进 ring）时摘链回滚，防重试二次入队。
+ * recv：取一条挂起 cmsg，fd 注入接收者 fd 表，控制消息写回用户缓冲。
+ *   返回写入的控制字节数（含 cmsghdr 头）；0 = 没有挂起 cmsg；<0 = -errno。 */
+void* unix_rights_prepare(int fd, const void* control, u32 clen, int* err);
+void unix_rights_commit(int fd, void* staged);
+void unix_rights_rollback(int fd, void* staged);
+int unix_recv_rights(int fd, void* control, u32 clen);
+/* 显式 owner 版本：唤醒路径在写者上下文执行，fd 表与控制缓冲属于等待者 */
+int unix_recv_rights_t(thread_t* owner, int fd, void* control, u32 clen);
 
 /* 【轮询型设备的等待周期】有些字符设备（/dev/input/event0 这类输入流）只有
  * 被 read 时才会去问硬件有没有新数据，内核收不到任何"数据到达"通知，因此

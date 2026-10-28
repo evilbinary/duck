@@ -2749,6 +2749,17 @@ int sys_getdents64(unsigned int fd, vdirent_t* dir, unsigned int count) {
       u32 ret = sys_dup(fd);
 
       return ret;
+    } else if (cmd == F_DUPFD_CLOEXEC) {
+      /* aarch64 通用号 1030：musl 的 O_CLOEXEC 打开路径（posix_spawn、
+       * wayland 库）全走它。复制后立刻置 FD_CLOEXEC 位。 */
+      u32 ret = sys_dup(fd);
+      if ((int)ret >= 0) {
+        fd_t* nfd = thread_find_fd_id(current, (int)ret);
+        if (nfd != NULL) {
+          nfd->flags |= (u32)FD_CLOEXEC;
+        }
+      }
+      return ret;
     } else if (cmd == F_GETFD) {
       return (int)(findfd->flags & (u32)FD_CLOEXEC);
     } else if (cmd == F_GETFL) {
