@@ -3065,6 +3065,19 @@ int sys_stat(const char* path, struct stat* stat) {
 
 /* 【新增】musl ftruncate/truncate -> ftruncate（aarch64 编号 46）。
  * LTP tst_test.c 建 IPC 共享文件（SAFE_FTRUNCATE）必需。 */
+/* flock(32)：咨询锁。本内核没有多写者竞争场景（单合成器/单实例工具），
+ * 实现为"fd 合法即授予"——wayland 的 wl_display_add_socket_auto 靠它
+ * 抢占 wayland-N 的 lockfile，缺它就会一路试到 wayland-32 后放弃
+ * （实测 add_socket 全失败）。真互斥由 unix bind 的命名冲突兜底。 */
+int sys_flock(int fd, int operation) {
+  thread_t* current = thread_current();
+  if (thread_find_fd_id(current, fd) == NULL) {
+    return -9; /* -EBADF */
+  }
+  (void)operation; /* LOCK_SH/LOCK_EX/LOCK_NB/LOCK_UN 一律视为成功 */
+  return 0;
+}
+
 int sys_ftruncate(int fd, off_t length) {
   thread_t* current = thread_current();
   fd_t* f = thread_find_fd_id(current, fd);

@@ -268,6 +268,7 @@ enum {
   /* 【aarch64 真实编号是 279】319 是 x86_64 的号；asm-generic 里
    * 278=getrandom、279=memfd_create、280=bpf */
   SYS_MEMFD_CREATE = 279,   /* memfd_create：匿名内存文件（wl_shm 的标准来路） */
+  SYS_FLOCK = 32,           /* flock：wayland 用 lockfile 抢占 wayland-N */
   /* 【aarch64 真实编号】setgroups=159、getgroups=158。旧值 81 其实是 sync，
    * 于是 glibc 的 getgroups（openbox 启动时 158 直接 ENOSYS）与
    * setgroups/initgroups 全都落空。 */

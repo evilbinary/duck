@@ -225,6 +225,7 @@ void sys_fn_init() {
   syscall_table[SYS_FCHMODAT] = &sys_fchmodat; /* musl chmod */
   syscall_table[SYS_FCHMOD] = &sys_fchmod;     /* fchmod（FAT 无权限位，no-op 成功） */
   syscall_table[SYS_FTRUNCATE] = &sys_ftruncate; /* musl ftruncate/truncate */
+  syscall_table[SYS_FLOCK] = &sys_flock; /* wayland lockfile 抢占 */
   syscall_table[SYS_CLONE] = &sys_clone;
 #if defined(ARM64)
   // ARM64 uses lseek (62) which returns 64-bit offset directly.
