@@ -1341,7 +1341,8 @@ static ssize_t sys_readlink_common(int dirfd, const char* pathname, char* buf,
         goto done;
       }
       if (magic < 0) {
-        ret = -ENOENT;
+        /* -2 = 存在但不是链接（Linux 语义 EINVAL，realpath 依赖它） */
+        ret = (magic == -2) ? -EINVAL : -ENOENT;
         goto done;
       }
     }
@@ -3657,11 +3658,35 @@ enum {
   SYSFS_ATTR_BPP,
   SYSFS_ATTR_BLANK,
   SYSFS_ATTR_ROTATE,
-  SYSFS_ATTR_UEVENT
+  SYSFS_ATTR_UEVENT,
+  /* ---- input 设备（/dev/input/eventN）---- */
+  SYSFS_DIR_DEV,        /* /sys/dev */
+  SYSFS_DIR_DEV_CHAR,   /* /sys/dev/char：按 major:minor 索引设备 */
+  SYSFS_DIR_INPUT,      /* /sys/class/input 与 /sys/devices/virtual/input */
+  SYSFS_DIR_INPUT_EVENT,/* .../eventN */
+  SYSFS_ATTR_INPUT_NAME,
+  SYSFS_ATTR_INPUT_DEV,
+  SYSFS_ATTR_INPUT_UEVENT,
+  /* capabilities/<ev|key|rel|abs|prop>：udev 的 input_id 内建就读这些文件，
+   * 再写成 ID_INPUT_* 属性给 libinput。内容与 EVIOCGBIT 完全一致。 */
+  SYSFS_DIR_INPUT_CAPS,
+  SYSFS_ATTR_CAP_EV,
+  SYSFS_ATTR_CAP_KEY,
+  SYSFS_ATTR_CAP_REL,
+  SYSFS_ATTR_CAP_ABS,
+  SYSFS_ATTR_CAP_PROP,
+  SYSFS_ATTR_EMPTY /* 存在但内容为空的属性（如中间目录的 uevent） */
 };
 
+/* Linux input 设备号约定：主设备号 13，eventN 的次设备号 64+N
+ * （与 /dev/input/eventN 的 stat.st_rdev 必须一致，libinput 的 path 后端会
+ *  拿 rdev 反查 /sys/dev/char/<major>:<minor>）。 */
+#define SYSFS_INPUT_MAJOR 13
+#define SYSFS_INPUT_MINOR_BASE 64
+#define SYSFS_INPUT_MAX 8
+
 typedef struct {
-  const char* path;   /* 'D' = fb 编号占位（匹配 1 位以上十进制数字） */
+  const char* path;   /* 'D' = fb 编号；'E' = input event 次设备号占位 */
   u8 kind;            /* SYSFS_ENT_* */
   u8 content;         /* SYSFS_DIR_* / SYSFS_ATTR_* */
   const char* target; /* 仅 LINK：目标串（'D' 同样换成编号） */
@@ -3714,6 +3739,89 @@ static const sysfs_entry_t sysfs_table[] = {
     /* 总线视图：/sys/bus/platform/drivers/fb/fbD → 回到 class */
     {"/sys/bus/platform/drivers/fb/fbD", SYSFS_ENT_LINK, 0,
      "/sys/class/graphics/fbD"},
+
+    /* ---------------- input 设备 ----------------
+     * udev（真实 libudev / libudev-zero）发现设备的两条路径都要支持：
+     *   · 枚举：[enumerate] 读 /sys/dev/char 的目录项（major:minor），
+     *           readlink 拿到设备目录；
+     *   · 按 rdev 定位：[libinput path 后端] stat(/dev/input/eventN) 得到
+     *           rdev，再 new_from_devnum → /sys/dev/char/13:64+N。
+     * 所以 /sys/dev/char/13:E 的 E 必须与设备节点 stat 的次设备号一致
+     * （Linux input 主设备号 13，eventN 次设备号从 64 起）。模板里的 'E'
+     * 匹配的是"次设备号"，resolve 会统一减 64 换成 event 序号。 */
+    {"/sys/dev", SYSFS_ENT_DIR, SYSFS_DIR_DEV, NULL},
+    {"/sys/dev/char", SYSFS_ENT_DIR, SYSFS_DIR_DEV_CHAR, NULL},
+    {"/sys/dev/char/13:E", SYSFS_ENT_LINK, 0,
+     "../../devices/virtual/input/eventE"},
+
+    /* 功能视图：/sys/class/input/eventE */
+    {"/sys/class/input", SYSFS_ENT_DIR, SYSFS_DIR_INPUT, NULL},
+    {"/sys/class/input/eventE", SYSFS_ENT_DIR, SYSFS_DIR_INPUT_EVENT, NULL},
+    {"/sys/class/input/eventE/name", SYSFS_ENT_FILE, SYSFS_ATTR_INPUT_NAME,
+     NULL},
+    {"/sys/class/input/eventE/dev", SYSFS_ENT_FILE, SYSFS_ATTR_INPUT_DEV, NULL},
+    {"/sys/class/input/eventE/uevent", SYSFS_ENT_FILE, SYSFS_ATTR_INPUT_UEVENT,
+     NULL},
+    {"/sys/class/input/eventE/subsystem", SYSFS_ENT_LINK, 0, "/sys/class/input"},
+    {"/sys/class/input/eventE/device", SYSFS_ENT_LINK, 0,
+     "../../../devices/virtual/input/eventE"},
+    {"/sys/class/input/eventE/device/name", SYSFS_ENT_FILE,
+     SYSFS_ATTR_INPUT_NAME, NULL},
+    {"/sys/class/input/eventE/device/uevent", SYSFS_ENT_FILE,
+     SYSFS_ATTR_INPUT_UEVENT, NULL},
+    {"/sys/class/input/eventE/device/subsystem", SYSFS_ENT_LINK, 0,
+     "/sys/class/input"},
+
+    /* 能力位图：Linux 内核 input_dev 的 sysfs 表示（十六进制、按 unsigned
+     * long 分组、高位组在前）。udev 的 input_id 读它们生成 ID_INPUT_*。 */
+    {"/sys/class/input/eventE/capabilities", SYSFS_ENT_DIR, SYSFS_DIR_INPUT_CAPS,
+     NULL},
+    {"/sys/class/input/eventE/capabilities/ev", SYSFS_ENT_FILE,
+     SYSFS_ATTR_CAP_EV, NULL},
+    {"/sys/class/input/eventE/capabilities/key", SYSFS_ENT_FILE,
+     SYSFS_ATTR_CAP_KEY, NULL},
+    {"/sys/class/input/eventE/capabilities/rel", SYSFS_ENT_FILE,
+     SYSFS_ATTR_CAP_REL, NULL},
+    {"/sys/class/input/eventE/capabilities/abs", SYSFS_ENT_FILE,
+     SYSFS_ATTR_CAP_ABS, NULL},
+    {"/sys/class/input/eventE/capabilities/prop", SYSFS_ENT_FILE,
+     SYSFS_ATTR_CAP_PROP, NULL},
+
+    /* 中间目录也带 uevent（Linux 上每个设备目录都有）：udev 找 parent 时会
+     * 逐级读，缺了文件虽然只是 parent 为 NULL，但会打 ENOENT 错误日志。 */
+    {"/sys/devices/uevent", SYSFS_ENT_FILE, SYSFS_ATTR_EMPTY, NULL},
+    {"/sys/devices/virtual/uevent", SYSFS_ENT_FILE, SYSFS_ATTR_EMPTY, NULL},
+    {"/sys/devices/virtual/input/uevent", SYSFS_ENT_FILE, SYSFS_ATTR_EMPTY,
+     NULL},
+
+    /* 物理视图：/sys/devices/virtual/input/eventE
+     * realpath("/sys/dev/char/13:64") 会落到这里，udev 随后读本目录的
+     * uevent（拿 DEVNAME 推出 /dev/input/eventN）。 */
+    {"/sys/devices/virtual", SYSFS_ENT_DIR, SYSFS_DIR_DEVICES, NULL},
+    {"/sys/devices/virtual/input", SYSFS_ENT_DIR, SYSFS_DIR_INPUT, NULL},
+    {"/sys/devices/virtual/input/eventE", SYSFS_ENT_DIR, SYSFS_DIR_INPUT_EVENT,
+     NULL},
+    {"/sys/devices/virtual/input/eventE/name", SYSFS_ENT_FILE,
+     SYSFS_ATTR_INPUT_NAME, NULL},
+    {"/sys/devices/virtual/input/eventE/dev", SYSFS_ENT_FILE,
+     SYSFS_ATTR_INPUT_DEV, NULL},
+    {"/sys/devices/virtual/input/eventE/uevent", SYSFS_ENT_FILE,
+     SYSFS_ATTR_INPUT_UEVENT, NULL},
+    {"/sys/devices/virtual/input/eventE/subsystem", SYSFS_ENT_LINK, 0,
+     "/sys/class/input"},
+    /* realpath 的落点是 devices 视图，udev 读 capabilities 就在这里读 */
+    {"/sys/devices/virtual/input/eventE/capabilities", SYSFS_ENT_DIR,
+     SYSFS_DIR_INPUT_CAPS, NULL},
+    {"/sys/devices/virtual/input/eventE/capabilities/ev", SYSFS_ENT_FILE,
+     SYSFS_ATTR_CAP_EV, NULL},
+    {"/sys/devices/virtual/input/eventE/capabilities/key", SYSFS_ENT_FILE,
+     SYSFS_ATTR_CAP_KEY, NULL},
+    {"/sys/devices/virtual/input/eventE/capabilities/rel", SYSFS_ENT_FILE,
+     SYSFS_ATTR_CAP_REL, NULL},
+    {"/sys/devices/virtual/input/eventE/capabilities/abs", SYSFS_ENT_FILE,
+     SYSFS_ATTR_CAP_ABS, NULL},
+    {"/sys/devices/virtual/input/eventE/capabilities/prop", SYSFS_ENT_FILE,
+     SYSFS_ATTR_CAP_PROP, NULL},
 };
 
 static u32 sysfs_readdir(vnode_t* node, vdirent_t* dirent, u32* offset,
@@ -3739,7 +3847,9 @@ static int sysfs_match(const char* path, const char* tmpl, u32* idx) {
   u32 v = 0;
   int digits = 0;
 
-  while (*tmpl != '\0' && *tmpl != 'D') {
+  /* 'D' = 显示编号；'E' = input event 次设备号（13:64+N 里的 64+N）。
+   * 两者都按"一位以上十进制数字"解析，语义差别由条目内容决定。 */
+  while (*tmpl != '\0' && *tmpl != 'D' && *tmpl != 'E') {
     if (*path != *tmpl) {
       return 0;
     }
@@ -3769,6 +3879,21 @@ static int sysfs_match(const char* path, const char* tmpl, u32* idx) {
   return *path == '\0';
 }
 
+/* 模板里是否含占位符 ch（'D'=显示编号，'E'=input 次设备号） */
+static int sysfs_tmpl_has(const char* tmpl, char ch) {
+  const char* s;
+
+  if (tmpl == NULL) {
+    return 0;
+  }
+  for (s = tmpl; *s != '\0'; s++) {
+    if (*s == ch) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 static const sysfs_entry_t* sysfs_resolve(const char* path, u32* idx) {
   u32 i;
 
@@ -3778,6 +3903,12 @@ static const sysfs_entry_t* sysfs_resolve(const char* path, u32* idx) {
   for (i = 0; i < sizeof(sysfs_table) / sizeof(sysfs_table[0]); i++) {
     u32 v = 0;
     if (sysfs_match(path, sysfs_table[i].path, &v)) {
+      /* 'E' 匹配到的是"次设备号"（Linux input：主 13、eventN 次 64+N），
+       * 对外统一换成 event 序号：生成属性、拼链接目标、查设备都存在都用它。 */
+      if (sysfs_tmpl_has(sysfs_table[i].path, 'E') &&
+          v >= SYSFS_INPUT_MINOR_BASE) {
+        v -= SYSFS_INPUT_MINOR_BASE;
+      }
       if (idx != NULL) {
         *idx = v;
       }
@@ -3814,7 +3945,7 @@ static int sysfs_entry_uses_fb(const sysfs_entry_t* e) {
  *   现在也能正确命中。 */
 static int sysfs_match_prefix(const char* path, const char* tmpl) {
   while (*path != '\0') {
-    if (*tmpl == 'D') {
+    if (*tmpl == 'D' || *tmpl == 'E') {
       int digits = 0;
       tmpl++;
       while (*path >= '0' && *path <= '9' && digits < 4) {
@@ -3878,6 +4009,64 @@ static int sysfs_is_sys(const char* path) {
   return kstrncmp(path, "/sys", 4) == 0 && (path[4] == '\0' || path[4] == '/');
 }
 
+/* 路径规范化：消掉 "." 与 ".."（就地写法：结果写 out）。
+ * 必需：musl 的 realpath() 只用 readlink()，遇到相对链接目标
+ * （"../../../devices/..."）会构造 "/sys/dev/char/.." 这类中间路径去
+ * readlink；表里只有规范路径，不消除点段就会一律 ENOENT。 */
+static int sysfs_normalize(const char* in, char* out, size_t outsz) {
+  size_t o = 0;
+  const char* p = in;
+
+  if (in == NULL || in[0] != '/') {
+    return -1;
+  }
+  if (outsz < 2) {
+    return -1;
+  }
+  out[o++] = '/';
+  while (*p != '\0') {
+    const char* s;
+    size_t len;
+
+    while (*p == '/') {
+      p++;
+    }
+    if (*p == '\0') {
+      break;
+    }
+    s = p;
+    while (*p != '\0' && *p != '/') {
+      p++;
+    }
+    len = (size_t)(p - s);
+    if (len == 1 && s[0] == '.') {
+      continue;
+    }
+    if (len == 2 && s[0] == '.' && s[1] == '.') {
+      while (o > 1 && out[o - 1] != '/') {
+        o--;
+      }
+      if (o > 1) {
+        o--; /* 去掉尾部的 '/' */
+      }
+      continue;
+    }
+    if (o > 1) {
+      if (o + 1 >= outsz) {
+        return -1;
+      }
+      out[o++] = '/';
+    }
+    if (o + len >= outsz) {
+      return -1;
+    }
+    kmemcpy(out + o, s, len);
+    o += len;
+  }
+  out[o] = '\0';
+  return 0;
+}
+
 /* 目标串展开：'D' 换成 fb 编号，返回长度 */
 static int sysfs_expand(const char* tmpl, u32 idx, char* out, size_t outsz) {
   char* p = out;
@@ -3885,7 +4074,7 @@ static int sysfs_expand(const char* tmpl, u32 idx, char* out, size_t outsz) {
   const char* s;
 
   for (s = tmpl; *s != '\0'; s++) {
-    if (*s == 'D') {
+    if (*s == 'D' || *s == 'E') {
       procfs_put_dec(&p, end, idx);
     } else if (p < end) {
       *p++ = *s;
@@ -3921,6 +4110,44 @@ static vnode_t* sysfs_fb_node(u32 idx) {
   return node;
 }
 
+/* /dev/input/eventN 存在即表示第 N 块输入设备可用（由 duck/modules/input
+ * 注册，节点名 eventN）。与 sysfs_fb_node 同款探存在性。 */
+static vnode_t* sysfs_input_node(u32 idx) {
+  vnode_t* devdir;
+  vnode_t* inputdir;
+  vnode_t* node;
+  char name[16];
+  char* p;
+
+  if (idx >= SYSFS_INPUT_MAX) {
+    return NULL;
+  }
+  devdir = vfs_find_child(root_node, "dev");
+  if (devdir == NULL) {
+    return NULL;
+  }
+  inputdir = vfs_find_child(devdir, "input");
+  if (inputdir == NULL) {
+    return NULL;
+  }
+  p = name;
+  *p++ = 'e';
+  *p++ = 'v';
+  *p++ = 'e';
+  *p++ = 'n';
+  *p++ = 't';
+  *p++ = (char)('0' + (idx % 10));
+  if (idx >= 10) {
+    /* 目前最多 8 块设备，两位够用；这里仍按倒序写保证从 10 起正确 */
+    name[5] = (char)('0' + (idx / 10));
+    name[6] = (char)('0' + (idx % 10));
+    p = name + 7;
+  }
+  *p = '\0';
+  node = vfs_find_child(inputdir, name);
+  return node;
+}
+
 /* 当前显示几何：只认 gpu 驱动"返回值即数据"的三个 ioctl（vga.h）。走 vioctl
  * 而不是直接读 device->data，pid 层就不必知道驱动的结构体布局。 */
 static int sysfs_fb_geometry(u32 idx, u32* w, u32* h, u32* bpp) {
@@ -3933,6 +4160,62 @@ static int sysfs_fb_geometry(u32 idx, u32* w, u32* h, u32* bpp) {
   *h = (u32)vioctl(node, VGA_IOC_READ_FRAMBUFFER_HEIGHT, NULL);
   *bpp = (u32)vioctl(node, VGA_IOC_READ_FRAMBUFFER_BPP, NULL);
   return (*w != 0 && *h != 0) ? 0 : -1;
+}
+
+/* ---------------- 能力位图的文本化（sysfs capabilities/*） ----------------
+ * 内核 input_dev 的 sysfs 表示：十六进制、按 unsigned long（8 字节）分组、
+ * 高位组在前、空格分隔、省略前导零组、末尾换行。udev 的 input_id 内建
+ * （以及 libudev-zero 的 make_bit）就按这个格式解析。 */
+static void sysfs_put_hex64(char** p, char* end, u64 v) {
+  char tmp[17];
+  int n = 0;
+
+  if (v == 0) {
+    procfs_put_char(p, end, '0');
+    return;
+  }
+  while (v > 0) {
+    u32 d = (u32)(v & 0xf);
+    tmp[n++] = (char)((d < 10) ? ('0' + d) : ('a' + (d - 10)));
+    v >>= 4;
+  }
+  while (n > 0) {
+    procfs_put_char(p, end, tmp[--n]);
+  }
+}
+
+static void sysfs_put_bitmap(char** p, char* end, const u8* bits, u32 nbytes) {
+  u32 nwords = (nbytes + 7) / 8;
+  u32 i;
+  int printed = 0;
+
+  for (i = nwords; i > 0; i--) {
+    u32 base = (i - 1) * 8;
+    u64 w = 0;
+    u32 j;
+
+    for (j = 0; j < 8 && base + j < nbytes; j++) {
+      w |= ((u64)bits[base + j]) << (8 * j);
+    }
+    if (!printed && w == 0 && i > 1) {
+      continue; /* 前导零组不打印（与内核一致） */
+    }
+    if (printed) {
+      procfs_put_char(p, end, ' ');
+    }
+    sysfs_put_hex64(p, end, w);
+    printed = 1;
+  }
+  if (!printed) {
+    procfs_put_char(p, end, '0');
+  }
+  procfs_put_char(p, end, '\n');
+}
+
+/* EVIOCGBIT(ev, len) 的 cmd 编码：_IOC(_IOC_READ, 'E', 0x20+ev, len)。
+ * EVIOCGPROP 是 nr=0x09 的独立命令，不走 0x20+ev 区间。 */
+static u32 sysfs_eviocgbit(u32 ev, u32 len) {
+  return 0x80000000u | (len << 16) | ((u32)'E' << 8) | (0x20u + ev);
 }
 
 /* 属性文件内容（现场生成，与 /dev/fbN 的 ioctl 永远一致） */
@@ -3963,6 +4246,77 @@ static int sysfs_generate(vnode_t* node, char* out, int outsz) {
       procfs_put_dec(&p, end, idx);
       procfs_put_char(&p, end, '\n');
       break;
+
+    case SYSFS_ATTR_EMPTY:
+      break; /* 空文件：内容 0 字节，read 返回 EOF */
+
+    /* ---- input 设备属性 ----
+     * uevent 是 udev 唯一的"设备元数据"入口：它读 DEVNAME 推出设备节点
+     * /dev/input/eventN，之后才去节点上读能力位（ID_INPUT_*）。
+     * MAJOR/MINOR 必须与节点 stat 的 rdev 一致（13 : 64+N）。 */
+    case SYSFS_ATTR_INPUT_NAME:
+      procfs_put_str(&p, end, "yiyiya-input");
+      procfs_put_dec(&p, end, idx);
+      procfs_put_char(&p, end, '\n');
+      break;
+    case SYSFS_ATTR_INPUT_DEV:
+      procfs_put_dec(&p, end, SYSFS_INPUT_MAJOR);
+      procfs_put_char(&p, end, ':');
+      procfs_put_dec(&p, end, SYSFS_INPUT_MINOR_BASE + idx);
+      procfs_put_char(&p, end, '\n');
+      break;
+    case SYSFS_ATTR_INPUT_UEVENT:
+      procfs_put_str(&p, end, "MAJOR=");
+      procfs_put_dec(&p, end, SYSFS_INPUT_MAJOR);
+      procfs_put_str(&p, end, "\nMINOR=");
+      procfs_put_dec(&p, end, SYSFS_INPUT_MINOR_BASE + idx);
+      procfs_put_str(&p, end, "\nDEVNAME=input/event");
+      procfs_put_dec(&p, end, idx);
+      procfs_put_char(&p, end, '\n');
+      break;
+
+    /* ---- capabilities/<type>：位图直接问设备节点的 ioctl，保证与
+     * EVIOCGBIT 完全一致（不复制一份状态，避免两边漂移）---- */
+    case SYSFS_ATTR_CAP_EV:
+    case SYSFS_ATTR_CAP_KEY:
+    case SYSFS_ATTR_CAP_REL:
+    case SYSFS_ATTR_CAP_ABS:
+    case SYSFS_ATTR_CAP_PROP: {
+      u8 bits[96];
+      u32 nbytes = 4;
+      u32 cmd;
+      vnode_t* devnode;
+
+      kmemset(bits, 0, sizeof(bits));
+      switch (node->inode) {
+        case SYSFS_ATTR_CAP_KEY:
+          nbytes = 96; /* KEY_MAX 0x2ff → 768 bit */
+          cmd = sysfs_eviocgbit(1 /*EV_KEY*/, nbytes);
+          break;
+        case SYSFS_ATTR_CAP_REL:
+          nbytes = 2; /* REL_MAX 0x0f */
+          cmd = sysfs_eviocgbit(2 /*EV_REL*/, nbytes);
+          break;
+        case SYSFS_ATTR_CAP_ABS:
+          nbytes = 8; /* ABS_MAX 0x3f */
+          cmd = sysfs_eviocgbit(3 /*EV_ABS*/, nbytes);
+          break;
+        case SYSFS_ATTR_CAP_PROP:
+          nbytes = 4; /* INPUT_PROP_MAX 0x1f */
+          cmd = 0x80000000u | (nbytes << 16) | ((u32)'E' << 8) | 0x09u;
+          break;
+        default: /* EV 位图 */
+          nbytes = 4; /* EV_MAX 0x1f */
+          cmd = sysfs_eviocgbit(0, nbytes);
+          break;
+      }
+      devnode = sysfs_input_node(idx);
+      if (devnode != NULL) {
+        vioctl(devnode, cmd, bits);
+      }
+      sysfs_put_bitmap(&p, end, bits, nbytes);
+      break;
+    }
     default:
       /* 其余属性都要几何；取不到就按 0 输出（文件仍可读，别让 stat/open 挂） */
       sysfs_fb_geometry(idx, &w, &h, &bpp);
@@ -3996,7 +4350,7 @@ static int sysfs_generate(vnode_t* node, char* out, int outsz) {
 }
 
 static u32 sysfs_file_read(vnode_t* node, u32 offset, u32 size, u8* buf) {
-  char tmp[128];
+  char tmp[512]; /* capabilities/key 的十六进制文本可到 200+ 字节 */
   int len;
   u32 avail;
   u32 n;
@@ -4069,12 +4423,92 @@ static u32 sysfs_readdir(vnode_t* node, vdirent_t* dirent, u32* offset,
       if (sysfs_dir_emit(dirent, offset, want, &idx, "devices", V_DIRECTORY)) {
         return 1;
       }
+      /* /sys/dev：udev 按 major:minor 反查设备用 */
+      if (sysfs_dir_emit(dirent, offset, want, &idx, "dev", V_DIRECTORY)) {
+        return 1;
+      }
       break;
     case SYSFS_DIR_CLASS:
       if (sysfs_dir_emit(dirent, offset, want, &idx, "graphics", V_DIRECTORY)) {
         return 1;
       }
+      if (sysfs_dir_emit(dirent, offset, want, &idx, "input", V_DIRECTORY)) {
+        return 1;
+      }
       break;
+    case SYSFS_DIR_DEV:
+      if (sysfs_dir_emit(dirent, offset, want, &idx, "char", V_DIRECTORY)) {
+        return 1;
+      }
+      break;
+    case SYSFS_DIR_DEV_CHAR:
+      /* 每块现存输入设备一项："13:64+N"（Linux input 的 major:minor） */
+      for (fb = 0; fb < SYSFS_INPUT_MAX; fb++) {
+        char name[8];
+        u32 minor;
+
+        if (sysfs_input_node(fb) == NULL) {
+          continue;
+        }
+        minor = SYSFS_INPUT_MINOR_BASE + fb;
+        name[0] = '1';
+        name[1] = '3';
+        name[2] = ':';
+        name[3] = (char)('0' + (minor / 10) % 10);
+        name[4] = (char)('0' + minor % 10);
+        name[5] = '\0';
+        if (sysfs_dir_emit(dirent, offset, want, &idx, name, V_FILE)) {
+          return 1;
+        }
+      }
+      break;
+    case SYSFS_DIR_INPUT:
+      /* /sys/class/input 与 /sys/devices/virtual/input 都列 eventN */
+      for (fb = 0; fb < SYSFS_INPUT_MAX; fb++) {
+        char name[16];
+
+        if (sysfs_input_node(fb) == NULL) {
+          continue;
+        }
+        name[0] = 'e';
+        name[1] = 'v';
+        name[2] = 'e';
+        name[3] = 'n';
+        name[4] = 't';
+        name[5] = (char)('0' + (fb < 10 ? fb : fb / 10));
+        name[6] = (char)('0' + (fb % 10));
+        if (fb < 10) {
+          name[6] = '\0';
+        } else {
+          name[7] = '\0';
+        }
+        if (sysfs_dir_emit(dirent, offset, want, &idx, name, V_DIRECTORY)) {
+          return 1;
+        }
+      }
+      break;
+    case SYSFS_DIR_INPUT_EVENT: {
+      static const char* const input_attrs[] = {
+          "name", "dev", "uevent", "subsystem", "device", "capabilities"};
+      for (i = 0; i < sizeof(input_attrs) / sizeof(input_attrs[0]); i++) {
+        if (sysfs_dir_emit(dirent, offset, want, &idx, input_attrs[i],
+                           V_FILE)) {
+          return 1;
+        }
+      }
+      break;
+    }
+    case SYSFS_DIR_INPUT_CAPS: {
+      /* 顺序与 Linux input_dev 一致（udev 的 input_id 只按名字取，顺序无所谓） */
+      static const char* const cap_files[] = {"ev", "key", "rel", "abs",
+                                              "prop"};
+      for (i = 0; i < sizeof(cap_files) / sizeof(cap_files[0]); i++) {
+        if (sysfs_dir_emit(dirent, offset, want, &idx, cap_files[i], V_FILE)) {
+          return 1;
+        }
+      }
+      break;
+    }
     case SYSFS_DIR_BUS:
       if (sysfs_dir_emit(dirent, offset, want, &idx, "platform", V_DIRECTORY)) {
         return 1;
@@ -4082,6 +4516,10 @@ static u32 sysfs_readdir(vnode_t* node, vdirent_t* dirent, u32* offset,
       break;
     case SYSFS_DIR_DEVICES:
       if (sysfs_dir_emit(dirent, offset, want, &idx, "platform", V_DIRECTORY)) {
+        return 1;
+      }
+      /* /sys/devices/virtual/input/eventN（realpath 的落点） */
+      if (sysfs_dir_emit(dirent, offset, want, &idx, "virtual", V_DIRECTORY)) {
         return 1;
       }
       break;
@@ -4136,7 +4574,7 @@ static u32 sysfs_readdir(vnode_t* node, vdirent_t* dirent, u32* offset,
 /* stat：目录/普通属性/软链接三种模式各按 Linux 语义报（软链接用 lstat 语义） */
 static size_t sysfs_ioctl(vnode_t* node, u32 cmd, void* args) {
   struct stat* st;
-  char tmp[128];
+  char tmp[512]; /* capabilities/key 的十六进制文本可到 200+ 字节 */
   int n;
 
   if (node == NULL || cmd != IOC_STAT || args == NULL) {
@@ -4169,6 +4607,7 @@ static size_t sysfs_ioctl(vnode_t* node, u32 cmd, void* args) {
 /* open/stat/access/opendir 的统一入口：命中 /sys 条目就造一个临时 vnode */
 static vnode_t* sysfs_lookup(const char* path) {
   char buf[192];
+  char norm[192];
   const sysfs_entry_t* e;
   vnode_t* node;
   u32 idx = 0;
@@ -4178,12 +4617,19 @@ static vnode_t* sysfs_lookup(const char* path) {
   if (path == NULL || !sysfs_is_sys(path)) {
     return NULL;
   }
+  if (sysfs_normalize(path, norm, sizeof(norm)) < 0) {
+    return NULL;
+  }
+  path = norm;
   e = sysfs_resolve(path, &idx);
   if (e == NULL) {
     return NULL;
   }
   if (sysfs_entry_uses_fb(e) && sysfs_fb_node(idx) == NULL) {
     return NULL; /* 没有第 idx 块屏：这条路径确实不存在 */
+  }
+  if (sysfs_tmpl_has(e->path, 'E') && sysfs_input_node(idx) == NULL) {
+    return NULL; /* 没有第 idx 块输入设备：同上 */
   }
   as_dir = (e->kind == SYSFS_ENT_DIR) || sysfs_has_children(path);
   node = vfs_create_node((u8*)path, as_dir ? V_DIRECTORY : V_FILE);
@@ -4201,6 +4647,7 @@ static vnode_t* sysfs_lookup(const char* path) {
 static int sysfs_readlink_magic(const char* path, char* out, size_t outsz,
                                 size_t* olen) {
   char buf[192];
+  char norm[192];
   const sysfs_entry_t* e;
   u32 idx = 0;
   int n;
@@ -4209,11 +4656,24 @@ static int sysfs_readlink_magic(const char* path, char* out, size_t outsz,
   if (path == NULL || !sysfs_is_sys(path)) {
     return 0;
   }
+  if (sysfs_normalize(path, norm, sizeof(norm)) < 0) {
+    return -1;
+  }
+  path = norm;
   e = sysfs_resolve(path, &idx);
-  if (e == NULL || e->kind != SYSFS_ENT_LINK) {
-    return 0;
+  if (e == NULL) {
+    return -1; /* /sys 下没有这个路径 ⇒ ENOENT */
+  }
+  if (e->kind != SYSFS_ENT_LINK) {
+    /* 存在但不是符号链接。Linux 的 readlink() 对此返回 EINVAL 而不是
+     * ENOENT —— musl 的 realpath() 就是靠这个区分"目录，继续往下走"，
+     * 回 ENOENT 会让 realpath("/sys/dev/char/13:64") 直接失败。 */
+    return -2;
   }
   if (sysfs_entry_uses_fb(e) && sysfs_fb_node(idx) == NULL) {
+    return -1;
+  }
+  if (sysfs_tmpl_has(e->path, 'E') && sysfs_input_node(idx) == NULL) {
     return -1;
   }
   n = sysfs_expand(e->target, idx, out, outsz);
