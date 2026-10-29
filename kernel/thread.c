@@ -508,6 +508,14 @@ int thread_signal_send(thread_t* t, int sig) {
     return 0; /* sig=0 只是存活探测 */
   }
   t->sig_pending |= THREAD_SIGBIT(sig);
+  /* 【就绪型等待者】signalfd/epoll 把"信号到达"当成可读事件：被屏蔽的信号
+   * 不会走下面的 EINTR 唤醒（见下一个 if），但 signalfd 的读者必须被打醒，
+   * 否则 mask 住信号后 read(signalfd) 会永远睡下去。Linux 的 signalfd 正是
+   * 靠"信号入 pending 时唤醒等待队列"实现的。这里统一叫一次通知钩子，由
+   * posix 层在等待者页表下重算就绪（等待者通常只有一两个，代价可忽略）。 */
+  if (thread_wait_notify_hook != NULL) {
+    thread_wait_notify_hook();
+  }
   /* 被屏蔽的信号只挂 pending，不打断当前等待（Linux：解除屏蔽后才投递）。 */
   if (t->sig_blocked & THREAD_SIGBIT(sig)) {
     return 0;

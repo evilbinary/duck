@@ -725,9 +725,9 @@ int sys_kill(pid_t pid, int sig) {
   }
   /* 【非 SIGKILL 走真正的信号投递】挂到目标线程的 pending 位图，并唤醒它
    * 阻塞中的 syscall（poll/select/epoll/read/write/futex 立刻返回 -EINTR）。
-   * 用户态 handler 的执行（信号帧 + sigreturn）尚未实现，因此这里不做
-   * "默认动作"（终止/忽略）—— 有 handler 的程序能看到 EINTR，但 handler
-   * 本身不会跑；无 handler 的信号只是被消费。
+   * 用户态 handler 由"回用户态"钩子执行（sysfn_signal.c：建信号帧跳 handler，
+   * handler 末尾的 restorer 发 rt_sigreturn(139) 恢复现场）；有 handler 的
+   * 程序因此能完整跑完 handler 再以 EINTR 返回到被打断的 syscall。
    * 【历史坑】早期版本把任何信号都当立即处决（thread_stop），LTP watchdog 的
    * SIGUSR1 心跳直接把父进程杀了；现在只挂 pending，不会再误杀。
    * SIGKILL(9) 仍按"结束整个进程"处理（下面）。 */

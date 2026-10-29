@@ -130,37 +130,76 @@ int sys_eventfd2(u64 initval, int flags) {
 }
 
 /* ===================== signalfd4(74) =====================
- * 把一个信号集变成可读 fd：read 返回 struct signalfd_siginfo(128B)，无信号时
- * 阻塞（本内核非阻塞返回 0，由 sys_read 的 V_BLOCK_READ 机制补齐）。
+ * 把一个信号集变成可读 fd：read 返回 struct signalfd_siginfo(128B)。
  *
- * 本内核目前没有异步信号投递（除 SIGKILL 走 thread_stop），所以 pending 恒为 0。
- * 关键是【就绪判定】：signalfd 不属于 pipe/unix socket/evdev，会落到
+ * 【数据来源是线程自己的 pending 位图】本内核的信号是线程级的
+ * （thread_t.sig_pending / sig_blocked，见 kernel/thread.c），kill/tkill 经
+ * thread_signal_send 挂位。标准用法是先用 sigprocmask 把关心的信号屏蔽掉，
+ * 再读 signalfd —— 屏蔽中的信号不会被"回用户态"前的投递钩子
+ * （sysfn_signal.c）消费，正好留给 read 取走。
+ *
+ * 【就绪判定】signalfd 不属于 pipe/unix socket/evdev，会落到
  * sys_fd_ready_t 的"其它 fd 存在即就绪"兜底 ⇒ epoll_wait 立刻返回、read 拿
- * 不到数据 ⇒ 等待者空转。因此这里导出 signalfd_node_ready()，让就绪判定给出
- * 真实答案（未就绪）。等真信号投递落地后，只需在投递路径里给 pending++ 并
- * 唤醒等待者。 */
+ * 不到数据 ⇒ 等待者空转。所以这里导出 signalfd_node_ready()，并让
+ * thread_signal_send 在挂上 pending 后叫一次 thread_wait_notify_hook ——
+ * "信号到达"于是等价于"signalfd 可读"，epoll 与阻塞 read 都能被唤醒
+ * （libwayland 的 wl_event_loop_add_signal 依赖这条路径）。 */
 #define SIGFD_MAGIC 0x516FD00u
 #define SIGFD_SIGINFO_SIZE 128
+/* SFD_NONBLOCK / SFD_CLOEXEC 与 O_NONBLOCK(0x800) / O_CLOEXEC(0x80000) 同值。 */
+#define SFD_NONBLOCK_ 0x800
+#define SFD_CLOEXEC_ 0x80000
 
 struct signalfd_k {
   u32 magic;
-  u64 mask;
-  u32 pending; /* 已投递未读取的信号条数（当前恒 0） */
+  u64 mask;        /* 这个 fd 关心的信号集合 */
+  thread_t* owner; /* 创建它的线程：pending 位图按线程存在 */
 };
+
+/* 取 pending & mask 里编号最小的信号并消费掉；没有则返回 0。 */
+static int sigfd_take(struct signalfd_k* s) {
+  u64 avail;
+  int sig;
+  if (s == NULL || s->owner == NULL) {
+    return 0;
+  }
+  avail = s->owner->sig_pending & s->mask;
+  if (avail == 0) {
+    return 0;
+  }
+  for (sig = 1; sig < THREAD_NSIG; sig++) {
+    if (avail & THREAD_SIGBIT(sig)) {
+      s->owner->sig_pending &= ~THREAD_SIGBIT(sig);
+      return sig;
+    }
+  }
+  return 0;
+}
 
 static u32 sigfd_read(vnode_t* node, u32 offset, u32 size, u8* buffer) {
   struct signalfd_k* s;
+  u32 n;
+  int sig;
   (void)offset;
   if (node == NULL || node->device == NULL || buffer == NULL) {
     return 0;
   }
   s = (struct signalfd_k*)node->device;
-  if (s->magic != SIGFD_MAGIC || s->pending == 0) {
-    return 0; /* 无待取信号 */
+  if (s->magic != SIGFD_MAGIC) {
+    return 0;
   }
-  s->pending--;
-  kmemset(buffer, 0, size < SIGFD_SIGINFO_SIZE ? size : SIGFD_SIGINFO_SIZE);
-  return (size < SIGFD_SIGINFO_SIZE) ? size : SIGFD_SIGINFO_SIZE;
+  sig = sigfd_take(s);
+  if (sig == 0) {
+    /* -EAGAIN（不能回 0 = EOF：调用方会当成"fd 已关闭"）。阻塞型节点由
+     * sys_read 的 V_BLOCK_READ 机制挂起等待，非阻塞 fd 直接拿到 EAGAIN。 */
+    return -11;
+  }
+  n = (size < SIGFD_SIGINFO_SIZE) ? size : SIGFD_SIGINFO_SIZE;
+  kmemset(buffer, 0, n);
+  if (n >= 4) {
+    ((u32*)buffer)[0] = (u32)sig; /* ssi_signo（其余字段 0：si_code=SI_USER） */
+  }
+  return n;
 }
 
 /* 供 sys_fd_ready_t 使用：-1 表示"不是 signalfd" */
@@ -173,10 +212,10 @@ int signalfd_node_ready(vnode_t* node) {
   if (s->magic != SIGFD_MAGIC) {
     return -1;
   }
-  return s->pending > 0 ? 1 : 0;
+  return (s->owner != NULL && (s->owner->sig_pending & s->mask) != 0) ? 1 : 0;
 }
 
-static vnode_t* sigfd_make(u64 mask) {
+static vnode_t* sigfd_make(u64 mask, int flags) {
   vnode_t* node = vfs_create_node("signalfd", 0);
   struct signalfd_k* s = kmalloc(sizeof(struct signalfd_k), KERNEL_TYPE);
   voperator_t* op = kmalloc(sizeof(voperator_t), KERNEL_TYPE);
@@ -188,41 +227,88 @@ static vnode_t* sigfd_make(u64 mask) {
   kmemset(s, 0, sizeof(struct signalfd_k));
   s->magic = SIGFD_MAGIC;
   s->mask = mask;
+  s->owner = thread_current();
   node->device = s;
   node->op = op;
   op->read = sigfd_read;
   op->close = evfd_node_close;
+  /* 阻塞型：没有信号时 sys_read 挂起等待（SFD_NONBLOCK 则直接 EAGAIN） */
+  if ((flags & SFD_NONBLOCK_) == 0) {
+    node->flags |= V_BLOCK_READ;
+  }
   return node;
+}
+
+/* 【SFD_CLOEXEC/SFD_NONBLOCK 必须落到 fd 层】两个常量与 O_CLOEXEC(0x80000)/
+ * O_NONBLOCK(0x800) 取同值，但内核只记在 fd_t->flags 里，fcntl(F_GETFD)/
+ * fcntl(F_GETFL) 才查得到（LTP signalfd4_01/02 逐条校验这两个标志）。
+ * exec 不会关闭 fd，CLOEXEC 只是标志位，与 unix socket 的处理保持一致。 */
+static void sigfd_apply_flags(int fd, int flags) {
+  thread_t* current = thread_current();
+  fd_t* f;
+  if (current == NULL || fd < 0) {
+    return;
+  }
+  f = thread_find_fd_id(current, (u32)fd);
+  if (f == NULL) {
+    return;
+  }
+  if ((flags & SFD_CLOEXEC_) != 0) {
+    f->flags |= (u32)FD_CLOEXEC;
+  }
+  if ((flags & SFD_NONBLOCK_) != 0) {
+    f->flags |= (u32)O_NONBLOCK;
+  }
 }
 
 int sys_signalfd4(int fd, void* mask, size_t sizemask, int flags) {
   thread_t* current = thread_current();
   u64 kmask = 0;
   u32 n;
-  (void)flags;
+  /* 【参数校验顺序照 Linux 的 do_signalfd4】未知标志位 / sigsetsize 不对都是
+   * EINVAL（LTP signalfd02 逐条校验：flags=-1 必须失败，不能"宽容地"忽略）。 */
+  if ((flags & ~(SFD_CLOEXEC_ | SFD_NONBLOCK_)) != 0) {
+    return -22;
+  }
+  if (sizemask != sizeof(u64)) {
+    return -22;
+  }
   if (mask != NULL) {
-    n = (sizemask > 0 && sizemask <= sizeof(u64)) ? (u32)sizemask : 8;
+    n = (u32)sizemask;
     if (sys_copy_from_user(&kmask, mask, n) < 0) {
       return -14;
     }
   }
-  if (fd >= 0) {
+  /* 【只有 -1 才是"新建"】fd=-2 之类的非法描述符必须落到下面的更新分支，由
+   * fd 查找失败给出 EBADF；写成 fd>=0 会把 -2 当成新建成功（LTP signalfd02
+   * 的 "fd is invalid" 用例正踩这条）。 */
+  if (fd != -1) {
     /* 更新已有 signalfd 的掩码（Linux 语义：fd 由调用方传入） */
     fd_t* f = thread_find_fd_id(current, fd);
+    vnode_t* node;
     struct signalfd_k* s;
     if (f == NULL || f->data == NULL) {
       return -9;
     }
-    s = (struct signalfd_k*)((vnode_t*)f->data)->device;
+    node = (vnode_t*)f->data;
+    s = (struct signalfd_k*)node->device;
     if (s == NULL || s->magic != SIGFD_MAGIC) {
       return -22;
     }
     s->mask = kmask;
+    /* SFD_NONBLOCK 可以在重设时切换：同步阻塞标志 */
+    if ((flags & SFD_NONBLOCK_) != 0) {
+      node->flags &= ~V_BLOCK_READ;
+    } else {
+      node->flags |= V_BLOCK_READ;
+    }
+    sigfd_apply_flags(fd, flags);
     return fd;
   }
   {
-    vnode_t* node = sigfd_make(kmask);
+    vnode_t* node = sigfd_make(kmask, flags);
     fd_t* nfd;
+    u32 nfdno;
     if (node == NULL) {
       return -12;
     }
@@ -231,7 +317,9 @@ int sys_signalfd4(int fd, void* mask, size_t sizemask, int flags) {
       evfd_node_close(node);
       return -12;
     }
-    return thread_add_fd(current, nfd);
+    nfdno = thread_add_fd(current, nfd);
+    sigfd_apply_flags((int)nfdno, flags);
+    return nfdno;
   }
 }
 
