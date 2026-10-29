@@ -206,6 +206,31 @@ int sys_rt_sigaction(int signum, const struct sigaction* restrict act,
   return 0;
 }
 
+/* 【sys_kill 用】查询线程对 sig 的处置方式（只读，不改状态）：
+ *   0 = SIG_DFL（默认动作，内核该执行"终止进程"）
+ *   1 = SIG_IGN（忽略）
+ *   2 = 用户 handler（内核只挂 pending + 唤醒，handler 由投递钩子执行）
+ * 表按线程存（t->sig_acts）；还没分配过 = 全部 SIG_DFL。 */
+int sys_signal_disposition(thread_t* t, int sig) {
+  struct thread_sigaction* acts;
+  u64 h;
+  if (t == NULL || sig <= 0 || sig >= THREAD_NSIG) {
+    return 0;
+  }
+  acts = (struct thread_sigaction*)t->sig_acts;
+  if (acts == NULL) {
+    return 0;
+  }
+  h = (u64)acts[sig].handler;
+  if (h == 0) {
+    return 0;
+  }
+  if (h == 1) {
+    return 1;
+  }
+  return 2;
+}
+
 /* ===================== 杂项/进程属性 ===================== */
 
 /* 【prctl(167)】进程/线程属性控制。只认真处理 PR_SET_NAME/GET_NAME

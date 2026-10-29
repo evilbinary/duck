@@ -685,6 +685,27 @@ int sys_getpgid(int pid) {
   return (int)current->pid;
 }
 
+/* 哪些信号的 SIG_DFL 动作由内核直接执行"终止进程"。
+ * 【刻意只留 4 个】HUP/INT/QUIT/TERM —— 真正的"外部要求你退出"。
+ * 其它默认终止信号一律不做动作（仍只挂 pending）：
+ *   SIGALRM(14) —— alarm/setitimer 到期走的是时钟路径，在中断上下文里跑
+ *                  thread_exit_group 会把整机拖进自旋（历史上 adjtimex02
+ *                  到期即挂死）；
+ *   SIGUSR1/2   —— LTP watchdog 心跳，误杀父进程会整批测试无输出；
+ *   SIGPIPE/SEGV/ABRT/... —— 由用户态自己处理（内核没有 fault 语义接管）。
+ * weston / 常见 daemon 收尾用的都是 SIGTERM，这四个足够。 */
+static int sig_default_terminates(int sig) {
+  switch (sig) {
+    case 1:  /* SIGHUP */
+    case 2:  /* SIGINT */
+    case 3:  /* SIGQUIT */
+    case 15: /* SIGTERM */
+      return 1;
+    default:
+      return 0;
+  }
+}
+
 int sys_kill(pid_t pid, int sig) {
   if (pid <= 0) {
     /* 0/负数在 Linux 里指"自己的进程组"：本内核没有进程组语义，
@@ -711,6 +732,19 @@ int sys_kill(pid_t pid, int sig) {
    * SIGUSR1 心跳直接把父进程杀了；现在只挂 pending，不会再误杀。
    * SIGKILL(9) 仍按"结束整个进程"处理（下面）。 */
   if (sig != 9 /* SIGKILL */) {
+    /* 【默认动作 = 终止进程】以前这里对非 SIGKILL 只挂 pending，于是
+     * kill(pid, SIGTERM) 变成"无声无息"：进程既不退出也看不到 EINTR
+     * （无阻塞点时不消费 pending）。weston 用 SIGTERM 收尾、LTP 的
+     * kill/signal 系列都要求它真的死掉。
+     * 处置方式按目标线程自己的 sigaction 表判断：
+     *   SIG_IGN（1）      → 什么都不做；
+     *   用户 handler（2）  → 仍只挂 pending + 唤醒（handler 由投递钩子跑）；
+     *   SIG_DFL（0）      → 走与 SIGKILL 相同的进程级终止。
+     * 默认动作是"忽略"的信号（SIGCHLD/SIGURG/SIGWINCH/SIGCONT）不改行为。 */
+    if (sys_signal_disposition(t, sig) == 0 && sig_default_terminates(sig)) {
+      thread_exit_group(t, 0);
+      return 0;
+    }
     return thread_signal_send(t, sig);
   }
   thread_t* current = thread_current();

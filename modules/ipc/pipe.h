@@ -20,7 +20,16 @@ typedef struct pipe {
   u32 head;  /* 读位置 */
   u32 count; /* 已缓存字节数 */
   u32 lock;  /* 缓冲自旋锁（读写端通常在不同线程） */
-  u32 ref;   /* 读写两个 vnode 的引用计数，归零才释放 */
+  u32 ref;   /* 读写两个 vnode 的引用计数（历史字段，仅作参考） */
+  /* 【端口计数】阻塞语义必须能区分两种"读不到"：
+   *   writers > 0  ⇒ 还有人在写，读端应当阻塞等待（不是 EOF）；
+   *   writers == 0 ⇒ 写端全关，读端返回 0（EOF），否则 read() 会永久挂起。
+   * 对称地 readers == 0 时写端写不出（EPIPE）。
+   * 计数在 vnode close 时按"读端/写端"分别递减；fork/dup 复制 fd 槽时
+   * 不增加（本内核的 fd 表复制不走 vnode open），因此计数只会偏小 ——
+   * 偏小的后果是提前 EOF，不会挂死，权衡后接受。 */
+  u32 readers;
+  u32 writers;
 } pipe_t;
 
 pipe_t* pipe_create(u32 size);

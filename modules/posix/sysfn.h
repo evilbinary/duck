@@ -432,6 +432,8 @@ int sys_rt_sigprocmask(int, void* set, void* old_set);
 struct sigaction;
 int sys_rt_sigaction(int signum, const struct sigaction* restrict act,
                      struct sigaction* restrict oldact);
+/* 线程对某信号的处置方式：0=SIG_DFL 1=SIG_IGN 2=用户 handler */
+int sys_signal_disposition(thread_t* t, int sig);
 
 unsigned int sys_alarm(unsigned int seconds);
 int sys_getresuid(void* ruid, void* euid, void* suid);

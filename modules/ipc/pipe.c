@@ -38,6 +38,8 @@ pipe_t* pipe_create(u32 size) {
     return NULL;
   }
   pipe->ref = 2; /* 读端、写端各一个 vnode */
+  pipe->readers = 1;
+  pipe->writers = 1;
   return pipe;
 }
 
@@ -134,12 +136,28 @@ static u32 pipe_append(pipe_t* p, const u8* src, u32 len) {
 static u32 pip_read(vnode_t* node, u32 offset, u32 size, u8* buffer) {
   pipe_t* p = (node != NULL) ? node->device : NULL;
   u32 n;
+  u32 writers;
   if (p == NULL || buffer == NULL || size == 0) {
     return 0;
   }
   pipe_lock(p);
   n = pipe_take(p, buffer, size);
+  writers = p->writers;
   pipe_unlock(p);
+  /* 【空读返回 -EAGAIN，由 sys_read 统一挂起】
+   * 以前这里返回 0，用户态（musl）一律当成 EOF：weston 在 fork 后用管道
+   * 等子进程 ready，父进程 read() 立刻拿到"EOF"⇒ 判服务端起不来；任何
+   * "阻塞读管道"的程序都会拿到假 EOF。
+   * 现在读端节点带 V_BLOCK_READ（见 pipe_create_pair），sys_read 看到
+   * -EAGAIN + 该标志且没设 O_NONBLOCK 时挂起，写端写入后由
+   * thread_wait_notify_hook() 唤醒并重跑这次 vread（pollw_rw_recheck）。 */
+  if (n == 0) {
+    /* 写端全关 ⇒ 真 EOF（返回 0）；还有人写 ⇒ 让 sys_read 挂起等待 */
+    if (writers == 0) {
+      return 0;
+    }
+    return (u32)-11; /* -EAGAIN */
+  }
   {
     /* 【诊断·可删】 */
     static int r_dbg = 0;
@@ -242,8 +260,26 @@ static void pipe_node_free(vnode_t* node) {
 
 static u32 pipe_close_end(vnode_t* node) {
   pipe_t* p = (node != NULL) ? node->device : NULL;
+  /* 写端的 op 表里有 write，读端只有 read */
+  int is_write = (node != NULL && node->op != NULL && node->op->write != NULL);
+  int wake = 0;
   if (p != NULL) {
     pipe_lock(p);
+    if (is_write) {
+      if (p->writers > 0) {
+        p->writers--;
+      }
+      if (p->writers == 0) {
+        wake = 1; /* 写端全关：叫醒阻塞的读者去拿 EOF */
+      }
+    } else {
+      if (p->readers > 0) {
+        p->readers--;
+      }
+      if (p->readers == 0) {
+        wake = 1; /* 读端全关：叫醒阻塞的写者去拿 EPIPE */
+      }
+    }
     if (p->ref > 0) {
       p->ref--;
     }
@@ -253,6 +289,11 @@ static u32 pipe_close_end(vnode_t* node) {
     }
   }
   pipe_node_free(node);
+  /* 端口归零后必须唤醒对端：阻塞读到 EOF / 阻塞写拿 EPIPE 都靠这一次通知
+   * （recheck 会重跑 vread/vwrite，读到 writers==0 就返回 0）。 */
+  if (wake && thread_wait_notify_hook != NULL) {
+    thread_wait_notify_hook();
+  }
   return 0;
 }
 
@@ -329,6 +370,9 @@ int pipe_create_pair(u32 size, vnode_t** read_node, vnode_t** write_node) {
   }
   r->device = p;
   r->op = &pipe_read_ops;
+  /* 读端"空了能等"：sys_read 只对带 V_BLOCK_READ 的节点挂起等待。
+   * O_NONBLOCK 由 sys_read 另查 fd 标志，非阻塞读仍即时返回 -EAGAIN。 */
+  r->flags |= V_BLOCK_READ;
   w->device = p;
   w->op = &pipe_write_ops;
   *read_node = r;
