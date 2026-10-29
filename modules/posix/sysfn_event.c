@@ -460,15 +460,6 @@ int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
   int ready = 0;
   int i;
   (void)sigsetsize;
-  /* TEMP-EPSTAT */
-  {
-    static u32 calls;
-    calls++;
-    if ((calls & 0x7FF) == 0) {
-      log_info("EPSTAT calls=%u tmo=%d nitems=%d\n", calls, timeout,
-               ep != NULL ? ep->nitems : -1);
-    }
-  }
   if (ep == NULL) {
     /* fd 不存在 ⇒ EBADF；fd 存在但不是 epoll ⇒ EINVAL（Linux 语义，
      * LTP epoll_wait03 逐条校验这两条）。 */
@@ -519,46 +510,11 @@ int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
     out.events = (ok_r ? EPOLLIN_ : 0) | (ok_w ? EPOLLOUT_ : 0);
     out.pad = 0;
     out.data = ep->items[i].data;
-    /* TEMP-EPSTAT：真正被投递出去的 fd */
-    {
-      static u32 em;
-      if ((em++ & 0xFF) == 0) {
-        log_info("EMIT fd=%d ev=%x\n", ep->items[i].fd, out.events);
-      }
-    }
     sys_copy_to_user((void*)((char*)events + ready * sizeof(out)), &out,
                      sizeof(out));
     ready++;
   }
   if (ready > 0) {
-    /* TEMP-EPSTAT：报告本轮就绪的 fd 与事件位 */
-    {
-      static u32 rd;
-      struct epoll_event_k first;
-      rd++;
-      if ((rd & 0x3F) == 0) {
-        int j;
-        sys_copy_from_user(&first, events, sizeof(first));
-        log_info("EPRDY n=%u ready=%d fd0ev=%x:", rd, ready, first.events);
-        for (j = 0; j < EPOLL_MAX_ITEMS; j++) {
-          if (!ep->items[j].used) {
-            continue;
-          }
-          if (sys_fd_ready(ep->items[j].fd, 1, 0) ||
-              sys_fd_ready(ep->items[j].fd, 0, 1)) {
-            {
-              fd_t* ff = thread_find_fd_id(thread_current(),
-                                           ep->items[j].fd);
-              log_info(" fd=%d(%s) ev=%x polled=%d", ep->items[j].fd,
-                       (ff != NULL && ff->name != NULL) ? ff->name : "?",
-                       ep->items[j].events,
-                       sys_fd_polled_t(thread_current(), ep->items[j].fd));
-            }
-          }
-        }
-        log_info("\n");
-      }
-    }
     return ready;
   }
   if (timeout == 0) {
@@ -895,6 +851,13 @@ int sys_timerfd_settime(int fd, int flags, void* utmr, void* uold) {
   /* 周期只对"周期性定时器"有意义：Linux 上 it_value 为 0 时 it_interval
    * 也被忽略，这里同样处理（上面已 early-return）。 */
   t->interval_ms = interval_ms;
+
+  /* 【重新装填必须清零已到期计数】Linux 的 do_timerfd_settime 同样把
+   * ctx->ticks 归零。不清零的后果：某次到期后没人 read（调用方只是重新
+   * arm 同一个 timerfd，例如 libwayland 的定时器源被复用），expirations
+   * 就一直 > 0 ⇒ epoll_wait 每次判它就绪并立刻返回 ⇒ 事件循环 100% 空转
+   * （实测 weston 空闲时 40 秒内 550k 次 epoll_pwait）。 */
+  t->expirations = 0;
 
   if (flags & TFD_TIMER_ABSTIME) {
     t->next_ms = value_ms;
