@@ -290,6 +290,12 @@ enum {
   SYS_INOTIFY_ADD_WATCH = 27,
   SYS_INOTIFY_RM_WATCH = 28,
   SYS_CLOSE_RANGE = 436,
+  /* 【signalfd4=74 / faccessat2=439】aarch64 通用编号。
+   * signalfd4：libwayland 的 wl_event_loop_add_signal 全靠它，缺失时
+   * add_signal 返回 NULL，weston 主程序会直接放弃启动。
+   * faccessat2：glibc 2.33+ 的 access/faccessat 包装优先走它。 */
+  SYS_SIGNALFD4 = 74,
+  SYS_FACCESSAT2 = 439,
   SYS_SET_ROBUST_LIST = 99,
   SYS_RSEQ = 293,
   /* 【rt_sigreturn=139】信号 handler 的返回通道：libc 的 restorer

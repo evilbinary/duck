@@ -718,15 +718,6 @@ int unix_accept(int fd, void* addr, u32* addrlen) {
   if (addr != NULL && addrlen != NULL && srv->raddr_len > 0) {
     unix_addr_out(srv->raddr, srv->raddr_len, addr, addrlen);
   }
-  {
-    /* 【诊断·可删】accept 之后把服务端接下来 40 个系统调用全打出来：
-     * 定位"accept 成功后立刻 close 连接"到底卡在 read 还是别的调用。 */
-    extern void sys_probe_arm(int tid, int count);
-    thread_t* c = thread_current();
-    if (c != NULL) {
-      sys_probe_arm((int)c->id, 40);
-    }
-  }
   return nfd;
 }
 
@@ -939,16 +930,6 @@ int unix_poll_ready_t(thread_t* owner, int fd, int want_read, int want_write) {
     return -1;
   }
   if (want_read) {
-    if (sk->listening && sk->pend_head != NULL) {
-      /* 【诊断·可删】只在"真有 pending 连接"时打印：定位服务端是否感知到
-       * 客户端已连接（若打了却仍不 accept，问题在 epoll/accept 侧）。 */
-      static int lp_dbg = 0;
-      if (lp_dbg++ < 100) {
-        thread_t* c = thread_current();
-        log_debug("UXREADY-PEND tid=%d fd=%d pend=%d\n",
-                  c != NULL ? (int)c->id : -1, fd, (int)sk->pend_count);
-      }
-    }
     if (sk->listening && sk->pend_head != NULL) {
       return 1;
     }

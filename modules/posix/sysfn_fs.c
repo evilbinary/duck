@@ -1405,6 +1405,13 @@ ssize_t sys_readlinkat(int dirfd, const char* restrict pathname,
   return sys_readlink_common(dirfd, pathname, buf, bufsiz);
 }
 
+/* faccessat2(439)：与 faccessat(48) 的唯一差别是 flags 可以带
+ * AT_EACCESS(0x200)/AT_SYMLINK_NOFOLLOW(0x100)。本系统 FAT 上没有属主和
+ * 符号链接的概念，直接复用 faccessat 的实现即可。 */
+int sys_faccessat2(int dirfd, const char* pathname, int mode, int flags) {
+  return sys_faccessat(dirfd, pathname, mode, flags);
+}
+
 int sys_faccessat(int dirfd, const char* pathname, int mode, int flags) {
   if (pathname == NULL) {
     log_error("sys_faccessat null pathname dirfd=%d mode=%x flags=%x\n", dirfd,
@@ -1494,6 +1501,22 @@ int sys_fd_ready_t(thread_t* owner, int fd, int want_read, int want_write) {
   pr = pipe_poll_ready_t(owner, fd);
   if (pr >= 0) {
     return want_read ? ((pr & 1) ? 1 : 0) : ((pr & 2) ? 1 : 0);
+  }
+  /* eventfd：就绪 = 计数 > 0（否则读只能拿到 0，等待者会空转） */
+  {
+    int efd = eventfd_node_ready((vnode_t*)f->data);
+    if (efd >= 0) {
+      return want_read ? efd : (want_write ? 1 : 0);
+    }
+  }
+  /* signalfd：就绪 = 有未取走的信号。必须拦住——否则会落到最后那条
+   * "存在即就绪"兜底，epoll/select 立刻返回，调用方 read 拿到 0 后
+   * 马上再等，形成空转。 */
+  {
+    int sfd = signalfd_node_ready((vnode_t*)f->data);
+    if (sfd >= 0) {
+      return want_read ? sfd : 0;
+    }
   }
   return unix_poll_ready_t(owner, fd, want_read, want_write) != 0;
 }

@@ -355,6 +355,7 @@ int sys_newfstatat(int dirfd, const char* pathname, struct stat* stat,
 ssize_t sys_readlinkat(int dirfd, const char* restrict pathname,
                        char* restrict buf, size_t bufsiz);
 int sys_faccessat(int dirfd, const char* pathname, int mode, int flags);
+int sys_faccessat2(int dirfd, const char* pathname, int mode, int flags);
 // size_t sys_ioctl(u32 fd, u32 cmd, ...);
 ssize_t sys_ioctl(u32 fd, u32 cmd, void* args);
 /* 【ABI 关键·勿改成 u64】这些 dispatch 由 sys_fn_call 经架构的 sys_call_fn
@@ -690,6 +691,9 @@ int sys_ppoll(void* ufds, unsigned int nfds, void* tmo, void* sigmask);
 ssize_t sys_sendmsg(int sockfd, void* umsg, int flags);
 ssize_t sys_recvmsg(int sockfd, void* umsg, int flags);
 int sys_eventfd2(u64 initval, int flags);
+int sys_signalfd4(int fd, void* mask, size_t sizemask, int flags);
+int eventfd_node_ready(vnode_t* node);
+int signalfd_node_ready(vnode_t* node);
 int sys_epoll_create1(int flags);
 int sys_epoll_ctl(int epfd, int op, int fd, void* ev);
 int sys_epoll_pwait2(int epfd, void* events, int maxevents, void* tmo,

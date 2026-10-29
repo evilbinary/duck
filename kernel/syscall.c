@@ -71,40 +71,14 @@ void sys_trace_dump(void) {
   log_info("syscall trace end\n");
 }
 
-/* 【诊断·可删】全局 syscall 探针：外部（如 unix_connect）可以把它瞄准某个 tid */
-int sys_probe_tid = -1;
-int sys_probe_left = 0;
-int sys_probe_pending = 0;
-void sys_probe_arm(int tid, int count) {
-  sys_probe_tid = tid;
-  sys_probe_left = count;
-}
-
 void* do_syscall(interrupt_context_t* ic) {
   // kprintf("syscall %d\n", context_fn(ic));
   int no = context_fn(ic);
-  /* 【诊断·可删】某个进程调用 pipe() 之后，把接下来 40 个系统调用的
-   * 参数与返回值原样打出来（定位 popen/posix_spawn 失败到底失败在哪一步）。
-   * 注意：参数必须在 handler 之前取——handler 会把返回码写进 x0。 */
   {
     thread_t* t = thread_current();
     int tid = (t != NULL) ? (int)t->id : -1;
-    /* 【诊断·可删】per-tid 最近调用序列（ps 里打印，见 sys_recent_print） */
+    /* per-tid 最近调用序列（ps 里打印，见 sys_recent_print） */
     sys_recent_record(tid, (u32)no);
-    /* 【诊断·可删】pipe2 自动 arm 已关闭：Xorg 主循环每次 pipe2 都会触发，
-     * 每秒刷 80 行串口日志，把真正有用的探针行冲掉（UXCONN/EPWAIT 疑似因此
-     * 丢行）。需要看某个进程的调用序列时，由 unix_connect 等位置显式 arm。 */
-    if (0 && no == 59 /* aarch64 pipe2 */) {
-      sys_probe_tid = tid;
-      sys_probe_left = 40;
-      log_debug("PROBE pipe2 by tid=%d\n", tid);
-    } else if (sys_probe_left > 0 && tid == sys_probe_tid) {
-      sys_probe_left--;
-      sys_probe_pending = 1;
-      log_debug("PROBE tid=%d no=%d args=%d,%x,%d\n", tid, no,
-                (int)context_arg0(ic), (u32)context_arg1(ic),
-                (int)context_arg2(ic));
-    }
   }
   {
     thread_t* t = thread_current();
@@ -117,12 +91,6 @@ void* do_syscall(interrupt_context_t* ic) {
     (void)ret;
   } else {
     log_warn("syscall did not found %d\n", context_fn(ic));
-  }
-  /* 【诊断·可删】把上面那条 PROBE 的返回值补上（handler 里会写 x0） */
-  if (sys_probe_pending) {
-    sys_probe_pending = 0;
-    log_debug("PROBE-RET tid=%d no=%d ret=%d\n", sys_probe_tid, no,
-              (int)context_ret(ic));
   }
   /* 【诊断】在 handler 跑完之后记录（此时 r0 里才是真正的返回值）。 */
   {

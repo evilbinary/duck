@@ -77,6 +77,22 @@ static u32 evfd_write(vnode_t* node, u32 offset, u32 size, u8* buffer) {
   return 8;
 }
 
+/* 供 sys_fd_ready_t 使用：-1 表示"不是 eventfd"。
+ * eventfd 的就绪判据是"计数 > 0"。不接住它就会落到 sys_fd_ready_t 最后那条
+ * "其它 fd 存在即就绪"兜底 ⇒ epoll/select 永远立刻返回、read 却拿到 0，
+ * 等待者（weston 的事件循环）100% 空转。 */
+int eventfd_node_ready(vnode_t* node) {
+  struct eventfd_k* e;
+  if (node == NULL || node->device == NULL) {
+    return -1;
+  }
+  e = (struct eventfd_k*)node->device;
+  if (e->magic != EVFD_MAGIC) {
+    return -1;
+  }
+  return e->count > 0 ? 1 : 0;
+}
+
 static vnode_t* eventfd_make(u64 initval) {
   vnode_t* node = vfs_create_node("eventfd", 0);
   struct eventfd_k* e = kmalloc(sizeof(struct eventfd_k), KERNEL_TYPE);
@@ -111,6 +127,112 @@ int sys_eventfd2(u64 initval, int flags) {
   }
   n = thread_add_fd(current, fd);
   return n;
+}
+
+/* ===================== signalfd4(74) =====================
+ * 把一个信号集变成可读 fd：read 返回 struct signalfd_siginfo(128B)，无信号时
+ * 阻塞（本内核非阻塞返回 0，由 sys_read 的 V_BLOCK_READ 机制补齐）。
+ *
+ * 本内核目前没有异步信号投递（除 SIGKILL 走 thread_stop），所以 pending 恒为 0。
+ * 关键是【就绪判定】：signalfd 不属于 pipe/unix socket/evdev，会落到
+ * sys_fd_ready_t 的"其它 fd 存在即就绪"兜底 ⇒ epoll_wait 立刻返回、read 拿
+ * 不到数据 ⇒ 等待者空转。因此这里导出 signalfd_node_ready()，让就绪判定给出
+ * 真实答案（未就绪）。等真信号投递落地后，只需在投递路径里给 pending++ 并
+ * 唤醒等待者。 */
+#define SIGFD_MAGIC 0x516FD00u
+#define SIGFD_SIGINFO_SIZE 128
+
+struct signalfd_k {
+  u32 magic;
+  u64 mask;
+  u32 pending; /* 已投递未读取的信号条数（当前恒 0） */
+};
+
+static u32 sigfd_read(vnode_t* node, u32 offset, u32 size, u8* buffer) {
+  struct signalfd_k* s;
+  (void)offset;
+  if (node == NULL || node->device == NULL || buffer == NULL) {
+    return 0;
+  }
+  s = (struct signalfd_k*)node->device;
+  if (s->magic != SIGFD_MAGIC || s->pending == 0) {
+    return 0; /* 无待取信号 */
+  }
+  s->pending--;
+  kmemset(buffer, 0, size < SIGFD_SIGINFO_SIZE ? size : SIGFD_SIGINFO_SIZE);
+  return (size < SIGFD_SIGINFO_SIZE) ? size : SIGFD_SIGINFO_SIZE;
+}
+
+/* 供 sys_fd_ready_t 使用：-1 表示"不是 signalfd" */
+int signalfd_node_ready(vnode_t* node) {
+  struct signalfd_k* s;
+  if (node == NULL || node->device == NULL) {
+    return -1;
+  }
+  s = (struct signalfd_k*)node->device;
+  if (s->magic != SIGFD_MAGIC) {
+    return -1;
+  }
+  return s->pending > 0 ? 1 : 0;
+}
+
+static vnode_t* sigfd_make(u64 mask) {
+  vnode_t* node = vfs_create_node("signalfd", 0);
+  struct signalfd_k* s = kmalloc(sizeof(struct signalfd_k), KERNEL_TYPE);
+  voperator_t* op = kmalloc(sizeof(voperator_t), KERNEL_TYPE);
+  if (node == NULL || s == NULL || op == NULL) {
+    kfree(s);
+    kfree(op);
+    return NULL;
+  }
+  kmemset(s, 0, sizeof(struct signalfd_k));
+  s->magic = SIGFD_MAGIC;
+  s->mask = mask;
+  node->device = s;
+  node->op = op;
+  op->read = sigfd_read;
+  op->close = evfd_node_close;
+  return node;
+}
+
+int sys_signalfd4(int fd, void* mask, size_t sizemask, int flags) {
+  thread_t* current = thread_current();
+  u64 kmask = 0;
+  u32 n;
+  (void)flags;
+  if (mask != NULL) {
+    n = (sizemask > 0 && sizemask <= sizeof(u64)) ? (u32)sizemask : 8;
+    if (sys_copy_from_user(&kmask, mask, n) < 0) {
+      return -14;
+    }
+  }
+  if (fd >= 0) {
+    /* 更新已有 signalfd 的掩码（Linux 语义：fd 由调用方传入） */
+    fd_t* f = thread_find_fd_id(current, fd);
+    struct signalfd_k* s;
+    if (f == NULL || f->data == NULL) {
+      return -9;
+    }
+    s = (struct signalfd_k*)((vnode_t*)f->data)->device;
+    if (s == NULL || s->magic != SIGFD_MAGIC) {
+      return -22;
+    }
+    s->mask = kmask;
+    return fd;
+  }
+  {
+    vnode_t* node = sigfd_make(kmask);
+    fd_t* nfd;
+    if (node == NULL) {
+      return -12;
+    }
+    nfd = fd_open(node, DEVICE_TYPE_VIRTUAL, "/dev/signalfd");
+    if (nfd == NULL) {
+      evfd_node_close(node);
+      return -12;
+    }
+    return thread_add_fd(current, nfd);
+  }
 }
 
 /* ===================== epoll 三件套(20/21/22) ===================== */
@@ -199,25 +321,6 @@ int sys_epoll_ctl(int epfd, int op, int fd, void* ev) {
   struct epoll_k* ep = (struct epoll_k*)evfd_priv(epfd, EPOLL_K_MAGIC);
   struct epoll_event_k kev;
   int i;
-  /* 【诊断·可删】fd>=8 全量打印（不设上限，重连/监听相关都在这个区间）；
-   * DEL 额外打用户态 pc/lr，用来定位是谁把连接从集合里摘掉 */
-  {
-    thread_t* c = thread_current();
-    /* 【诊断·限额】Xorg 主循环每个事件都 epoll_ctl，无条件打印会把串口打满
-     * （日志刷得比串口快，关键行全被冲掉）。只留前 40 条。 */
-    static int epctl_dbg = 0;
-    if (fd >= 8 && epctl_dbg++ < 40) {
-      u64 pc = (c != NULL && c->ctx != NULL && c->ctx->ic != NULL)
-                   ? c->ctx->ic->pc
-                   : 0;
-      u64 lr = (c != NULL && c->ctx != NULL && c->ctx->ic != NULL)
-                   ? c->ctx->ic->lr
-                   : 0;
-      log_debug("EPCTL tid=%d epfd=%d op=%d fd=%d ep=%s pc=%x lr=%x\n",
-                c != NULL ? (int)c->id : -1, epfd, op, fd,
-                ep != NULL ? "ok" : "BAD", (u32)pc, (u32)lr);
-    }
-  }
   if (ep == NULL) {
     return -9; /* -EBADF */
   }
@@ -239,17 +342,6 @@ int sys_epoll_ctl(int epfd, int op, int fd, void* ev) {
   }
   if (ev != NULL && sys_copy_from_user(&kev, ev, sizeof(kev)) < 0) {
     return -14;
-  }
-  /* 【诊断·可删】结构体布局验证：把原始 24 字节打出来看 data 到底在哪 */
-  {
-    static int ev_dbg = 0;
-    if (ev_dbg++ < 20 && ev != NULL) {
-      u32 raw[6];
-      sys_copy_from_user(raw, ev, sizeof(raw));
-      log_debug("EPEVT op=%d fd=%d size=%d w=%x,%x,%x,%x,%x,%x\n", op, fd,
-                (int)sizeof(kev), (u32)raw[0], (u32)raw[1], (u32)raw[2],
-                (u32)raw[3], (u32)raw[4], (u32)raw[5]);
-    }
   }
   if (op == 3 /* EPOLL_CTL_MOD */) {
     for (i = 0; i < EPOLL_MAX_ITEMS; i++) {
@@ -363,29 +455,20 @@ static void pollw_epoll_release(void* a) {
  * pipe/本机 socket 按真实缓冲状态，普通文件/网络 socket 仍是"存在即就绪"。 */
 int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
                     void* sigmask, size_t sigsetsize) {
-  struct epoll_k* ep;
+  struct epoll_k* ep = (struct epoll_k*)evfd_priv(epfd, EPOLL_K_MAGIC);
   struct epoll_event_k out;
-  /* 【诊断·可删】入口参数（含 ep 指针原值）：EPWAIT 探针此前一次都没打印，
-   * 需要区分是"根本没进函数"还是"入口就 early-return"。 */
-  {
-    static int epw_in = 0;
-    thread_t* c0 = thread_current();
-    vnode_t* n0 = NULL;
-    fd_t* f0 = thread_find_fd_id(c0, epfd);
-    if (f0 != NULL) {
-      n0 = (vnode_t*)f0->data;
-    }
-    ep = (struct epoll_k*)evfd_priv(epfd, EPOLL_K_MAGIC);
-    if (epw_in++ < 30) {
-      log_debug("EPWAIT-IN tid=%d epfd=%d ev=%x max=%d tmo=%d ep=%x magic=%x\n",
-                c0 != NULL ? (int)c0->id : -1, epfd, (u32)(uintptr_t)events,
-                maxevents, timeout, (u32)(uintptr_t)ep,
-                (n0 != NULL && n0->device != NULL) ? ((u32*)n0->device)[0] : 0);
-    }
-  }
   int ready = 0;
   int i;
   (void)sigsetsize;
+  /* TEMP-EPSTAT */
+  {
+    static u32 calls;
+    calls++;
+    if ((calls & 0x7FF) == 0) {
+      log_info("EPSTAT calls=%u tmo=%d nitems=%d\n", calls, timeout,
+               ep != NULL ? ep->nitems : -1);
+    }
+  }
   if (ep == NULL) {
     /* fd 不存在 ⇒ EBADF；fd 存在但不是 epoll ⇒ EINVAL（Linux 语义，
      * LTP epoll_wait03 逐条校验这两条）。 */
@@ -406,26 +489,6 @@ int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
       u32 n = (sigsetsize > 0 && sigsetsize <= sizeof(sm)) ? (u32)sigsetsize : 8;
       if (sys_copy_from_user(sm, sigmask, n) < 0) {
         return -14;
-      }
-    }
-  }
-  {
-    /* 【诊断·可删】只在真的检测到"就绪项"时打印，定位监听 fd 有没有被
-     * 判成可读（若打了却仍不 accept，问题在服务端 accept 侧）。 */
-    static int epw_dbg = 0;
-    if (epw_dbg < 100) {
-      thread_t* c = thread_current();
-      for (i = 0; i < EPOLL_MAX_ITEMS; i++) {
-        if (!ep->items[i].used) {
-          continue;
-        }
-        if (sys_fd_ready(ep->items[i].fd, 1, 0)) {
-          epw_dbg++;
-          log_debug("EPWAIT-RDY tid=%d fd=%d ev=%x listen=%d\n",
-                    c != NULL ? (int)c->id : -1, ep->items[i].fd,
-                    ep->items[i].events, unix_fd_is_listener(ep->items[i].fd));
-          break;
-        }
       }
     }
   }
@@ -456,11 +519,46 @@ int sys_epoll_pwait(int epfd, void* events, int maxevents, int timeout,
     out.events = (ok_r ? EPOLLIN_ : 0) | (ok_w ? EPOLLOUT_ : 0);
     out.pad = 0;
     out.data = ep->items[i].data;
+    /* TEMP-EPSTAT：真正被投递出去的 fd */
+    {
+      static u32 em;
+      if ((em++ & 0xFF) == 0) {
+        log_info("EMIT fd=%d ev=%x\n", ep->items[i].fd, out.events);
+      }
+    }
     sys_copy_to_user((void*)((char*)events + ready * sizeof(out)), &out,
                      sizeof(out));
     ready++;
   }
   if (ready > 0) {
+    /* TEMP-EPSTAT：报告本轮就绪的 fd 与事件位 */
+    {
+      static u32 rd;
+      struct epoll_event_k first;
+      rd++;
+      if ((rd & 0x3F) == 0) {
+        int j;
+        sys_copy_from_user(&first, events, sizeof(first));
+        log_info("EPRDY n=%u ready=%d fd0ev=%x:", rd, ready, first.events);
+        for (j = 0; j < EPOLL_MAX_ITEMS; j++) {
+          if (!ep->items[j].used) {
+            continue;
+          }
+          if (sys_fd_ready(ep->items[j].fd, 1, 0) ||
+              sys_fd_ready(ep->items[j].fd, 0, 1)) {
+            {
+              fd_t* ff = thread_find_fd_id(thread_current(),
+                                           ep->items[j].fd);
+              log_info(" fd=%d(%s) ev=%x polled=%d", ep->items[j].fd,
+                       (ff != NULL && ff->name != NULL) ? ff->name : "?",
+                       ep->items[j].events,
+                       sys_fd_polled_t(thread_current(), ep->items[j].fd));
+            }
+          }
+        }
+        log_info("\n");
+      }
+    }
     return ready;
   }
   if (timeout == 0) {

@@ -364,6 +364,8 @@ void sys_fn_init() {
   syscall_table[SYS_GETGROUPS] = &sys_getgroups;
   syscall_table[SYS_VHANGUP] = &sys_setsid;
   syscall_table[SYS_EVENTFD2] = &sys_eventfd2;
+  syscall_table[SYS_SIGNALFD4] = &sys_signalfd4;
+  syscall_table[SYS_FACCESSAT2] = &sys_faccessat2;
   syscall_table[SYS_TIMERFD_CREATE] = &sys_timerfd_create;
   syscall_table[SYS_TIMERFD_SETTIME] = &sys_timerfd_settime;
   syscall_table[SYS_TIMERFD_GETTIME] = &sys_timerfd_gettime;

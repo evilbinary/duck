@@ -553,15 +553,6 @@ ssize_t sys_sendto(int sockfd, const void* buf, size_t len, int flags,
 
 ssize_t sys_recvfrom(int sockfd, void* buf, size_t len, int flags,
                      struct sockaddr* src_addr, socklen_t* addrlen) {
-  {
-    /* 【诊断·可删】客户端收包走哪条通道（只打业务线程，额度放宽） */
-    static int r_dbg = 0;
-    thread_t* t = thread_current();
-    int tid = (t != NULL) ? (int)t->id : -1;
-    if (tid >= 6 && r_dbg++ < 200) {
-      log_debug("SRECV tid=%d fd=%d unix=%d\n", tid, sockfd, unix_owns(sockfd));
-    }
-  }
   if (unix_owns(sockfd)) {
     ssize_t n;
     (void)flags;
