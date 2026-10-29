@@ -100,8 +100,15 @@ int bcm2836_init(vga_device_t* vga) {
 
   vga->pframbuffer = (u32*)(uintptr_t)fb_addr;
   vga->frambuffer = (u32*)(uintptr_t)0xfb000000UL;
-  /* GPU 返回的是分配字节数；兼容旧代码里 *8 的映射余量 */
-  vga->framebuffer_length = fb_size * 8;
+  /* 【如实按字节保存】ALLOCATE_BUFFER 的响应就是分配的字节数。这个值同时
+   * 决定页映射长度和 fbdev 上报的 smem_len，必须与真实分配一致。
+   * 历史上这里乘过 8（"长度当位数用"的旧习惯），1024x768x32 双缓冲的 6MB
+   * 显存被映射/上报成 48MB：对内只是多铺了几十页无主物理内存，但经
+   * FBIOGET_FSCREENINFO 外泄给标准 fbdev 程序后，对方会按 48MB 去 mmap。
+   * 【兜底】固件没回报字节数（0）时按几何推算，避免一页都不映射。 */
+  vga->framebuffer_length =
+      (fb_size > 0) ? fb_size
+                    : (vga->width * vga->height * ((vga->bpp + 7) / 8) * 2);
 
   return 0;
 }

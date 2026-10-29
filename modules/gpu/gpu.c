@@ -155,8 +155,12 @@ static void gpu_fb_fill_var(vga_device_t* vga, gpu_fb_varinfo_t* var) {
       break;
   }
   var->activate = 0;
-  var->height = vga->height; /* 物理尺寸(mm)驱动未申报，按像素数占位 */
-  var->width = vga->width;
+  /* 【物理尺寸单位是毫米，不能填像素数】fb_var_screeninfo 的 width/height 是
+   * "画面物理尺寸(mm)"，被 X 等程序用来算 DPI。驱动层没有上报 EDID/面板
+   * 尺寸的通道，这里按 96 dpi 折算近似值：mm = px * 25.4 / 96。
+   * （填 0 会被当"未知"乱猜，填像素数会被算成 25dpi 级别的极小字体。） */
+  var->width = (vga->width * 254u + 480u) / 960u;
+  var->height = (vga->height * 254u + 480u) / 960u;
   var->rotate = (vga->rotate & VGA_ROT_MASK) * 90; /* 0/90/180/270 */
 }
 
