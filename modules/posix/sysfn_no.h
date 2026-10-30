@@ -177,6 +177,7 @@ enum {
   SYS_FCHMODAT = 53,   /* aarch64 真实编号：musl chmod -> fchmodat */
   SYS_FCHMOD = 52,     /* aarch64 真实编号：fchmod 独立号 */
   SYS_FTRUNCATE = 46,  /* aarch64 真实编号：musl ftruncate/truncate */
+  SYS_FALLOCATE = 47,  /* aarch64：musl posix_fallocate（wayland shm pool 预分配） */
   SYS_FCHOWNAT = 54,   /* aarch64 真实编号：musl chown/lchown/fchown -> fchownat */
   SYS_SEEK = 62,
   // ARM64 does not have _llseek; lseek returns 64-bit offset directly.

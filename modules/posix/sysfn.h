@@ -464,6 +464,7 @@ int sys_fchmod(int fd, unsigned int mode);
 void sys_chmod_set(const char* path, u32 mode);
 int sys_chmod_query(const char* path, u32* mode);
 int sys_ftruncate(int fd, off_t length);
+int sys_fallocate(int fd, int mode, off_t offset, off_t length);
 /* flock(32)：咨询锁（fd 合法即授予，见 sysfn_fs.c 注释） */
 int sys_flock(int fd, int operation);
 int sys_mkdir(const char* pathname, mode_t mode);

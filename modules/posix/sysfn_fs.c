@@ -3135,6 +3135,38 @@ int sys_ftruncate(int fd, off_t length) {
   return fat_ftruncate(node, (u64)length);
 }
 
+/* fallocate(47)。本内核没有真正的磁盘/内存预分配，语义降级成"确保文件
+ * 至少有 offset+length 长"（等价 ftruncate）。
+ * 【为什么要实现】musl 的 posix_fallocate 直接发这个号；wayland 建 shm pool
+ * 时用它预分配，缺号时返回 -ENOSYS，客户端直接报
+ * "creating a buffer file for N B failed: Function not implemented" 然后退出。 */
+int sys_fallocate(int fd, int mode, off_t offset, off_t length) {
+  thread_t* current = thread_current();
+  fd_t* f;
+  vnode_t* node;
+  u64 end;
+
+  /* mode 必须是 0（FALLOC_FL_KEEP_SIZE 等本内核不支持） */
+  if (mode != 0) {
+    return -95; /* -EOPNOTSUPP */
+  }
+  if (offset < 0 || length <= 0) {
+    return -22; /* -EINVAL */
+  }
+  f = thread_find_fd_id(current, fd);
+  if (f == NULL || f->data == NULL) {
+    return -9; /* -EBADF */
+  }
+  node = (vnode_t*)f->data;
+  end = (u64)offset + (u64)length;
+  /* 共享页节点（memfd）：按长度增减页 */
+  if (node->op != NULL && node->op->truncate != NULL) {
+    return node->op->truncate(node, end);
+  }
+  /* FAT 等真实文件系统：不预分配，但让调用方成功（内容按需增长） */
+  return 0;
+}
+
 int sys_mkdir(const char* pathname, mode_t mode) {
   thread_t* current = thread_current();
   char kpath[MAX_PATH_BUFFER];

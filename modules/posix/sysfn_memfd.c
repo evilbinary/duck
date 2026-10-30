@@ -33,6 +33,12 @@
 /* linux/memfd.h 的 uapi 位 */
 #define MFD_CLOEXEC_ 0x0001u
 #define MFD_ALLOW_SEALING_ 0x0002u
+/* 6.3+ 的"可执行性"策略位。本内核没有可执行映射的 seal 概念，收到就忽略；
+ * 但必须**接受**：新版 musl 的 os_create_anonymous_file() 默认带
+ * MFD_NOEXEC_SEAL，拒绝会让它回退到 /tmp 真实文件，而文件的后端共享映射
+ * 没有页缓存 ⇒ 合成器读不到客户端画的像素（wl_shm 全黑）。 */
+#define MFD_NOEXEC_SEAL_ 0x0008u
+#define MFD_EXEC_ 0x0010u
 
 #define MEMFD_MAGIC 0x3E3FD000u
 #define MEMFD_NAME_MAX 56
@@ -185,7 +191,8 @@ int sys_memfd_create(unsigned long uname, unsigned long flags) {
   if (current == NULL || uname == 0) {
     return -22; /* -EINVAL */
   }
-  if ((flags & ~(MFD_CLOEXEC_ | MFD_ALLOW_SEALING_)) != 0) {
+  if ((flags & ~(MFD_CLOEXEC_ | MFD_ALLOW_SEALING_ | MFD_NOEXEC_SEAL_ |
+                 MFD_EXEC_)) != 0) {
     return -22; /* 未知 flag：Linux 语义 EINVAL */
   }
   kmemset(name, 0, sizeof(name));
