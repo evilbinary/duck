@@ -41,7 +41,10 @@
 #define MFD_EXEC_ 0x0010u
 
 #define MEMFD_MAGIC 0x3E3FD000u
-#define MEMFD_NAME_MAX 56
+/* Linux 的 MFD_NAME_MAX_LEN=249：名字必须是【249 字节内】的 NUL 结尾字符串，
+ * 越界或没结尾都算 EINVAL（LTP memfd_create02 的 invalid name 1-3）。 */
+#define MEMFD_NAME_MAX_LEN 249
+#define MEMFD_NAME_MAX (MEMFD_NAME_MAX_LEN + 1)
 #define MEMFD_MAX_PAGES 8192 /* 单对象上限 32MB，wl_shm 双缓冲足够 */
 
 struct memfd_obj {
@@ -188,8 +191,13 @@ int sys_memfd_create(unsigned long uname, unsigned long flags) {
   fd_t* fd;
   int n;
   int i;
-  if (current == NULL || uname == 0) {
+  if (current == NULL) {
     return -22; /* -EINVAL */
+  }
+  /* 名字指针为空是 EFAULT（不是 EINVAL）：Linux 先访问用户内存再校验。
+   * memfd_create02 的 "invalid name fail 1" 就卡在这条。 */
+  if (uname == 0) {
+    return -14; /* -EFAULT */
   }
   if ((flags & ~(MFD_CLOEXEC_ | MFD_ALLOW_SEALING_ | MFD_NOEXEC_SEAL_ |
                  MFD_EXEC_)) != 0) {
@@ -197,11 +205,18 @@ int sys_memfd_create(unsigned long uname, unsigned long flags) {
   }
   kmemset(name, 0, sizeof(name));
   if (sys_copy_from_user(name, (const void*)(uintptr_t)uname,
-                         sizeof(name) - 1) < 0) {
+                         MEMFD_NAME_MAX_LEN) < 0) {
     return -14; /* -EFAULT */
   }
-  name[sizeof(name) - 1] = 0;
-  for (i = 0; i < MEMFD_NAME_MAX - 1 && name[i] != 0; i++) {
+  name[MEMFD_NAME_MAX_LEN] = 0;
+  /* 前 249 字节内必须出现 NUL，否则 EINVAL（名字过长/未结尾）。
+   * 旧实现只拷 55 字节再强补 0，长名字被静默截断成功 → LTP 报 TFAIL。 */
+  for (i = 0; i < MEMFD_NAME_MAX_LEN && name[i] != 0; i++) {
+  }
+  if (i == MEMFD_NAME_MAX_LEN) {
+    return -22; /* -EINVAL */
+  }
+  for (i = 0; name[i] != 0; i++) {
     unsigned char ch = (unsigned char)name[i];
     if (ch < 0x20 || ch > 0x7e) {
       name[i] = '?';
