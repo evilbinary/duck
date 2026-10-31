@@ -85,6 +85,9 @@ client_t* service_create_client(char* name, int size) {
   client->apis = sys_mmap2(NULL, pages * PAGE_SIZE, 0, MAP_ANON, 0, 0);
   if (client->apis != NULL) {
     kmemset(client->apis, 0, pages * PAGE_SIZE);
+    /* 控制区 alive=1：调用方据此判断服务端是否还在（统计字由调用方维护） */
+    ((u32*)((char*)client->apis + (int)size * (int)sizeof(api_t)))
+        [FOOT_CTL_ALIVE] = 1;
   }
   log_debug("create client %s slots=%d apis=%x\n", name, client->api_size,
             client->apis);
@@ -163,6 +166,13 @@ void service_remove_client(client_t* client) {
   }
   if (client_number > 0) {
     clients[--client_number] = NULL;
+  }
+
+  /* 先给共享页盖上"服务端已走"的戳：还在等结果的调用方醒来后能立刻判死
+   * （页若随后被回收，这次写也在回收之前）。 */
+  if (client->apis != NULL) {
+    ((u32*)((char*)client->apis + (int)client->api_size * (int)sizeof(api_t)))
+        [FOOT_CTL_ALIVE] = 0;
   }
 
   /* 【注销回收】只有满足两条才真释放，否则只摘名字（保守泄漏）：

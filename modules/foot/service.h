@@ -37,10 +37,18 @@ enum {
 #define FOOT_SLOT_LEAK_MS 5000 /* 调用方崩溃后槽位回收阈值（ms） */
 
 /* 共享页控制区：紧跟在槽数组后面，与 eggs/libfoot/client.h 同布局。
- *   [0] kick  调用方的提交计数（服务端空闲时 futex 睡在这个字上）
- *   [1..3]    预留 */
-#define FOOT_CTL_WORDS 4
+ *   [0] kick    调用方的提交计数（服务端空闲时 futex 睡在这个字上）
+ *   [1] alive   服务端存活标记（注册置 1，注销/崩溃清理置 0）
+ *   [2] req_total / [3] timeout / [4] err / [5] max_lat_ms（调用方维护的统计）
+ *   [6..7] 预留 */
+#define FOOT_CTL_WORDS 8
 #define FOOT_CTL_BYTES (FOOT_CTL_WORDS * 4)
+#define FOOT_CTL_KICK 0
+#define FOOT_CTL_ALIVE 1
+#define FOOT_CTL_REQ 2
+#define FOOT_CTL_TIMEOUT 3
+#define FOOT_CTL_ERR 4
+#define FOOT_CTL_MAX_LAT 5
 
 enum {
   SYS_NEW_CLIENT = 1,
