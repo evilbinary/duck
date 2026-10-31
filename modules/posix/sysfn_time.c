@@ -164,15 +164,18 @@ int sys_setitimer(int which, void* new_val, void* old_val) {
  * ⇒ usleep 是空转：X11 桌面每个客户端主循环的 usleep(2000) 防自旋全成了
  * 纯烧 CPU（实测 xcalc 单实例 11%+5%，窗口越多拖动越卡）。
  * 现在用 poll_wait_suspend 纯定时等待真正挂起（与无 fd 的 select 同一套，
- * tick 到期 WAKE_TIMEOUT 唤醒）。保险丝语义保留：单段最多睡 100 tick，
- * 长睡眠拆成多段——单段大冻（~1.9s 手柄没反应）不会再出现，想插队的事件
- * 每 100ms 就有机会被处理。 */
-#define NANOSLEEP_STEP_TICKS 100
-
+ * tick 到期 WAKE_TIMEOUT 唤醒）。
+ *
+ * 【必须一次睡满，不能分段】poll_wait_suspend 真正挂起后【不会返回】内核
+ * 调用链——tick 到期由唤醒方把 x0 写进保存帧直接回用户态。旧实现按
+ * "单段最多 100 tick、长睡眠拆多段"的循环写，第一次挂起就让循环失效，
+ * 结果任何超过 100 tick 的请求都只睡 100ms（实测 nanosleep(1200ms) 实际
+ * 99ms：X11 的 usleep、SDL_Delay、LTP 定时用例全被截断）。
+ * 这里按剩余时间一次性挂起，时长换算回毫秒交给 tick 计时。 */
 static int sys_sleep_rel(struct timespec* req, struct timespec* rem) {
   ullong want;
-  ullong start;
-  ullong now;
+  u32 ms;
+  int r;
   if (req == NULL) {
     return -1;
   }
@@ -181,35 +184,21 @@ static int sys_sleep_rel(struct timespec* req, struct timespec* rem) {
   if (want == 0) {
     return 0;
   }
-  start = (ullong)schedule_get_ticks();
-  for (;;) {
-    ullong left;
-    int r;
-    now = (ullong)schedule_get_ticks();
-    if (now >= start + want) {
-      break;
-    }
-    left = start + want - now;
-    if (left > NANOSLEEP_STEP_TICKS) {
-      left = NANOSLEEP_STEP_TICKS;
-    }
-    r = sys_idle_wait_ms((u32)left);
-    if (r < 0) {
-      /* 挂起前就有未决信号：POSIX 返回 -EINTR，剩余时间尽力写给 rem。
-       * （等待中途到的信号由唤醒方直接回填保存帧，走不到这里。） */
-      if (rem != NULL) {
-        ullong left2 = start + want - (ullong)schedule_get_ticks();
-        if ((long)left2 < 0) {
-          left2 = 0;
-        }
-        rem->tv_sec = (time_t)(left2 / (ullong)SCHEDULE_FREQUENCY);
-        rem->tv_nsec = (long)((left2 % (ullong)SCHEDULE_FREQUENCY) *
-                              (1000000000ull / (ullong)SCHEDULE_FREQUENCY));
-      }
-      return -4; /* -EINTR */
-    }
+  if (rem != NULL) {
+    /* 睡满返回时没有剩余时间；中途被信号打断由唤醒方回 -EINTR，
+     * 这里拿不到剩余量，按 0 处理（musl 只在 ret==-1&&errno==EINTR 时读 rem）。 */
+    rem->tv_sec = 0;
+    rem->tv_nsec = 0;
   }
-  return 0;
+  /* tick → ms（向上取整，别把 1 tick 换成 0ms 变成“立刻返回”） */
+  ms = (u32)((want * 1000ull + (ullong)SCHEDULE_FREQUENCY - 1ull) /
+             (ullong)SCHEDULE_FREQUENCY);
+  if (ms > 0x7fffffffull) {
+    ms = 0x7fffffffu;
+  }
+  r = sys_idle_wait_ms(ms);
+  /* 挂起前就有未决信号：POSIX 返回 -EINTR（等待中途的信号由唤醒方回填）。 */
+  return r < 0 ? -4 : 0;
 }
 
 /* 【重要·应用其实走的是这一路】musl 的 __clock_nanosleep 在本平台

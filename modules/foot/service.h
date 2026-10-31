@@ -4,7 +4,7 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #ifndef __SERVICE_H__
-#define __SERVICE__
+#define __SERVICE_H__
 
 #include "kernel/kernel.h"
 
@@ -30,9 +30,11 @@ enum {
 };
 
 #define MAX_CLIENTS 100
-
+#define MAX_API_SLOTS 8      /* 每个 client 最多 8 个并发请求槽 */
 #define MAX_ARGS_BUF 128
 #define MAX_INSTANCE 16
+#define FOOT_API_DEFAULT 4   /* 默认槽位数 */
+#define FOOT_SLOT_LEAK_MS 5000 /* 调用方崩溃后槽位回收阈值（ms） */
 
 enum {
   SYS_NEW_CLIENT = 1,
@@ -49,19 +51,29 @@ enum {
   SYS_DINIT = 4,
 };
 
-enum{
-  API_INIT =0,
-  API_REDAY=1,
-  API_RETURN=2,
-  API_FINISH=3
+enum {
+  API_INIT = 0,
+  API_REDAY = 1,
+  API_RETURN = 2,
+  API_FINISH = 3
 };
 
+/* 共享页里的一个请求槽。
+ * 【重要】本结构与 eggs/libfoot/client.h 的同名结构必须逐字段一致：
+ * 内核与用户态各自持有一份定义（刻意解耦），字段变更时两侧同批修改。
+ *
+ * 生命周期：cid==0 表示空闲；调用方用 CAS 把 cid 从 0 改成 seq 完成占用，
+ * 然后写参数、置 state=API_REDAY；服务方处理完置 state=API_RETURN；
+ * 调用方取走结果后把 state 置回 API_INIT、cid 置回 0。 */
 typedef struct api {
-  int cid;        // call id
-  int state;         // api state
-  char* fn;       // function id
-  void* ret;      // return value
-  char args[MAX_ARGS_BUF];  // params
+  int cid;                 /* 0 = 空闲，非 0 = 正在处理（值即 seq） */
+  int state;               /* API_INIT / API_REDAY / API_RETURN / API_FINISH */
+  int err;                 /* 响应错误码：0 = OK */
+  unsigned int seq;        /* 请求序号，用于识别陈旧响应 */
+  unsigned int claim_ms;   /* 调用方写入的起始时刻（ms），服务方据此回收僵尸槽 */
+  void* fn;                /* 方法号 */
+  void* ret;               /* 返回值 */
+  char args[MAX_ARGS_BUF]; /* 参数区（按实际长度拷贝，未用部分为 0） */
 } api_t;
 
 typedef struct client {
@@ -73,16 +85,17 @@ typedef struct client {
   int fd;
   int service_id;
   int type;
-  int api_size;
-  api_t* apis;
+  int api_size; /* 槽位数，由服务方注册时声明（1..MAX_API_SLOTS） */
+  api_t* apis;  /* 指向共享页（服务方与调用方映射同一物理页） */
   int state;
   int count;
-  struct client *instance[MAX_INSTANCE];
+  struct client* instance[MAX_INSTANCE];
 } client_t;
 
 typedef struct client_ctl {
   char* name;
   int id;
+  int api_size; /* SYS_NEW_CLIENT：期望槽位数；返回时回填实际值 */
   client_t* client;
 } client_ctl_t;
 

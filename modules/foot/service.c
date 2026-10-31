@@ -29,7 +29,7 @@ client_t* service_get_client_name(char* name) {
         if (client == NULL) {
           client = clients[i];
           client->count = 0;
-        } else {
+        } else if (client->count < MAX_INSTANCE) {
           client->instance[client->count++] = clients[i];
         }
       }
@@ -48,23 +48,46 @@ client_t* service_get_client(int id) {
 }
 
 int service_add_client(client_t* client) {
+  if (client_number >= MAX_CLIENTS) {
+    log_error("clients table full (%d)\n", MAX_CLIENTS);
+    return -1;
+  }
   client->id = client_number;
   clients[client_number++] = client;
   return client->id;
 }
 
+/* 共享页页数：按槽位数向上取整，至少 1 页 */
+static int service_api_pages(int slots) {
+  int bytes = slots * (int)sizeof(api_t);
+  int pages = (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
+  return pages < 1 ? 1 : pages;
+}
+
 client_t* service_create_client(char* name, int size) {
+  if (size < 1) size = 1;
+  if (size > MAX_API_SLOTS) size = MAX_API_SLOTS;
+
   client_t* client = kmalloc(sizeof(client_t), DEVICE_TYPE);
+  kmemset(client, 0, sizeof(client_t));
+
   int len = kstrlen(name);
-  client->name = kmalloc(len, DEVICE_TYPE);
+  client->name = kmalloc(len + 1, DEVICE_TYPE);
+  kmemset(client->name, 0, len + 1);
   kstrncpy(client->name, name, len);
+
   client->state = SYS_INIT;
   client->tid = thread_current()->id;
-  // alloc apis
   client->api_size = size;
-  client->apis = sys_mmap2(NULL, PAGE_SIZE, 0, MAP_ANON, 0, 0);
-  // client->apis = kmalloc(sizeof(api_t) * client->api_size, DEVICE_TYPE);
-  log_debug("create client %s %d %x\n", name, client->api_size, client->apis);
+
+  /* 共享页：调用方与服务方映射同一物理页，槽位数组就在这里 */
+  int pages = service_api_pages(size);
+  client->apis = sys_mmap2(NULL, pages * PAGE_SIZE, 0, MAP_ANON, 0, 0);
+  if (client->apis != NULL) {
+    kmemset(client->apis, 0, pages * PAGE_SIZE);
+  }
+  log_debug("create client %s slots=%d apis=%x\n", name, client->api_size,
+            client->apis);
   return client;
 }
 
@@ -79,12 +102,12 @@ void service_map_client_api(client_t* src, client_t* des) {
   }
   thread_t* current = thread_current();
 
-  char* name = des->name;
-  kmemcpy(des, src, sizeof(client_t));
-  des->name = name;
-
-  int len = sizeof(api_t) * src->api_size;
-  des->api_size = src->api_size;
+  /* des 是用户态结构：内核不裸读/裸写，统一走 copy_from/to_user 做逐页校验 */
+  client_t udes;
+  if (sys_copy_from_user(&udes, des, sizeof(client_t)) < 0) {
+    log_error("map client: copy_from_user failed\n");
+    return;
+  }
 
   thread_t* t = thread_find_id(src->tid);
   if (t == NULL) {
@@ -92,28 +115,76 @@ void service_map_client_api(client_t* src, client_t* des) {
     return;
   }
 
-  void* addr = page_v2p(t->vm->upage, src->apis);
-  if (addr == NULL) {
-    log_warn("addr is null %s\n", t->name);
+  int pages = service_api_pages(src->api_size);
+
+  client_t kdes;
+  kmemcpy(&kdes, src, sizeof(client_t));
+  kdes.name = udes.name; /* 保留调用方自己的 name 指针 */
+  kdes.apis = sys_mmap2(NULL, pages * PAGE_SIZE, 0, MAP_ANON, 0, 0);
+  if (kdes.apis == NULL) {
+    log_error("map client: mmap %d pages failed\n", pages);
     return;
   }
-  des->apis = sys_mmap2(NULL, PAGE_SIZE, 0, MAP_ANON, 0, 0);
-  page_map_on(current->vm->upage, des->apis, addr,
-              PAGE_USER);
-  log_debug("mmap addr %x to %x api_size %d\n", src->apis, des->apis,
-            des->api_size);
+
+  /* 逐页把服务方的共享页物理帧映射进调用方地址空间 */
+  for (int i = 0; i < pages; i++) {
+    void* pa = page_v2p(t->vm->upage, (char*)src->apis + i * PAGE_SIZE);
+    if (pa == NULL) {
+      log_warn("map client: apis page %d unmapped (%s)\n", i, t->name);
+      break;
+    }
+    page_map_on(current->vm->upage, (char*)kdes.apis + i * PAGE_SIZE, pa,
+                PAGE_USER);
+  }
+
+  if (sys_copy_to_user(des, &kdes, sizeof(client_t)) < 0) {
+    log_error("map client: copy_to_user failed\n");
+    return;
+  }
+  log_debug("mmap client %s apis %x -> %x slots=%d pages=%d\n", src->name,
+            src->apis, kdes.apis, kdes.api_size, pages);
 }
 
 void service_remove_client(client_t* client) {
   int pos = service_get_client_no(client);
-  for (int i = pos + 1; (i + 1) < client_number; i++) {
+  if (pos < 0) {
+    log_warn("remove client not found id %d\n", client->id);
+    return;
+  }
+  for (int i = pos; (i + 1) < client_number; i++) {
     clients[i] = clients[i + 1];
+  }
+  if (client_number > 0) {
+    clients[--client_number] = NULL;
   }
 }
 
 u32 service_open(vnode_t* node, u32 mode) { return 0; }
 
-u32 service_close(vnode_t* node) { return 0; }
+/* 关闭 /dev/foot：把该线程注册过的所有 client 摘除，
+ * 否则客户端崩掉后 clients[] 会被永久占满（MAX_CLIENTS=100）。 */
+u32 service_close(vnode_t* node) {
+  thread_t* current = thread_current();
+  if (current == NULL) return 0;
+
+  int i = 0;
+  int removed = 0;
+  while (i < client_number) {
+    if (clients[i] != NULL && clients[i]->tid == current->id) {
+      client_t* victim = clients[i];
+      victim->state = SYS_DINIT;
+      service_remove_client(victim); /* 内含数组搬移与 client_number-- */
+      removed++;
+    } else {
+      i++;
+    }
+  }
+  if (removed > 0) {
+    log_debug("close: removed %d client(s) of tid %d, %d left\n", removed,
+              current->id, client_number);
+  }
+  return 0;
+}
 
 size_t service_read(vnode_t* node, void* buf, size_t len) {
   u32 ret = 0;
@@ -157,34 +228,56 @@ ssize_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
 
   // log_debug("ioctl cmd= %x args= %x\n", cmd, args);
 
-  client_ctl_t* ctl = args;
+  /* 用户参数：先拷进内核，之后只用内核副本解释 */
+  client_ctl_t uctl;
+  if (sys_copy_from_user(&uctl, args, sizeof(uctl)) < 0) {
+    log_error("ioctl: copy_from_user ctl failed\n");
+    return -1;
+  }
+
+  char kname[32];
+  kmemset(kname, 0, sizeof(kname));
+  if (uctl.name != NULL) {
+    if (sys_copy_from_user(kname, uctl.name, sizeof(kname) - 1) < 0) {
+      log_error("ioctl: copy_from_user name failed\n");
+      return -1;
+    }
+  }
 
   if (cmd == SYS_GET_CLIENT) {
-    client_t* client = service_get_client_name(ctl->name);
+    client_t* client = service_get_client_name(kname);
     if (client == NULL) {
-      log_error("client %s get is null\n", ctl->name);
+      log_error("client %s get is null\n", kname);
       return -1;
     }
     client->cid = current->id;
-    service_map_client_api(client, ctl->client);
-    // thread_t* t1 = thread_create_name_level("dump", (u32*)&do_dump_thread,
-    // NULL,
-    //                                         LEVEL_KERNEL_SHARE);
-    // thread_run(t1);
+    service_map_client_api(client, uctl.client);
   } else if (cmd == SYS_NEW_CLIENT) {
-    client_t* client = service_create_client(ctl->name, 1);
+    int slots = uctl.api_size;
+    if (slots <= 0 || slots > MAX_API_SLOTS) slots = FOOT_API_DEFAULT;
+    client_t* client = service_create_client(kname, slots);
+    if (client == NULL) {
+      log_error("create client %s failed\n", kname);
+      return -1;
+    }
     client->cid = current->id;
     int no = service_add_client(client);
-    service_map_client_api(client, ctl->client);
+    if (no < 0) {
+      return -1;
+    }
+    service_map_client_api(client, uctl.client);
 
     vnode_t* node_client = vfs_create_node(client->name, V_FILE);
     vfs_add_child(node, node_client);
 
     ret = no;
-    // mmap
   } else if (cmd == SYS_DEL_CLIENT) {
-    int id = ctl->id;
+    int id = uctl.id;
     client_t* client = service_get_client(id);
+    if (client == NULL) {
+      log_error("client del id %d is null\n", id);
+      return -1;
+    }
     client->state = SYS_DINIT;
     service_remove_client(client);
 
@@ -193,14 +286,14 @@ ssize_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
       vfs_remove_child(node, node_client);
     }
   } else if (cmd == SYS_GET_CLIENT_BY_ID) {
-    int id = ctl->id;
+    int id = uctl.id;
     client_t* client = service_get_client(id);
     if (client == NULL) {
       log_error("client get id %d is null\n", id);
       return -1;
     }
     client->cid = current->id;
-    service_map_client_api(client, ctl->client);
+    service_map_client_api(client, uctl.client);
   }
   return ret;
 }
@@ -229,7 +322,7 @@ u32 service_readdir(vnode_t* node, struct vdirent* dirent, u32* offset,
       dirent->length = sizeof(struct vdirent);
       nbytes += dirent->length;
       dirent++;  // maybe change to offset
-      *offset++;
+      (*offset)++;
       read_count++;
     } else {
       break;
