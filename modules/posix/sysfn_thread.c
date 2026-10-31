@@ -12,6 +12,7 @@
 #include "kernel/event.h"
 #include "kernel/fd.h"
 #include "kernel/kernel.h"
+#include "kernel/page_ref.h"
 #include "kernel/thread.h"
 #include "kernel/version.h"
 #include "kernel/vfs.h"
@@ -88,16 +89,19 @@ int sys_thread_map(int tid, u32 virt_addr, u32 phy_addr, u32 size, u32 attr) {
   log_debug("sys thread %s map %x %x %d\n", current->name, virt_addr, phy_addr,
             size);
 
-  /* 【收权】用户地址空间只能映射自己 cap 表里已授权的设备窗口。
+  /* 【收权】用户地址空间只能映射自己 cap 表里已授权的资源。
    * 原实现直接吃用户给的 phy_addr、不校验范围 ⇒ 用户态可以把内核代码段、
    * 页表、其它进程的页映射进自己的地址空间再改写（等同于提权）。
-   * 现在必须先在 /dev/foot 用 SYS_CAP_GET_MMIO 拿到 CAP_MMIO，映射范围
-   * 落在该窗口内才放行。内核线程（upage == kpage）不受此限。 */
+   * 现在放行条件只有两种：
+   *   1) 范围落在已授权的设备窗口内（SYS_CAP_GET_MMIO 拿到的 DEVWIN）；
+   *   2) 范围落在已授权的物理页帧对象内（SYS_CAP_ALLOC_FRAME 拿到的 FRAME）。
+   * 内核线程（upage == kpage）不受此限。 */
+  int cap_kind = CAP_RANGE_DEVWIN; /* 内核线程不受限，按设备页处理（不加页引用） */
   if (caller != NULL && caller->vm != NULL &&
       caller->vm->upage != caller->vm->kpage) {
-    int ok = cap_check_phys_range(caller->cspace, phy_addr, size, DEVWIN_MAP);
-    if (!ok) {
-      log_warn("thread_map denied: tid %d phys %x size %x no CAP_MMIO\n",
+    cap_kind = cap_range_owner(caller->cspace, phy_addr, size, DEVWIN_MAP);
+    if (cap_kind == CAP_RANGE_NONE) {
+      log_warn("thread_map denied: tid %d phys %x size %x no DEVWIN/FRAME cap\n",
                caller->id, phy_addr, size);
       return -1;
     }
@@ -116,6 +120,15 @@ int sys_thread_map(int tid, u32 virt_addr, u32 phy_addr, u32 size, u32 attr) {
 
   int ret = 0;
   vmemory_map_type(current->vm->upage, virt_addr, phy_addr, size, attr);
+
+  /* 帧对象：这块页由对象持有，本次映射再持有一份，进程退出时由
+   * page_destroy 的 page_put 减掉，避免对象还在、页已被还进页池。
+   * 设备窗口的页不属于页池（page_ref 表里没有条目，inc 是空操作）。 */
+  if (cap_kind == CAP_RANGE_FRAME) {
+    for (vaddr_t i = 0; i < size; i += PAGE_SIZE) {
+      page_ref_inc((u32)(phy_addr + i));
+    }
+  }
 
   return ret;
 }

@@ -307,15 +307,26 @@ static ssize_t service_cap_ioctl(u32 cmd, void* args) {
       ret = 0;
     } break;
     case SYS_CAP_MAP:
-      ret = cap_devwin_map(cs, uctl.handle, pgdir, uctl.vaddr, uctl.offset,
-                           uctl.len);
+      /* 按句柄的实际类型分派（设备窗口 / 物理页帧 / 将来的其它可映射对象） */
+      ret = cap_map(cs, uctl.handle, pgdir, uctl.vaddr, uctl.offset, uctl.len);
       break;
     case SYS_CAP_UNMAP:
-      ret = cap_devwin_unmap(cs, uctl.handle, pgdir);
+      ret = cap_unmap(cs, uctl.handle, pgdir);
       break;
     case SYS_CAP_INFO:
-      ret = cap_devwin_info(cs, uctl.handle, &uctl.pa, &uctl.size, &uctl.rights);
+      ret = cap_res_info(cs, uctl.handle, &uctl.pa, &uctl.size, &uctl.rights);
       break;
+    case SYS_CAP_ALLOC_FRAME: {
+      /* 入参：size（0 = 一页）、pa（0 = 新分配）、rights（0 = 默认） */
+      u32 h = cap_frame_alloc(cs, uctl.size, uctl.pa, uctl.rights);
+      if (h == 0) {
+        break;
+      }
+      uctl.handle = h;
+      /* 回填实际物理基址与长度，用户态不必再发一次 INFO */
+      cap_frame_info(cs, h, &uctl.pa, &uctl.size, &uctl.rights);
+      ret = 0;
+    } break;
     case SYS_CAP_DERIVE: {
       u32 h = cap_mint(cs, uctl.handle, uctl.rights);
       if (h == 0) {
@@ -342,7 +353,7 @@ static ssize_t service_cap_ioctl(u32 cmd, void* args) {
 ssize_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
   u32 ret = 0;
   /* capability 命令：参数结构、语义都与客户端命令不同，先分流 */
-  if (cmd >= SYS_CAP_GET_MMIO && cmd <= SYS_CAP_REVOKE) {
+  if (cmd >= SYS_CAP_GET_MMIO && cmd <= SYS_CAP_ALLOC_FRAME) {
     return service_cap_ioctl(cmd, args);
   }
   if (node == NULL) {

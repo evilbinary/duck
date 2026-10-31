@@ -38,6 +38,7 @@ add_files(
     'cap.c',
     'cap_obj.c',
     'cap_devwin.c',
+    'cap_frame.c',
     'cred.c'
 )
 

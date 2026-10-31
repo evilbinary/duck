@@ -92,6 +92,7 @@ typedef struct cap {
    * （设备映射的 VA < EXEC_ADDR，那里只清 PTE 不还页）。 */
   vaddr_t map_va;
   vaddr_t map_len;
+  vaddr_t map_off; /* 最近一次 map 在对象内的偏移（FRAME 归还引用要用） */
 } cap_t;
 
 #define CSPACE_MIN_SLOTS 64
@@ -159,9 +160,24 @@ int cap_info(cspace_t* cs, u32 h, u32* ty, u32* rights, u32* obj_id,
 /* 当前线程的 CSpace（内核线程为 NULL） */
 cspace_t* cap_current(void);
 
-/* 判断 [pa, pa+size) 是否落在持有者某个 DEVWIN 能力覆盖的窗口内
- * （sys_thread_map 收权用），1 = 允许 */
+/* 判断 [pa, pa+size) 是否落在持有者某个 DEVWIN 窗口 / FRAME 能力覆盖的
+ * 范围之内（sys_thread_map 收权用），1 = 允许 */
 int cap_check_phys_range(cspace_t* cs, vaddr_t pa, vaddr_t size, u32 need_rights);
+/* 同上，但返回覆盖该范围的能力种类：0 = 无，1 = DEVWIN，2 = FRAME。
+ * 调用方据此决定是否要为自己的映射再持有一份页引用（帧需要）。 */
+#define CAP_RANGE_NONE 0
+#define CAP_RANGE_DEVWIN 1
+#define CAP_RANGE_FRAME 2
+int cap_range_owner(cspace_t* cs, vaddr_t pa, vaddr_t size, u32 need_rights);
+
+/* ---- 类型无关的用法（按 c->ty 分派到 obj_ops） ---- */
+/* 用能力把对象映射进 pgdir：DEVWIN 需 DEVWIN_MAP，FRAME 需 FRAME_MAP。
+ * 成功后把 VA/长度记进能力台账，撤销时据此 unmap。 */
+int cap_map(cspace_t* cs, u32 h, void* pgdir, vaddr_t vaddr, vaddr_t offset,
+            vaddr_t len);
+int cap_unmap(cspace_t* cs, u32 h, void* pgdir);
+/* 取对象资源信息（DEVWIN: 窗口基址/长度；FRAME: 物理页基址/长度） */
+int cap_res_info(cspace_t* cs, u32 h, u32* pa, u32* size, u32* rights);
 
 /* ============ OBJ_DEVWIN（cap_devwin.c） ============ */
 typedef struct foot_dev_win {
@@ -188,5 +204,37 @@ int cap_devwin_map(cspace_t* cs, u32 h, void* pgdir, vaddr_t vaddr,
 int cap_devwin_unmap(cspace_t* cs, u32 h, void* pgdir);
 /* 查窗口物理基址 / 长度 / 当前权限（指针可空） */
 int cap_devwin_info(cspace_t* cs, u32 h, u32* pa, u32* size, u32* rights);
+
+/* ============ OBJ_FRAME（cap_frame.c） ============
+ * 物理页（或页组）对象。两种来源：
+ *   1) pa == 0：由页池分配，owned=1，最后一个能力消失时归还页池；
+ *   2) pa != 0：包装已存在的物理页（DMA 缓冲 / 共享页），owned=0，
+ *      对象消失只是"没人持有"，页面本身不动。
+ * 用户态拿到的句柄可用于 mmap 式映射（FRAME_MAP）或被 sys_thread_map 认可。 */
+typedef struct foot_frame {
+  vaddr_t pa;   /* 物理基址（页对齐） */
+  vaddr_t size; /* 字节数（页对齐） */
+  u32 owned;    /* 1 = 页由本对象分配，销毁时归还 */
+  u32 owner;    /* 创建者线程 id（审计用） */
+} foot_frame_t;
+
+/* FRAME 的默认授予权限：读 + 可映射 + 可派生/撤销/转授 */
+#define CAP_FRAME_RIGHTS_DEFAULT                                               \
+  (RIGHT_LOAD | RIGHT_INVOKE | RIGHT_GRANT | RIGHT_MINT | RIGHT_REVOKE |       \
+   FRAME_MAP | FRAME_UNMAP)
+
+/* 注册 OBJ_FRAME 类型（boot 期由 cap_init 调用） */
+void cap_frame_init(void);
+/* 创建帧对象并把能力装进 cs，返回句柄（0 = 失败）。
+ *   size 按页向上取整；pa == 0 表示从页池新分配，否则包装该物理地址。
+ *   rights == 0 时取 CAP_FRAME_RIGHTS_DEFAULT。 */
+u32 cap_frame_alloc(cspace_t* cs, vaddr_t size, vaddr_t pa, u32 rights);
+/* 映射帧内 [offset, offset+len) 到 vaddr（FRAME_MAP） */
+int cap_frame_map(cspace_t* cs, u32 h, void* pgdir, vaddr_t vaddr,
+                  vaddr_t offset, vaddr_t len);
+/* 解除该能力记录过的映射 */
+int cap_frame_unmap(cspace_t* cs, u32 h, void* pgdir);
+/* 查帧物理基址 / 长度 / 当前权限（指针可空） */
+int cap_frame_info(cspace_t* cs, u32 h, u32* pa, u32* size, u32* rights);
 
 #endif

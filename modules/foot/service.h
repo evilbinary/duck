@@ -65,6 +65,9 @@ enum {
   SYS_CAP_INFO = 8,     /* handle → pa/size/rights（输出） */
   SYS_CAP_DERIVE = 9,   /* handle + rights → handle（输出） */
   SYS_CAP_REVOKE = 10,  /* handle（递归撤销子树） */
+  /* 帧对象：size（0 = 一页，最多 256KB）→ handle。
+   * pa 非 0 时包装该物理页（不接管生命周期），0 时从页池分配。 */
+  SYS_CAP_ALLOC_FRAME = 11,
 };
 
 /* ioctl(/dev/foot, SYS_CAP_*) 的参数。字段按用途分组，未用的留 0。

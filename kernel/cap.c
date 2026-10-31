@@ -19,6 +19,7 @@
 void cap_init(void) {
   obj_init();
   cap_devwin_init(); /* 静态设备窗口 → OBJ_DEVWIN 对象 */
+  cap_frame_init();  /* 物理页对象 OBJ_FRAME */
 }
 
 /* ---------------- 工具 ---------------- */
@@ -93,10 +94,11 @@ static void cap_unmap_record(cap_t* c, void* pgdir) {
   }
   const obj_ops_t* ops = obj_ops_get(c->ty);
   if (ops != NULL && ops->unmap != NULL) {
-    ops->unmap(c->obj, pgdir, c->map_va, 0, c->map_len);
+    ops->unmap(c->obj, pgdir, c->map_va, c->map_off, c->map_len);
   }
   c->map_va = 0;
   c->map_len = 0;
+  c->map_off = 0;
 }
 
 void cspace_destroy(cspace_t* cs, void* pgdir) {
@@ -379,8 +381,7 @@ cspace_t* cap_current(void) {
   return t->cspace;
 }
 
-int cap_check_phys_range(cspace_t* cs, vaddr_t pa, vaddr_t size,
-                         u32 need_rights) {
+int cap_range_owner(cspace_t* cs, vaddr_t pa, vaddr_t size, u32 need_rights) {
   if (cs == NULL) {
     return 0; /* 内核线程没有 CSpace，由调用方决定放行策略 */
   }
@@ -389,16 +390,97 @@ int cap_check_phys_range(cspace_t* cs, vaddr_t pa, vaddr_t size,
   }
   for (u32 i = 1; i < cs->nslot; i++) {
     cap_t* c = &cs->slots[i];
-    if (c->obj == NULL || c->ty != OBJ_DEVWIN || c->obj->state == NULL) {
+    if (c->obj == NULL || c->obj->state == NULL) {
       continue;
     }
-    if ((c->rights & need_rights) != need_rights) {
-      continue;
-    }
-    const foot_dev_win_t* win = (const foot_dev_win_t*)c->obj->state;
-    if (pa >= win->base && (pa + size) <= (win->base + win->size)) {
-      return 1;
+    if (c->ty == OBJ_DEVWIN) {
+      if ((c->rights & need_rights) != need_rights) {
+        continue;
+      }
+      const foot_dev_win_t* win = (const foot_dev_win_t*)c->obj->state;
+      if (pa >= win->base && (pa + size) <= (win->base + win->size)) {
+        return 1;
+      }
+    } else if (c->ty == OBJ_FRAME) {
+      /* 帧只认 FRAME_MAP：调用方要的映射权必须落在该能力上 */
+      if ((need_rights & FRAME_MAP) != 0 && (c->rights & FRAME_MAP) == 0) {
+        continue;
+      }
+      const foot_frame_t* f = (const foot_frame_t*)c->obj->state;
+      if (pa >= f->pa && (pa + size) <= (f->pa + f->size)) {
+        return 2;
+      }
     }
   }
   return 0;
+}
+
+int cap_check_phys_range(cspace_t* cs, vaddr_t pa, vaddr_t size,
+                         u32 need_rights) {
+  return cap_range_owner(cs, pa, size, need_rights) != 0;
+}
+
+/* ---------------- 类型无关的用法 ---------------- */
+
+/* 该类型"映射"需要哪个类型位 */
+static u32 cap_map_right(obj_type_t ty) {
+  switch (ty) {
+    case OBJ_DEVWIN:
+      return DEVWIN_MAP;
+    case OBJ_FRAME:
+      return FRAME_MAP;
+    default:
+      return 0;
+  }
+}
+
+int cap_map(cspace_t* cs, u32 h, void* pgdir, vaddr_t vaddr, vaddr_t offset,
+            vaddr_t len) {
+  cap_t* c = cspace_get(cs, h);
+  if (c == NULL || c->obj == NULL) {
+    return -1;
+  }
+  u32 need = cap_map_right(c->ty);
+  if (need == 0 || (c->rights & need) == 0) {
+    return -1;
+  }
+  const obj_ops_t* ops = obj_ops_get(c->ty);
+  if (ops == NULL || ops->map == NULL) {
+    return -1;
+  }
+  int r = ops->map(c->obj, pgdir, vaddr, offset, len);
+  if (r == 0) {
+    c->map_va = vaddr;
+    c->map_len = len;
+    c->map_off = offset;
+  }
+  return r;
+}
+
+int cap_unmap(cspace_t* cs, u32 h, void* pgdir) {
+  cap_t* c = cspace_get(cs, h);
+  if (c == NULL || c->obj == NULL) {
+    return -1;
+  }
+  u32 need = cap_map_right(c->ty);
+  if (need == 0 || (c->rights & need) == 0) {
+    return -1;
+  }
+  cap_unmap_record(c, pgdir);
+  return 0;
+}
+
+int cap_res_info(cspace_t* cs, u32 h, u32* pa, u32* size, u32* rights) {
+  cap_t* c = cspace_get(cs, h);
+  if (c == NULL) {
+    return -1;
+  }
+  switch (c->ty) {
+    case OBJ_DEVWIN:
+      return cap_devwin_info(cs, h, pa, size, rights);
+    case OBJ_FRAME:
+      return cap_frame_info(cs, h, pa, size, rights);
+    default:
+      return -1;
+  }
 }
