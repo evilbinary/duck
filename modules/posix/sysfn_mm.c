@@ -365,6 +365,10 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
      * 不映射，首次访问由 page.c 的缺页路径补零。 */
     if (node->op != NULL && node->op->fault != NULL) {
       u32 mapped = 0;
+      /* 【诊断·可删】走共享页对象（memfd）分支：多进程映射同一批物理页。 */
+      log_debug("MMAPMEM node=%s node=%p addr=%x len=%x off=%x\n",
+                node->name != NULL ? node->name : "?", (void*)node, (u32)map_at,
+                (u32)length, (u32)off);
       if (sys_mmap_install_area(vm, map_at, length, node, off) < 0) {
         log_error("mmap shared-mem install failed addr=%x\n", map_at);
         return MAP_FAILED;
@@ -437,6 +441,11 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
      * 数据页并成同一物理页、退出回写还会把脏数据写进 libc 文件。
      * MAP_SHARED（LTP IPC：子写父读）才需要共享物理页+落盘。 */
     if ((flags & MAP_SHARED) == MAP_SHARED) {
+      /* 【诊断·可删】文件型 MAP_SHARED：登记 file_node，跨进程不共享物理页
+       * （只保证父子 fork 共享 + 退出回写）。走这条时 wl_shm 会丢内容。 */
+      log_debug("MMAPFILE node=%s addr=%x len=%x off=%x\n",
+                node->name != NULL ? node->name : "?", (u32)map_at, (u32)length,
+                (u32)off);
       if (sys_mmap_install_area(vm, map_at, length, node, off) < 0) {
         log_error("mmap file install failed addr=%x\n", map_at);
         return MAP_FAILED;

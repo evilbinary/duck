@@ -191,21 +191,31 @@ int sys_memfd_create(unsigned long uname, unsigned long flags) {
   fd_t* fd;
   int n;
   int i;
+  /* 【诊断·可删】wl_shm 的池由 libwayland/toytoolkit 的
+   * os_create_anonymous_file() 创建：memfd_create("weston-shared",
+   * MFD_CLOEXEC|MFD_ALLOW_SEALING|MFD_NOEXEC_SEAL)。它若失败就回退成
+   * /tmp/weston-shared-XXXXXX 真实文件，跨进程 mmap 拿不到同一份物理页。
+   * 这条日志用来确认"到底有没有进来、卡在哪一步"。 */
+  log_debug("MEMFD enter uname=%lx flags=%lx\n", uname, flags);
   if (current == NULL) {
+    log_error("MEMFD fail: no current\n");
     return -22; /* -EINVAL */
   }
   /* 名字指针为空是 EFAULT（不是 EINVAL）：Linux 先访问用户内存再校验。
    * memfd_create02 的 "invalid name fail 1" 就卡在这条。 */
   if (uname == 0) {
+    log_error("MEMFD fail: uname=0\n");
     return -14; /* -EFAULT */
   }
   if ((flags & ~(MFD_CLOEXEC_ | MFD_ALLOW_SEALING_ | MFD_NOEXEC_SEAL_ |
                  MFD_EXEC_)) != 0) {
+    log_error("MEMFD fail: bad flags\n");
     return -22; /* 未知 flag：Linux 语义 EINVAL */
   }
   kmemset(name, 0, sizeof(name));
   if (sys_copy_from_user(name, (const void*)(uintptr_t)uname,
                          MEMFD_NAME_MAX_LEN) < 0) {
+    log_error("MEMFD fail: copy name\n");
     return -14; /* -EFAULT */
   }
   name[MEMFD_NAME_MAX_LEN] = 0;
@@ -214,6 +224,7 @@ int sys_memfd_create(unsigned long uname, unsigned long flags) {
   for (i = 0; i < MEMFD_NAME_MAX_LEN && name[i] != 0; i++) {
   }
   if (i == MEMFD_NAME_MAX_LEN) {
+    log_error("MEMFD fail: name too long\n");
     return -22; /* -EINVAL */
   }
   for (i = 0; name[i] != 0; i++) {
@@ -232,6 +243,7 @@ int sys_memfd_create(unsigned long uname, unsigned long flags) {
     if (node != NULL) {
       kfree(node);
     }
+    log_error("MEMFD fail: alloc node/obj/op\n");
     return -12; /* -ENOMEM */
   }
   kmemset(obj, 0, sizeof(*obj));
@@ -246,6 +258,7 @@ int sys_memfd_create(unsigned long uname, unsigned long flags) {
   fd = fd_open((u32*)node, DEVICE_TYPE_VIRTUAL, node->name);
   if (fd == NULL) {
     memfd_node_close(node);
+    log_error("MEMFD fail: fd_open\n");
     return -12;
   }
   n = thread_add_fd(current, fd);
@@ -253,6 +266,7 @@ int sys_memfd_create(unsigned long uname, unsigned long flags) {
     node->device = NULL; /* 防止 close 路径二次释放对象 */
     fd_close(fd);
     memfd_node_close(node);
+    log_error("MEMFD fail: thread_add_fd\n");
     return -12;
   }
   if (flags & MFD_CLOEXEC_) {
@@ -262,5 +276,9 @@ int sys_memfd_create(unsigned long uname, unsigned long flags) {
     }
   }
   log_debug("memfd create fd=%d name=%s\n", n, node->name);
+  /* 【诊断·可删】确认 wl_shm 走的是 memfd 共享对象（而不是 /tmp 真实文件）。
+   * 走文件路径时两个进程各自读入私有副本，compositor 拿不到客户端写的像素。 */
+  log_debug("MEMFD create fd=%d name=%s node=%p fault=%p\n", n, node->name,
+            (void*)node, (void*)op->fault);
   return n;
 }
