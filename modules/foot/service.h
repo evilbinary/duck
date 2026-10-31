@@ -30,11 +30,17 @@ enum {
 };
 
 #define MAX_CLIENTS 100
-#define MAX_API_SLOTS 8      /* 每个 client 最多 8 个并发请求槽 */
-#define MAX_ARGS_BUF 128
+#define MAX_API_SLOTS 64     /* 每个 client 最多 64 个并发请求槽 */
+#define MAX_ARGS_BUF 240     /* 单个请求的 payload 上限（字节） */
 #define MAX_INSTANCE 16
 #define FOOT_API_DEFAULT 4   /* 默认槽位数 */
 #define FOOT_SLOT_LEAK_MS 5000 /* 调用方崩溃后槽位回收阈值（ms） */
+
+/* 共享页控制区：紧跟在槽数组后面，与 eggs/libfoot/client.h 同布局。
+ *   [0] kick  调用方的提交计数（服务端空闲时 futex 睡在这个字上）
+ *   [1..3]    预留 */
+#define FOOT_CTL_WORDS 4
+#define FOOT_CTL_BYTES (FOOT_CTL_WORDS * 4)
 
 enum {
   SYS_NEW_CLIENT = 1,
@@ -71,9 +77,11 @@ typedef struct api {
   int err;                 /* 响应错误码：0 = OK */
   unsigned int seq;        /* 请求序号，用于识别陈旧响应 */
   unsigned int claim_ms;   /* 调用方写入的起始时刻（ms），服务方据此回收僵尸槽 */
+  unsigned int len;        /* args 有效长度（0..MAX_ARGS_BUF） */
+  unsigned int flags;      /* 保留（同步/异步、唤醒策略等） */
   void* fn;                /* 方法号 */
   void* ret;               /* 返回值 */
-  char args[MAX_ARGS_BUF]; /* 参数区（按实际长度拷贝，未用部分为 0） */
+  char args[MAX_ARGS_BUF]; /* 参数区（按 len 拷贝，未用部分为 0） */
 } api_t;
 
 typedef struct client {

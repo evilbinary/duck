@@ -57,9 +57,9 @@ int service_add_client(client_t* client) {
   return client->id;
 }
 
-/* 共享页页数：按槽位数向上取整，至少 1 页 */
+/* 共享页页数：槽数组 + 尾部控制区（kick 字），向上取整，至少 1 页 */
 static int service_api_pages(int slots) {
-  int bytes = slots * (int)sizeof(api_t);
+  int bytes = slots * (int)sizeof(api_t) + FOOT_CTL_BYTES;
   int pages = (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
   return pages < 1 ? 1 : pages;
 }
