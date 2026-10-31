@@ -593,19 +593,26 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
      * 引用计数（ref++）由 kernel 在这里做。 */
     vmemory_area_t* a;
     for (a = vmthread->vma; a != NULL; a = a->next) {
-      /* 【别只看 EXEC】应用真正"装入的映像/数据"在 HEAP 区（见 vmemory_create_default：
-       * mmap 与装载都走堆区 0x70100000+），只标 EXEC 等于 COW 没开 —— 实测 armv8-a
-       * 日志里一条 COW-mark 都没有、page fault at 0 照旧 ✗。
-       * EXEC + HEAP 都标；未映射的页由下面 page_v2p 过滤掉（100MB 区多是空洞，很便宜）。 */
       if (a->flags != MEMORY_EXEC && a->flags != MEMORY_HEAP) {
         continue;
       }
+      /* 【跳过被深拷贝覆盖的 HEAP 页】vmemory_copy_data 把 HEAP 的
+       * [vaddr, alloc_addr) 逐页深拷贝给子进程（见本函数末尾）。这段页
+       * 标 COW + page_ref_inc 之后父子其实并不共享 —— 那份引用无人配对，
+       * 父页永远回不到 0 ⇒ 每个堆页泄漏 4KB。标 RO 也无收益（子进程用
+       * 私有副本）。alloc_addr 之上的已映射页（匿名 mmap 区，自 vend
+       * 向下分配）不会被深拷贝，必须照旧标 COW：否则父子共享同一可写页，
+       * 且 ref 仍为 1，任一方退出即释放 ⇒ 另一方踩已回收页。 */
+      vaddr_t deep_end = (a->flags == MEMORY_HEAP) ? a->alloc_addr : 0;
       /* 【地址按字长】内核线程 VMA 搬到 USER_VA_END 之上后，u32 会回绕
        * （(u32)(0x110100000)=0x10100000 < 起点 ⇒ 死循环），统一 vaddr_t。 */
       vaddr_t s = a->vaddr;
       vaddr_t e = a->vend;
       for (vaddr_t va = s; va < e; va += PAGE_SIZE) {
         u32 pa = 0;
+        if (va < deep_end) {
+          continue; /* 会被深拷贝 ⇒ 父子不共享，不标 COW、不计引用 */
+        }
         /* 【必须跳过"内核映像段"】内核自己的段也被登记成 MEMORY_EXEC
          * （见本文件 191-200：boot_info->segments ⇒ vmemory_area_create），
          * 它们不是"用户私有代码"：
