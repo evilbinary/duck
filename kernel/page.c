@@ -114,6 +114,30 @@ void* page_fault_handle(interrupt_context_t *ic) {
                     current->name, (unsigned long)fault_addr,
                     (unsigned long)ic->pc, (unsigned long)ic->lr,
                     (unsigned long)ic->sp);
+          /* 【诊断·临时】用户栈现场快照：从 sp 起 128 个字。
+           * 用途：判断"栈耗尽"是真递归（栈上会看到周期性重复的返回地址）
+           * 还是 sp 被污染（栈内容没有规律）。逐 32 字节校验页表映射，
+           * 避免探针自己在缺页处理里再触发缺页。 */
+          {
+            u64 usp = (u64)ic->sp;
+            u64 stack_lo = (u64)STACK_ADDR;
+            u64 stack_hi = (u64)STACK_ADDR + MEMORY_STACK_SIZE;
+            log_error("  probe usp=%lx fp=%lx lr=%lx pc=%lx\n", usp,
+                      (u64)ic->x29, (u64)ic->lr, (u64)ic->pc);
+            if (usp >= stack_lo && usp + 128 * 8 <= stack_hi &&
+                current->vm != NULL) {
+              u64* s = (u64*)(uintptr_t)usp;
+              for (int i = 0; i < 128; i += 4) {
+                if (page_v2p((u64*)current->vm->upage,
+                             (void*)(uintptr_t)(usp + i * 8)) == NULL) {
+                  log_error("  [%03d] <unmapped>\n", i);
+                  continue;
+                }
+                log_error("  [%03d] %lx %lx %lx %lx\n", i, s[i], s[i + 1],
+                          s[i + 2], s[i + 3]);
+              }
+            }
+          }
           /* 【诊断】把崩之前最近的系统调用序列打出来：用户程序崩在野指针
            * （如 miyoo 上 /bin/ls 崩在 dfar=0xfffffffc）时，多半是某个 syscall
            * 返回了负值被当成指针 ⇒ 这串调用号能直接定位是哪一个。 */
