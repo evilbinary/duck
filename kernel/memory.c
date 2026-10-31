@@ -812,6 +812,18 @@ void vmemory_release_user_space(vmemory_t* vm) {
   /* brk 前沿复位：新映像的 malloc 从堆底重新长 */
   heap->alloc_addr = heap->vaddr;
   heap->alloc_size = 0;
+
+  /* 【EXEC 区游标也要复位】解释器（ET_DYN）每次 exec 都由 reserve_bias 从
+   * 这里往上排；不复位就一直在抬（实测 alloc=0x603e0000/size=4MB），
+   * 100MB 窗口几十次 exec 后就放不下 ld-musl 了。内核映像段（0x100000）
+   * 也是 MEMORY_EXEC，按地址取 EXEC_ADDR 那条即可避开。 */
+  {
+    vmemory_area_t* e = vmemory_area_find(vm->vma, (void*)EXEC_ADDR, 1);
+    if (e != NULL && e->flags == MEMORY_EXEC) {
+      e->alloc_addr = e->vaddr;
+      e->alloc_size = 0;
+    }
+  }
 }
 
 void* kpage_v2p(void* addr, int size) {

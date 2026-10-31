@@ -403,6 +403,45 @@ static int elf64_open_and_load(const char* path, elf64_image_info_t* image,
   return ret;
 }
 
+/* 【exec 预检】只读：能打开、ELF64 头/phdr 可读、有 PT_LOAD、ET_EXEC 落在
+ * 用户 VA 窗口内。先预检再回收旧地址空间，失败时调用者内存原样。 */
+static int elf64_precheck(const char* path) {
+  Elf64_Ehdr ehdr;
+  Elf64_Phdr phdr[MAX_PHDR];
+  u64 min_vaddr = 0;
+  u64 max_vaddr = 0;
+  int fd = syscall2(SYS_OPEN, path, 0);
+  if (fd < 0) {
+    return -1;
+  }
+  kmemset(&ehdr, 0, sizeof(ehdr));
+  u32 got = syscall3(SYS_READ, fd, &ehdr, sizeof(ehdr));
+  int ok = got >= sizeof(ehdr) && elf64_is_valid(ehdr.e_ident) &&
+           ehdr.e_version == EV_CURRENT && ehdr.e_machine == 183 &&
+           ehdr.e_type >= ET_EXEC && ehdr.e_type <= ET_DYN &&
+           ehdr.e_phnum <= MAX_PHDR &&
+           ehdr.e_phentsize == sizeof(Elf64_Phdr);
+  if (ok) {
+    kmemset(phdr, 0, sizeof(phdr));
+    ok = elf64_read_phdrs(fd, &ehdr, phdr) == 0 &&
+         elf64_scan_load_range(&ehdr, phdr, &min_vaddr, &max_vaddr) == 0;
+  }
+  syscall1(SYS_CLOSE, fd);
+
+  /* ET_EXEC 不重定位：地址不在用户窗口就别开始（load 里还会再拦一次） */
+  if (ok && ehdr.e_type == ET_EXEC &&
+      (min_vaddr < EXEC_ADDR || max_vaddr > USER_VA_END)) {
+    elf64_log_error("elf64 precheck reject %s vaddr [%lx,%lx)\n", path,
+                    min_vaddr, max_vaddr);
+    ok = 0;
+  }
+  if (!ok) {
+    elf64_log_error("elf64 precheck failed %s\n", path);
+    return -1;
+  }
+  return 0;
+}
+
 static void elf64_auxv_put(u64** w, u64 type, u64 val) {
   *(*w)++ = type;
   *(*w)++ = val;
@@ -610,6 +649,13 @@ int run_elf64_thread(long* p) {
   kmemset(&layout, 0, sizeof(layout));
 
 
+
+  /* 先预检、再回收旧地址空间（elf32 一直这么做，elf64 漏了：不回收时旧
+   * brk 堆 / mmap 链表 / 映像页都会带到新进程）。 */
+  if (elf64_precheck(exec->filename) < 0) {
+    return -1;
+  }
+  vmemory_release_user_space(current->vm);
 
   if (elf64_open_and_load(exec->filename, &main_image, 0) < 0) {
     return -1;
