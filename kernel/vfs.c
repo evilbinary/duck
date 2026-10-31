@@ -217,7 +217,7 @@ vnode_t *vfind(vnode_t *node, char *name) {
   if (node == NULL) {
     node = root_node;
   }
-  if (node->op->find != NULL) {
+  if (node->op!=NULL && node->op->find != NULL) {
     if (node->op->find == &vfs_find) {
       return NULL;
     }
@@ -229,7 +229,20 @@ vnode_t *vfind(vnode_t *node, char *name) {
       return ret;
     }
   } else {
-    log_error("node find is null\n");
+    /* 节点本身在、但 op 表或 find 指针为空：把节点身份打全，否则只看到
+     * "node find is null" 不知道是树里哪个节点坏了（哪个文件系统漏设 op）。 */
+    if (node != NULL) {
+      log_error(
+          "node find is null name=%s node=%x nodename=%s flags=%x inode=%x "
+          "parent=%x super=%x device=%x op=%x\n",
+          name != NULL ? name : "?", (u32)(uintptr_t)node,
+          node->name != NULL ? node->name : "?", node->flags, node->inode,
+          (u32)(uintptr_t)node->parent, (u32)(uintptr_t)node->super,
+          (u32)(uintptr_t)node->device, (u32)(uintptr_t)node->op);
+    } else {
+      log_error("node find is null name=%s node=NULL\n",
+                name != NULL ? name : "?");
+    }
     return 0;
   }
 }

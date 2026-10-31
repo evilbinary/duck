@@ -13,7 +13,7 @@
 
 /* cache 维护统一走 duck/arch/cpu.h 的跨架构接口，见 elf.c 同名说明。 */
 
-// #define LOAD_ELF_DEBUG 1
+#define LOAD_ELF_DEBUG 1
 
 #ifdef LOAD_ELF_DEBUG
 #define elf64_log_debug kprintf
@@ -215,7 +215,9 @@ static u64 elf64_copy_phdr_to_user(const Elf64_Ehdr* ehdr, const Elf64_Phdr* phd
 
   u64 size = ehdr->e_phnum * ehdr->e_phentsize;
   u64 dst = elf64_align_up(max_vaddr, PAGE_SIZE);
-  if (size == 0 || valloc((void*)dst, PAGE_SIZE) == NULL) {
+  /* 这一页排在镜像末尾之后，同样不能越过用户 VA 上界（否则会落到内核区）。 */
+  if (size == 0 || dst + PAGE_SIZE > USER_VA_END ||
+      valloc((void*)dst, PAGE_SIZE) == NULL) {
     return 0;
   }
 
@@ -255,7 +257,14 @@ static int elf64_map_segment(int fd, const Elf64_Phdr* ph) {
   u64 seg_end = elf64_align_up(ph->p_vaddr + ph->p_memsz, PAGE_SIZE);
   u64 seg_size = seg_end - seg_page;
 
-  valloc((void*)seg_page, seg_size);
+  /* valloc 的返回值必须检查：失败时下面的 kmemset / SYS_READ 会直接写到
+   * 没有映射的地址上（在 armv8-a 上若该 VA 已有内核恒等映射，就是同步覆盖
+   * 内核内存，而不是报缺页）。 */
+  if (valloc((void*)seg_page, seg_size) == NULL) {
+    elf64_log_error("elf64 map seg valloc failed vaddr=%lx size=%lx\n", seg_page,
+                    seg_size);
+    return -1;
+  }
   kmemset((void*)seg_page, 0, seg_size);
 
   if (ph->p_filesz != 0) {
@@ -295,6 +304,25 @@ static int elf64_load_image_fd(int fd, const Elf64_Ehdr* ehdr, elf64_image_info_
   u64 bias = 0;
   if (force_dyn_bias || ehdr->e_type == ET_DYN) {
     bias = elf64_reserve_bias(min_vaddr, max_vaddr);
+  }
+
+  /* 【内核地址防护】镜像整体（含 bias 后的安置地址）必须落在本内核的用户
+   * VA 窗口 [EXEC_ADDR, USER_VA_END) 内。
+   * ET_EXEC 不做重定位，bias 恒为 0，p_vaddr 就是最终地址：历史上
+   * weston-desktop-shell / weston-keyboard 这类"漏了用户链接脚本"的产物被
+   * 链接到 0x3f0000（ld 默认 0x400000 + 64K p_align 前移一段），正好压在
+   * 内核映像尾部与内核堆的物理恒等映射上。旧代码会 valloc 覆盖该区间的内核
+   * 页表项，再 kmemset + 读文件把 4.5MB 内核内存清零，表现为 elr=0 跑飞，
+   * 且没有任何可读的加载错误。
+   * 宁可让这次 exec 失败（进程收到错误退出），也不能让用户镜像改写内核内存。 */
+  if (bias + min_vaddr < EXEC_ADDR || bias + max_vaddr > USER_VA_END) {
+    elf64_log_error(
+        "elf64 reject image: load range [%lx,%lx) outside user space "
+        "[%lx,%lx) (e_type=%d entry=%lx, relink with "
+        "-Tapp/xlinker/user-<plat>.ld)\n",
+        bias + min_vaddr, bias + max_vaddr, (u64)EXEC_ADDR, (u64)USER_VA_END,
+        ehdr->e_type, bias + ehdr->e_entry);
+    return -1;
   }
 
   image->base = bias;
@@ -364,6 +392,9 @@ static int elf64_open_and_load(const char* path, elf64_image_info_t* image,
                   ehdr.e_type, ehdr.e_entry, ehdr.e_phoff, ehdr.e_phnum);
 
   int ret = elf64_load_image_fd(fd, &ehdr, image, force_dyn_bias);
+  if (ret < 0) {
+    elf64_log_error("elf64 load failed %s\n", path);
+  }
   elf64_log_debug(
       "elf64 image %s base=%lx entry=%lx phdr=%lx phent=%lx phnum=%lx interp=%s\n",
       path, image->base, image->entry, image->phdr, image->phent, image->phnum,
