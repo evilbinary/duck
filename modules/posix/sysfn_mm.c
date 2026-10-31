@@ -365,9 +365,9 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
      * 不映射，首次访问由 page.c 的缺页路径补零。 */
     if (node->op != NULL && node->op->fault != NULL) {
       u32 mapped = 0;
-      /* 【诊断·可删】走共享页对象（memfd）分支：多进程映射同一批物理页。 */
-      log_debug("MMAPMEM node=%s node=%p addr=%x len=%x off=%x\n",
-                node->name != NULL ? node->name : "?", (void*)node, (u32)map_at,
+      /* 走共享页对象（memfd）分支：多进程映射同一批物理页。 */
+      log_debug("mmap shared-mem node=%s addr=%x len=%x off=%x\n",
+                node->name != NULL ? node->name : "?", (u32)(uintptr_t)map_at,
                 (u32)length, (u32)off);
       if (sys_mmap_install_area(vm, map_at, length, node, off) < 0) {
         log_error("mmap shared-mem install failed addr=%x\n", map_at);
@@ -589,6 +589,48 @@ void* sys_mmap2(void* addr, size_t length, int prot, int flags, int fd,
   return MAP_FAILED;
 }
 
+/* 【共享页对象（memfd 等）的区间装配】把 vnode 对象里的物理页按 VA 装进
+ * 当前进程页表：va 对应的文件偏移 = area->file_off + (va - area->vaddr)。
+ * op->fault 返回 NULL（超出对象长度/未分配）的页保持未映射，由缺页路径补零。
+ * 与 sys_mmap 的 memfd 分支、page.c 的缺页分支是同一套语义，三处必须一致。 */
+static void sys_mmap_attach_shared_range(thread_t* current,
+                                         vmemory_area_t* area, vaddr_t va_begin,
+                                         vaddr_t va_end) {
+  vnode_t* node;
+  vaddr_t va;
+  if (area == NULL || area->file_node == NULL) {
+    return;
+  }
+  node = (vnode_t*)area->file_node;
+  if (node->op == NULL || node->op->fault == NULL) {
+    return;
+  }
+  for (va = va_begin; va < va_end; va += PAGE_SIZE) {
+    void* pa;
+    if (page_v2p((u64*)current->vm->upage, (void*)va) != NULL) {
+      continue; /* 已装配（改大小往返的页）不重复 +ref */
+    }
+    pa = node->op->fault(node, area->file_off + (u64)(va - area->vaddr));
+    if (pa == NULL) {
+      continue;
+    }
+    page_ref_inc((u32)(uintptr_t)pa);
+    page_map_on((page_dir_t*)current->vm->upage, (u32)(uintptr_t)va,
+                (u32)(uintptr_t)pa, PAGE_USER);
+  }
+}
+
+/* 该 area 是否是"共享页对象"（memfd 类）：mremap 必须保住共享身份，
+ * 不能像匿名/普通文件映射那样 valloc 一批私有零页。 */
+static int sys_mmap_area_is_shared(vmemory_area_t* area) {
+  vnode_t* node;
+  if (area == NULL || area->file_node == NULL) {
+    return 0;
+  }
+  node = (vnode_t*)area->file_node;
+  return node->op != NULL && node->op->fault != NULL;
+}
+
 void* sys_mremap(void* old_address, size_t old_size, size_t new_size, int flags,
                  ... /* void *new_address */) {
   (void)old_size;
@@ -640,12 +682,25 @@ void* sys_mremap(void* old_address, size_t old_size, size_t new_size, int flags,
 
   size_t grow = new_size - map_old;
   u32 extend_at = (u32)old_area->vend;
+  int shared = sys_mmap_area_is_shared(old_area);
   int can_inplace =
       (extend_at + grow <= (u32)vm->vend) &&
       !sys_mmap_child_overlaps(vm->child, extend_at, grow) &&
       !sys_mmap_pages_mapped(current, (void*)(uintptr_t)extend_at, grow);
 
   if (can_inplace) {
+    if (shared) {
+      /* 【共享页对象绝不能用 valloc】valloc 会在新增 range 装配一批私有
+       * 零页并把 PTE 抢过来 ⇒ 该 range 与对象脱钩（合成器扩容 wl_shm pool
+       * 后读客户端写的像素全是 0 的根因）。这里按对象页装配。 */
+      old_area->size = new_size;
+      old_area->vend = old_area->vaddr + new_size;
+      sys_mmap_attach_shared_range(current, old_area, extend_at,
+                                   old_area->vend);
+      log_debug("mremap inplace shared %x size %x\n", old_area->vaddr,
+                new_size);
+      return old_address;
+    }
     if (valloc((void*)(uintptr_t)extend_at, grow) == NULL) {
       log_error("mremap: inplace valloc failed at %x len %x\n", extend_at,
                 grow);
@@ -670,6 +725,28 @@ void* sys_mremap(void* old_address, size_t old_size, size_t new_size, int flags,
   if (new_addr == NULL) {
     log_error("mremap: no anon space for %x\n", new_size);
     return MAP_FAILED;
+  }
+  if (shared) {
+    /* 【共享页对象搬移】不 valloc、不 kmemcpy：新 VMA 直接指向对象的同一批
+     * 物理页（内容本来就在对象里，复制既没用又会把私有权带进来）。 */
+    if (sys_mmap_install_area(vm, new_addr, new_size, old_area->file_node,
+                              old_area->file_off) < 0) {
+      log_error("mremap: install shared area failed\n");
+      return MAP_FAILED;
+    }
+    {
+      vmemory_area_t* na =
+          vmemory_area_find(vm->child, new_addr, new_size);
+      if (na != NULL) {
+        sys_mmap_attach_shared_range(current, na, na->vaddr, na->vend);
+      }
+    }
+    if (sys_munmap(old_address, map_old) != 0) {
+      log_warn("mremap: munmap old %x failed\n", old_address);
+    }
+    log_debug("mremap moved shared %x -> %x size %x\n", old_address, new_addr,
+              new_size);
+    return new_addr;
   }
   if (valloc(new_addr, new_size) == NULL) {
     log_error("mremap: valloc new %x len %x failed\n", new_addr, new_size);
@@ -733,7 +810,8 @@ int sys_munmap(void* addr, size_t size) {
         /* 【MAP_SHARED 落盘】物理页即将释放，文件映射的脏页先写回文件，
          * 否则 munmap→close→重开读不到写入内容（LTP IPC 走这条路径）。 */
         if (p->file_node != NULL && current->vm != NULL &&
-            current->vm->upage != NULL) {
+            current->vm->upage != NULL &&
+            !sys_mmap_area_is_shared(p)) { /* 共享页对象无需回写（数据即对象页） */
           vnode_t* fnode = (vnode_t*)p->file_node;
           vaddr_t fva;
           for (fva = s0; fva < s1; fva += PAGE_SIZE) {
@@ -742,17 +820,8 @@ int sys_munmap(void* addr, size_t size) {
             if (fpa == 0) {
               continue;
             }
-            {
-              u32 wr = vwrite(fnode, (u32)(p->file_off + (u64)(fva - p->vaddr)),
-                              PAGE_SIZE, (void*)(uintptr_t)fva);
-              static int dbg_mfl;
-              if (dbg_mfl++ < 8) {
-                kprintf("MFLUSH area %x-%x node=%x off=%d pa=%x wr=%d\n",
-                        (u32)s0, (u32)s1, (u32)(uintptr_t)fnode,
-                        (u32)(p->file_off + (u64)(fva - p->vaddr)), (u32)fpa,
-                        wr);
-              }
-            }
+            (void)vwrite(fnode, (u32)(p->file_off + (u64)(fva - p->vaddr)),
+                         PAGE_SIZE, (void*)(uintptr_t)fva);
           }
         }
         vfree((void*)s0, (vaddr_t)(s1 - s0));

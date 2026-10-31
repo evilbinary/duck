@@ -275,10 +275,7 @@ int sys_memfd_create(unsigned long uname, unsigned long flags) {
       f->flags |= FD_CLOEXEC;
     }
   }
-  log_debug("memfd create fd=%d name=%s\n", n, node->name);
-  /* 【诊断·可删】确认 wl_shm 走的是 memfd 共享对象（而不是 /tmp 真实文件）。
-   * 走文件路径时两个进程各自读入私有副本，compositor 拿不到客户端写的像素。 */
-  log_debug("MEMFD create fd=%d name=%s node=%p fault=%p\n", n, node->name,
-            (void*)node, (void*)op->fault);
+  log_debug("memfd create fd=%d name=%s node=%p\n", n, node->name,
+            (void*)node);
   return n;
 }
