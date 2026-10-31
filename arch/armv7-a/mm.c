@@ -259,8 +259,6 @@ void mm_init_default(u32 kernel_page_dir){
   
 }
 #ifdef CONFIG_COW
-/* ---- COW 接口：本架构暂未实现，给空实现保证 kernel 侧可链接 ----
- * （armv5 已有真实实现，其余平台按需补齐） */
 /* ============ COW（写时复制）PTE 操作 ============
  * 与 armv5/mm.c 同构，但【不用软件标记位】：
  *   armv5 的 PTE bit9 是 IMP（可私用）⇒ 拿它当 COW 标记；

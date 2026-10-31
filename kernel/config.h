@@ -181,7 +181,9 @@
 #define SCHEDULE_FREQUENCY 1000
 
 /* 写时复制（COW）：fork 时共享可写页（只读 + 引用计数），写入时才复制。
- * 关掉则恢复旧的"fork 共享物理页"行为。实现见 kernel/cow.c 与各 arch mm.c。 */
+ * 关掉则恢复旧的"fork 共享物理页"行为。策略在 kernel/vma.c（选哪些页标 COW）
+ * 与 kernel/page.c（破写复制）、引用计数在 kernel/page_ref.c，PTE 机制在各
+ * arch 的 mm.c（page_cow_query/page_cow_apply/page_put_page）。 */
 #ifndef CONFIG_COW
 #define CONFIG_COW 1
 #endif

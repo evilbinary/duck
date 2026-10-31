@@ -302,8 +302,6 @@ void mm_init_default(void) {
 }
 
 #ifdef CONFIG_COW
-/* ---- COW 接口：本架构暂未实现，给空实现保证 kernel 侧可链接 ----
- * （armv5 已有真实实现，其余平台按需补齐） */
 /* ============ COW（写时复制）PTE 操作（armv8-a） ============
  * 64 位描述符 + AP[2:1]；本平台所有页按 EL1 映射（无 EL0 分离，用户跑 EL1t）
  * ⇒ 保护态只能用 PTE_AP_EL1_RO(2<<6)：EL1 也会只读 ✗（armv7-a 的 AP[1:0]=0b10
