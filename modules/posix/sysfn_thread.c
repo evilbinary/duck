@@ -166,10 +166,47 @@ int sys_sched_getaffinity(int pid, unsigned int len, unsigned long* mask) {
  * 使用时 kmalloc，分配失败或未分配时登记退化成"纯超时"行为（不阻塞
  * 功能，只是唤醒语义降级）。 */
 #define FUTEX_WAITER_MAX 512
-static struct {
-  u32* addr;
+/* 【futex 字的身份 = 物理页 + 页内偏移，且物理页要在唤醒时现算】
+ * 只按裸用户 VA 比较的话，共享内存（foot 的共享页、跨进程的 pthread 锁）在
+ * 两个进程里 VA 不同，FUTEX_WAKE 永远匹配不上对方的等待者——每次调用只能
+ * 靠超时兜底（实测 foot 跨进程调用因此从 9.6s 变成 92s，每次都在等满 1s）。
+ *
+ * 只按登记时的物理地址比较又会踩 COW：同一进程里线程共用一个 vm，写时复制
+ * 会把整页搬家，早先登记的物理页随即失效（实测 futex_wake02 全灭：同一 VA、
+ * 同一页表，等待者登记在 0x2295080，唤醒时该地址已经变成 0x3dc4080）。
+ *
+ * 所以登记时保存 (页表根, VA)，比对时在【各自页表】里现算物理页：
+ *   · 同一 vm  → 现算结果一致（不管 COW 搬了几次）；
+ *   · 共享页   → 不同 vm、同一物理页 → 一致；
+ *   · 解析不到（未缺页/退出中）→ 退回裸 VA 比较，保持旧语义。 */
+typedef struct {
+  void* upage; /* 等待者的页表根（唤醒时用它现算 va 的物理页） */
+  u32* va;
   thread_t* t;
-} * futex_waiters = NULL;
+} futex_waiter_t;
+
+static u64 futex_key_of(void* upage, u32* addr) {
+  void* pa = NULL;
+  if (upage != NULL) {
+    pa = page_v2p(upage, (void*)addr);
+  }
+  if (pa == NULL) {
+    return 0;
+  }
+  return ((u64)(uintptr_t)pa & ~(u64)0xFFFull) |
+         ((u64)(uintptr_t)addr & (u64)0xFFFull);
+}
+
+/* 同一个 futex 字？两侧都能解析物理页时比物理页，否则退回比 VA */
+static int futex_match(futex_waiter_t* w, u64 key, u32* va) {
+  u64 wkey = futex_key_of(w->upage, w->va);
+  if (wkey != 0 && key != 0) {
+    return wkey == key;
+  }
+  return w->va == va;
+}
+
+static futex_waiter_t* futex_waiters = NULL;
 
 static void futex_waiter_ensure(void) {
   if (futex_waiters != NULL) {
@@ -181,7 +218,7 @@ static void futex_waiter_ensure(void) {
   }
 }
 
-static void futex_waiter_add(u32* addr, thread_t* t) {
+static void futex_waiter_add(void* upage, u32* va, thread_t* t) {
   int i;
   if (t == NULL) {
     return;
@@ -192,21 +229,23 @@ static void futex_waiter_add(u32* addr, thread_t* t) {
   }
   for (i = 0; i < FUTEX_WAITER_MAX; i++) {
     if (futex_waiters[i].t == t) {
-      futex_waiters[i].addr = addr;
+      futex_waiters[i].upage = upage;
+      futex_waiters[i].va = va;
       return;
     }
   }
   for (i = 0; i < FUTEX_WAITER_MAX; i++) {
     if (futex_waiters[i].t == NULL) {
       futex_waiters[i].t = t;
-      futex_waiters[i].addr = addr;
+      futex_waiters[i].upage = upage;
+      futex_waiters[i].va = va;
       return;
     }
   }
   /* 表满：退化为旧的"纯超时"行为，功能不受影响 */
 }
 
-static u32 futex_waiter_wake(u32* addr, u32 max_wake) {
+static u32 futex_waiter_wake_key(u64 key, u32* va, u32 max_wake) {
   u32 n = 0;
   int i;
   /* 【按 val 限量唤醒】Linux 语义 FUTEX_WAKE 的 val = 最多唤醒几个；
@@ -217,7 +256,7 @@ static u32 futex_waiter_wake(u32* addr, u32 max_wake) {
   }
   for (i = 0; i < FUTEX_WAITER_MAX && n < max_wake; i++) {
     thread_t* w = futex_waiters[i].t;
-    if (w == NULL || futex_waiters[i].addr != addr) {
+    if (w == NULL || !futex_match(&futex_waiters[i], key, va)) {
       continue;
     }
     /* 只在"还在等"时唤醒；已经自己超时醒来的直接清槽 */
@@ -233,9 +272,16 @@ static u32 futex_waiter_wake(u32* addr, u32 max_wake) {
       n++;
     }
     futex_waiters[i].t = NULL;
-    futex_waiters[i].addr = NULL;
+    futex_waiters[i].upage = NULL;
+    futex_waiters[i].va = NULL;
   }
   return n;
+}
+
+static u32 futex_waiter_wake(u32* addr, u32 max_wake) {
+  thread_t* cur = thread_current();
+  void* upage = (cur != NULL && cur->vm != NULL) ? cur->vm->upage : NULL;
+  return futex_waiter_wake_key(futex_key_of(upage, addr), addr, max_wake);
 }
 
 /* 【FUTEX_CMP_REQUEUE(4)/REQUEUE(3)】唤醒 uaddr 上最多 max_wake 个等待者，
@@ -247,13 +293,16 @@ static u32 futex_waiter_wake(u32* addr, u32 max_wake) {
 static u32 futex_waiter_requeue(u32* addr, u32* addr2, u32 max_wake,
                                 u32 max_requeue) {
   u32 woken = 0, moved = 0;
+  thread_t* cur = thread_current();
+  void* upage = (cur != NULL && cur->vm != NULL) ? cur->vm->upage : NULL;
+  u64 key = futex_key_of(upage, addr);
   int i;
   if (futex_waiters == NULL) {
     return 0;
   }
   for (i = 0; i < FUTEX_WAITER_MAX; i++) {
     thread_t* w = futex_waiters[i].t;
-    if (w == NULL || futex_waiters[i].addr != addr) {
+    if (w == NULL || !futex_match(&futex_waiters[i], key, addr)) {
       continue;
     }
     if (w->state == THREAD_SLEEP || w->state == THREAD_WAITING) {
@@ -266,12 +315,14 @@ static u32 futex_waiter_requeue(u32* addr, u32* addr2, u32 max_wake,
         }
         thread_wake(w);
         futex_waiters[i].t = NULL;
-        futex_waiters[i].addr = NULL;
+        futex_waiters[i].upage = NULL;
+        futex_waiters[i].va = NULL;
         woken++;
         continue;
       }
       if (moved < max_requeue) {
-        futex_waiters[i].addr = addr2;
+        futex_waiters[i].upage = upage;
+        futex_waiters[i].va = addr2;
         moved++;
         continue;
       }
@@ -283,7 +334,8 @@ static u32 futex_waiter_requeue(u32* addr, u32* addr2, u32 max_wake,
     }
     /* 已超时自醒的：清槽（与 wake 同款），不计入返回值 */
     futex_waiters[i].t = NULL;
-    futex_waiters[i].addr = NULL;
+    futex_waiters[i].upage = NULL;
+    futex_waiters[i].va = NULL;
   }
   return woken + moved;
 }
@@ -376,7 +428,8 @@ int sys_futex(uint32_t* uaddr, int futex_op, uint32_t val,
       }
       has_timeout = 1;
     }
-    futex_waiter_add(uaddr, current);
+    futex_waiter_add((current->vm != NULL) ? current->vm->upage : NULL, uaddr,
+                     current);
     if (has_timeout) {
       current->sleep_counter = (int)sleep_ticks; /* 到期由 tick 回填 ETIMEDOUT */
     }
