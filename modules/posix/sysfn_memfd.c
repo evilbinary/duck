@@ -248,6 +248,11 @@ int sys_memfd_create(unsigned long uname, unsigned long flags) {
   }
   kmemset(obj, 0, sizeof(*obj));
   obj->magic = MEMFD_MAGIC;
+  /* 【op 必须清零】kmalloc 是页池拿来的旧内存：不 memset 时 read/write/ioctl
+   * 是野指针，而缺页回填（page.c 的 vread）、munmap 回写（sysfn_mm.c 的
+   * vwrite）都会对 memfd 节点调它们 ⇒ 跳进随机地址。清零后按 vfs 的
+   * "未实现"语义处理（读恒 0 / 写黑洞），与共享页语义一致。 */
+  kmemset(op, 0, sizeof(*op));
   node->device = obj;
   node->op = op;
   op->close = memfd_node_close;
