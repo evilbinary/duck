@@ -98,6 +98,7 @@ typedef struct client {
   int state;
   int count;
   struct client* instance[MAX_INSTANCE];
+  int map_count; /* 共享页被多少个进程映射过（0 才敢在注销时真正回收） */
 } client_t;
 
 typedef struct client_ctl {

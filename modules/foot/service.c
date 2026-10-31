@@ -91,7 +91,9 @@ client_t* service_create_client(char* name, int size) {
   return client;
 }
 
-void service_map_client_api(client_t* src, client_t* des) {
+/* self=1：服务方自己注册时的映射（不计入 map_count）；
+ * self=0：外部进程（client_get）持有的映射（计入 map_count，注销时不回收）。 */
+void service_map_client_api(client_t* src, client_t* des, int self) {
   if (src == NULL) {
     log_error("map client src is null\n");
     return;
@@ -141,8 +143,13 @@ void service_map_client_api(client_t* src, client_t* des) {
     log_error("map client: copy_to_user failed\n");
     return;
   }
-  log_debug("mmap client %s apis %x -> %x slots=%d pages=%d\n", src->name,
-            src->apis, kdes.apis, kdes.api_size, pages);
+  /* 记录"共享页被外部进程映射过"：只要还有人映射着，注销时就不能释放物理帧 */
+  if (!self) {
+    __atomic_add_fetch(&src->map_count, 1, __ATOMIC_ACQ_REL);
+  }
+  log_debug("mmap client %s apis %x -> %x slots=%d pages=%d maps=%d\n",
+            src->name, src->apis, kdes.apis, kdes.api_size, pages,
+            src->map_count);
 }
 
 void service_remove_client(client_t* client) {
@@ -156,6 +163,25 @@ void service_remove_client(client_t* client) {
   }
   if (client_number > 0) {
     clients[--client_number] = NULL;
+  }
+
+  /* 【注销回收】只有满足两条才真释放，否则只摘名字（保守泄漏）：
+   *  1) 没有外部进程映射过共享页（map_count==0）—— 别人还映射着就 free，
+   *     那些进程会踩到被复用的内存；
+   *  2) 当前线程就是注册者 —— 只有注册者的 vm 里有这个映射，munmap 才有意义。 */
+  if (client->apis != NULL &&
+      __atomic_load_n(&client->map_count, __ATOMIC_ACQUIRE) == 0 &&
+      client->tid == thread_current()->id) {
+    int pages = service_api_pages(client->api_size);
+    sys_munmap(client->apis, (size_t)pages * PAGE_SIZE);
+    if (client->name != NULL) {
+      kfree(client->name);
+    }
+    kfree(client);
+  } else if (client->name != NULL) {
+    log_debug("remove client %s kept (maps=%d owner=%d self=%d)\n",
+              client->name, client->map_count, client->tid,
+              thread_current()->id);
   }
 }
 
@@ -172,8 +198,15 @@ u32 service_close(vnode_t* node) {
   while (i < client_number) {
     if (clients[i] != NULL && clients[i]->tid == current->id) {
       client_t* victim = clients[i];
+      /* 顺手摘掉 /dev/foot 下的子节点，否则每注册一次就漏一个 vnode */
+      if (victim->name != NULL) {
+        vnode_t* node_client = vfs_find_child(node, victim->name);
+        if (node_client != NULL) {
+          vfs_remove_child(node, node_client);
+        }
+      }
       victim->state = SYS_DINIT;
-      service_remove_client(victim); /* 内含数组搬移与 client_number-- */
+      service_remove_client(victim); /* 内含数组搬移、client_number--、回收 */
       removed++;
     } else {
       i++;
@@ -251,7 +284,7 @@ ssize_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
       return -1;
     }
     client->cid = current->id;
-    service_map_client_api(client, uctl.client);
+    service_map_client_api(client, uctl.client, 0);
   } else if (cmd == SYS_NEW_CLIENT) {
     int slots = uctl.api_size;
     if (slots <= 0 || slots > MAX_API_SLOTS) slots = FOOT_API_DEFAULT;
@@ -265,7 +298,7 @@ ssize_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
     if (no < 0) {
       return -1;
     }
-    service_map_client_api(client, uctl.client);
+    service_map_client_api(client, uctl.client, 1);
 
     vnode_t* node_client = vfs_create_node(client->name, V_FILE);
     vfs_add_child(node, node_client);
@@ -278,13 +311,16 @@ ssize_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
       log_error("client del id %d is null\n", id);
       return -1;
     }
+    /* 先摘 vfs 子节点（要用 client->name），再摘 clients[] 表——
+     * service_remove_client 在无外部映射时会连 name 一起释放。 */
+    {
+      vnode_t* node_client = vfs_find_child(node, client->name);
+      if (node_client != NULL) {
+        vfs_remove_child(node, node_client);
+      }
+    }
     client->state = SYS_DINIT;
     service_remove_client(client);
-
-    vnode_t* node_client = vfs_find_child(node, client->name);
-    if (node_client != NULL) {
-      vfs_remove_child(node, node_client);
-    }
   } else if (cmd == SYS_GET_CLIENT_BY_ID) {
     int id = uctl.id;
     client_t* client = service_get_client(id);
@@ -293,7 +329,7 @@ ssize_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
       return -1;
     }
     client->cid = current->id;
-    service_map_client_api(client, uctl.client);
+    service_map_client_api(client, uctl.client, 0);
   }
   return ret;
 }
