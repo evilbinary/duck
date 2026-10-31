@@ -533,8 +533,8 @@ void thread_wait(thread_t* thread) {
 }
 
 /* 等待协议的钩子（见 thread.h）：由 posix 层在 sys_fn_init 里注册 */
-int (*thread_wait_fill_hook)(thread_t* t, int timed_out) = NULL;
-void (*thread_wait_notify_hook)(void) = NULL;
+int (*thread_event_fill_hook)(thread_t* t, int timed_out) = NULL;
+void (*thread_event_notify_hook)(void) = NULL;
 /* 【pidfd 退出通知钩子】由 posix 层（sysfn_proc.c）在 sys_fn_init 里注册：
  * 线程退出、code 定稿后调用一次（幂等：thread_exit 的幂等闸保证不重入），
  * 参数 = (thread->id, (code&0xff)<<8) 的 wait-status 编码。pidfd 用它把
@@ -561,8 +561,8 @@ void thread_wake_ex(thread_t* thread, int reason) {
   if (thread->state == THREAD_WAITING && thread->ctx != NULL &&
       thread->ctx->ksp != NULL) {
     int handled = 0;
-    if (thread_wait_fill_hook != NULL) {
-      handled = thread_wait_fill_hook(thread, reason);
+    if (thread_event_fill_hook != NULL) {
+      handled = thread_event_fill_hook(thread, reason);
     }
     if (!handled) {
       if (reason == WAKE_TIMEOUT) {
@@ -592,8 +592,8 @@ int thread_signal_send(thread_t* t, int sig) {
    * 否则 mask 住信号后 read(signalfd) 会永远睡下去。Linux 的 signalfd 正是
    * 靠"信号入 pending 时唤醒等待队列"实现的。这里统一叫一次通知钩子，由
    * posix 层在等待者页表下重算就绪（等待者通常只有一两个，代价可忽略）。 */
-  if (thread_wait_notify_hook != NULL) {
-    thread_wait_notify_hook();
+  if (thread_event_notify_hook != NULL) {
+    thread_event_notify_hook();
   }
   /* 被屏蔽的信号只挂 pending，不打断当前等待（Linux：解除屏蔽后才投递）。 */
   if (t->sig_blocked & THREAD_SIGBIT(sig)) {

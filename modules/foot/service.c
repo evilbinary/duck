@@ -7,6 +7,7 @@
 
 #include "kernel/cap.h"
 #include "kernel/cred.h"
+#include "kernel/thread_event.h"
 #include "posix/sysfn.h"
 
 client_t* clients[MAX_CLIENTS];
@@ -350,49 +351,42 @@ static ssize_t service_cap_ioctl(u32 cmd, void* args) {
   return ret;
 }
 
-/* 阻塞收发的等待块。挂起后本函数【不会返回】，所以参数必须放内核堆；
- * 就绪时由 poll_wait_suspend 的重查回调在【等待者页表】下完成用户态回写。 */
-typedef struct cap_ep_wait {
+/* 端点收发的阻塞等待块。挂起后本函数【不会返回】，所以参数放内核堆，
+ * 就绪时由 poll_wait_suspend 的重查在等待者页表下完成用户态回写。
+ * 结构与用法与 posix 的 sys_rw_wait 完全一致（sysfn_fs.c）。 */
+struct cap_ep_wait {
   cspace_t* cs;
   cap_ep_ctl_t uc; /* 用户参数副本（含 buf 指针与输出字段） */
   void* uargs;     /* 用户参数地址：就绪时整体写回 */
-  int* done;       /* 指向调用者栈上的完成标记（只有未挂起的路径会读） */
-  u32 len;         /* send：数据长度 */
+  int is_recv;     /* 1 = 接收方向，0 = 发送方向 */
+  int done;        /* 已完成的标记：唤醒遍历可能重复调用本回调，必须幂等 */
+  u32 len;         /* send：数据长度；recv：可接收容量 */
   u32 rights;
   u32 grant_h; /* send：待转授句柄 */
   char data[CAP_EP_DATA_MAX];
-} cap_ep_wait_t;
+};
 
-static void cap_ep_wait_release(void* arg) {
-  if (arg != NULL) {
-    kfree(arg);
+/* 队列空/满返回 0（继续等）；能完成就地做完并回写用户态，返回 1。
+ * 出错返回负值表示放弃等待（该值直接成为 syscall 返回值）。
+ * 完成后再被遍历到要直接返回 1，否则会重复入队/重复取消息。
+ * 这里传 wake=1：入队/出队后要叫醒对端；cap_endpoint 内部的 busy/pending
+ * 循环把"重查里再唤醒"的递归折成了循环。 */
+static int cap_ep_rw_recheck(void* a) {
+  struct cap_ep_wait* w = (struct cap_ep_wait*)a;
+  if (w->done) {
+    return 1;
   }
-}
-
-/* 队列空/满时返回 0（继续等）；能完成就【就地做完并写回用户态】再返回 1。
- * wake 一律传 0：本回调可能运行在 poll_wait_notify 的遍历里，
- * 再触发一次 notify 会自递归。 */
-static int cap_ep_recheck_send(void* arg) {
-  cap_ep_wait_t* w = (cap_ep_wait_t*)arg;
-  if (cap_endpoint_send_ex(w->cs, w->uc.handle, w->data, w->len, w->grant_h,
-                           w->rights, 0) != 0) {
-    return 0;
-  }
-  if (w->done != NULL) {
-    *w->done = 1;
-  }
-  return 1;
-}
-
-static int cap_ep_recheck_recv(void* arg) {
-  cap_ep_wait_t* w = (cap_ep_wait_t*)arg;
-  u32 cap = w->uc.len;
-  if (cap > CAP_EP_DATA_MAX) {
-    cap = CAP_EP_DATA_MAX;
+  if (!w->is_recv) {
+    if (cap_endpoint_send_ex(w->cs, w->uc.handle, w->data, w->len, w->grant_h,
+                             w->rights, 1) != 0) {
+      return 0; /* 队列满 */
+    }
+    w->done = 1;
+    return 1;
   }
   u32 out_len = 0, out_grant = 0;
-  if (cap_endpoint_recv_ex(w->cs, w->uc.handle, w->data, cap, &out_len,
-                           &out_grant, 0) != 0) {
+  if (cap_endpoint_recv_ex(w->cs, w->uc.handle, w->data, w->len, &out_len,
+                           &out_grant, 1) != 0) {
     return 0; /* 队列空 */
   }
   if (out_len > 0 && w->uc.buf != NULL) {
@@ -407,13 +401,15 @@ static int cap_ep_recheck_recv(void* arg) {
       return -1;
     }
   }
-  if (w->done != NULL) {
-    *w->done = 1;
-  }
+  w->done = 1;
   return 1;
 }
 
-/* 端点（IPC）命令：参数是 cap_ep_ctl_t，收发数据要在用户/内核之间搬。 */
+static void cap_ep_rw_release(void* a) { kfree(a); }
+
+/* 端点（IPC）命令：参数是 cap_ep_ctl_t，收发数据要在用户/内核之间搬。
+ * 阻塞语义沿用 posix 的 sys_rw_wait：登记 recheck → THREAD_WAITING →
+ * schedule_switch，对端入队/出队时经 thread_event_notify_hook 唤醒。 */
 static ssize_t service_cap_ep_ioctl(u32 cmd, void* args) {
   cap_ep_ctl_t ctl;
   if (args == NULL) {
@@ -443,7 +439,7 @@ static ssize_t service_cap_ep_ioctl(u32 cmd, void* args) {
       if (want > CAP_EP_DATA_MAX) {
         want = CAP_EP_DATA_MAX;
       }
-      /* 非阻塞：直接试一次，满/空就失败 */
+      /* 非阻塞（或调用方显式要求）：直接试一次，满/空就失败 */
       if ((ctl.flags & CAP_EP_NONBLOCK) != 0) {
         char kbuf[CAP_EP_DATA_MAX];
         kmemset(kbuf, 0, sizeof(kbuf));
@@ -470,36 +466,39 @@ static ssize_t service_cap_ep_ioctl(u32 cmd, void* args) {
         break;
       }
 
-      /* 阻塞：登记 → 挂起。队列已就绪时根本不睡，直接完成。 */
-      cap_ep_wait_t* w = kmalloc(sizeof(cap_ep_wait_t), KERNEL_TYPE);
+      /* 阻塞：登记 → 挂起；队列已就绪时根本不睡。 */
+      struct cap_ep_wait* w = kmalloc(sizeof(*w), KERNEL_TYPE);
       if (w == NULL) {
         break;
       }
-      kmemset(w, 0, sizeof(cap_ep_wait_t));
-      int done = 0;
+      kmemset(w, 0, sizeof(*w));
       w->cs = cs;
       w->uc = ctl;
-      w->uc.len = want;
       w->uargs = args;
-      w->done = &done;
+      w->is_recv = is_recv;
       w->len = want;
       w->rights = ctl.rights;
       w->grant_h = ctl.grant;
-      if (!is_recv && want > 0 && ctl.buf != NULL) {
-        if (sys_copy_from_user(w->data, ctl.buf, want) < 0) {
-          kfree(w);
-          break;
-        }
+      if (!is_recv && want > 0 && ctl.buf != NULL &&
+          sys_copy_from_user(w->data, ctl.buf, want) < 0) {
+        kfree(w);
+        break;
       }
-      int r = poll_wait_suspend(is_recv ? cap_ep_recheck_recv
-                                        : cap_ep_recheck_send,
-                                NULL, cap_ep_wait_release, w, 0, 0);
-      /* 能走到这里说明没有真挂起：本来就有事件（done=1）、等待表满（r=0）
-       * 或信号打断（r<0）。真挂起的返回值由唤醒方写进保存帧。 */
+      /* 就绪时 recheck 返回 1（result 为 NULL ⇒ 这个 1 就是 syscall 返回值，
+       * libfoot 按 "<0 即失败" 判定，所以 1 也表示成功）。真挂起后不返回，
+       * 唤醒方把 1 写进保存帧 x0。 */
+      /* 定向等待：挂到这个端点自己的事件上，队列变化时只唤醒它，
+       * 不必让全表的每个等待者都重跑一次 recheck。 */
+      int r = thread_event_wait_on((thread_event_t*)cap_endpoint_event(
+                                       cs, ctl.handle),
+                                   cap_ep_rw_recheck, NULL, cap_ep_rw_release,
+                                   w, 0, 0);
+      /* 能走到这里只有两种情况：本来就有事件（r>0）或等待表满（r==0，
+       * 此时 w 已被 release）。信号打断返回负值。 */
       if (r < 0) {
         return r;
       }
-      return (done || r > 0) ? 0 : -1;
+      return r > 0 ? 0 : -1;
     }
     default:
       break;

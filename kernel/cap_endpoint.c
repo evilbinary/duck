@@ -13,19 +13,23 @@
 
 #include "memory.h"
 #include "thread.h"
+#include "thread_event.h"
 
 #define log_debug
 
-/* 队列状态变化后叫醒阻塞在收/发上的线程。
- * 用 thread_wait_notify_hook 而不是直接调 poll_wait_notify：端点在内核核心，
- * 不能反向依赖 posix 模块（钩子由 poll_wait_init 装上，未装时为空）。
- * 【防递归】唤醒方在重查（recheck）里调用本文件的 ex 版本，wake 传 0，
- * 否则 poll_wait_notify → recheck → send → notify 会自递归。 */
-static void ep_wake(void) {
-  if (thread_wait_notify_hook != NULL) {
-    thread_wait_notify_hook();
-  }
-}
+/* 队列状态变化后叫醒阻塞在收/发上的线程（通用等待层，见 thread_event.h）。
+ *
+ * 【防递归】send/recv 会在 thread_event_wait 的重查回调里被调用，而重查本身
+ * 就是 thread_event_notify 遍历的一部分 ⇒ 直接再唤醒会自嵌套，而且嵌套里
+ * 可能通知的是【另一个】端点。这里用一个小队列把递归摊平成循环：内层只把
+ * 端点排进队列，外层逐项通知完再返回。重查回调自身用完成标记做幂等，所以
+ * 重复遍历不会重复入队/取消息。 */
+#define EP_WAKE_QUEUE 8
+static struct foot_endpoint* ep_wake_q[EP_WAKE_QUEUE];
+static int ep_wake_qn = 0;
+static int ep_wake_busy = 0;
+
+static void ep_wake(struct foot_endpoint* ep);
 
 typedef struct cap_ep_msg {
   u32 len;              /* 数据长度 */
@@ -34,13 +38,36 @@ typedef struct cap_ep_msg {
   u8 data[CAP_EP_DATA_MAX];
 } cap_ep_msg_t;
 
-typedef struct foot_endpoint {
+struct foot_endpoint {
   u32 head; /* 出队位置 */
   u32 tail; /* 入队位置 */
   u32 cnt;  /* 当前消息数 */
   u32 owner;
+  thread_event_t* ev; /* 该端点的等待事件：send/recv 改队列后定向唤醒 */
   cap_ep_msg_t msgs[CAP_EP_MSGS];
-} foot_endpoint_t;
+};
+typedef struct foot_endpoint foot_endpoint_t;
+
+/* 队列变化后定向唤醒（实现放在结构体定义之后：要访问 ep->ev） */
+static void ep_wake(struct foot_endpoint* ep) {
+  if (ep == NULL) {
+    return;
+  }
+  if (ep_wake_busy) {
+    if (ep_wake_qn < EP_WAKE_QUEUE) {
+      ep_wake_q[ep_wake_qn++] = ep;
+    }
+    return;
+  }
+  ep_wake_busy = 1;
+  ep_wake_qn = 0;
+  ep_wake_q[ep_wake_qn++] = ep;
+  while (ep_wake_qn > 0) {
+    struct foot_endpoint* cur = ep_wake_q[--ep_wake_qn];
+    thread_event_notify(cur->ev); /* 只唤醒等在【这个】端点上的线程 */
+  }
+  ep_wake_busy = 0;
+}
 
 /* ---------------- ops ---------------- */
 
@@ -55,6 +82,10 @@ static void endpoint_destroy(kobject_t* obj) {
       obj_put(ep->msgs[i].grant_obj);
       ep->msgs[i].grant_obj = NULL;
     }
+  }
+  if (ep->ev != NULL) {
+    kfree(ep->ev);
+    ep->ev = NULL;
   }
   kfree(ep);
   obj->state = NULL;
@@ -91,9 +122,16 @@ u32 cap_endpoint_create(cspace_t* cs) {
   }
   kmemset(ep, 0, sizeof(foot_endpoint_t));
   ep->owner = (t != NULL) ? t->id : 0;
+  ep->ev = kmalloc(sizeof(thread_event_t), KERNEL_TYPE);
+  if (ep->ev == NULL) {
+    kfree(ep);
+    return 0;
+  }
+  ep->ev->head = -1;
 
   kobject_t* o = obj_create(OBJ_ENDPOINT, ep);
   if (o == NULL) {
+    kfree(ep->ev);
     kfree(ep);
     return 0;
   }
@@ -164,7 +202,7 @@ int cap_endpoint_send_ex(cspace_t* cs, u32 h, const void* data, u32 len,
             grant_obj != NULL, ep->cnt);
   /* 可能有线程正阻塞在 recv 上（等这条消息） */
   if (wake) {
-    ep_wake();
+    ep_wake(ep);
   }
   return 0;
 }
@@ -217,7 +255,16 @@ int cap_endpoint_recv_ex(cspace_t* cs, u32 h, void* data, u32 cap, u32* out_len,
   log_debug("ep recv h=%x len=%d grant=%d cnt=%d\n", h, n, nh, ep->cnt);
   /* 腾出空位，叫醒阻塞在 send 上的线程 */
   if (wake) {
-    ep_wake();
+    ep_wake(ep);
   }
   return 0;
+}
+
+struct thread_event* cap_endpoint_event(cspace_t* cs, u32 h) {
+  cap_t* c = cspace_get(cs, h);
+  if (c == NULL || c->ty != OBJ_ENDPOINT || c->obj == NULL ||
+      c->obj->state == NULL) {
+    return NULL;
+  }
+  return ((foot_endpoint_t*)c->obj->state)->ev;
 }

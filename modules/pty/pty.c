@@ -19,8 +19,8 @@ u32 pty_close(vnode_t *node) {
     /* master 没了 ⇒ 从端变死终端：read EOF、write EIO；唤醒可能在
      * V_BLOCK_READ 上挂着的从端读者（pty08 的语义） */
     pty->dead = 1;
-    if (thread_wait_notify_hook != NULL) {
-      thread_wait_notify_hook();
+    if (thread_event_notify_hook != NULL) {
+      thread_event_notify_hook();
     }
   } else if (node->op == &pty_slave_operator) {
     if (pty->slave_cnt > 0) {
@@ -147,7 +147,7 @@ u32 pty_open(vnode_t *node, u32 mode) {
  * 线程被唤醒后回不到 vread 的返回点，所以 op->read 一律不阻塞：
  *   没数据 → 返回 -EAGAIN，由 sys_read 对带 V_BLOCK_READ 的节点走
  *   sys_rw_wait 挂起（与 unix socket 同一套 poll 机制），写入方用
- *   thread_wait_notify_hook 唤醒等待者重试。
+ *   thread_event_notify_hook 唤醒等待者重试。
  * 缓冲的 wait/notify 回调全部置 NULL（原来的 rw_queue 阻塞就是这个死结），
  * buffer 满/空都在调用方层面短读/短写。 */
 u32 pty_master_read(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
@@ -178,8 +178,8 @@ u32 pty_master_write(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
 #endif
   u32 ret = buffer_write(pty->out, buffer, size);
   /* 写进数据 ⇒ 从端的阻塞读可就绪：唤醒 poll/rw 等待者（同 pipe 的做法） */
-  if (ret > 0 && thread_wait_notify_hook != NULL) {
-    thread_wait_notify_hook();
+  if (ret > 0 && thread_event_notify_hook != NULL) {
+    thread_event_notify_hook();
   }
   return ret;
 }
@@ -220,8 +220,8 @@ u32 pty_slave_write(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
   kprintf("pty slave write %s\n", buffer);
 #endif
   u32 ret = buffer_write(pty->in, buffer, size);
-  if (ret > 0 && thread_wait_notify_hook != NULL) {
-    thread_wait_notify_hook(); /* 唤醒主端等待者（目前主端只轮询，留语义一致） */
+  if (ret > 0 && thread_event_notify_hook != NULL) {
+    thread_event_notify_hook(); /* 唤醒主端等待者（目前主端只轮询，留语义一致） */
   }
   return ret;
 }
@@ -269,7 +269,7 @@ static vnode_t *pty_clone_open(vnode_t *node) {
   }
   kmemset(pty, 0, sizeof(pty_t));
   /* wait/notify 全 NULL：本内核不支持"挂在内核调用链里等"（见文件头注释），
-   * 空/满一律靠 -EAGAIN + sys_rw_wait + thread_wait_notify_hook。 */
+   * 空/满一律靠 -EAGAIN + sys_rw_wait + thread_event_notify_hook。 */
   pty->in = buffer_create(PTY_BUFFER, NULL, NULL, NULL, NULL);
   pty->out = buffer_create(PTY_BUFFER, NULL, NULL, NULL, NULL);
 

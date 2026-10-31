@@ -150,7 +150,7 @@ static u32 pip_read(vnode_t* node, u32 offset, u32 size, u8* buffer) {
    * "阻塞读管道"的程序都会拿到假 EOF。
    * 现在读端节点带 V_BLOCK_READ（见 pipe_create_pair），sys_read 看到
    * -EAGAIN + 该标志且没设 O_NONBLOCK 时挂起，写端写入后由
-   * thread_wait_notify_hook() 唤醒并重跑这次 vread（pollw_rw_recheck）。 */
+   * thread_event_notify_hook() 唤醒并重跑这次 vread（pollw_rw_recheck）。 */
   if (n == 0) {
     /* 写端全关 ⇒ 真 EOF（返回 0）；还有人写 ⇒ 让 sys_read 挂起等待 */
     if (writers == 0) {
@@ -169,8 +169,8 @@ static u32 pip_read(vnode_t* node, u32 offset, u32 size, u8* buffer) {
   }
   /* 读走数据 ⇒ 写端可能变可写、读端可能变可读（缓冲里还有）：唤醒等待者。
    * 必须在 pipe_unlock 之后调（重算就绪要再拿这把锁）。 */
-  if (n > 0 && thread_wait_notify_hook != NULL) {
-    thread_wait_notify_hook();
+  if (n > 0 && thread_event_notify_hook != NULL) {
+    thread_event_notify_hook();
   }
   return n;
 }
@@ -197,8 +197,8 @@ static u32 pip_write(vnode_t* node, u32 offset, u32 size, u8* buffer) {
   }
   /* 写进数据 ⇒ 读端变可读：Xorg 就是把 keymap 写进管道喂 xkbcomp，
    * 不唤醒会让对端一直等到超时。 */
-  if (n > 0 && thread_wait_notify_hook != NULL) {
-    thread_wait_notify_hook();
+  if (n > 0 && thread_event_notify_hook != NULL) {
+    thread_event_notify_hook();
   }
   return n;
 }
@@ -291,8 +291,8 @@ static u32 pipe_close_end(vnode_t* node) {
   pipe_node_free(node);
   /* 端口归零后必须唤醒对端：阻塞读到 EOF / 阻塞写拿 EPIPE 都靠这一次通知
    * （recheck 会重跑 vread/vwrite，读到 writers==0 就返回 0）。 */
-  if (wake && thread_wait_notify_hook != NULL) {
-    thread_wait_notify_hook();
+  if (wake && thread_event_notify_hook != NULL) {
+    thread_event_notify_hook();
   }
   return 0;
 }

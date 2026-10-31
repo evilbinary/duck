@@ -198,13 +198,13 @@ extern void (*thread_user_return_hook)(thread_t* t, void* ic);
 void thread_user_return_run(thread_t* t, void* ic);
 
 /* 【等待协议钩子】由 posix 层（sysfn_pollwait.c）在 sys_fn_init 里注册：
- *   thread_wait_fill_hook：thread_wake 内部调用（reason 见 WAKE_*）。返回 1
+ *   thread_event_fill_hook：thread_wake 内部调用（reason 见 WAKE_*）。返回 1
  *     表示"这是 poll 类等待者，已把结果写进保存帧并清掉等待登记"；返回 0
  *     表示普通等待者（futex/waitpid），由 thread_wake_ex 按约定处理。
- *   thread_wait_notify_hook：事件发生（socket 连接/数据、pipe 读写）时调用，
+ *   thread_event_notify_hook：事件发生（socket 连接/数据、pipe 读写）时调用，
  *     重算所有 poll 类等待者并唤醒就绪者。未注册时为 NULL，调用方要判空。 */
-extern int (*thread_wait_fill_hook)(thread_t* t, int reason);
-extern void (*thread_wait_notify_hook)(void);
+extern int (*thread_event_fill_hook)(thread_t* t, int reason);
+extern void (*thread_event_notify_hook)(void);
 /* 【pidfd 退出通知钩子】线程退出时调用（pid, wait-status 编码），见 thread.c */
 extern void (*thread_pidfd_exit_hook)(int pid, int exit_status);
 

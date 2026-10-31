@@ -7,6 +7,7 @@
 #include "kernel.h"
 #include "cap.h"
 #include "page.h"
+#include "thread_event.h"
 
 #include "config.h"
 
@@ -52,6 +53,10 @@ void kernel_init() {
     thread_init();
     log_info("event init\n");
     event_init();
+    log_info("wait init\n");
+    /* 通用等待协议：安装 thread_event_fill_hook（把就绪/超时/信号结果写回
+     * 挂起线程的保存帧）。posix 的 poll_wait_init 会再装一次，内容相同。 */
+    thread_event_init();
     log_info("cap init\n");
     /* capability v2：对象表 + 类型注册表 + 静态设备窗口对象。
      * 必须在 memory_init 之后（要用 kmalloc），早于任何用户线程创建。 */

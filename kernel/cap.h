@@ -288,5 +288,8 @@ int cap_endpoint_send_ex(cspace_t* cs, u32 h, const void* data, u32 len,
                          u32 grant_h, u32 grant_rights, int wake);
 int cap_endpoint_recv_ex(cspace_t* cs, u32 h, void* data, u32 cap, u32* out_len,
                          u32* out_grant, int wake);
+/* 取该端点对应的等待事件对象：调用方用 thread_event_wait_on(ev, ...) 挂起，
+ * 队列变化时 cap_endpoint 会定向唤醒它（而不是全表广播）。 */
+struct thread_event* cap_endpoint_event(cspace_t* cs, u32 h);
 
 #endif

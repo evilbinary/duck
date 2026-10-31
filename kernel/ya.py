@@ -40,6 +40,7 @@ add_files(
     'cap_devwin.c',
     'cap_frame.c',
     'cap_endpoint.c',
+    'thread_event.c',
     'cred.c'
 )
 

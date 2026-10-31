@@ -141,7 +141,7 @@ int sys_eventfd2(u64 initval, int flags) {
  * 【就绪判定】signalfd 不属于 pipe/unix socket/evdev，会落到
  * sys_fd_ready_t 的"其它 fd 存在即就绪"兜底 ⇒ epoll_wait 立刻返回、read 拿
  * 不到数据 ⇒ 等待者空转。所以这里导出 signalfd_node_ready()，并让
- * thread_signal_send 在挂上 pending 后叫一次 thread_wait_notify_hook ——
+ * thread_signal_send 在挂上 pending 后叫一次 thread_event_notify_hook ——
  * "信号到达"于是等价于"signalfd 可读"，epoll 与阻塞 read 都能被唤醒
  * （libwayland 的 wl_event_loop_add_signal 依赖这条路径）。 */
 #define SIGFD_MAGIC 0x516FD00u
