@@ -21,6 +21,10 @@
 #define EVDEV_NAME "YiYiYa Virtual Mouse"
 #define EVDEV_PHYS "yiyiya/input0"
 
+/* 一次 pump 最多搬运多少份硬件报告（1 份 = 1~5 个 input 事件）。
+ * 只是防"端点一直有数据"时霸占 CPU，正常一帧也就 1~3 份。 */
+#define EVDEV_PUMP_MAX 16
+
 static input_dev_t* evdev_mouse;
 static u32 evdev_btn_old;
 
@@ -30,49 +34,60 @@ static u32 evdev_btn_old;
  * 的 in_pump() 负责（read 与就绪判定会从不同线程进来）。 */
 static void evdev_pump(input_dev_t* dev) {
   device_t* mouse = device_find(DEVICE_MOUSE);
-  u8 pkt[4];
-  size_t n;
-  i32 dx;
-  i32 dy;
-  u32 btn;
+  /* 一次 pump 把硬件侧积压的报告全部展开成事件（上限 EVDEV_PUMP_MAX 包）：
+   * 用户态一次 read 就能拿到成批的 REL_X/REL_Y/SYN。
+   * 【为什么必须批量】旧实现每次只取一个包，而 poll/epoll 对本类设备是按
+   * SYS_POLLED_FD_RECHECK_MS(8ms) 切片重查的，等于每 8ms 只吐一包（≈41 包/秒），
+   * 快速拖动时用户态看到的是"一跳一跳"的光标，且 1 包 = 3 个事件要分 3 次
+   * read 才取完，延迟再翻倍。 */
+  int guard;
 
   if (mouse == NULL || mouse->read == NULL) {
     return;
   }
 
-  n = mouse->read(mouse, pkt, sizeof(pkt));
-  if (n < 3) {
-    return; /* 硬件侧暂无新报告 */
-  }
+  for (guard = 0; guard < EVDEV_PUMP_MAX; guard++) {
+    u8 pkt[4];
+    size_t n;
+    i32 dx;
+    i32 dy;
+    u32 btn;
 
-  dx = (i32)(i8)pkt[1];
-  dy = (i32)(i8)pkt[2];
-  btn = pkt[0] & 0x07;
+    n = mouse->read(mouse, pkt, sizeof(pkt));
+    if (n < 3) {
+      return; /* 硬件侧暂无新报告 */
+    }
 
-  if (dx == 0 && dy == 0 && btn == evdev_btn_old) {
-    return;
-  }
+    dx = (i32)(i8)pkt[1];
+    dy = (i32)(i8)pkt[2];
+    btn = pkt[0] & 0x07;
 
-  if (dx != 0) {
-    input_report(dev, EV_REL, REL_X, dx);
-  }
-  if (dy != 0) {
-    /* 【不要取反】usb_mouse_read_packet 交出的 byte2 就是 USB HID 报告的
-     * dy，正向已经是屏幕方向（向下为正），与 EV_REL/REL_Y 的约定一致。 */
-    input_report(dev, EV_REL, REL_Y, dy);
-  }
-  if ((btn & 0x01) != (evdev_btn_old & 0x01)) {
-    input_report(dev, EV_KEY, BTN_LEFT, (btn & 0x01) ? 1 : 0);
-  }
-  if ((btn & 0x02) != (evdev_btn_old & 0x02)) {
-    input_report(dev, EV_KEY, BTN_RIGHT, (btn & 0x02) ? 1 : 0);
-  }
-  if ((btn & 0x04) != (evdev_btn_old & 0x04)) {
-    input_report(dev, EV_KEY, BTN_MIDDLE, (btn & 0x04) ? 1 : 0);
-  }
-  evdev_btn_old = btn;
+    /* 空闲时的全零报告：没有变化就不投递，但要继续看后面还有没有真事件 */
+    if (dx == 0 && dy == 0 && btn == evdev_btn_old) {
+      continue;
+    }
 
-  input_sync(dev);
+    if (dx != 0) {
+      input_report(dev, EV_REL, REL_X, dx);
+    }
+    if (dy != 0) {
+      /* 【不要取反】usb_mouse_read_packet 交出的 byte2 就是 USB HID 报告的
+       * dy，正向已经是屏幕方向（向下为正），与 EV_REL/REL_Y 的约定一致。 */
+      input_report(dev, EV_REL, REL_Y, dy);
+    }
+    if ((btn & 0x01) != (evdev_btn_old & 0x01)) {
+      input_report(dev, EV_KEY, BTN_LEFT, (btn & 0x01) ? 1 : 0);
+    }
+    if ((btn & 0x02) != (evdev_btn_old & 0x02)) {
+      input_report(dev, EV_KEY, BTN_RIGHT, (btn & 0x02) ? 1 : 0);
+    }
+    if ((btn & 0x04) != (evdev_btn_old & 0x04)) {
+      input_report(dev, EV_KEY, BTN_MIDDLE, (btn & 0x04) ? 1 : 0);
+    }
+    evdev_btn_old = btn;
+
+    input_sync(dev);
+  }
 }
 
 /* posix 层（sys_fs 的就绪判定）以弱符号调用：设备是 DEVICE_EVDEV 时问这里

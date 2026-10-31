@@ -205,6 +205,9 @@ int input_poll_ready(void* arg) {
 /* ---------------- read ---------------- */
 static size_t input_core_read(device_t* base, void* buf, size_t len) {
   input_dev_t* dev = (input_dev_t*)base;
+  size_t max;
+  size_t n = 0;
+  u8* out = (u8*)buf;
 
   if (buf == NULL || len < sizeof(input_event_t)) {
     return 0;
@@ -215,9 +218,18 @@ static size_t input_core_read(device_t* base, void* buf, size_t len) {
      * 降频由就绪判定 + SYS_POLLED_FD_RECHECK_MS 负责。 */
     return (size_t)-11;
   }
-  *(input_event_t*)buf = dev->queue[dev->tail];
-  dev->tail = (dev->tail + 1) % INPUT_QUEUE_SIZE;
-  return sizeof(input_event_t);
+
+  /* 【与 Linux 一致：一次 read 取走队列里所有事件（不超过用户缓冲）】
+   * 一次鼠标报告是 REL_X + REL_Y + SYN_REPORT 三个事件，旧实现每次只回一个，
+   * 用户态就得为同一份报告做 3 次 read（配合 poll 的 8ms 切片，延迟被放大
+   * 数倍，光标显得发滞）。 */
+  max = len / sizeof(input_event_t);
+  while (n < max && dev->head != dev->tail) {
+    *(input_event_t*)(out + n * sizeof(input_event_t)) = dev->queue[dev->tail];
+    dev->tail = (dev->tail + 1) % INPUT_QUEUE_SIZE;
+    n++;
+  }
+  return n * sizeof(input_event_t);
 }
 
 /* ---------------- ioctl（Linux evdev 语义） ----------------
