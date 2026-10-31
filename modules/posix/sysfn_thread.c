@@ -293,10 +293,13 @@ static u32 futex_waiter_wake_key(u64 key, u32* va, u32 max_wake) {
     if (w->state == THREAD_SLEEP || w->state == THREAD_WAITING) {
       /* 【回填返回值】WAITING 是 schedule_switch 式阻塞：内核调用链被弃，
        * 唤醒后线程从保存帧直接回用户态 —— 必须由唤醒方把返回值写进
-       * 保存帧（与 thread_exit 代收割 waitpid 的同款机制）。 */
-      if (w->state == THREAD_WAITING && w->ctx != NULL &&
-          w->ctx->ksp != NULL) {
-        ((interrupt_context_t*)w->ctx->ksp)->x0 = 0;
+       * 正确的帧（thread_wake_frame：已切出写 ksp，还没切出写共享 trap
+       * 帧，否则会被 context_switch 覆盖）。 */
+      if (w->state == THREAD_WAITING) {
+        interrupt_context_t* frame = thread_wake_frame(w);
+        if (frame != NULL) {
+          frame->x0 = 0;
+        }
       }
       thread_wake(w); /* 同时清零 sleep_counter ⇒ 兜底睡眠也会立刻结束 */
       n++;
@@ -338,10 +341,12 @@ static u32 futex_waiter_requeue(u32* addr, u32* addr2, u32 max_wake,
     if (w->state == THREAD_SLEEP || w->state == THREAD_WAITING) {
       if (woken < max_wake) {
         /* 与 futex_waiter_wake 同款：WAITING 是 schedule_switch 式阻塞，
-         * 返回值必须由唤醒方写进保存帧 */
-        if (w->state == THREAD_WAITING && w->ctx != NULL &&
-            w->ctx->ksp != NULL) {
-          ((interrupt_context_t*)w->ctx->ksp)->x0 = 0;
+         * 返回值必须由唤醒方写进正确的帧（见 thread_wake_frame） */
+        if (w->state == THREAD_WAITING) {
+          interrupt_context_t* frame = thread_wake_frame(w);
+          if (frame != NULL) {
+            frame->x0 = 0;
+          }
         }
         thread_wake(w);
         futex_waiters[i].t = NULL;

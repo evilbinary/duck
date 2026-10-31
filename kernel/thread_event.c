@@ -339,9 +339,15 @@ static int wait_fill(thread_t* t, int reason) {
   }
   /* 【不在这里打日志】轮询型设备靠"短超时反复醒来"工作（见 sysfn.h 的
    * SYS_POLLED_FD_RECHECK_MS），每次超时都打印会把串口打满并拖慢整机。 */
-  if (t->ctx != NULL && t->ctx->ksp != NULL) {
-    /* ctx->ksp 是保存帧副本；ctx->ic 指向共享槽，早被别的线程覆盖了 */
-    ((interrupt_context_t*)t->ctx->ksp)->x0 = (u64)ret;
+  {
+    /* 【写哪一帧】线程已切出 → 保存帧 ctx->ksp；线程还是本核 current
+     * （被 tick/IRQ 打断在 SVC 里，刚置 WAITING）→ 共享 trap 帧 ctx->ic，
+     * 写 ksp 会被 context_switch 的 kmemcpy(++ksp, ic) 覆盖。见
+     * thread_wake_frame()。 */
+    interrupt_context_t* frame = thread_wake_frame(t);
+    if (frame != NULL) {
+      frame->x0 = (u64)ret;
+    }
   }
   wait_clear(e);
   return 1;

@@ -169,6 +169,15 @@ void thread_wake(thread_t* thread);
 #define WAKE_SIGNAL 2  /* 信号打断：回 -EINTR */
 void thread_wake_ex(thread_t* thread, int reason);
 
+/* 【唤醒方该把返回值写进哪一帧】阻塞 syscall 的退出帧有两种可能：
+ *   · 线程已经真正切出：恢复用它的保存帧 ctx->ksp；
+ *   · 线程还是本核正在跑的那一个（被 tick/IRQ 打断在 SVC 里，state 刚被
+ *     置成 WAITING）：现场在共享运行栈上的 trap 帧 ctx->ic —— 此时写 ksp
+ *     会被 context_switch 的 kmemcpy(++ksp, ic) 覆盖，唤醒结果就丢了
+ *     （表现为 read 返回 fd、poll 返回 fds 指针这类"返回了参数值"）。
+ * 这里不存任何状态，只按"目标线程此刻在哪"选帧，所以不会串到别的 syscall。 */
+interrupt_context_t* thread_wake_frame(thread_t* t);
+
 /* 投递信号（挂到 pending 并唤醒阻塞在该线程上的 syscall，让它返回 -EINTR）。
  * sig=0 只做存活探测。返回 0 成功 / -ESRCH 无线程。 */
 int thread_signal_send(thread_t* t, int sig);

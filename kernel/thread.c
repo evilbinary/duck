@@ -542,6 +542,21 @@ void (*thread_event_notify_hook)(void) = NULL;
  * waitpid 收割（thread 释放）之后仍能查到退出信息。未注册时为 NULL。 */
 void (*thread_pidfd_exit_hook)(int pid, int exit_status) = NULL;
 
+/* 见 thread.h：按"目标线程此刻在哪"选要回填的帧。 */
+interrupt_context_t* thread_wake_frame(thread_t* t) {
+  if (t == NULL || t->ctx == NULL) {
+    return NULL;
+  }
+  /* 本核正在跑的线程：现场是共享运行栈上的 trap 帧（ctx->ic）。
+   * 注意必须回读 thread_current() 而不是比较 cpu_id —— 只有"就是本核的
+   * current"才能保证 ctx->ic 指向它自己的现场；别的核上的线程看不到它的
+   * 共享栈，只能写它的保存帧。 */
+  if (t == thread_current() && t->ctx->ic != NULL) {
+    return (interrupt_context_t*)t->ctx->ic;
+  }
+  return (interrupt_context_t*)t->ctx->ksp;
+}
+
 void thread_wake_ex(thread_t* thread, int reason) {
   if (thread == NULL) {
     return;
@@ -565,10 +580,15 @@ void thread_wake_ex(thread_t* thread, int reason) {
       handled = thread_event_fill_hook(thread, reason);
     }
     if (!handled) {
-      if (reason == WAKE_TIMEOUT) {
-        ((interrupt_context_t*)thread->ctx->ksp)->x0 = (u64)(long)-110;
-      } else if (reason == WAKE_SIGNAL) {
-        ((interrupt_context_t*)thread->ctx->ksp)->x0 = (u64)(long)-4; /* EINTR */
+      /* 用 thread_wake_frame 而不是直接写 ctx->ksp：线程可能还没切出，
+       * 那时出口帧是共享运行栈上的 trap 帧。 */
+      interrupt_context_t* frame = thread_wake_frame(thread);
+      if (frame != NULL) {
+        if (reason == WAKE_TIMEOUT) {
+          frame->x0 = (u64)(long)-110;
+        } else if (reason == WAKE_SIGNAL) {
+          frame->x0 = (u64)(long)-4; /* EINTR */
+        }
       }
     }
   }
