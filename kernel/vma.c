@@ -491,8 +491,15 @@ void vmemory_flush_shared_files(vmemory_t* vm) {
         continue;
       }
       node = (vnode_t*)c->file_node;
-      /* 共享页节点（memfd 等）：映射的是共享物理页，没有文件可回写 */
-      if (node->op != NULL && node->op->fault != NULL) {
+      /* 【file_node 只是 mmap 那一刻的 vnode 快照，必须当成弱引用校验】
+       * 用户 mmap 一个文件后 close(fd) 是合法用法（weston-terminal 就是这样
+       * 加载字体的），而 close 会把 vnode 摘掉/回收：node->op 变 NULL 甚至
+       * 整块内存被复用。这里再按 node->op->fault 访问就是野指针 —— 实测
+       * weston-terminal 在 exit 的 flush 路径直接崩在 vwrite+0x3c
+       * （`ldr x0,[x0,#8]`，FAR=8，即 node->op == NULL）。
+       * 共享页对象（memfd 等）op->fault 非空，映射的是共享物理页，没有文件
+       * 可回写，同样跳过。 */
+      if (!vfs_node_is_valid(node) || node->op->fault != NULL) {
         continue;
       }
       for (va = c->vaddr; va < c->vend; va += PAGE_SIZE) {

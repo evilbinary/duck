@@ -95,6 +95,25 @@ ssize_t pty_ioctl(vnode_t *node, u32 cmd, void *args) {
     }
     kmemcpy(pty->winsize, args, sizeof(pty->winsize));
     return 0;
+  } else if (cmd == 0x540Eu) { /* TIOCSCTTY：把本 fd 设为控制终端。
+                                * musl 的 login_tty() 在 setsid() 之后必须
+                                * 拿到它，否则 forkpty 的子进程会
+                                *   write(pipe, &errno); _exit(127);
+                                * 父进程读到 errno=ENOTTY ⇒ forkpty 返回 -1，
+                                * 调用方看到 "failed to fork and create pty
+                                * (Not a tty)"（weston-terminal 实测）。
+                                * 本内核没有会话/控制终端语义，无脑成功。 */
+    return 0;
+  } else if (cmd == 0x540Fu) { /* TIOCGPGRP：取前台进程组。没有 job control，
+                                * 回当前线程 id 当占位（0 会让部分 shell 认为
+                                * 自己不是前台）。 */
+    if (args == NULL) {
+      return -1;
+    }
+    *((int *)args) = (int)thread_current()->id;
+    return 0;
+  } else if (cmd == 0x5410u) { /* TIOCSPGRP：设置前台进程组，no-op 成功 */
+    return 0;
   } else if (cmd >= 0x5409u && cmd <= 0x540Bu) { /* TCSBRK/TCXONC/TCFLSH：
                                                   * break/流控/冲刷均无
                                                   * 硬件语义，no-op 成功 */
@@ -143,6 +162,26 @@ u32 pty_open(vnode_t *node, u32 mode) {
   return 1;
 }
 
+/* 【实例完整性检查】in/out 是 pty_create/pty_clone_open 里一次性建的循环
+ * 缓冲，正常永远非 NULL。为 NULL 表示实例被破坏、或 node->device 指向了
+ * 别的对象（例如打开的是 /dev/pts 目录节点、取到的是占位 pty_t）。
+ * 以前直接 buffer_write(pty->in, ...) ⇒ 内核在 buffer_write+0x1c
+ * （`ldr x0,[x0,#16]`）data abort，FAR=0x10：/bin/sh 一写 stdout 就挂。
+ * 这里改成返回 -EIO 并打一条现场，让用户态拿到写失败而不是掀翻内核。 */
+static int pty_buffers_bad(pty_t *pty, vnode_t *node, const char *who) {
+  static int bad_dbg;
+  if (pty->in != NULL && pty->out != NULL) {
+    return 0;
+  }
+  if (bad_dbg++ < 8) {
+    kprintf("PTYBAD %s node=%s node=%x pty=%x in=%x out=%x dead=%d "
+            "slave_no=%d slave_cnt=%d\n",
+            who, (node != NULL && node->name != NULL) ? node->name : "?", node,
+            pty, pty->in, pty->out, pty->dead, pty->slave_no, pty->slave_cnt);
+  }
+  return -1;
+}
+
 /* 【本内核没有"睡在内核里等数据"的能力】schedule_switch 丢弃内核调用链，
  * 线程被唤醒后回不到 vread 的返回点，所以 op->read 一律不阻塞：
  *   没数据 → 返回 -EAGAIN，由 sys_read 对带 V_BLOCK_READ 的节点走
@@ -155,6 +194,9 @@ u32 pty_master_read(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
   if (pty == NULL) {
     kprintf("pyt read null\n");
     return -1;
+  }
+  if (pty_buffers_bad(pty, node, "master_read") < 0) {
+    return (u32)-EIO;
   }
   if (buffer_size(pty->in) == 0) {
     /* 从端全部关闭且无数据 ⇒ 对端挂断：read 回 -EIO（hangup01 靠它数
@@ -172,6 +214,9 @@ u32 pty_master_write(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
   if (pty == NULL) {
     kprintf("pyt write null\n");
     return -1;
+  }
+  if (pty_buffers_bad(pty, node, "master_write") < 0) {
+    return (u32)-EIO;
   }
 #ifdef DEBUG_PTY
   kprintf("pty master write %s\n", buffer);
@@ -193,9 +238,8 @@ u32 pty_slave_read(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
 #ifdef DEBUG_PTY
   kprintf("pty slave read\n");
 #endif
-  if (pty->out == NULL) {
-    kprintf("pty slave read erro for out null\n");
-    return -1;
+  if (pty_buffers_bad(pty, node, "slave_read") < 0) {
+    return (u32)-EIO;
   }
   if (pty->dead) {
     return 0; /* master 已关：EOF（pty08） */
@@ -215,6 +259,9 @@ u32 pty_slave_write(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
   }
   if (pty->dead) {
     return (u32)-EIO; /* master 已关：写死终端报 EIO（pty08） */
+  }
+  if (pty_buffers_bad(pty, node, "slave_write") < 0) {
+    return (u32)-EIO;
   }
 #ifdef DEBUG_PTY
   kprintf("pty slave write %s\n", buffer);
@@ -280,6 +327,17 @@ u32 pty_slave_open(vnode_t *node, u32 mode) {
   if (pty != NULL) {
     pty->slave_cnt++;
   }
+  /* 【诊断·临时】谁被当成从端打开了、指向哪个 pty 实例。区分
+   * "open 到了 /dev/pts 目录节点（占位 pty_t）" 与 "open 到 /dev/pts/N"。 */
+  {
+    static int open_dbg;
+    if (open_dbg++ < 8) {
+      kprintf("PTYOPEN slave node=%s node=%x pty=%x in=%x out=%x slave_no=%d\n",
+              (node != NULL && node->name != NULL) ? node->name : "?", node, pty,
+              (pty != NULL) ? pty->in : NULL, (pty != NULL) ? pty->out : NULL,
+              (pty != NULL) ? pty->slave_no : -1);
+    }
+  }
 #ifdef DEBUG_PTY
   kprintf("pty slave open %s\n", node->name);
 #endif
@@ -320,6 +378,13 @@ static vnode_t *pty_clone_open(vnode_t *node) {
    * 空/满一律靠 -EAGAIN + sys_rw_wait + thread_event_notify_hook。 */
   pty->in = buffer_create(PTY_BUFFER, NULL, NULL, NULL, NULL);
   pty->out = buffer_create(PTY_BUFFER, NULL, NULL, NULL, NULL);
+  /* buffer_create 内部 fn_malloc/cqueue_create 失败会返回 NULL，以前没检查
+   * ⇒ 实例带着 NULL 缓冲被挂到 /dev/pts/N，从端一写就变成内核 data abort */
+  if (pty->in == NULL || pty->out == NULL) {
+    kprintf("PTYBAD clone_open in=%x out=%x (buffer_create failed)\n", pty->in,
+            pty->out);
+    return NULL;
+  }
 
   vnode_t *m = vfs_create_node("ptm", V_DIRECTORY);
   if (m == NULL) {
