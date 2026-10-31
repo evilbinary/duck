@@ -20,5 +20,8 @@ add_subs("./libs/*/ya.py")
 # 都有 SIMD 指令，pre_launch 直接 ldp q0,q1/stp q0,q1 做 32 字节拷贝）。
 # -mgeneral-regs-only 只禁编译器生成 SIMD/FP 指令；手写内联汇编里的
 # stp/ldp qN 仍可用（cpu_fp_switch 就是靠它们搬运现场），所以本选项安全。
-# 只作用于 duck（内核/模块）作用域，用户态（cairo/weston 等）不受影响。
-add_cflags('-mgeneral-regs-only')
+# 【别加在这里】duck 作用域的 add_cflags 会进全局 $CFLAGS，用户态的
+# cairo/weston/libweston 一编译就报 "-mgeneral-regs-only is incompatible with
+# the use of floating-point types"。真正需要它的目标（kernel.elf 的 app/init）
+# 在自己的 ya.py 里加；duck 侧靠构建后检查 + 各 target 按需加。
+# add_cflags('-mgeneral-regs-only')
