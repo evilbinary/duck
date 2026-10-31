@@ -5,6 +5,7 @@
  ********************************************************************/
 
 #include "kernel.h"
+#include "cap.h"
 #include "page.h"
 
 #include "config.h"
@@ -51,6 +52,10 @@ void kernel_init() {
     thread_init();
     log_info("event init\n");
     event_init();
+    log_info("cap init\n");
+    /* capability v2：对象表 + 类型注册表 + 静态设备窗口对象。
+     * 必须在 memory_init 之后（要用 kmalloc），早于任何用户线程创建。 */
+    cap_init();
     log_info("kernel init end\n");
   } else {
     kprintf("ap %d kernel init\n", cpu);

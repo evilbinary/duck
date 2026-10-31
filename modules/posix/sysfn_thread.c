@@ -6,6 +6,7 @@
  ********************************************************************/
 #include "sysfn.h"
 
+#include "kernel/cap.h"
 #include "kernel/devfn.h"
 #include "kernel/error.h"
 #include "kernel/event.h"
@@ -79,12 +80,28 @@ void* sys_thread_addr(void* vaddr) {
 
 int sys_thread_map(int tid, u32 virt_addr, u32 phy_addr, u32 size, u32 attr) {
   thread_t* current = NULL;
+  thread_t* caller = thread_current();
   current = thread_find_id(tid);
   if (current == NULL) {
     current = thread_current();
   }
   log_debug("sys thread %s map %x %x %d\n", current->name, virt_addr, phy_addr,
             size);
+
+  /* 【收权】用户地址空间只能映射自己 cap 表里已授权的设备窗口。
+   * 原实现直接吃用户给的 phy_addr、不校验范围 ⇒ 用户态可以把内核代码段、
+   * 页表、其它进程的页映射进自己的地址空间再改写（等同于提权）。
+   * 现在必须先在 /dev/foot 用 SYS_CAP_GET_MMIO 拿到 CAP_MMIO，映射范围
+   * 落在该窗口内才放行。内核线程（upage == kpage）不受此限。 */
+  if (caller != NULL && caller->vm != NULL &&
+      caller->vm->upage != caller->vm->kpage) {
+    int ok = cap_check_phys_range(caller->cspace, phy_addr, size, DEVWIN_MAP);
+    if (!ok) {
+      log_warn("thread_map denied: tid %d phys %x size %x no CAP_MMIO\n",
+               caller->id, phy_addr, size);
+      return -1;
+    }
+  }
 
   /* 用户态传入的 attr 语义映射（1=设备，2=系统/内核，3/其它=用户）。
    * 旧实现用三个已废弃的属性名，现统一改为用途名 PAGE_DEV / PAGE_KERNEL /

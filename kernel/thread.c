@@ -6,6 +6,8 @@
 #include "thread.h"
 
 #include "arch/cpu.h"
+#include "cap.h"
+#include "cred.h"
 #include "fd.h"
 #include "preempt.h"
 #include "loader.h"
@@ -135,6 +137,11 @@ void thread_init_default(thread_t* thread, u32 level, u32* entry, void* data) {
   thread->clear_child_tid = NULL;
   thread->user_tp = NULL;
   thread->last_no = -1;
+  /* 新线程默认没有 CSpace / 凭据（内核线程不需要）；用户进程在首次启动时
+   * 由 cap 层创建，fork 时由 thread_copy 复制。thread 是裸 kmalloc，不清零
+   * 会把堆垃圾当指针。 */
+  thread->cspace = NULL;
+  thread->cred = NULL;
 }
 
 thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
@@ -325,6 +332,26 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
     return NULL;
   }
 #endif
+
+  /* 【CSpace】v2：能力表挂 TCB。
+   *   CLONE_VM / vfork：共享同一张表（ref++），close 对整个进程生效；
+   *   fork：复制整表（去掉 GRANT/MINT/REVOKE），每个对象引用 +1。 */
+  if (thread->cspace != NULL) {
+    copy->cspace = cspace_share_or_dup(thread->cspace, (flags & VM_SAME) != 0);
+  } else if ((flags & VM_SAME) == 0) {
+    /* 父没有表（内核线程 fork 出用户线程）：给一张空表 */
+    copy->cspace = cspace_create();
+  }
+  /* 【凭据】同样挂在 TCB 上：
+   *   CLONE_VM（建线程）：共享同一份，setuid 对整个进程生效（POSIX 线程组语义）
+   *   fork/vfork：复制一份，子进程改凭据不影响父进程
+   *   父为 NULL（内核线程 fork 出首个用户进程）：给 root 凭据 */
+  if ((flags & VM_SAME) != 0) {
+    copy->cred = thread->cred;
+    cred_ref(copy->cred);
+  } else {
+    copy->cred = cred_dup(thread->cred);
+  }
 
   // Always give the child its own fd table; optionally share fd_t objects.
   copy->fd_size = thread->fd_size;
@@ -1036,6 +1063,19 @@ void thread_exit(thread_t* thread, int code) {
         fd_close(f);
       }
     }
+  }
+  /* 【CSpace】v2：最后一个使用者离开时撤销全部能力并 unmap。
+   * 必须在页表销毁（vmemory_destroy → page_destroy）之前：unmap 要用 upage。
+   * 共享表（CLONE_VM）时这里只 ref--，由最后一个退出的线程收尾。 */
+  if (thread->cspace != NULL) {
+    void* pgdir = (thread->vm != NULL) ? thread->vm->upage : NULL;
+    cspace_put(thread->cspace, pgdir);
+    thread->cspace = NULL;
+  }
+  /* 凭据：共享同一份时只减引用，最后一个线程退出才释放 */
+  if (thread->cred != NULL) {
+    cred_free(thread->cred);
+    thread->cred = NULL;
   }
   thread->code = code;
   /* 【pidfd 退出通知】退出码在此定稿（本函数幂等，不会重复触发）：

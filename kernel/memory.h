@@ -131,6 +131,9 @@ typedef struct vmemory{
   vmemory_area_t* vma;
   u32 tid;
   u32 ref; /* shared by CLONE_VM threads; free only when last ref drops */
+  /* 注：capability 表（CSpace）与进程凭据（cred）自 v2 起都挂在 thread_t 上
+   * （见 cap.h / cred.h 与 docs/develop/微内核.md 5.10），地址空间不再持有
+   * 安全相关的状态 —— "谁能访问什么"跟着执行实体走。 */
 }vmemory_t;
 
 

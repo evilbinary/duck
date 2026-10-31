@@ -73,6 +73,14 @@ typedef struct thread {
   exec_params_t* exec;
   context_t* ctx;
   vmemory_t* vm;
+  /* capability 空间（duck/kernel/cap.h 的 cspace_t*）：v2 挂在 TCB 上。
+   * CLONE_VM/vfork 共享同一张表（ref++），fork 复制整表。
+   * 内核线程为 NULL（不需要能力）。 */
+  struct cspace* cspace;
+  /* 进程凭据（duck/kernel/cred.h 的 cred_t*：uid/euid/suid + gid 组）。
+   * 挂 TCB：fork 复制一份（子进程 setuid 不影响父），CLONE_VM 线程共享同一份
+   * （setuid 对整个进程生效，符合 POSIX 线程组语义）。内核线程为 NULL。 */
+  struct cred* cred;
   u32 pid;
   fd_t** fds;
   u32 fd_size;

@@ -5,6 +5,8 @@
  ********************************************************************/
 #include "service.h"
 
+#include "kernel/cap.h"
+#include "kernel/cred.h"
 #include "posix/sysfn.h"
 
 client_t* clients[MAX_CLIENTS];
@@ -259,8 +261,90 @@ void do_dump_thread() {
   }
 }
 
+/* 当前线程的 CSpace（cap 核心在 kernel/cap.c，v2 挂 TCB） */
+static cspace_t* service_caps(void) { return cap_current(); }
+
+/* /dev/foot 的 capability 命令：申请句柄 / 映射 / 查询 / 派生 / 撤销。
+ * 参数一律先拷进内核再解释（用户指针不裸用）。
+ * v2：能力路径不看 uid —— 授权由“有没有能力”决定，身份只进审计日志。 */
+static ssize_t service_cap_ioctl(u32 cmd, void* args) {
+  thread_t* current = thread_current(); /* 只为拿 upage（映射目标页表） */
+  cap_ctl_t uctl;
+
+  if (args == NULL) {
+    return -1;
+  }
+  if (sys_copy_from_user(&uctl, args, sizeof(uctl)) < 0) {
+    log_error("cap ioctl: copy ctl failed\n");
+    return -1;
+  }
+  cspace_t* cs = service_caps();
+  if (cs == NULL) {
+    return -1;
+  }
+  void* pgdir = (current != NULL && current->vm != NULL) ? current->vm->upage
+                                                         : NULL;
+
+  int ret = -1;
+  switch (cmd) {
+    case SYS_CAP_GET_MMIO: {
+      char kname[32];
+      kmemset(kname, 0, sizeof(kname));
+      if (uctl.name == NULL) {
+        break;
+      }
+      if (sys_copy_from_user(kname, uctl.name, sizeof(kname) - 1) < 0) {
+        break;
+      }
+      /* v2 过渡：按名字把窗口对象的一个能力装进调用者 CSpace。
+       * 最终形态是 boot 授权表预置 + cap_copy 转授，按名字申请只是过渡口。 */
+      u32 h = cap_devwin_grant(cs, kname);
+      if (h == 0) {
+        log_warn("cap: devwin '%s' not available\n", kname);
+        break;
+      }
+      uctl.handle = h;
+      ret = 0;
+    } break;
+    case SYS_CAP_MAP:
+      ret = cap_devwin_map(cs, uctl.handle, pgdir, uctl.vaddr, uctl.offset,
+                           uctl.len);
+      break;
+    case SYS_CAP_UNMAP:
+      ret = cap_devwin_unmap(cs, uctl.handle, pgdir);
+      break;
+    case SYS_CAP_INFO:
+      ret = cap_devwin_info(cs, uctl.handle, &uctl.pa, &uctl.size, &uctl.rights);
+      break;
+    case SYS_CAP_DERIVE: {
+      u32 h = cap_mint(cs, uctl.handle, uctl.rights);
+      if (h == 0) {
+        break;
+      }
+      uctl.handle = h;
+      ret = 0;
+    } break;
+    case SYS_CAP_REVOKE:
+      cap_revoke(cs, uctl.handle, pgdir);
+      ret = 0;
+      break;
+    default:
+      break;
+  }
+
+  /* 回填（handle/pa/size/rights 是输出；失败时用户也能看到 -1） */
+  if (sys_copy_to_user(args, &uctl, sizeof(uctl)) < 0) {
+    return -1;
+  }
+  return ret;
+}
+
 ssize_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
   u32 ret = 0;
+  /* capability 命令：参数结构、语义都与客户端命令不同，先分流 */
+  if (cmd >= SYS_CAP_GET_MMIO && cmd <= SYS_CAP_REVOKE) {
+    return service_cap_ioctl(cmd, args);
+  }
   if (node == NULL) {
     kprintf("not found node\n");
     return ret;

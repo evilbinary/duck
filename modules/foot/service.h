@@ -55,7 +55,30 @@ enum {
   SYS_GET_CLIENT = 2,
   SYS_DEL_CLIENT = 3,
   SYS_GET_CLIENT_BY_ID = 4,
+  /* ---- capability（阶段 4）----
+   * 申请句柄 → 用它映射资源，用户态不再自己填物理地址。
+   * 命令号区间 [SYS_CAP_GET_MMIO, SYS_CAP_UNMAP] 由 service_cap_ioctl 处理，
+   * 参数结构是 cap_ctl_t（不是 client_ctl_t）。 */
+  SYS_CAP_GET_MMIO = 5, /* ctl.name → ctl.handle（输出） */
+  SYS_CAP_MAP = 6,      /* handle + vaddr + offset + len */
+  SYS_CAP_UNMAP = 7,    /* handle */
+  SYS_CAP_INFO = 8,     /* handle → pa/size/rights（输出） */
+  SYS_CAP_DERIVE = 9,   /* handle + rights → handle（输出） */
+  SYS_CAP_REVOKE = 10,  /* handle（递归撤销子树） */
 };
+
+/* ioctl(/dev/foot, SYS_CAP_*) 的参数。字段按用途分组，未用的留 0。
+ * 与 eggs/libfoot/client.h 的 foot_cap_ctl_t 逐字段一致。 */
+typedef struct cap_ctl {
+  char* name;   /* GET_MMIO：窗口名（如 "gpio" / "dwc2" / "bcm-periph"） */
+  u32 handle;   /* 句柄：入参或输出 */
+  u32 vaddr;    /* MAP：映射到的用户 VA（页对齐） */
+  u32 offset;   /* MAP：窗口内字节偏移（页对齐） */
+  u32 len;      /* MAP：映射长度（页对齐） */
+  u32 rights;   /* DERIVE：子 cap 权限；INFO：输出当前权限 */
+  u32 pa;       /* INFO：输出窗口物理基址 */
+  u32 size;     /* INFO：输出窗口长度 */
+} cap_ctl_t;
 
 enum {
   SYS_INIT = 0,

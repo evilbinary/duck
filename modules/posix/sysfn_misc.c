@@ -6,6 +6,7 @@
  ********************************************************************/
 #include "sysfn.h"
 
+#include "kernel/cred.h"
 #include "kernel/error.h"
 #include "kernel/kernel.h"
 #include "kernel/memory.h"
@@ -83,12 +84,25 @@ int sys_uname(char* buf) {
 
 /* ===================== 其它 ===================== */
 
-/* 【身份 syscall】单用户内核恒 root(0)。aarch64 通用号 174-177，每个测试
- * 启动时 tst_test 都会调（此前 "syscall 176 not found" 刷屏）。 */
-int sys_getuid() { return 0; }
-int sys_geteuid() { return 0; }
-int sys_getgid() { return 0; }
-int sys_getegid() { return 0; }
+/* 【身份 syscall】返回进程真实凭据（用户权限模型）：初始为 root(0)，
+ * 服务调用 setuid 降权后这里就是降权后的值。aarch64 通用号 174-177，
+ * 每个测试启动时 tst_test 都会调（此前 "syscall 176 not found" 刷屏）。 */
+int sys_getuid() {
+  cred_t* c = cred_current();
+  return c != NULL ? (int)c->uid : 0;
+}
+int sys_geteuid() {
+  cred_t* c = cred_current();
+  return c != NULL ? (int)c->euid : 0;
+}
+int sys_getgid() {
+  cred_t* c = cred_current();
+  return c != NULL ? (int)c->gid : 0;
+}
+int sys_getegid() {
+  cred_t* c = cred_current();
+  return c != NULL ? (int)c->egid : 0;
+}
 
 int sys_umask(int mask) {
   thread_t* current = thread_current();

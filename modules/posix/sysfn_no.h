@@ -254,6 +254,8 @@ enum {
   SYS_SETRLIMIT = 164,
   /* 【aarch64 真实编号】105/106 是 init_module/delete_module，不是 setuid/setgid。
    * 写错时 Xorg 的子线程调 setgid 直接 "syscall 144 not found handler"。 */
+  SYS_SETREGID = 143,       /* aarch64 真实编号：143/144/145/146 依次是
+                             * setregid/setgid/setreuid/setuid */
   SYS_SETGID = 144,
   SYS_SETREUID = 145,
   SYS_SETUID = 146,

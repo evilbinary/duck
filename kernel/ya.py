@@ -34,7 +34,11 @@ add_files(
     'vma.c',
     'page.c',
     'page_ref.c',
-    'event.c'
+    'event.c',
+    'cap.c',
+    'cap_obj.c',
+    'cap_devwin.c',
+    'cred.c'
 )
 
 add_includedirs(

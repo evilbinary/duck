@@ -4,6 +4,8 @@
  * 邮箱: rootdebug@163.com
  ********************************************************************/
 #include "memory.h"
+#include "cap.h"
+#include "cred.h"
 #include "page.h"
 #include "page_ref.h"
 #include "thread.h"
@@ -362,6 +364,8 @@ void vmemory_init(vmemory_t* vm, u32 level, vaddr_t usp, u32 usp_size, u32 flags
   vm->vma = vmemory_create_default(koffset);
   vm->kpage = page_kernel_dir();
   vm->ref = 1;
+  /* 安全状态（capability 表 / 凭据）自 v2 起都挂在 thread_t 上，由
+   * thread_create_ex / thread_copy 负责，地址空间只管页表与 VMA。 */
   if (level == LEVEL_KERNEL_SHARE) {
     vm->upage = vm->kpage;
   } else if (level == LEVEL_KERNEL) {
@@ -530,6 +534,8 @@ void vmemory_destroy(vmemory_t* vm) {
    * 必须在 page_destroy 之前——否则 VA/页表被新进程复用后，旧记录命中
    * 同 VA ⇒ 把 A 进程换出的数据换入给 B（数据串门）。 */
   page_swap_drop_vm(vm);
+  /* capability 表与凭据都不在这里：v2 起两者都挂 TCB，撤销/释放发生在
+   * thread_exit（cspace_put → 逐能力 unmap；cred_free），早于本函数。 */
 #ifdef VM_ENABLE
   if (vm->upage != NULL) {
     if (vm->kpage != NULL && vm->upage == vm->kpage) {
@@ -578,6 +584,7 @@ void vmemory_clone(vmemory_t* vmcopy, vmemory_t* vmthread, u32 flags) {
    * kmalloc（现已在调用处清零），但语义上这里显式设 1 才正确——否则
    * vmemory_destroy 的 ref>1 保险会把 page_destroy 挡在门外。 */
   vmcopy->ref = 1;
+  /* fork 的凭据副本由 thread_copy 负责（凭据挂 TCB，不挂 vm） */
   /* 【fork 前全部换回】换出页没有页表映射，下面的 COW 标记/page_clone 都
    * 复制不到子进程；不换回的话子进程对这些 VA 一律读到 0（父子数据不一致）。
    * v1 策略简单但正确：fork 前把父进程的全部换出页换回物理内存，

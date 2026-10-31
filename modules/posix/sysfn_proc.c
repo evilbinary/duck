@@ -6,6 +6,7 @@
  ********************************************************************/
 #include "sysfn.h"
 
+#include "kernel/cred.h"
 #include "kernel/devfn.h"
 #include "kernel/elf.h"
 #include "kernel/error.h"
@@ -619,30 +620,43 @@ int sys_gettid() {
  * 写用户指针必须走 sys_copy_to_user（逐页校验是否已映射）：直接
  * *(u32*)ptr 赋值遇到坏指针（实测 0x12）会让内核在 data abort 里崩掉，
  * 整个进程静默消失。 */
-static void res_id_store(void* ptr) {
-  /* 【必须真的写 0】只在 165/166（aarch64 那其实是 getrusage/getresgid 之外的
+static void res_id_store(void* ptr, u32 v) {
+  /* 【必须真的写】只在 165/166（aarch64 那其实是 getrusage/getresgid 之外的
    * 错号）注册时，参数根本不是 uid 指针，写内存会打坏调用方的栈 canary，
    * 所以曾经退化成"只返回不写"。现在注册在真实号 148/150 上，三个参数确实
    * 是 uid_t*，不写会留下调用方的栈垃圾：glibc 的 getuid/geteuid 走
    * getresuid 时两个值来自不同栈帧，于是 getuid() != geteuid() 成立，
    * GTK 据此判定"进程以 setuid 运行"并拒绝初始化（lxterminal 退出码 1）。 */
-  u32 v = 0;
   if (ptr != NULL && sys_copy_to_user(ptr, &v, sizeof(v)) < 0) {
     /* 坏指针：忽略（Linux 这里会返回 EFAULT，调用方几乎没有能处理的） */
   }
 }
 
 int sys_getresuid(void* ruid, void* euid, void* suid) {
-  res_id_store(ruid);
-  res_id_store(euid);
-  res_id_store(suid);
+  cred_t* c = cred_current();
+  u32 r = 0, e = 0, s = 0;
+  if (c != NULL) {
+    r = c->uid;
+    e = c->euid;
+    s = c->suid;
+  }
+  res_id_store(ruid, r);
+  res_id_store(euid, e);
+  res_id_store(suid, s);
   return 0;
 }
 
 int sys_getresgid(void* rgid, void* egid, void* sgid) {
-  res_id_store(rgid);
-  res_id_store(egid);
-  res_id_store(sgid);
+  cred_t* c = cred_current();
+  u32 r = 0, e = 0, s = 0;
+  if (c != NULL) {
+    r = c->gid;
+    e = c->egid;
+    s = c->sgid;
+  }
+  res_id_store(rgid, r);
+  res_id_store(egid, e);
+  res_id_store(sgid, s);
   return 0;
 }
 
@@ -798,31 +812,96 @@ int sys_tkill(int tid, int sig) {
   return sys_kill(tid, sig);
 }
 
-/* 【setuid/setgid/setgroups】单用户内核：恒成功恒 0（调用方的凭据
- * 切换逻辑依赖返回成功）。 */
-int sys_setuid(uid_t uid) {
-  (void)uid;
+/* 【setuid/setgid/setgroups】真实凭据切换（用户权限模型）。
+ * 规则见 cred.c：root 任意切；非 root 只能在 uid/euid/suid 之间切，不能提权。
+ * 失败返回 -1（musl 映射成 EPERM）。 */
+int sys_setuid(uid_t uid) { return cred_setuid(cred_current(), (u32)uid); }
+
+int sys_setgid(gid_t gid) { return cred_setgid(cred_current(), (u32)gid); }
+
+/* setresuid(147)/setresgid(149)：-1 = 保持不变 */
+int sys_setresuid(uid_t r, uid_t e, uid_t s) {
+  return cred_setresuid(cred_current(), (u32)r, (u32)e, (u32)s);
+}
+
+int sys_setresgid(gid_t r, gid_t e, gid_t s) {
+  return cred_setresgid(cred_current(), (u32)r, (u32)e, (u32)s);
+}
+
+/* setreuid(145)/setregid(146)：与 setresuid 的区别是它不能设置 suid
+ * （Linux 里 setreuid 会把 euid 落到真实/有效身份上）。这里按
+ * "r/e 必须已是自己的身份，root 例外"处理。 */
+int sys_setreuid(uid_t r, uid_t e) {
+  cred_t* c = cred_current();
+  if (c == NULL) {
+    return -1;
+  }
+  if (c->euid != 0) {
+    if ((r != (uid_t)-1 && r != c->uid && r != c->euid) ||
+        (e != (uid_t)-1 && e != c->uid && e != c->euid && e != c->suid)) {
+      log_warn("cred: setreuid(%d,%d) denied\n", r, e);
+      return -1;
+    }
+  }
+  if (r != (uid_t)-1) c->uid = (u32)r;
+  if (e != (uid_t)-1) c->euid = (u32)e;
   return 0;
 }
 
-int sys_setgid(gid_t gid) {
-  (void)gid;
+int sys_setregid(gid_t r, gid_t e) {
+  cred_t* c = cred_current();
+  if (c == NULL) {
+    return -1;
+  }
+  if (c->euid != 0) {
+    if ((r != (gid_t)-1 && r != c->gid && r != c->egid) ||
+        (e != (gid_t)-1 && e != c->gid && e != c->egid && e != c->sgid)) {
+      log_warn("cred: setregid(%d,%d) denied\n", r, e);
+      return -1;
+    }
+  }
+  if (r != (gid_t)-1) c->gid = (u32)r;
+  if (e != (gid_t)-1) c->egid = (u32)e;
   return 0;
 }
 
 int sys_setgroups(int size, const gid_t* list) {
-  (void)size;
-  (void)list;
-  return 0;
+  cred_t* c = cred_current();
+  if (c == NULL) {
+    return -1;
+  }
+  if (size < 0 || size > CRED_MAX_GROUPS) {
+    return -1;
+  }
+  if (size > 0) {
+    u32 groups[CRED_MAX_GROUPS];
+    kmemset(groups, 0, sizeof(groups));
+    if (sys_copy_from_user(groups, (void*)list, (size_t)size * sizeof(u32)) < 0) {
+      return -1;
+    }
+    return cred_setgroups(c, size, groups);
+  }
+  return cred_setgroups(c, 0, NULL);
 }
 
-/* 【getgroups(158)】单用户内核：进程没有附加组。size==0 是"查询需要多大"，
- * 两者都返回 0（0 个组）。缺了它 glibc 启动链（initgroups/NSS）会吃 ENOSYS
- * —— openbox 启动日志里就有 "syscall 158 not found handler"。 */
+/* 【getgroups(158)】返回进程附加组（size==0 是"查询需要多大"）。
+ * 缺了它 glibc 启动链（initgroups/NSS）会吃 ENOSYS —— openbox 启动日志里
+ * 就有 "syscall 158 not found handler"。 */
 int sys_getgroups(int size, gid_t* list) {
-  (void)size;
-  (void)list;
-  return 0;
+  cred_t* c = cred_current();
+  u16 n = (c != NULL) ? c->ngroups : 0;
+  if (size == 0) {
+    return n;
+  }
+  if (size < n) {
+    return -1;
+  }
+  if (n > 0 && list != NULL) {
+    if (sys_copy_to_user((void*)list, c->groups, (size_t)n * sizeof(u32)) < 0) {
+      return -1;
+    }
+  }
+  return n;
 }
 
 /* ===================== wait ===================== */

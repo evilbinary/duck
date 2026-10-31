@@ -356,11 +356,12 @@ void sys_fn_init() {
   syscall_table[SYS_SETRLIMIT] = &sys_setrlimit;
   syscall_table[SYS_SETUID] = &sys_setuid;
   syscall_table[SYS_SETGID] = &sys_setgid;
-  /* setresuid/setresgid/setreuid：本内核没有权限模型，按"永远成功"处理。
-   * 参数多余的部分被忽略（sys_setuid 只读第一个）。 */
-  syscall_table[SYS_SETRESUID] = &sys_setuid;
-  syscall_table[SYS_SETRESGID] = &sys_setgid;
-  syscall_table[SYS_SETREUID] = &sys_setuid;
+  /* 凭据切换按 POSIX 语义实现（见 kernel/cred.c）：
+   * root 任意切；非 root 只能在 uid/euid/suid 之间切，提权返回 EPERM。 */
+  syscall_table[SYS_SETRESUID] = &sys_setresuid;
+  syscall_table[SYS_SETRESGID] = &sys_setresgid;
+  syscall_table[SYS_SETREUID] = &sys_setreuid;
+  syscall_table[SYS_SETREGID] = &sys_setregid;
   syscall_table[SYS_SETGROUPS] = &sys_setgroups;
   syscall_table[SYS_GETGROUPS] = &sys_getgroups;
   syscall_table[SYS_VHANGUP] = &sys_setsid;

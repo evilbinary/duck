@@ -678,6 +678,10 @@ int sys_tgkill(int tgid, int tid, int sig);
 int sys_tkill(int tid, int sig);
 int sys_setuid(uid_t uid);
 int sys_setgid(gid_t gid);
+int sys_setresuid(uid_t r, uid_t e, uid_t s);
+int sys_setresgid(gid_t r, gid_t e, gid_t s);
+int sys_setreuid(uid_t r, uid_t e);
+int sys_setregid(gid_t r, gid_t e);
 int sys_setgroups(int size, const gid_t* list);
 int sys_getgroups(int size, gid_t* list);
 int sys_prctl(int option, unsigned long a2, unsigned long a3,
