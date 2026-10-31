@@ -264,9 +264,12 @@ typedef struct cap_ep_ctl {
   u32 len;       /* SEND：数据长度；RECV：缓冲区容量 */
   u32 out_len;   /* RECV：实际数据长度 */
   u32 rights;    /* SEND：给接收方的权限（0 = 沿用原能力权限） */
-  u32 flags;     /* 保留 */
+  u32 flags;     /* CAP_EP_NONBLOCK 见下 */
   char* buf;     /* 数据缓冲区（用户指针） */
 } cap_ep_ctl_t;
+
+/* flags 位：不带该位时收发是阻塞的（挂起直到有消息/有空位） */
+#define CAP_EP_NONBLOCK 1u
 
 /* 注册 OBJ_ENDPOINT 类型（boot 期由 cap_init 调用） */
 void cap_endpoint_init(void);
@@ -278,5 +281,12 @@ int cap_endpoint_send(cspace_t* cs, u32 h, const void* data, u32 len,
 /* 取一条消息；copy 到 data（最多 cap 字节），带上转授的能力句柄 */
 int cap_endpoint_recv(cspace_t* cs, u32 h, void* data, u32 cap, u32* out_len,
                       u32* out_grant);
+/* 同上，但可指定完成后是否唤醒对端等待者。阻塞实现（service.c）在
+ * poll_wait_suspend 的重查回调里必须传 wake=0，否则 notify → recheck →
+ * send → notify 会自递归。 */
+int cap_endpoint_send_ex(cspace_t* cs, u32 h, const void* data, u32 len,
+                         u32 grant_h, u32 grant_rights, int wake);
+int cap_endpoint_recv_ex(cspace_t* cs, u32 h, void* data, u32 cap, u32* out_len,
+                         u32* out_grant, int wake);
 
 #endif

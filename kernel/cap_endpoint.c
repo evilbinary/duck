@@ -12,8 +12,20 @@
 #include "cap.h"
 
 #include "memory.h"
+#include "thread.h"
 
 #define log_debug
+
+/* 队列状态变化后叫醒阻塞在收/发上的线程。
+ * 用 thread_wait_notify_hook 而不是直接调 poll_wait_notify：端点在内核核心，
+ * 不能反向依赖 posix 模块（钩子由 poll_wait_init 装上，未装时为空）。
+ * 【防递归】唤醒方在重查（recheck）里调用本文件的 ex 版本，wake 传 0，
+ * 否则 poll_wait_notify → recheck → send → notify 会自递归。 */
+static void ep_wake(void) {
+  if (thread_wait_notify_hook != NULL) {
+    thread_wait_notify_hook();
+  }
+}
 
 typedef struct cap_ep_msg {
   u32 len;              /* 数据长度 */
@@ -95,6 +107,11 @@ u32 cap_endpoint_create(cspace_t* cs) {
 
 int cap_endpoint_send(cspace_t* cs, u32 h, const void* data, u32 len,
                       u32 grant_h, u32 grant_rights) {
+  return cap_endpoint_send_ex(cs, h, data, len, grant_h, grant_rights, 1);
+}
+
+int cap_endpoint_send_ex(cspace_t* cs, u32 h, const void* data, u32 len,
+                         u32 grant_h, u32 grant_rights, int wake) {
   if (len > CAP_EP_DATA_MAX) {
     return -1;
   }
@@ -145,11 +162,20 @@ int cap_endpoint_send(cspace_t* cs, u32 h, const void* data, u32 len,
   ep->cnt++;
   log_debug("ep send h=%x len=%d grant=%d cnt=%d\n", h, len,
             grant_obj != NULL, ep->cnt);
+  /* 可能有线程正阻塞在 recv 上（等这条消息） */
+  if (wake) {
+    ep_wake();
+  }
   return 0;
 }
 
 int cap_endpoint_recv(cspace_t* cs, u32 h, void* data, u32 cap, u32* out_len,
                       u32* out_grant) {
+  return cap_endpoint_recv_ex(cs, h, data, cap, out_len, out_grant, 1);
+}
+
+int cap_endpoint_recv_ex(cspace_t* cs, u32 h, void* data, u32 cap, u32* out_len,
+                         u32* out_grant, int wake) {
   cap_t* c = cspace_get(cs, h);
   if (c == NULL || c->ty != OBJ_ENDPOINT || c->obj == NULL ||
       c->obj->state == NULL) {
@@ -189,5 +215,9 @@ int cap_endpoint_recv(cspace_t* cs, u32 h, void* data, u32 cap, u32* out_len,
   ep->head = (ep->head + 1) % CAP_EP_MSGS;
   ep->cnt--;
   log_debug("ep recv h=%x len=%d grant=%d cnt=%d\n", h, n, nh, ep->cnt);
+  /* 腾出空位，叫醒阻塞在 send 上的线程 */
+  if (wake) {
+    ep_wake();
+  }
   return 0;
 }

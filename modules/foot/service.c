@@ -350,6 +350,69 @@ static ssize_t service_cap_ioctl(u32 cmd, void* args) {
   return ret;
 }
 
+/* 阻塞收发的等待块。挂起后本函数【不会返回】，所以参数必须放内核堆；
+ * 就绪时由 poll_wait_suspend 的重查回调在【等待者页表】下完成用户态回写。 */
+typedef struct cap_ep_wait {
+  cspace_t* cs;
+  cap_ep_ctl_t uc; /* 用户参数副本（含 buf 指针与输出字段） */
+  void* uargs;     /* 用户参数地址：就绪时整体写回 */
+  int* done;       /* 指向调用者栈上的完成标记（只有未挂起的路径会读） */
+  u32 len;         /* send：数据长度 */
+  u32 rights;
+  u32 grant_h; /* send：待转授句柄 */
+  char data[CAP_EP_DATA_MAX];
+} cap_ep_wait_t;
+
+static void cap_ep_wait_release(void* arg) {
+  if (arg != NULL) {
+    kfree(arg);
+  }
+}
+
+/* 队列空/满时返回 0（继续等）；能完成就【就地做完并写回用户态】再返回 1。
+ * wake 一律传 0：本回调可能运行在 poll_wait_notify 的遍历里，
+ * 再触发一次 notify 会自递归。 */
+static int cap_ep_recheck_send(void* arg) {
+  cap_ep_wait_t* w = (cap_ep_wait_t*)arg;
+  if (cap_endpoint_send_ex(w->cs, w->uc.handle, w->data, w->len, w->grant_h,
+                           w->rights, 0) != 0) {
+    return 0;
+  }
+  if (w->done != NULL) {
+    *w->done = 1;
+  }
+  return 1;
+}
+
+static int cap_ep_recheck_recv(void* arg) {
+  cap_ep_wait_t* w = (cap_ep_wait_t*)arg;
+  u32 cap = w->uc.len;
+  if (cap > CAP_EP_DATA_MAX) {
+    cap = CAP_EP_DATA_MAX;
+  }
+  u32 out_len = 0, out_grant = 0;
+  if (cap_endpoint_recv_ex(w->cs, w->uc.handle, w->data, cap, &out_len,
+                           &out_grant, 0) != 0) {
+    return 0; /* 队列空 */
+  }
+  if (out_len > 0 && w->uc.buf != NULL) {
+    if (sys_copy_to_user(w->uc.buf, w->data, out_len) < 0) {
+      return -1;
+    }
+  }
+  w->uc.out_len = out_len;
+  w->uc.grant = out_grant;
+  if (w->uargs != NULL) {
+    if (sys_copy_to_user(w->uargs, &w->uc, sizeof(w->uc)) < 0) {
+      return -1;
+    }
+  }
+  if (w->done != NULL) {
+    *w->done = 1;
+  }
+  return 1;
+}
+
 /* 端点（IPC）命令：参数是 cap_ep_ctl_t，收发数据要在用户/内核之间搬。 */
 static ssize_t service_cap_ep_ioctl(u32 cmd, void* args) {
   cap_ep_ctl_t ctl;
@@ -373,39 +436,71 @@ static ssize_t service_cap_ep_ioctl(u32 cmd, void* args) {
       ctl.handle = h;
       ret = 0;
     } break;
-    case SYS_CAP_EP_SEND: {
-      char kbuf[CAP_EP_DATA_MAX];
-      u32 n = ctl.len;
-      if (n > CAP_EP_DATA_MAX) {
-        n = CAP_EP_DATA_MAX;
+    case SYS_CAP_EP_SEND:
+    case SYS_CAP_EP_RECV: {
+      int is_recv = (cmd == SYS_CAP_EP_RECV);
+      u32 want = ctl.len;
+      if (want > CAP_EP_DATA_MAX) {
+        want = CAP_EP_DATA_MAX;
       }
-      kmemset(kbuf, 0, sizeof(kbuf));
-      if (n > 0) {
-        if (ctl.buf == NULL || sys_copy_from_user(kbuf, ctl.buf, n) < 0) {
+      /* 非阻塞：直接试一次，满/空就失败 */
+      if ((ctl.flags & CAP_EP_NONBLOCK) != 0) {
+        char kbuf[CAP_EP_DATA_MAX];
+        kmemset(kbuf, 0, sizeof(kbuf));
+        if (!is_recv) {
+          if (want > 0 &&
+              (ctl.buf == NULL || sys_copy_from_user(kbuf, ctl.buf, want) < 0)) {
+            break;
+          }
+          ret = cap_endpoint_send(cs, ctl.handle, kbuf, want, ctl.grant,
+                                  ctl.rights);
+        } else {
+          u32 out_len = 0, out_grant = 0;
+          ret = cap_endpoint_recv(cs, ctl.handle, kbuf, want, &out_len,
+                                  &out_grant);
+          if (ret == 0) {
+            ctl.out_len = out_len;
+            ctl.grant = out_grant;
+            if (out_len > 0 && ctl.buf != NULL &&
+                sys_copy_to_user(ctl.buf, kbuf, out_len) < 0) {
+              ret = -1;
+            }
+          }
+        }
+        break;
+      }
+
+      /* 阻塞：登记 → 挂起。队列已就绪时根本不睡，直接完成。 */
+      cap_ep_wait_t* w = kmalloc(sizeof(cap_ep_wait_t), KERNEL_TYPE);
+      if (w == NULL) {
+        break;
+      }
+      kmemset(w, 0, sizeof(cap_ep_wait_t));
+      int done = 0;
+      w->cs = cs;
+      w->uc = ctl;
+      w->uc.len = want;
+      w->uargs = args;
+      w->done = &done;
+      w->len = want;
+      w->rights = ctl.rights;
+      w->grant_h = ctl.grant;
+      if (!is_recv && want > 0 && ctl.buf != NULL) {
+        if (sys_copy_from_user(w->data, ctl.buf, want) < 0) {
+          kfree(w);
           break;
         }
       }
-      ret = cap_endpoint_send(cs, ctl.handle, kbuf, n, ctl.grant, ctl.rights);
-    } break;
-    case SYS_CAP_EP_RECV: {
-      char kbuf[CAP_EP_DATA_MAX];
-      u32 cap = ctl.len;
-      if (cap > CAP_EP_DATA_MAX) {
-        cap = CAP_EP_DATA_MAX;
+      int r = poll_wait_suspend(is_recv ? cap_ep_recheck_recv
+                                        : cap_ep_recheck_send,
+                                NULL, cap_ep_wait_release, w, 0, 0);
+      /* 能走到这里说明没有真挂起：本来就有事件（done=1）、等待表满（r=0）
+       * 或信号打断（r<0）。真挂起的返回值由唤醒方写进保存帧。 */
+      if (r < 0) {
+        return r;
       }
-      u32 out_len = 0, out_grant = 0;
-      kmemset(kbuf, 0, sizeof(kbuf));
-      ret = cap_endpoint_recv(cs, ctl.handle, kbuf, cap, &out_len, &out_grant);
-      if (ret == 0) {
-        ctl.out_len = out_len;
-        ctl.grant = out_grant;
-        if (out_len > 0 && ctl.buf != NULL) {
-          if (sys_copy_to_user(ctl.buf, kbuf, out_len) < 0) {
-            ret = -1;
-          }
-        }
-      }
-    } break;
+      return (done || r > 0) ? 0 : -1;
+    }
     default:
       break;
   }
