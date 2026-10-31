@@ -226,6 +226,54 @@ u32 pty_slave_write(vnode_t *node, u32 offset, u32 size, u8 *buffer) {
   return ret;
 }
 
+/* 【select/poll 就绪判定】返回 -1 表示该节点不是 pty。
+ *
+ * 不提供这条时，posix 层的 sys_fd_ready_t 会落到最后那句"存在即就绪"的
+ * 兜底 ⇒ pty 主端 poll 恒报可读，调用方 read 立刻拿到 -EAGAIN，于是
+ * "poll 说好了、read 说没数据" 无限空转（xterm 主循环每 25ms 白醒一次）。
+ * 就绪必须按真实缓冲算：
+ *   主端可读 = in 有字节（从端还没打开时不算就绪：此时 read 会回 -EIO，
+ *              对调用方是"没有数据"，让 poll 继续等等从端写数据才对）
+ *   从端可读 = out 有字节，或 master 已关（read 回 0 = EOF）
+ *   可写     = 目标缓冲没满（满了 buffer_write 会短写） */
+int pty_node_ready(vnode_t *node, int want_read, int want_write) {
+  pty_t *pty;
+  if (node == NULL || node->device == NULL) {
+    return -1;
+  }
+  if (node->op != &pty_master_operator && node->op != &pty_slave_operator) {
+    return -1;
+  }
+  pty = node->device;
+  if (node->op == &pty_master_operator) {
+    if (want_read) {
+      if (buffer_size(pty->in) > 0) {
+        return 1;
+      }
+    }
+    if (want_write) {
+      return buffer_size(pty->out) < PTY_BUFFER;
+    }
+    return 0;
+  }
+  if (want_read) {
+    if (buffer_size(pty->out) > 0) {
+      return 1;
+    }
+    if (pty->dead) {
+      return 1;
+    }
+    return 0;
+  }
+  if (want_write) {
+    if (pty->dead) {
+      return 1; /* 写会回 -EIO，不必阻塞 */
+    }
+    return buffer_size(pty->in) < PTY_BUFFER;
+  }
+  return 0;
+}
+
 u32 pty_slave_open(vnode_t *node, u32 mode) {
   (void)mode;
   pty_t *pty = node->device;

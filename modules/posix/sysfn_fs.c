@@ -29,6 +29,10 @@ extern int pipe_poll_ready_t(thread_t* owner, int fd);
  * 弱符号：posix 模块不应硬依赖 input 模块；未参与链接时该符号为空，
  * 相关 fd 退回旧的"存在即就绪"规则（不会崩）。 */
 extern int evdev_poll_ready(void* dev) __attribute__((weak));
+/* 【pty 的缓冲就绪判定】实现见 modules/pty/pty.c（mod-pty），返回 -1 表示
+ * 该节点不是 pty。同样是弱符号：不用 pty 的平台不影响。 */
+extern int pty_node_ready(vnode_t* node, int want_read, int want_write)
+    __attribute__((weak));
 
 #define log_debug 
 
@@ -1506,6 +1510,14 @@ int sys_fd_ready_t(thread_t* owner, int fd, int want_read, int want_write) {
   pr = pipe_poll_ready_t(owner, fd);
   if (pr >= 0) {
     return want_read ? ((pr & 1) ? 1 : 0) : ((pr & 2) ? 1 : 0);
+  }
+  /* pty：就绪必须按 in/out 缓冲真实状态算。缺这条就会落到最后那句
+   * "存在即就绪"兜底 ⇒ poll 恒报可读、read 立刻 -EAGAIN，调用方空转。 */
+  if (pty_node_ready != NULL && f->data != NULL) {
+    pr = pty_node_ready((vnode_t*)f->data, want_read, want_write);
+    if (pr >= 0) {
+      return pr ? 1 : 0;
+    }
   }
   /* eventfd：就绪 = 计数 > 0（否则读只能拿到 0，等待者会空转） */
   {

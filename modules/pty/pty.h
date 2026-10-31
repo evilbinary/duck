@@ -48,6 +48,9 @@ u32 pty_slave_open(vnode_t *node, u32 mode);
 u32 pty_slave_write(vnode_t *node, u32 offset, u32 size, u8 *buffer);
 
 
+/* select/poll 就绪判定（-1 = 不是 pty 节点）。见 pty.c 的说明。 */
+int pty_node_ready(vnode_t *node, int want_read, int want_write);
+
 u32 pty_open(vnode_t *node, u32 mode);
 u32 pty_close(vnode_t *node);
 ssize_t pty_ioctl(vnode_t *node, u32 cmd, void *args);
