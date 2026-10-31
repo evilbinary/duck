@@ -647,7 +647,12 @@ vnode_t *fat_op_find(vnode_t *node, char *name) {
   res = find_in_dir(&dir, &find_file, name);
   f_closedir(&dir);
   if (res != FR_OK) {
-    log_error("not found file %s in %s code %d\n", name, node->name, res);
+    /* 与 vfs.c 的 "cannot found file" 同因：库扫描候选路径时这是常态，
+     * 串口阻塞写会把整个 guest 拖死，这里 1/64 抽样。 */
+    static u32 fat_miss_log;
+
+    if ((fat_miss_log++ & 0x3f) == 0)
+      log_error("not found file %s in %s code %d\n", name, node->name, res);
     kfree(new_file_info);
     return NULL;
   }

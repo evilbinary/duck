@@ -398,7 +398,12 @@ static u32 sys_open_kpath(const char* name, int attr) {
       file = vfs_open_attr(start, name, attr);
     }
     if (file == NULL) {
-      log_error("sys open file %s error, attr %x \n", name, attr);
+      /* 【降噪】open 失败同样是常态（库探测路径），串口阻塞写会拖死 guest，
+       * 1/64 抽样保留可诊断性。 */
+      static u32 open_miss_log;
+
+      if ((open_miss_log++ & 0x3f) == 0)
+        log_error("sys open file %s error, attr %x \n", name, attr);
       /* 【必须回 -ENOENT，不能一律 -1】-1 会被 musl 翻成 EPERM：xtrans 的
        * trans_mkdir 靠 "stat 失败且 errno==ENOENT" 才肯继续建 /tmp/.X11-unix，
        * 回 EPERM 直接放弃 ⇒ X 服务器没有 unix 监听 fd，客户端全部

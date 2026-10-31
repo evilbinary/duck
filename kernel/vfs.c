@@ -499,7 +499,15 @@ vnode_t *vfs_find(vnode_t *root, u8 *path) {
   }
 
   if (node == NULL) {
-    log_error("cannot found file %s\n", path);
+    /* 【降噪·只抽样打印】"找不到文件"在图形栈里是常态：wayland-cursor 加载
+     * 光标主题会把 ~/.icons、/usr/share/icons、/usr/share/pixmaps… 挨个试
+     * 一遍，每个窗口还要再试一次。串口日志是阻塞写（主机不及时收就卡住），
+     * 一次桌面启动能刷出几千行 ⇒ guest 被日志本身拖死，表现为
+     * "客户端迟迟 map 不出窗口/桌面一动就卡"。这里 1/64 抽样，保留可诊断性。 */
+    static u32 vfs_miss_log;
+
+    if ((vfs_miss_log++ & 0x3f) == 0)
+      log_error("cannot found file %s\n", path);
   }
   vfs_unlock();
   return node;
