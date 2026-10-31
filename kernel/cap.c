@@ -18,8 +18,9 @@
 
 void cap_init(void) {
   obj_init();
-  cap_devwin_init(); /* 静态设备窗口 → OBJ_DEVWIN 对象 */
-  cap_frame_init();  /* 物理页对象 OBJ_FRAME */
+  cap_devwin_init();   /* 静态设备窗口 → OBJ_DEVWIN 对象 */
+  cap_frame_init();    /* 物理页对象 OBJ_FRAME */
+  cap_endpoint_init(); /* IPC 端点 OBJ_ENDPOINT */
 }
 
 /* ---------------- 工具 ---------------- */

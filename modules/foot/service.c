@@ -350,9 +350,77 @@ static ssize_t service_cap_ioctl(u32 cmd, void* args) {
   return ret;
 }
 
+/* 端点（IPC）命令：参数是 cap_ep_ctl_t，收发数据要在用户/内核之间搬。 */
+static ssize_t service_cap_ep_ioctl(u32 cmd, void* args) {
+  cap_ep_ctl_t ctl;
+  if (args == NULL) {
+    return -1;
+  }
+  if (sys_copy_from_user(&ctl, args, sizeof(ctl)) < 0) {
+    return -1;
+  }
+  cspace_t* cs = service_caps();
+  if (cs == NULL) {
+    return -1;
+  }
+  int ret = -1;
+  switch (cmd) {
+    case SYS_CAP_EP_CREATE: {
+      u32 h = cap_endpoint_create(cs);
+      if (h == 0) {
+        break;
+      }
+      ctl.handle = h;
+      ret = 0;
+    } break;
+    case SYS_CAP_EP_SEND: {
+      char kbuf[CAP_EP_DATA_MAX];
+      u32 n = ctl.len;
+      if (n > CAP_EP_DATA_MAX) {
+        n = CAP_EP_DATA_MAX;
+      }
+      kmemset(kbuf, 0, sizeof(kbuf));
+      if (n > 0) {
+        if (ctl.buf == NULL || sys_copy_from_user(kbuf, ctl.buf, n) < 0) {
+          break;
+        }
+      }
+      ret = cap_endpoint_send(cs, ctl.handle, kbuf, n, ctl.grant, ctl.rights);
+    } break;
+    case SYS_CAP_EP_RECV: {
+      char kbuf[CAP_EP_DATA_MAX];
+      u32 cap = ctl.len;
+      if (cap > CAP_EP_DATA_MAX) {
+        cap = CAP_EP_DATA_MAX;
+      }
+      u32 out_len = 0, out_grant = 0;
+      kmemset(kbuf, 0, sizeof(kbuf));
+      ret = cap_endpoint_recv(cs, ctl.handle, kbuf, cap, &out_len, &out_grant);
+      if (ret == 0) {
+        ctl.out_len = out_len;
+        ctl.grant = out_grant;
+        if (out_len > 0 && ctl.buf != NULL) {
+          if (sys_copy_to_user(ctl.buf, kbuf, out_len) < 0) {
+            ret = -1;
+          }
+        }
+      }
+    } break;
+    default:
+      break;
+  }
+  if (sys_copy_to_user(args, &ctl, sizeof(ctl)) < 0) {
+    return -1;
+  }
+  return ret;
+}
+
 ssize_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
   u32 ret = 0;
   /* capability 命令：参数结构、语义都与客户端命令不同，先分流 */
+  if (cmd >= SYS_CAP_EP_CREATE && cmd <= SYS_CAP_EP_RECV) {
+    return service_cap_ep_ioctl(cmd, args);
+  }
   if (cmd >= SYS_CAP_GET_MMIO && cmd <= SYS_CAP_ALLOC_FRAME) {
     return service_cap_ioctl(cmd, args);
   }

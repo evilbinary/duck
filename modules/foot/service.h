@@ -68,6 +68,11 @@ enum {
   /* 帧对象：size（0 = 一页，最多 256KB）→ handle。
    * pa 非 0 时包装该物理页（不接管生命周期），0 时从页池分配。 */
   SYS_CAP_ALLOC_FRAME = 11,
+  /* 端点（IPC）三件：创建 / 投递（可携带能力）/ 接收。
+   * 参数结构是 cap_ep_ctl_t（与 cap_ctl_t 不同）。 */
+  SYS_CAP_EP_CREATE = 12, /* → handle */
+  SYS_CAP_EP_SEND = 13,   /* handle + buf + len + grant(+rights) */
+  SYS_CAP_EP_RECV = 14,   /* handle + buf + len(=容量) → out_len + grant */
 };
 
 /* ioctl(/dev/foot, SYS_CAP_*) 的参数。字段按用途分组，未用的留 0。
@@ -82,6 +87,9 @@ typedef struct cap_ctl {
   u32 pa;       /* INFO：输出窗口物理基址 */
   u32 size;     /* INFO：输出窗口长度 */
 } cap_ctl_t;
+
+/* 端点收发参数 cap_ep_ctl_t 定义在 kernel/cap.h（端点对象归内核，
+ * 与 eggs/libfoot/client.h 的 foot_ep_ctl_t 逐字段一致）。 */
 
 enum {
   SYS_INIT = 0,

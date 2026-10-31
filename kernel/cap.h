@@ -237,4 +237,46 @@ int cap_frame_unmap(cspace_t* cs, u32 h, void* pgdir);
 /* 查帧物理基址 / 长度 / 当前权限（指针可空） */
 int cap_frame_info(cspace_t* cs, u32 h, u32* pa, u32* size, u32* rights);
 
+/* ============ OBJ_ENDPOINT（cap_endpoint.c） ============
+ * 内核消息队列 + 随消息转授能力（IPC grant）。
+ *   一个 endpoint 对象就是一端"信箱"：任何持有该对象 EP_SEND 能力的线程
+ *   可以投递消息，持有 EP_RECV 的线程可以取走。
+ *   fork 之后父子自动共享同一个 endpoint（CSpace 整表复制，句柄值一致），
+ *   这正是"父进程把某个能力交给子进程"的最小通路：
+ *     父 send {buf, grant=dwc2 句柄} → 子 recv → 得到一个可用的新句柄。
+ *
+ * 【为什么由内核完成转授】能力表挂在 TCB 上，用户态无法直接写对方 CSpace；
+ * 发送时内核先给对象补一份引用，接收时再装进接收者 CSpace，引用随之转移。
+ * 队列满/空返回 -1（非阻塞，调用方轮询），阻塞版本要等调度器配合。 */
+#define CAP_EP_MSGS 8
+#define CAP_EP_DATA_MAX 64
+
+/* endpoint 的默认权限：收发消息 + 可转授/派生/撤销 */
+#define CAP_ENDPOINT_RIGHTS_DEFAULT                                            \
+  (RIGHT_LOAD | RIGHT_STORE | RIGHT_INVOKE | RIGHT_GRANT | RIGHT_MINT |        \
+   RIGHT_REVOKE | EP_SEND | EP_RECV)
+
+/* 发送/接收的参数（与 eggs/libfoot/client.h 的 foot_ep_ctl_t 逐字段一致） */
+typedef struct cap_ep_ctl {
+  u32 handle;    /* endpoint 句柄 */
+  u32 grant;     /* SEND：随消息一起转授的句柄（0 = 不带）；
+                  * RECV：输出收到的句柄（0 = 本条没带） */
+  u32 len;       /* SEND：数据长度；RECV：缓冲区容量 */
+  u32 out_len;   /* RECV：实际数据长度 */
+  u32 rights;    /* SEND：给接收方的权限（0 = 沿用原能力权限） */
+  u32 flags;     /* 保留 */
+  char* buf;     /* 数据缓冲区（用户指针） */
+} cap_ep_ctl_t;
+
+/* 注册 OBJ_ENDPOINT 类型（boot 期由 cap_init 调用） */
+void cap_endpoint_init(void);
+/* 新建 endpoint 并把能力装进 cs（EP_SEND | EP_RECV | GRANT/MINT/REVOKE） */
+u32 cap_endpoint_create(cspace_t* cs);
+/* 投递一条消息；grant_h 非 0 时把该能力随消息转授（需要 RIGHT_GRANT） */
+int cap_endpoint_send(cspace_t* cs, u32 h, const void* data, u32 len,
+                      u32 grant_h, u32 grant_rights);
+/* 取一条消息；copy 到 data（最多 cap 字节），带上转授的能力句柄 */
+int cap_endpoint_recv(cspace_t* cs, u32 h, void* data, u32 cap, u32* out_len,
+                      u32* out_grant);
+
 #endif
