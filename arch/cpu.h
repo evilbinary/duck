@@ -178,4 +178,11 @@ static inline void cpu_set_sp(u32 sp) {
 #endif
 }
 
+/* 【浮点/SIMD 现场切换】from_fp / to_fp 指向 thread_t.fp（66 个 u64 = q0-q31
+ * + fpsr + fpcr，16 字节对齐）；NULL 表示该侧没有线程（idle / 已退出）。
+ * 只由调度层在【真正换线程】时调用（schedule.c 的 thread_fp_switch），
+ * 不参与异常进出 —— 理由见 thread.h 的 thread_t.fp 与 armv8-a/context.h 的
+ * __fp_state_save 注释。默认（弱符号）空实现，armv8-a 给强实现。 */
+void cpu_fp_switch(void* from_fp, void* to_fp);
+
 #endif

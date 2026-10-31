@@ -95,7 +95,19 @@ typedef struct thread {
   u64 sig_blocked; /* 位图：被屏蔽的信号 */
   void* sig_acts;  /* struct thread_sigaction[NSIG]，首次 sigaction 时分配 */
   int wait_kind;   /* 当前阻塞点是否"可被信号打断"（见 WAIT_KIND_*） */
+
+  /* 【浮点/SIMD 现场】q0-q31(512B) + fpsr(512) + fpcr(520)，共 66 个 u64。
+   * q 寄存器是"每核"寄存器，异常进入时硬件不保存，必须由软件在线程切换时
+   * 搬（thread_fp_switch → cpu_fp_switch，见 armv8-a/context.h 的
+   * __fp_state_save/load 与 schedule.c 的说明）。
+   * 不放进 interrupt_context_t 的原因：异常帧每次 syscall/IRQ 都要搬一遍，
+   * 而真正换线程才需要 —— 放这里可以只在切换时搬一次（同 arm64 Linux 的
+   * thread_struct.fpsimd_state）。
+   * 创建时必须清零、fork 时必须复制（父子各自持有独立副本）。 */
+  u64 fp[66];
 } thread_t;
+
+#define THREAD_FP_STATE_WORDS 66
 
 /* 【可中断性】Linux 语义里 poll/select/epoll_wait/read/write 被信号打断
  * 一律失败 EINTR（不受 SA_RESTART 影响），而 waitpid 这类会被 SA_RESTART
@@ -223,6 +235,10 @@ int thread_child_exists(int parent_tid, int pid);
 
 void thread_fill_fd(thread_t* thread);
 u64 thread_user_tp();
+/* 换线程时必须搬的 per-thread 硬件状态（TPIDR_EL0 + 浮点/SIMD 现场）。
+ * 由调度层在【真正切换】时调用（schedule.c 三处切换点），实现与理由见
+ * thread.c。from/to 不可同时为 NULL。 */
+void thread_switch(thread_t* from, thread_t* to);
 void thread_reset_user_context(thread_t* thread, void* entry, void* stack_top);
 void thread_dump_stack(u32* stack, u32 size);
 void thread_dump(thread_t* thread, u32 flags);

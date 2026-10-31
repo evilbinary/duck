@@ -95,6 +95,78 @@ typedef struct context_t {
 //   VEC  → ic->no
 //   CODE → ic->code
 // ---------------------------------------------------------------------------
+/* ---------------------------------------------------------------------------
+ * 浮点/SIMD 现场（q0-q31 + fpsr + fpcr，共 528 字节）的存取原语
+ *
+ * 【放哪里由调度层决定，不放进异常帧】q/fpsr/fpcr 是"每核"而不是"每线程"的
+ * 寄存器，异常进入时硬件不压。但"每次异常都压"是浪费：syscall/缺页/定时器
+ * 绝大多数并不换线程，而真正换线程时只需要一次搬运。所以现场放在
+ * thread_t.fp（每线程一块），由 thread_fp_switch() 在【真正切换】时
+ * save 旧线程 / load 新线程 —— 与 arm64 Linux 的
+ * fpsimd_thread_switch() + thread_struct.uw.fpsimd_state 同一思路。
+ *
+ * 为什么不用 CPACR_EL1.FPEN 陷阱做"用到了才搬"（x86 CR0.TS / arm32 FPEXC.EN
+ * 那一套）：本移植的用户线程跑在 EL1t（绕 PXN），而 FPEN 是 EL0/EL1 两个
+ * bit 分开管的，"用户 FP"在本平台就是 EL1 FP，无法与内核自身区分 ⇒ 陷阱法
+ * 不可用。
+ *
+ * 布局（相对基址）：q0..q31 = 0/16/…/496，fpsr = 512，fpcr = 520。
+ * 基址必须是 16 字节对齐（thread_t 由 kmalloc 给出，按 16 对齐；这里仍用
+ * 单条 stp/ldp，SCTLR_EL1.A=0 时非对齐访问也可用）。
+ * ---------------------------------------------------------------------------
+ */
+#define __fp_state_save(mem)                              \
+  asm volatile(                                           \
+      "stp  q0,  q1,  [%0, #0]\n"                         \
+      "stp  q2,  q3,  [%0, #32]\n"                        \
+      "stp  q4,  q5,  [%0, #64]\n"                        \
+      "stp  q6,  q7,  [%0, #96]\n"                        \
+      "stp  q8,  q9,  [%0, #128]\n"                       \
+      "stp  q10, q11, [%0, #160]\n"                       \
+      "stp  q12, q13, [%0, #192]\n"                       \
+      "stp  q14, q15, [%0, #224]\n"                       \
+      "stp  q16, q17, [%0, #256]\n"                       \
+      "stp  q18, q19, [%0, #288]\n"                       \
+      "stp  q20, q21, [%0, #320]\n"                       \
+      "stp  q22, q23, [%0, #352]\n"                       \
+      "stp  q24, q25, [%0, #384]\n"                       \
+      "stp  q26, q27, [%0, #416]\n"                       \
+      "stp  q28, q29, [%0, #448]\n"                       \
+      "stp  q30, q31, [%0, #480]\n"                       \
+      "mrs  x9,  fpsr\n"                                  \
+      "str  x9,  [%0, #512]\n"                            \
+      "mrs  x9,  fpcr\n"                                  \
+      "str  x9,  [%0, #520]\n"                            \
+      :                                                   \
+      : "r"(mem)                                          \
+      : "memory", "x9")
+
+#define __fp_state_load(mem)                              \
+  asm volatile(                                           \
+      "ldp  q0,  q1,  [%0, #0]\n"                         \
+      "ldp  q2,  q3,  [%0, #32]\n"                        \
+      "ldp  q4,  q5,  [%0, #64]\n"                        \
+      "ldp  q6,  q7,  [%0, #96]\n"                        \
+      "ldp  q8,  q9,  [%0, #128]\n"                       \
+      "ldp  q10, q11, [%0, #160]\n"                       \
+      "ldp  q12, q13, [%0, #192]\n"                       \
+      "ldp  q14, q15, [%0, #224]\n"                       \
+      "ldp  q16, q17, [%0, #256]\n"                       \
+      "ldp  q18, q19, [%0, #288]\n"                       \
+      "ldp  q20, q21, [%0, #320]\n"                       \
+      "ldp  q22, q23, [%0, #352]\n"                       \
+      "ldp  q24, q25, [%0, #384]\n"                       \
+      "ldp  q26, q27, [%0, #416]\n"                       \
+      "ldp  q28, q29, [%0, #448]\n"                       \
+      "ldp  q30, q31, [%0, #480]\n"                       \
+      "ldr  x9,  [%0, #512]\n"                            \
+      "msr  fpsr, x9\n"                                   \
+      "ldr  x9,  [%0, #520]\n"                            \
+      "msr  fpcr, x9\n"                                   \
+      :                                                   \
+      : "r"(mem)                                          \
+      : "memory", "x9")
+
 #define interrupt_entering_code(VEC, CODE, TYPE)        \
   asm volatile(                                         \
       "stp x0,  x1,  [sp, #-16]!\n"                    \

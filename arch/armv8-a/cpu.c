@@ -208,6 +208,20 @@ u64 cpu_get_index(int idx) {
   return cpus_id[idx];
 }
 
+/* 【浮点/SIMD 现场切换】覆盖 arch.c 的弱符号。
+ * 调度层在真正换线程时调用（schedule.c: thread_fp_switch）：
+ *   先把即将离开的线程的 q0-q31/fpsr/fpcr 存回它自己的 thread_t.fp，
+ *   再把下一个线程的存值载入寄存器。
+ * 内核自身不碰浮点（否则会冲掉这里的现场），见 thread.h 的说明。 */
+void cpu_fp_switch(void* from_fp, void* to_fp) {
+  if (from_fp != NULL) {
+    __fp_state_save(from_fp);
+  }
+  if (to_fp != NULL) {
+    __fp_state_load(to_fp);
+  }
+}
+
 // Initialize CPU
 void cpu_init(int cpu_id) {
   if (cpu_id != 0) {
@@ -216,6 +230,16 @@ void cpu_init(int cpu_id) {
   for (int i = 0; i < MAX_CPU; i++) {
     cpus_id[i] = i;
   }
+  /* 【浮点/SIMD 必须在内核可用】上下文切换要保存 q0-q31 / fpsr / fpcr
+   * （见 context.h 的 interrupt_entering_code），内核自己也要执行 stp qN。
+   * CPACR_EL1.FPEN(bits 21:20)=0b11 表示 EL0/EL1 都不陷入。固件通常已经
+   * 置好（用户态 double 能跑就是证据），这里显式写一次，避免换引导链后
+   * 第一帧浮点现场保存就触发异常。 */
+  u64 cpacr;
+  asm volatile("mrs %0, cpacr_el1" : "=r"(cpacr));
+  cpacr |= (3UL << 20);
+  asm volatile("msr cpacr_el1, %0" ::"r"(cpacr) : "memory");
+  isb();
 }
 
 // Halt CPU

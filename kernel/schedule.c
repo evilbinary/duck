@@ -11,24 +11,9 @@
 u32 timer_ticks[MAX_CPU] = {0};
 lock_t schedule_lock;
 
-/* 【TP 保存/恢复】TPIDR_EL0 是 aarch64 的 per-thread 用户态寄存器，musl 的
- * __pthread_self() 直接 mrs 读它——和 sp/pc 一样属于线程用户现场，切换线程
- * 必须一并换。不切的话 fork 子进程首次上 CPU 会读到别的进程残值（实测
- * tp=4 → musl self = 4-sizeof(thread_info_t) 负地址 → exit_group 内核态缺页）。
- * 放在调度层而非 arch context_switch：后者只搬运 ic，参数是 context_t，
- * 够不着 thread_t 上的 user_tp；三处切换点统一走这里，一处维护。 */
-static void thread_tls_switch(thread_t* from, thread_t* to) {
-#if defined(ARM64) && defined(VM_ENABLE)
-  /* 保存是必须的：musl aarch64 的 __set_thread_area 直接 msr TPIDR_EL0，
-   * 不经过内核 syscalls，内核里的 user_tp 只有在这里回读才能跟上真实值，
-   * fork 继承（thread_copy）拿到的才是对的。 */
-  from->user_tp = (void*)cpu_get_tls();
-  cpu_set_tls(to->user_tp);
-#else
-  (void)from;
-  (void)to;
-#endif
-}
+/* 【换线程时要搬的 per-thread 硬件状态】TPIDR_EL0 与浮点/SIMD 现场都统一在
+ * thread.c 的 thread_switch() 里处理（理由见那里），调度层只负责在下面三处
+ * 切换点调用它。 */
 
 u32 schedule_get_ticks() {
   int cpu = cpu_get_id();
@@ -149,15 +134,12 @@ interrupt_context_t* schedule_reschedule(interrupt_context_t* ic) {
   preempt_clear_need_resched();
   interrupt_context_t* next_ic =
       context_switch(ic, current_thread->ctx, next_thread->ctx);
-    thread_set_current(next_thread);
-    thread_bind_finish(current_thread, cpu);
-    preempt_reset(); /* 退出临界区的抢占计数不留给新线程 */
-    thread_tls_switch(current_thread, next_thread);
+  thread_switch(current_thread, next_thread);
 #ifdef VM_ENABLE
-    context_switch_page(next_thread->ctx, next_thread->vm->upage);
+  context_switch_page(next_thread->ctx, next_thread->vm->upage);
 #endif
-    thread_recycle_process(); /* 已切到别的线程，此时回收退出的线程是安全的 */
-    return next_ic;
+  thread_recycle_process(); /* 已切到别的线程，此时回收退出的线程是安全的 */
+  return next_ic;
 }
 
 void schedule(interrupt_context_t* ic) {
@@ -172,10 +154,7 @@ void schedule(interrupt_context_t* ic) {
 
   interrupt_context_t* next_ic =
       context_switch(ic, current_thread->ctx, next_thread->ctx);
-  thread_set_current(next_thread);
-  thread_bind_finish(current_thread, cpu);
-  preempt_reset(); /* 退出临界区的抢占计数不留给新线程 */
-  thread_tls_switch(current_thread, next_thread);
+  thread_switch(current_thread, next_thread);
 #ifdef VM_ENABLE
   context_switch_page(next_thread->ctx, next_thread->vm->upage);
 #endif
@@ -198,14 +177,10 @@ void schedule_switch() {
     return;
   }
 
-  thread_set_current(next_thread);
-
   interrupt_context_t* next_ic =
       context_switch(ic, current_thread->ctx, next_thread->ctx);
-  thread_bind_finish(current_thread, cpu);
-  preempt_reset(); /* 退出临界区的抢占计数不留给新线程 */
 
-  thread_tls_switch(current_thread, next_thread);
+  thread_switch(current_thread, next_thread);
 
 #ifdef VM_ENABLE
   context_switch_page(next_thread->ctx, next_thread->vm->upage);

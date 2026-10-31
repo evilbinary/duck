@@ -51,6 +51,13 @@ __attribute__((weak)) u64 cpu_get_tls(void) { return 0; }
  * 只有实现了时基/PMU 的架构才给强实现（当前 armv5）。其它架构空实现。 */
 __attribute__((weak)) void cpu_cache_selftest(void) {}
 
+/* 【浮点/SIMD 现场切换的默认实现】只有带 SIMD 寄存器且用户态会用到浮点的
+ * 架构才需要真实现（当前 armv8-a 在 cpu.c 里覆盖）。其它架构空实现。 */
+__attribute__((weak)) void cpu_fp_switch(void* from_fp, void* to_fp) {
+  (void)from_fp;
+  (void)to_fp;
+}
+
 /* 【分页(MMU)是否已开的默认实现（弱符号）】
  * 缺省返回 1（认为已开）：其它架构行为完全不变。armv7-a 在 cpu.c 里给出强实现
  * （读 SCTLR.M），因为 sunxi 这类平台由 U-Boot 引导、进内核时 MMU 还是关的，

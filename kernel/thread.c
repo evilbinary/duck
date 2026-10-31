@@ -5,11 +5,57 @@
  ********************************************************************/
 #include "thread.h"
 
+#include "arch/cpu.h"
 #include "fd.h"
 #include "preempt.h"
 #include "loader.h"
 #include "schedule.h"
 #include "syscall.h"
+
+/* 【切换线程：把 CPU 上属于 from 的东西存起来、把 to 的东西装上去】
+ * 三处调度切换点（schedule_reschedule / schedule / schedule_switch）在
+ * context_switch() 把 ic 内容换成 next 的现场之后统一调这一个函数，
+ * 调度层不再重复记账。按顺序做五件事：
+ *
+ *  1) 安装新的 current —— 本核从此刻起"正在跑的是 to"；
+ *  2) thread_bind_finish —— from 的上下文刚被存回它自己（context_switch
+ *     干的），这时才能安全地把它从本核队列挪到它被 bind 的目标核；
+ *  3) preempt_reset —— 退出临界区时的抢占计数不留给新线程；
+ *  4) TPIDR_EL0 —— musl 的 __pthread_self() 直接 mrs 读它。保存必须【回读】：
+ *     用户态 __set_thread_area 直接 msr，不经内核 syscall，内核里的
+ *     user_tp 只有在这里才能跟上真实值（fork 继承拿到的才是对的）；
+ *  5) 浮点/SIMD 现场 q0-q31 + fpsr + fpcr —— 异常进入时硬件不压，必须在这里
+ *     存旧的、载新的（见 thread_t.fp 与 armv8-a/context.h 的
+ *     __fp_state_save）。这也是"不需要就零成本"的落点：syscall / 缺页 /
+ *     没换线程的定时器都不会走到这里。
+ *
+ * 【为什么 FP 不做"用到才搬"】x86(CR0.TS) / arm32(VFP FPEXC.EN) 靠陷阱做延迟，
+ * 本平台用户线程跑在 EL1t（绕 PXN），CPACR_EL1.FPEN 的 EL0/EL1 两个 bit
+ * 区分不出"用户 FP"与"内核 FP" ⇒ 陷阱法不可用。arm64 Linux 也是同一取舍：
+ * 切换时按需保存 + 懒加载（thread_struct.uw.fpsimd_state）。
+ */
+void thread_switch(thread_t* from, thread_t* to) {
+  if (from == to) {
+    return;
+  }
+
+  int cpu = cpu_get_id();
+
+  thread_set_current(to);
+  thread_bind_finish(from, cpu);
+  preempt_reset(); /* 退出临界区的抢占计数不留给新线程 */
+
+#if defined(ARM64) && defined(VM_ENABLE)
+  if (from != NULL) {
+    from->user_tp = (void*)cpu_get_tls();
+  }
+  if (to != NULL) {
+    cpu_set_tls(to->user_tp);
+  }
+#endif
+
+  cpu_fp_switch(from != NULL ? from->fp : NULL, to != NULL ? to->fp : NULL);
+}
 
 thread_t* current_threads[MAX_CPU] = {0};
 thread_t* schedulable_head_thread[MAX_CPU] = {0};
@@ -103,6 +149,9 @@ thread_t* thread_create_ex(void* entry, u32 kstack_size, u32 ustack_size,
 
   thread_t* thread = kmalloc(sizeof(thread_t), KERNEL_TYPE);
   thread_init_default(thread, level, entry, data);
+  /* 浮点现场：新线程从"全 0 的 FP 寄存器"开始（FPCR/FPSR 清零）。
+   * 不清零就是内核堆里的垃圾值，线程一上 CPU 就载入自己那堆垃圾。 */
+  kmemset(thread->fp, 0, sizeof(thread->fp));
 
   thread->fds = kmalloc(sizeof(fd_t*) * thread->fd_size, KERNEL_TYPE);
   if (thread->fds != NULL) {
@@ -235,6 +284,9 @@ thread_t* thread_copy(thread_t* thread, u32 flags) {
 
   context_clone(copy->ctx, thread->ctx);
   context_inherit_live(copy->ctx, thread->ctx->ic);
+  /* fork 的浮点现场：子进程拿到父进程的一份副本（POSIX 语义就是"寄存器
+   * 状态被复制"），之后各自独立演进。 */
+  kmemcpy(copy->fp, thread->fp, sizeof(copy->fp));
 
   if (thread->vfs != NULL) {
     copy->vfs = thread->vfs;
@@ -607,6 +659,9 @@ void thread_reset_user_context(thread_t* thread, void* entry, void* stack_top) {
     return;
   }
   context_t* ctx = thread->ctx;
+  /* exec 换映像：浮点现场按 Linux/POSIX 语义复位（FPCR/FPSR=0、q 全 0），
+   * 不把旧程序留在寄存器里的值带进新程序。 */
+  kmemset(thread->fp, 0, sizeof(thread->fp));
 #if defined(ARM64)
   context_init(ctx, ctx->ksp_end, (u64)stack_top, (u64)entry, LEVEL_USER,
                thread->cpu_id);
