@@ -391,7 +391,7 @@ int sys_name_to_handle_at(int dfd, const char* name, void* handle,
   return -95; /* -EOPNOTSUPP */
 }
 
-/* 【cacheflush 自定义号 522】用户态驱动（GPU g2dd 等）dispatch 前后对 dcache
+/* 【cacheflush 自定义号 522】用户态驱动（GPU v3dd 等）dispatch 前后对 dcache
  * 做维护。aarch64 上 EL0 只能执行 dc civac（clean+invalidate），纯 invalidate
  * （dc ivac）要 EL1 ⇒ 统一走这个 syscall。
  *   flags 0 = clean（写回脏行）
