@@ -13,7 +13,7 @@
 
 /* cache 维护统一走 duck/arch/cpu.h 的跨架构接口，见 elf.c 同名说明。 */
 
-#define LOAD_ELF_DEBUG 1
+// #define LOAD_ELF_DEBUG 1
 
 #ifdef LOAD_ELF_DEBUG
 #define elf64_log_debug kprintf

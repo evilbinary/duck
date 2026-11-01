@@ -10,6 +10,9 @@
 #include "kernel/thread_event.h"
 #include "posix/sysfn.h"
 
+
+#define log_debug
+
 client_t* clients[MAX_CLIENTS];
 int client_number = 0;
 

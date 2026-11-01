@@ -915,17 +915,16 @@ int sys_getgroups(int size, gid_t* list) {
 
 /* ===================== wait ===================== */
 
-extern void sys_trace_dump(void);
-
 static pid_t sys_waitpid_trace(pid_t pid, int options, pid_t ret) {
-  /* 【诊断·可删】把 Xorg 等子进程的 waitpid 结果与之前的 syscall 序列打出来 */
+  /* 【诊断·可删】只打 waitpid 的结果，不再附带整段 syscall 序列 ——
+   * 那段 trace 本来是给"卡死/崩溃"定位用的，正常 waitpid 也打会把日志刷满。
+   * 真正需要时由 page fault 那条路径（duck/kernel/page.c）按需输出。 */
   static int wp_dbg = 0;
   thread_t* current = thread_current();
   if (wp_dbg++ < 6) {
     log_debug("WAITP tid=%d pid=%d opt=%d ret=%d\n",
               current != NULL ? (int)current->id : -1, (int)pid, options,
               (int)ret);
-    sys_trace_dump();
   }
   return ret;
 }
