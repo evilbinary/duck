@@ -420,3 +420,13 @@ void* syscall5(u32 num, void* arg0, void* arg1, void* arg2, void* arg3,
       : "r0", "r1", "r2", "r3", "r4", "r6", "memory");
       return ret;
 }
+/* ARM32: cpsr 保存/还原 */
+u32 cpu_save_flags(void) {
+  u32 cpsr;
+  __asm__ __volatile__("mrs %0, cpsr" : "=r"(cpsr));
+  __asm__ __volatile__("msr cpsr_c, %0" ::"r"(cpsr | 0xC0u));
+  return cpsr;
+}
+void cpu_restore_flags(u32 flags) {
+  __asm__ __volatile__("msr cpsr_c, %0" ::"r"(flags));
+}

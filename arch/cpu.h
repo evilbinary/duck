@@ -66,6 +66,17 @@ void cpu_flush_dcache_range(unsigned long start, unsigned long stop);
 void cpu_invalidate_dcache_range(unsigned long start, unsigned long stop);
 void cpu_invalidate_icache(void);
 
+/* ---- 中断状态保存/还原（跨架构） ----------------------------------------
+ * 返回进入时的中断状态，restore 按原值还原（不是无条件开关）：在"原本就关着
+ * 中断"的上下文里使用不会提前开中断。用于分配器 / 改表这类临界区。
+ *   · ARM32：mrs/msr cpsr（I|F 置位，还原时整体写回）
+ *   · ARM64：DAIF 保存 / 写回（msr daifset,#3 关，msr daif 还原）
+ *   · 其它架构：arch.c 的弱符号退化为 cpu_cli/cpu_sti
+ * 注意语义是"保存/还原"而非 cli/sti：可嵌套（内层保存的已是"关"状态，
+ * 还原后仍关），因此在持锁期间调用 log/OOM 路径不会提前放行中断。 */
+u32 cpu_save_flags(void);
+void cpu_restore_flags(u32 flags);
+
 /*   cpu_zero_phy_page(p, size)        把一页【按恒等映射(物理地址)访问】的内存清零，
  *                                     并保证清零结果不会被同一物理页的其它虚拟别名
  *                                     分叉或事后覆盖。

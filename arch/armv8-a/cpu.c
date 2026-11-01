@@ -373,3 +373,14 @@ __attribute__((naked)) static void signal_restorer_stub(void) {
 }
 
 u64 cpu_signal_restorer(void) { return (u64)(uintptr_t)&signal_restorer_stub; }
+
+/* ARM64: DAIF 保存/还原 */
+u32 cpu_save_flags(void) {
+  u64 daif;
+  __asm__ __volatile__("mrs %0, daif" : "=r"(daif));
+  __asm__ __volatile__("msr daifset, #3" ::: "memory");
+  return (u32)daif;
+}
+void cpu_restore_flags(u32 flags) {
+  __asm__ __volatile__("msr daif, %0" ::"r"((u64)flags));
+}

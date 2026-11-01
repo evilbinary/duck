@@ -71,6 +71,19 @@ __attribute__((weak)) int cpu_page_enabled(void) { return 1; }
  * 避免用户跳到内核代码而 fault。 */
 __attribute__((weak)) u64 cpu_signal_restorer(void) { return 0; }
 
+/* 【中断状态保存/还原的默认实现（弱符号）】
+ * 没有"保存/还原"语义的架构退化为 cli/sti（它们当前没有平台会在"中断已关"
+ * 的上下文里用这对原语）。ARM32 / ARM64 在各自 cpu.c 里给出强实现（cpsr /
+ * DAIF），链接时自动覆盖本弱定义。 */
+__attribute__((weak)) u32 cpu_save_flags(void) {
+  cpu_cli();
+  return 0;
+}
+__attribute__((weak)) void cpu_restore_flags(u32 flags) {
+  (void)flags;
+  cpu_sti();
+}
+
 void context_inherit_live(context_t* child, interrupt_context_t* live) {
   if (child == NULL || live == NULL) {
     return;

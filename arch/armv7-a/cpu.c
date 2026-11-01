@@ -671,3 +671,13 @@ void cpu_delay(int n) {
     n--;
   }
 }
+/* ARM32: cpsr 保存/还原 */
+u32 cpu_save_flags(void) {
+  u32 cpsr;
+  __asm__ __volatile__("mrs %0, cpsr" : "=r"(cpsr));
+  __asm__ __volatile__("msr cpsr_c, %0" ::"r"(cpsr | 0xC0u));
+  return cpsr;
+}
+void cpu_restore_flags(u32 flags) {
+  __asm__ __volatile__("msr cpsr_c, %0" ::"r"(flags));
+}

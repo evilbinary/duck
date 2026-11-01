@@ -19,6 +19,8 @@
 #define MM_IDENTITY_MAX 0
 #endif
 
+#include "cpu.h"
+
 #include "kernel/common.h"
 #include "kernel/logger.h"
 #include "kernel/page.h"
@@ -497,7 +499,14 @@ block_t* ya_find_free_block(size_t size) {
   return find_block;
 }
 
-void* ya_alloc(size_t size) {
+/* 【并发保护】内核字节堆（ya_alloc/ya_free）没有锁，而系统是 SMP、多线程
+ * 并发 kmalloc/kfree。实测偶发 free 链被交叉改写：块头 magic 变成 0、
+ * g_block_free 头尾指向同一个坏块（/bin/logo 启动时 8KB 分配触发）。
+ *
+ * 用 cpu_save_flags 关中断保护整个分配/释放：ARM64 上是 DAIF 保存/还原，
+ * 可嵌套（内层保存"已关"状态，还原后仍关），因此 log/OOM 路径里的重入不会
+ * 提前开中断。ya_sbrk 只从 mmt.blocks 切内存、不重入 kmalloc，故整体加锁安全。 */
+static void* ya_alloc_locked(size_t size) {
   if (size <= 0) {
     return NULL;
   }
@@ -597,6 +606,14 @@ void* ya_alloc(size_t size) {
   return addr;
 }
 
+/* 关中断保护的内核堆分配入口（见 ya_alloc_locked 的说明）。 */
+void* ya_alloc(size_t size) {
+  u32 __f = cpu_save_flags();
+  void* __p = ya_alloc_locked(size);
+  cpu_restore_flags(__f);
+  return __p;
+}
+
 void ya_verify() {
   block_t* current = mmt.g_block_list;
   int total = 0;
@@ -682,7 +699,7 @@ void ya_heap_stats(u32* free_bytes, u32* free_blocks, u32* max_free_block,
   if (last_map) *last_map = (u32)mmt.last_map_addr;
 }
 
-void ya_free(void* ptr) {
+static void ya_free_locked(void* ptr) {
   if (ptr == NULL) {
     return;
   }
@@ -764,6 +781,13 @@ void ya_free(void* ptr) {
   /* 挂回空闲链（append 统一维护 head/last/双向指针） */
   ya_list_append(&mmt.g_block_free, &mmt.g_block_free_last, block);
   ptr = NULL;
+}
+
+/* 关中断保护的内核堆释放入口（见 ya_alloc_locked 的说明）。 */
+void ya_free(void* ptr) {
+  u32 __f = cpu_save_flags();
+  ya_free_locked(ptr);
+  cpu_restore_flags(__f);
 }
 
 int is_line_intersect(int a1, int a2, int b1, int b2) {

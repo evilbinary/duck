@@ -64,43 +64,12 @@ static u32 bh_overflow;
  * 所以这里保存 CPSR 再关中断，解锁时按原值还原（原本开着才开）。
  * ARM32 用 mrs/msr cpsr 实现；其它架构暂退化为 cpu_cli/cpu_sti（它们当前没有平台
  * 会注册 chip，等有需要时把这对函数提到 arch 层各自实现即可）。 */
-#if (defined(ARMV7_A) || defined(ARMV7) || defined(ARMV5)) && !defined(ARM64)
-u32 irq_save_flags(void) {
-  u32 cpsr;
-  __asm__ __volatile__("mrs %0, cpsr" : "=r"(cpsr));
-  __asm__ __volatile__("msr cpsr_c, %0" ::"r"(cpsr | 0xC0u)); /* I|F = 1（关 IRQ/FIQ）*/
-  return cpsr;
-}
-void irq_restore_flags(u32 flags) {
-  __asm__ __volatile__("msr cpsr_c, %0" ::"r"(flags));
-}
-#elif defined(ARM64)
-/* ARM64 用 DAIF：daifset #3 = I|F 置位（关 IRQ/FIQ），还原时整体写回 DAIF。
- * 【为什么必须有这个分支】以前 ARM64 落到下面的 #else（cpu_cli/cpu_sti），
- * 而 cpu_sti() 是**无条件开中断** —— 在"原本就关着中断"的上下文里使用会提前开中断
- * （正是 §11.1-2 那条坑）。kernel_init 现在也用这对原语，所以必须真正保存/还原。 */
-u32 irq_save_flags(void) {
-  u64 daif;
-  __asm__ __volatile__("mrs %0, daif" : "=r"(daif));
-  __asm__ __volatile__("msr daifset, #3" ::: "memory");
-  return (u32)daif;
-}
-void irq_restore_flags(u32 flags) {
-  __asm__ __volatile__("msr daif, %0" ::"r"((u64)flags));
-}
-#else
-u32 irq_save_flags(void) {
-  cpu_cli();
-  return 0;
-}
-void irq_restore_flags(u32 flags) {
-  (void)flags;
-  cpu_sti();
-}
-#endif
-
-static u32 irq_lock(void) { return irq_save_flags(); }
-static void irq_unlock(u32 flags) { irq_restore_flags(flags); }
+/* 中断状态"保存/还原"已上移到各 arch 的 cpu.c（cpu_save_flags /
+ * cpu_restore_flags，声明见 arch/cpu.h），无实现架构由 arch.c 弱符号兜底。
+ * 语义与原 irq_save_flags 完全一致：保存进入时的状态，解锁时按原值还原，
+ * 不是无条件 cli/sti —— 在"中断本来就被屏蔽"的早期启动阶段不会提前放行 tick。 */
+static u32 irq_lock(void) { return cpu_save_flags(); }
+static void irq_unlock(u32 flags) { cpu_restore_flags(flags); }
 
 static int irq_valid(u32 irq) { return irq < IRQ_NUM_MAX; }
 
