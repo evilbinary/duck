@@ -6,6 +6,7 @@
  ********************************************************************/
 #include "sysfn.h"
 
+#include "arch/cpu.h" /* cpu_get_tls：fork 子进程继承父进程当前硬件 TP */
 #include "kernel/cred.h"
 #include "kernel/devfn.h"
 #include "kernel/elf.h"
@@ -394,6 +395,14 @@ int sys_clone(int flags, void* stack, int* parent_tid, void* tls,
       log_error("sys_clone: thread_copy failed\n");
       return -1;
     }
+    /* 【fork 子进程 TLS 必须取父进程【当前硬件 TP】】
+     * musl 的 __set_thread_area 直接 msr tpidr_el0、不经内核 syscall，
+     * 内核 thread->user_tp 可能从未更新（NULL / 旧值 / 堆垃圾）。
+     * thread_copy 继承的就是它，子进程 __get_tp()（mrs tpidr_el0）拿到
+     * 垃圾后 musl 的 self = tp - 0xc8 变成野指针 —— 实测 test-v3d fork 后
+     * TPIDR_EL0=0xdc（正好是 clone syscall 号），musl _Fork 里
+     * `str self->tid` 崩在 0x34。这里回读真实 TP 覆盖继承值。 */
+    copy_thread->user_tp = (void*)(uintptr_t)cpu_get_tls();
     thread_set_ret(copy_thread, 0);  // 子进程返回 0
 
 #ifdef LOG_DEBUG
