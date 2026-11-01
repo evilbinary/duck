@@ -160,9 +160,34 @@ static void ya_end_write(block_t* block) {
   end[1] = (int)(u32)(uintptr_t)block;
 }
 
-/* O(1) 校验 block 的 END 槽完整（哨兵 + self 回指一致） */
+/* 合理块大小的上界：任何单块都不该超过 1GB（池总量也就这个量级）。
+ * 用于挡住被越界写踩坏的 size 字段。 */
+#define YA_END_MAX_BLOCK (1024ull * 1024ull * 1024ull)
+
+/* O(1) 校验 block 的 END 槽完整（哨兵 + self 回指一致）。
+ *
+ * 【必须先校验 size，否则会打死整机】end 是按 block->size 算出来的：
+ * 一旦块头被越界写踩坏（实测 config 启动 logo 时，一个 16 字节块的邻居
+ * 头 size 变成 0xa28a2880ccad02aa），end 直接溢出成 non-canonical 地址
+ * （0xa28a2880cf9836a，bit61=1）——ARM64 对 non-canonical 的访问是架构级
+ * 必然 fault，缺页处理无法修复，只会无限重试成 page fault storm。
+ * 块头被踩坏是任何分配器都可能遇到的，这里判定无效、放弃合并即可，
+ * 分配器还能继续工作；同时报出被踩的块，便于定位越界写者。 */
 static int ya_end_valid(block_t* block) {
-  int* end = (int*)((u8*)ya_block_addr(block) + block->size);
+  if (block == NULL) {
+    return 0;
+  }
+  u64 sz = (u64)block->size;
+  if (sz < sizeof(block_t) || sz > YA_END_MAX_BLOCK) {
+    static int bad_cnt = 0;
+    if (bad_cnt < 8) {
+      bad_cnt++;
+      log_error("ya_end_valid: corrupted header size=%lx block=%lx\n",
+                (unsigned long)sz, (unsigned long)block);
+    }
+    return 0;
+  }
+  int* end = (int*)((u8*)ya_block_addr(block) + sz);
   return end[0] == MAGIC_END && (block_t*)(uintptr_t)(u32)end[1] == block;
 }
 
@@ -745,9 +770,11 @@ static void ya_free_locked(void* ptr) {
               block != NULL ? block->magic : 0);
     return;
   }
-  if (block->free != BLOCK_USED || block->magic != MAGIC_USED || block->size <= 0) {
-    log_error("ya_free bad state ptr=%x block=%x free=%x magic=%x size=%x\n", ptr,
-              block, block->free, block->magic, block->size);
+  if (block->free != BLOCK_USED || block->magic != MAGIC_USED ||
+      block->size <= 0 || (u64)block->size > YA_END_MAX_BLOCK) {
+    log_error("ya_free bad state ptr=%x block=%x free=%x magic=%x size=%lx\n",
+              ptr, block, block->free, block->magic,
+              (unsigned long)block->size);
     return;
   }
 
