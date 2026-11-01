@@ -96,11 +96,8 @@ void irq_bh_poll(void);
 
 /* ---------------- 供 arch 入口 / 平台调用 ---------------- */
 
-/* 中断状态的"保存/还原"（不是无条件开关）：返回进入时的中断状态，restore 按原值还原。
- * 用于"改表/初始化"这类临界区 —— 不能在原本关中断的上下文里无条件开中断，
- * 否则会提前放行 tick（见设计文档 §11.1-2 的启动风暴）。 */
-u32 irq_save_flags(void);
-void irq_restore_flags(u32 flags);
+/* 中断状态的"保存/还原"（不是无条件开关）已上移到 arch 层：
+ * cpu_save_flags / cpu_restore_flags（声明见 arch/cpu.h，各 arch cpu.c 实现）。 */
 
 int irq_core_enabled(void); /* 未注册任何 chip ⇒ 0，平台走老的 interrupt_get_source() */
 /* claim 型（GIC/PLIC）：内部取号 → 派发 → EOI → 跑 bottom half。
