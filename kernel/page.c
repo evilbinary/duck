@@ -493,6 +493,10 @@ void page_init() {
     log_info("page enable page: %x\n", kernel_page_dir);
     mm_page_enable((page_dir_t)(uintptr_t)kernel_page_dir);
     log_info("page enable end\n");
+    /* MMU/cache 已开（内存属性回到 Normal）⇒ 内核堆的自旋锁此时才可用。
+     * 之前 page_create 期间的分配只关中断，不能用 LDXR/STXR。 */
+    extern void ya_heap_lock_enable(void);
+    ya_heap_lock_enable();
   } else {
     // Secondary cores only need to attach the existing shared kernel page
     // table locally instead of rebuilding it.
