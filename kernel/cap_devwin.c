@@ -41,10 +41,17 @@ static const foot_dev_win_t foot_devtab[] = {
  * 中断：core0 = GIC SPI 249 → INTID 281（hub = SPI 250 → 282）。
  * 映射本身经 cap_devwin_map → page_map_on 进用户页表（armv8-a 运行期建表），
  * 与内核页表的 platform_map 无关。 */
-#define FOOT_DEVTAB_N 2
+#define FOOT_DEVTAB_N 3
 static const foot_dev_win_t foot_devtab[] = {
     {"v3d", 0x1002000000ULL, 0x00040000UL, 281},
     {"pm-grafx", 0x107D200000ULL, 0x00001000UL, 0},
+    /* 固件 mailbox（property channel）：V3D 时钟必须靠它使能。
+     * v3d_power_resume() 的第一步就是 clk_prepare_enable(v3d->clk)，
+     * 而固件默认可能把 V3D 核心时钟留在关闭状态 —— 那样 HUB_IDENT0 照样
+     * 能读（APB 时钟独立），但 QPU 阵列不推进：job 被接收、CSD_STATUS 的
+     * 内部序号照常递增、INT_STS 只有残留位、像素一个都不写。
+     * 地址见 DTB /soc@107c000000/mailbox@7c013880（CPU 侧 +0x107c000000）。 */
+    {"mailbox", 0x107c013000ULL, 0x00001000UL, 0},
 };
 #else
 #define FOOT_DEVTAB_N 0
