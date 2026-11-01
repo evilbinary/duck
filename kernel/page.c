@@ -46,6 +46,21 @@ void* page_fault_handle(interrupt_context_t *ic) {
     }
     if (last_fault_storm > 64) {
       log_error("%s page fault storm at %lx\n", current->name, fault_addr);
+#ifdef ARMV8_A
+
+      /* 【诊断·永久保留】non-canonical 地址（bit63:48 既非全 0 也非全 1）
+       * 的访问是架构层面必然 fault，缺页处理再怎么 page_map 都救不了，
+       * 只会无限重试成 storm。这里把现场打全，便于直接定位是哪条指令、
+       * 哪个寄存器带着坏指针（实测 config 出现过 0x2000000002d91360 =
+       * 内核堆地址 0x02d91360 被拼上 psr 的 bit29 左移 32 位）。 */
+      log_error("  storm pc=%lx lr=%lx sp=%lx x0=%lx x1=%lx x2=%lx\n",
+                (unsigned long)(ic ? ic->pc : 0),
+                (unsigned long)(ic ? ic->lr : 0),
+                (unsigned long)(ic ? ic->sp : 0),
+                (unsigned long)(ic ? ic->x0 : 0),
+                (unsigned long)(ic ? ic->x1 : 0),
+                (unsigned long)(ic ? ic->x2 : 0));
+#endif
       last_fault_storm = 0;
       thread_exit(current, -1);
       exception_process_error(current, ic, (void *)&page_error_exit);
