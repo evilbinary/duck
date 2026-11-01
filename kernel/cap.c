@@ -20,6 +20,7 @@ void cap_init(void) {
   obj_init();
   cap_devwin_init();   /* 静态设备窗口 → OBJ_DEVWIN 对象 */
   cap_frame_init();    /* 物理页对象 OBJ_FRAME */
+  cap_arena_init();    /* 物理连续大块对象 OBJ_ARENA */
   cap_endpoint_init(); /* IPC 端点 OBJ_ENDPOINT */
 }
 
@@ -411,6 +412,15 @@ int cap_range_owner(cspace_t* cs, vaddr_t pa, vaddr_t size, u32 need_rights) {
       if (pa >= f->pa && (pa + size) <= (f->pa + f->size)) {
         return 2;
       }
+    } else if (c->ty == OBJ_ARENA) {
+      /* arena 与 frame 同语义（物理内存覆盖），也归 CAP_RANGE_FRAME */
+      if ((need_rights & ARENA_MAP) != 0 && (c->rights & ARENA_MAP) == 0) {
+        continue;
+      }
+      const foot_arena_t* a = (const foot_arena_t*)c->obj->state;
+      if (pa >= a->pa && (pa + size) <= (a->pa + a->size)) {
+        return 2;
+      }
     }
   }
   return 0;
@@ -430,6 +440,8 @@ static u32 cap_map_right(obj_type_t ty) {
       return DEVWIN_MAP;
     case OBJ_FRAME:
       return FRAME_MAP;
+    case OBJ_ARENA:
+      return ARENA_MAP;
     default:
       return 0;
   }
@@ -481,6 +493,8 @@ int cap_res_info(cspace_t* cs, u32 h, u32* pa, u32* size, u32* rights) {
       return cap_devwin_info(cs, h, pa, size, rights);
     case OBJ_FRAME:
       return cap_frame_info(cs, h, pa, size, rights);
+    case OBJ_ARENA:
+      return cap_arena_info(cs, h, pa, size, rights);
     default:
       return -1;
   }

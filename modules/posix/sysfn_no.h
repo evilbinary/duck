@@ -580,4 +580,13 @@ enum {
 #define SYS_CLOCK_NANOSLEEP_TIME64 407
 #endif
 
+/* 【cacheflush 自定义号 · 所有架构通用】用户态驱动（GPU g2dd 等）dispatch
+ * 前后要对 dcache 做 clean / invalidate。aarch64 上 EL0 只能执行 dc civac
+ * （clean+invalidate），纯 invalidate（dc ivac）需要 EL1 ⇒ 统一走这个 syscall。
+ * 参数：sys_cacheflush(start, end, flags)，flags 0=clean、1=invalidate、
+ * 2=clean+invalidate。放在 500+ 的自定义号段之后（SYS_PERF_READ=521 再 +1）。 */
+#ifndef SYS_CACHEFLUSH
+#define SYS_CACHEFLUSH 522
+#endif
+
 #endif

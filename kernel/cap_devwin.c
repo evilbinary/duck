@@ -33,6 +33,19 @@ static const foot_dev_win_t foot_devtab[] = {
      * 小窗口，逐个授权会把驱动改成十几次调用；先给整段，命名上标明是过渡项。 */
     {"bcm-periph", FOOT_IO_BASE, 0x01000000UL, 0},
 };
+#elif defined(RASPI5)
+/* Pi5（BCM2712）的外设窗口。V3D 7.1（VideoCore VII）与 PM 电源域都落在
+ * 64GB+ 的 36 位 AXI 地址区间（>4GB），base 是 vaddr_t 所以能装下。
+ *   v3d      0x1002000000 hub + core0 + SMS，HUB_IDENT0(+0x08) 读回 "VHUB"
+ *   pm-grafx 0x107D200000 PM 电源域，+0x10c 的 bit6 = V3DRSTN
+ * 中断：core0 = GIC SPI 249 → INTID 281（hub = SPI 250 → 282）。
+ * 映射本身经 cap_devwin_map → page_map_on 进用户页表（armv8-a 运行期建表），
+ * 与内核页表的 platform_map 无关。 */
+#define FOOT_DEVTAB_N 2
+static const foot_dev_win_t foot_devtab[] = {
+    {"v3d", 0x1002000000ULL, 0x00040000UL, 281},
+    {"pm-grafx", 0x107D200000ULL, 0x00001000UL, 0},
+};
 #else
 #define FOOT_DEVTAB_N 0
 #endif

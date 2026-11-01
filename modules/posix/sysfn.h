@@ -688,6 +688,9 @@ int sys_prctl(int option, unsigned long a2, unsigned long a3,
               unsigned long a4, unsigned long a5);
 int sys_sigaltstack(const void* ss, void* old_ss);
 int sys_getrandom(void* buf, size_t len, unsigned int flags);
+/* cacheflush（自定义号 522）：用户态驱动 dcache 维护，flags 0=clean、
+ * 1=invalidate、2=clean+invalidate，范围 [start,end)。 */
+int sys_cacheflush(unsigned long start, unsigned long end, unsigned long flags);
 int sys_close_range(u32 first, u32 last, unsigned int flags);
 int sys_setrlimit(int resource, const void* rlim);
 int sys_set_robust_list(void* head, size_t len);

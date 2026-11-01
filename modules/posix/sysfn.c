@@ -383,6 +383,8 @@ void sys_fn_init() {
   syscall_table[SYS_CLOSE_RANGE] = &sys_close_range;
   syscall_table[SYS_SET_ROBUST_LIST] = &sys_set_robust_list;
   syscall_table[SYS_RSEQ] = &sys_rseq;
+  /* cacheflush（自定义号 522）：用户态驱动 dcache 维护 */
+  syscall_table[SYS_CACHEFLUSH] = &sys_cacheflush;
   /* 【aarch64 真实编号补齐】148=getresuid / 150=getresgid（165/166 是
    * getrusage，上面那两行是历史误映射，保留不动）；169=gettimeofday；
    * 264=name_to_handle_at；435=clone3。Xorg/GTK 都会碰到这几个。 */

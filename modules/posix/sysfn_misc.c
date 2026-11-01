@@ -6,6 +6,7 @@
  ********************************************************************/
 #include "sysfn.h"
 
+#include "arch/cpu.h"
 #include "kernel/cred.h"
 #include "kernel/error.h"
 #include "kernel/kernel.h"
@@ -388,4 +389,23 @@ int sys_name_to_handle_at(int dfd, const char* name, void* handle,
   (void)mount_id;
   (void)flags;
   return -95; /* -EOPNOTSUPP */
+}
+
+/* 【cacheflush 自定义号 522】用户态驱动（GPU g2dd 等）dispatch 前后对 dcache
+ * 做维护。aarch64 上 EL0 只能执行 dc civac（clean+invalidate），纯 invalidate
+ * （dc ivac）要 EL1 ⇒ 统一走这个 syscall。
+ *   flags 0 = clean（写回脏行）
+ *   flags 1 = invalidate（丢弃，CPU 重新读 DRAM）
+ *   flags 2 = clean + invalidate
+ * 范围是半开区间 [start, end)。 */
+int sys_cacheflush(unsigned long start, unsigned long end, unsigned long flags) {
+  if (end <= start) {
+    return 0;
+  }
+  if (flags == 1) {
+    cpu_invalidate_dcache_range(start, end);
+  } else {
+    cpu_flush_dcache_range(start, end); /* clean (+invalidate) */
+  }
+  return 0;
 }

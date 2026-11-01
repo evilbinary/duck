@@ -328,6 +328,17 @@ static ssize_t service_cap_ioctl(u32 cmd, void* args) {
       cap_frame_info(cs, h, &uctl.pa, &uctl.size, &uctl.rights);
       ret = 0;
     } break;
+    case SYS_CAP_ALLOC_ARENA: {
+      /* 入参：size=长度、offset=物理对齐（页向上取整，0=页对齐）、
+       * rights=0 取默认。物理连续大块（GPU 页表等），走 phy_alloc_aligment。 */
+      u32 h = cap_arena_alloc(cs, uctl.size, uctl.offset, uctl.rights);
+      if (h == 0) {
+        break;
+      }
+      uctl.handle = h;
+      cap_arena_info(cs, h, &uctl.pa, &uctl.size, &uctl.rights);
+      ret = 0;
+    } break;
     case SYS_CAP_DERIVE: {
       u32 h = cap_mint(cs, uctl.handle, uctl.rights);
       if (h == 0) {
@@ -516,6 +527,10 @@ ssize_t service_ioctl(vnode_t* node, u32 cmd, void* args) {
     return service_cap_ep_ioctl(cmd, args);
   }
   if (cmd >= SYS_CAP_GET_MMIO && cmd <= SYS_CAP_ALLOC_FRAME) {
+    return service_cap_ioctl(cmd, args);
+  }
+  /* 物理连续大块分配（命令号在 EP 区间之后，单独路由） */
+  if (cmd == SYS_CAP_ALLOC_ARENA) {
     return service_cap_ioctl(cmd, args);
   }
   if (node == NULL) {

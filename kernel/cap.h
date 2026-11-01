@@ -49,6 +49,9 @@ enum {
 enum {
   FRAME_MAP = 1 << 16,
   FRAME_UNMAP = 1 << 17,
+  /* ARENA 复用 FRAME_MAP 的同一位（1<<16）：二者语义都是"把物理内存映射进
+   * 地址空间"，只是分配方式不同（FRAME=页池逐页，ARENA=物理连续大块）。 */
+  ARENA_MAP = 1 << 16,
 
   EP_SEND = 1 << 16,
   EP_RECV = 1 << 17,
@@ -236,6 +239,41 @@ int cap_frame_map(cspace_t* cs, u32 h, void* pgdir, vaddr_t vaddr,
 int cap_frame_unmap(cspace_t* cs, u32 h, void* pgdir);
 /* 查帧物理基址 / 长度 / 当前权限（指针可空） */
 int cap_frame_info(cspace_t* cs, u32 h, u32* pa, u32* size, u32* rights);
+
+/* ============ OBJ_ARENA（cap_arena.c） ============
+ * 物理【连续】大块内存（DMA / GPU 页表 / QPU 代码 / 渲染目标）。
+ * 与 OBJ_FRAME 的区别：FRAME 从页池逐页分配（≤256KB、要求逐页恰好连续）；
+ * ARENA 走 phy_alloc_aligment（mm_alloc_zero_align），一次拿到整块物理连续 +
+ * 恒等映射，支持 4KB 对齐与 MB 级长度（V3D MMU 页表就是 4MB 连续）。
+ *
+ * 【生命周期】owned=1 时对象最后一个能力消失 → kfree_alignment 归还；
+ * 映射进用户页表后【不】参与 page_destroy 归还（进程退出不扫 EXEC_ADDR 以下，
+ * 映射到 MMIO 直通区即可），由 arena 对象自身负责回收。
+ * pa 是 64 位物理地址（= 恒等映射下的内核虚拟地址）。 */
+typedef struct foot_arena {
+  vaddr_t pa;    /* 物理基址（页对齐） */
+  vaddr_t size;  /* 字节数（页对齐） */
+  u32 owned;     /* 1 = 本对象分配，销毁时归还 */
+  u32 owner;     /* 创建者线程 id */
+} foot_arena_t;
+
+/* ARENA 默认权限：读 + 可映射 + 可派生/撤销/转授 */
+#define CAP_ARENA_RIGHTS_DEFAULT                                               \
+  (RIGHT_LOAD | RIGHT_INVOKE | RIGHT_GRANT | RIGHT_MINT | RIGHT_REVOKE |       \
+   ARENA_MAP)
+
+/* 注册 OBJ_ARENA 类型（boot 期由 cap_init 调用） */
+void cap_arena_init(void);
+/* 分配物理连续内存对象：size 按页向上取整；alignment 是物理对齐（0=页对齐）。
+ * 分配走 phy_alloc_aligment；返回 0 = 失败。 */
+u32 cap_arena_alloc(cspace_t* cs, vaddr_t size, vaddr_t alignment, u32 rights);
+/* 映射 [offset, offset+len) 到 vaddr（ARENA_MAP） */
+int cap_arena_map(cspace_t* cs, u32 h, void* pgdir, vaddr_t vaddr,
+                  vaddr_t offset, vaddr_t len);
+/* 解除该能力记录过的映射 */
+int cap_arena_unmap(cspace_t* cs, u32 h, void* pgdir);
+/* 查物理基址 / 长度 / 权限（指针可空） */
+int cap_arena_info(cspace_t* cs, u32 h, u32* pa, u32* size, u32* rights);
 
 /* ============ OBJ_ENDPOINT（cap_endpoint.c） ============
  * 内核消息队列 + 随消息转授能力（IPC grant）。

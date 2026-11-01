@@ -73,6 +73,9 @@ enum {
   SYS_CAP_EP_CREATE = 12, /* → handle */
   SYS_CAP_EP_SEND = 13,   /* handle + buf + len + grant(+rights) */
   SYS_CAP_EP_RECV = 14,   /* handle + buf + len(=容量) → out_len + grant */
+  /* 物理连续大块（OBJ_ARENA）：cap_ctl_t 的 size=长度、offset=物理对齐。
+   * 输出 handle + pa + size。GPU 页表（4MB 连续）/ QPU 代码 / uniform 用。 */
+  SYS_CAP_ALLOC_ARENA = 15,
 };
 
 /* ioctl(/dev/foot, SYS_CAP_*) 的参数。字段按用途分组，未用的留 0。
