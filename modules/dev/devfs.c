@@ -38,11 +38,30 @@ static vnode_t* devfs_console;
 #define DEVFS_NULL 0
 #define DEVFS_ZERO 1
 #define DEVFS_FULL 2
+#define DEVFS_URANDOM 3
 
 static u32 devfs_sink_read(vnode_t* node, u32 offset, u32 size, u8* buf) {
   (void)offset;
   if ((u32)node->impl == DEVFS_NULL) {
     return 0; /* EOF */
+  }
+  /* /dev/urandom、/dev/random：与 sys_getrandom 同一套软件 PRNG。
+   * 【为什么必须有】OpenSSL 的 RAND_bytes 在 getrandom() 不可用或返回值不被
+   * 接受时会退回读 /dev/urandom；节点不存在就直接失败。OpenSSH 的 seed_rng()
+   * 一失败就 fatal 退出，而裸机上 stderr 常常看不到 —— 表现就是「sshd 跑了
+   * 但零输出、端口也不监听」。这里补上，所有用 OpenSSL 随机数的程序都受益。 */
+  if ((u32)node->impl == DEVFS_URANDOM) {
+    extern u64 schedule_get_ticks();
+    static u32 s_urand = 0x13572468u;
+    u64 ticks = schedule_get_ticks();
+    if (buf != NULL && size > 0) {
+      for (u32 i = 0; i < size; i++) {
+        s_urand ^= (u32)(ticks >> ((i & 7) * 8)) ^ (i * 2654435761u);
+        s_urand = s_urand * 1664525u + 1013904223u;
+        buf[i] = (u8)(s_urand >> 16);
+      }
+    }
+    return size;
   }
   if (buf != NULL && size > 0) {
     kmemset(buf, 0, size);
@@ -225,10 +244,12 @@ int devfs_init(void) {
 
   /* null / zero / full：算子见 file 头部的 devfs_sink_* */
   {
-    static const char* sink_names[] = {"null", "zero", "full"};
+    static const char* sink_names[] = {"null", "zero", "full",
+                                       "urandom", "random"};
     for (u32 i = 0; i < sizeof(sink_names) / sizeof(sink_names[0]); i++) {
       vnode_t* sink = vfs_create_node((char*)sink_names[i], V_FILE);
-      sink->impl = i; /* DEVFS_NULL / DEVFS_ZERO / DEVFS_FULL */
+      /* 3/4 都映射到 DEVFS_URANDOM（/dev/random 与 /dev/urandom 这里同源） */
+      sink->impl = (i >= 3) ? DEVFS_URANDOM : i;
       sink->op = &devfs_sink_ops;
       vfs_mount(NULL, "/dev", sink);
     }
