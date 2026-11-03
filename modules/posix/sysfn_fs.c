@@ -1436,7 +1436,10 @@ int sys_close(u32 fd) {
   thread_t* current = thread_current();
   fd_t* f = thread_find_fd_id(current, fd);
   if (f == NULL) {
-    log_error("close not found fd %d tid %d\n", fd, current->id);
+    /* 【静默】POSIX 里 close(无效fd) 返回 EBADF，程序自己会判。但 OpenSSH 的
+     * closefrom(3) 会从 3 一直试到几百，几乎所有 fd 都不存在 → 每次 log_error
+     * 刷几百行，把真正的错误（bind 失败之类）彻底淹没（实测 sshd 启动刷屏）。
+     * 这里不打印也不报错，避免噪音。 */
     return 0;
   }
   {
