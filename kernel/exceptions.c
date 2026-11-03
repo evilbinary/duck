@@ -205,6 +205,41 @@ void exception_on_other(interrupt_context_t *ic) {
   exception_process_error(current, ic, (void *)&exception_error_exit);
 }
 
+/* 【用户态非法指令 → 投递 SIGILL】POSIX 语义：用户程序执行 udf 等非法指令
+ * 时，应该把 SIGILL 交给它的 handler；只有没有 handler 才按默认动作终止。
+ * 原实现一律 exception_process_error(exit)，导致：
+ *   · OpenSSL 的 OPENSSL_cpuid_setup 用 udf 探测指令集 → 进程直接被杀
+ *     （之前还被 EC=0 的 syscall 误判拖成死循环，见 arch/armv8-a/interrupt.c）
+ *   · app/test/test-sigill 的 handler 永远执行不到。
+ *
+ * 判据用 ic->pc：用户程序链接在 EXEC_ADDR 之上；内核线程由调用方提前返回。
+ * SIGILL 在 aarch64 是 4；sigaction.handler：NULL=SIG_DFL、1=SIG_IGN。
+ *
+ * 返回 1 = 已处理（handler 已投递，或 SIG_IGN 跳过指令），调用方应直接返回；
+ * 返回 0 = 没有 handler，调用方按默认动作终止进程。 */
+static int exception_try_user_sigill(interrupt_context_t *ic, thread_t *t) {
+  struct thread_sigaction *sa;
+  void *h;
+
+  if (t == NULL || ic->pc < EXEC_ADDR) {
+    return 0;
+  }
+  sa = (struct thread_sigaction *)t->sig_acts;
+  if (sa == NULL) {
+    return 0;
+  }
+  h = sa[4 /* SIGILL */].handler;
+  if (h == (void *)1) {          /* SIG_IGN：跳过这条指令继续 */
+    ic->pc += 4;
+    return 1;
+  }
+  if (h != NULL) {               /* 用户 handler：交给「回用户态」钩子执行 */
+    thread_signal_send(t, 4 /* SIGILL */);
+    return 1;
+  }
+  return 0;
+}
+
 void exception_on_undef(interrupt_context_t *ic) {
   int cpu = cpu_get_id();
   thread_t *current = thread_current();
@@ -212,6 +247,9 @@ void exception_on_undef(interrupt_context_t *ic) {
   exception_info(ic);
   if (exception_is_system_thread(current)) {
     exception_park_system_thread(ic);
+    return;
+  }
+  if (exception_try_user_sigill(ic, current)) {
     return;
   }
   kprintf("--dump thread--\n");

@@ -211,15 +211,22 @@ void* sync_handler(interrupt_context_t* ic) {
       ic->no = EX_SYS_CALL;
       break;
     case ESR_ELx_EC_UNKNOWN:
-      // When user threads run at EL1t during bring-up, some libc syscall
-      // sites can arrive here with EC=0 even though x8 still carries a valid
-      // Linux syscall number. Handle that path as a syscall instead of halting.
-      if ((ic->x8 <= 518) || (ic->x8 >= 0x5000 && ic->x8 <= 0x5017)) {
-        ic->no = EX_SYS_CALL;
-        break;
+      /* 【不能只看 x8】udf #0 等非法指令同样走 EC=0，而那一刻 x8 往往
+       * 残留着上一次 syscall 的编号（<=518 恒成立），于是被误判成 syscall
+       * 走分发 —— 分发完 PC 不前进，原地反复触发，表现为死循环。
+       * 实测受害者：OpenSSL 的 OPENSSL_cpuid_setup（用 udf 探测指令集）
+       * → sshd 启动卡死、零输出；以及 app/test/test-sigill。
+       * 正确做法：把出错地址处的指令读回来，只有真的是 `svc #0`
+       * （0xD4000001）才按 syscall 处理，否则是非法指令。 */
+      {
+        u32 insn = *(volatile u32*)(uintptr_t)ic->pc;
+        if ((insn & 0xFFE0001Fu) == 0xD4000001u) { /* svc #0 */
+          ic->no = EX_SYS_CALL;
+          break;
+        }
       }
-      kprintf("sync: unknown ec=%x esr=%lx pc=%lx sp=%lx x8=%lx\n", ec, esr,
-              ic->pc, ic->sp, ic->x8);
+      kprintf("sync: illegal insn ec=%x esr=%lx pc=%lx sp=%lx x8=%lx\n", ec,
+              esr, ic->pc, ic->sp, ic->x8);
       context_dump_interrupt(ic);
       ic->no = EX_UNDEF;
       break;
