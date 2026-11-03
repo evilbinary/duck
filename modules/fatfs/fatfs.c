@@ -851,33 +851,16 @@ ssize_t fat_op_ioctl(struct vnode *node, uint cmd, void *args) {
       stat->st_size = fno.fsize;
       stat_set_mtime(stat, (time_t)(fno.fdate << 16 | fno.ftime));
       stat->st_mode = S_IFREG;
-      /* 【执行位按文件内容判断，不按路径】
-       * FAT 不存 unix 权限，但这个位有真实用途：程序常用
-       * `stat() + (st_mode & 0111)` 判断「这个文件能不能 exec」
-       * （OpenSSH 10 的 sshd 就是这样找 sshd-session 的）。
-       * 之前一律给 0644（无 x 位）→ 所有二进制都被判成不可执行；
-       * 一律给 0755 又会踩 OpenSSH 的另一个检查：authfile.c 要求私钥
-       * 「不能有任何 group/other 位」，0755 的 host key 会被拒绝。
-       * 语义上正确的判据是看内容：ELF 就是可执行，其它不是。
-       * （不能按路径特判 /etc/ssh——用户自己的 ~/.ssh 私钥同样要保护，
-       *   任何硬编码的路径白名单都不可靠。） */
-      {
-        u32 exec_bits = 0;
-        if (fno.fsize >= 4) {
-          FIL f;
-          if (f_open(&f, buf, FA_READ) == FR_OK) {
-            BYTE magic[4];
-            UINT br = 0;
-            if (f_read(&f, magic, 4, &br) == FR_OK && br == 4 &&
-                magic[0] == 0x7F && magic[1] == 'E' && magic[2] == 'L' &&
-                magic[3] == 'F') {
-              exec_bits = 0111;
-            }
-            f_close(&f);
-          }
-        }
-        stat->st_mode |= 0644 | exec_bits;
-      }
+      /* 【统一给 0755】FAT 不存 unix 权限，但这个位有真实用途：
+       * 程序常用 `stat() + (st_mode & 0111)` 判断「能不能 exec」
+       * （OpenSSH 10 的 sshd 就是这样找 sshd-session 的），给 0644 会让
+       * 所有二进制都被判成不可执行。
+       * 【不要在这里读文件头判断 ELF】试过：每次 stat 都 f_open+f_read+
+       * f_close，启动时 config/logo/fand 频繁 stat，直接把系统拖死
+       * （实测 logo 之后就卡住了）。stat 必须是纯内存操作。
+       * 私钥「权限过宽」由 OpenSSH 侧的 authfile.c 补丁处理
+       * （FAT 根本没有权限模型，这是环境限制，不是路径特例）。 */
+      stat->st_mode |= 0755;
     }
 
     return 0;
