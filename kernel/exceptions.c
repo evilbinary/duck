@@ -268,15 +268,24 @@ static int exception_try_user_sigill(interrupt_context_t *ic, thread_t *t) {
 void* exception_on_undef(interrupt_context_t *ic) {
   int cpu = cpu_get_id();
   thread_t *current = thread_current();
-  log_debug("exception undef on cpu %d no %d code %x\n", cpu, ic->no, ic->code);
-  exception_info(ic);
+  /* 【不要把 dump 放在最前面】udf 有两种用途：
+   *   1. 程序真的执行了非法指令（需要 dump 现场）
+   *   2. **主动试探**（OpenSSL 的 OPENSSL_cpuid_setup 逐条 udf 探测指令集）
+   * 第 2 种在启动时会连续触发几十次，每次都 exception_info(ic) 打一遍
+   * x0~x29 会把串口彻底刷爆（实测 sshd 启动刷了上百屏）。所以先尝试
+   * 投递 SIGILL，只有「没有 handler」才 dump。 */
   if (exception_is_system_thread(current)) {
+    log_debug("exception undef on cpu %d no %d code %x\n", cpu, ic->no,
+              ic->code);
+    exception_info(ic);
     exception_park_system_thread(ic);
     return ic;
   }
   if (exception_try_user_sigill(ic, current)) {
     return ic;
   }
+  log_debug("exception undef on cpu %d no %d code %x\n", cpu, ic->no, ic->code);
+  exception_info(ic);
   kprintf("--dump thread--\n");
   thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
   exception_process_error(current, ic, (void *)&exception_error_exit);
