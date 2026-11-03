@@ -62,6 +62,7 @@ void exception_regist(u32 vec, interrupt_handler_t handler) {
 void *exception_process(interrupt_context_t *ic) {
   u32 was_syscall = 0;
   u32 was_irq = 0;
+  thread_t *t0 = thread_current();   /* 发起异常的线程（用于对比是否被调度换掉） */
 
   if (ic->no == EX_OTHER) {
     int cpu = cpu_get_id();
@@ -132,7 +133,22 @@ void *exception_process(interrupt_context_t *ic) {
        * 了别的线程，此时的 thread_current() 与 ret 才是"真正要跑的那一方"。
        * 阻塞型 syscall（poll/futex/waitpid…）不走这条路径，它们的恢复点是
        * schedule_switch，那里有同一个调用。 */
-      thread_user_return_run(thread_current(), ret);
+      {
+        thread_t *tnow = thread_current();
+        /* 【切换后要补投】异常处理中途可能被调度走（tnow != t0）。此时 ret
+         * 对应的是新线程的帧；如果只给它投，发起异常的 t0 挂着的信号就永远
+         * 没人处理（实测：udf 的 SIGILL 一直投不出去，handler 空跑）。
+         * 先给 t0 用它的异常帧 ic 投一次 —— t0 此刻不在 CPU 上，帧写在它
+         * 自己的用户栈，等它下次被调度、准备 eret 时由 rt_sigreturn 消费。 */
+        if (t0 != NULL && tnow != t0 && t0->sig_pending != 0) {
+          void *t0_ic = (t0->ctx != NULL) ? t0->ctx->ksp : NULL;
+          /* 【必须用 t0 自己的帧】ic 是当前 CPU 的异常帧，改它只会影响
+           * 正在跑的线程；t0 被切走前的现场保存在 t0->ctx->ksp（内核栈
+           * 上的 interrupt_context_t 副本），context_switch 恢复的也是它。 */
+          thread_user_return_run(t0, t0_ic);
+        }
+        thread_user_return_run(tnow, ret);
+      }
       return ret;
     }
   } else {
@@ -174,7 +190,11 @@ void exception_error_exit() {
   }
 }
 
-void exception_on_permission(interrupt_context_t *ic) {
+/* 【返回类型必须是 void*】exception_handlers[] 是 interrupt_handler_t。
+ * 原来写成 void 时，exception_process 的 `void *ret = handler(ic)` 拿到的是
+ * x0 残值（非 0）→ 跳过 `ret = ic` 兜底 → 野指针传给 thread_user_return_run
+ * → 读 ret->psr 时 permission fault（同 exception_on_undef 那个坑）。 */
+void* exception_on_permission(interrupt_context_t *ic) {
   int cpu = cpu_get_id();
   log_debug("exception permission on cpu %d no %d code %x\n", cpu, ic->no,
             ic->code);
@@ -185,24 +205,23 @@ void exception_on_permission(interrupt_context_t *ic) {
   }
   if (exception_is_system_thread(current)) {
     exception_park_system_thread(ic);
-    return;
+    return ic;
   }
   exception_process_error(current, ic, (void *)&exception_error_exit);
-  // context_dump_interrupt(ic);
-  // thread_dump(current);
-  // cpu_halt();
+  return ic;
 }
 
-void exception_on_other(interrupt_context_t *ic) {
+void* exception_on_other(interrupt_context_t *ic) {
   int cpu = cpu_get_id();
   thread_t *current = thread_current();
   log_debug("exception other on cpu %d no %d code %x\n", cpu, ic->no, ic->code);
   exception_info(ic);
   if (exception_is_system_thread(current)) {
     exception_park_system_thread(ic);
-    return;
+    return ic;
   }
   exception_process_error(current, ic, (void *)&exception_error_exit);
+  return ic;
 }
 
 /* 【用户态非法指令 → 投递 SIGILL】POSIX 语义：用户程序执行 udf 等非法指令
@@ -240,21 +259,28 @@ static int exception_try_user_sigill(interrupt_context_t *ic, thread_t *t) {
   return 0;
 }
 
-void exception_on_undef(interrupt_context_t *ic) {
+/* 【返回类型必须是 void*】exception_handlers[] 是 interrupt_handler_t
+ * (void*(*)(interrupt_context_t*))。原来这里写成 void，exception_process 里
+ * `void *ret = handler(ic)` 拿到的是 x0 的残值（非 0），于是跳过了
+ * `if (ret == NULL) ret = ic` 的兜底，把野指针传给 thread_user_return_run →
+ * 读 ret->psr 时 permission fault（实测 pc 固定在 thread_user_return_run）。
+ * 现在统一返回 ic，与 sync_handler / exception_on_none 一致。 */
+void* exception_on_undef(interrupt_context_t *ic) {
   int cpu = cpu_get_id();
   thread_t *current = thread_current();
   log_debug("exception undef on cpu %d no %d code %x\n", cpu, ic->no, ic->code);
   exception_info(ic);
   if (exception_is_system_thread(current)) {
     exception_park_system_thread(ic);
-    return;
+    return ic;
   }
   if (exception_try_user_sigill(ic, current)) {
-    return;
+    return ic;
   }
   kprintf("--dump thread--\n");
   thread_dump(current, DUMP_DEFAULT | DUMP_CONTEXT);
   exception_process_error(current, ic, (void *)&exception_error_exit);
+  return ic;
 }
 
 void* exception_on_none(interrupt_context_t *ic) { return ic; }
