@@ -4813,3 +4813,10 @@ static vnode_t* devfs_lookup(const char* path) {
   return cur;
 }
 
+
+/* aarch64 没有 dup2，musl 的 dup2() 走 dup3(24)。flags 只可能是
+ * O_CLOEXEC，本内核不维护 per-fd 的 cloexec 位，忽略即可。 */
+int sys_dup3(int oldfd, int newfd, int flags) {
+  (void)flags;
+  return sys_dup2(oldfd, newfd);
+}

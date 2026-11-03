@@ -851,7 +851,33 @@ ssize_t fat_op_ioctl(struct vnode *node, uint cmd, void *args) {
       stat->st_size = fno.fsize;
       stat_set_mtime(stat, (time_t)(fno.fdate << 16 | fno.ftime));
       stat->st_mode = S_IFREG;
-      stat->st_mode |= 0644;  // rw-r--r--
+      /* 【执行位按文件内容判断，不按路径】
+       * FAT 不存 unix 权限，但这个位有真实用途：程序常用
+       * `stat() + (st_mode & 0111)` 判断「这个文件能不能 exec」
+       * （OpenSSH 10 的 sshd 就是这样找 sshd-session 的）。
+       * 之前一律给 0644（无 x 位）→ 所有二进制都被判成不可执行；
+       * 一律给 0755 又会踩 OpenSSH 的另一个检查：authfile.c 要求私钥
+       * 「不能有任何 group/other 位」，0755 的 host key 会被拒绝。
+       * 语义上正确的判据是看内容：ELF 就是可执行，其它不是。
+       * （不能按路径特判 /etc/ssh——用户自己的 ~/.ssh 私钥同样要保护，
+       *   任何硬编码的路径白名单都不可靠。） */
+      {
+        u32 exec_bits = 0;
+        if (fno.fsize >= 4) {
+          FIL f;
+          if (f_open(&f, buf, FA_READ) == FR_OK) {
+            BYTE magic[4];
+            UINT br = 0;
+            if (f_read(&f, magic, 4, &br) == FR_OK && br == 4 &&
+                magic[0] == 0x7F && magic[1] == 'E' && magic[2] == 'L' &&
+                magic[3] == 'F') {
+              exec_bits = 0111;
+            }
+            f_close(&f);
+          }
+        }
+        stat->st_mode |= 0644 | exec_bits;
+      }
     }
 
     return 0;
