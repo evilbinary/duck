@@ -2304,8 +2304,11 @@ int sys_dup(int oldfd) {
   thread_t* current = thread_current();
   fd_t* fd = thread_find_fd_id(current, oldfd);
   if (fd == NULL) {
-    log_error("dup not found fd %d\n", oldfd);
-    return 0;
+    /* 【必须返回 -EBADF，不能返回 0】返回 0 会被调用方当成「成功复制到 fd 0」，
+     * 于是继续对 0 操作、再次失败、再 dup…形成死循环（实测 sshd 卡在
+     * 反复调 dup(23)，trace 里 sys 23 无限重复）。POSIX：失败返回 -1 并置
+     * errno=EBADF。内核返回 -errno，由 dispatch 层转成用户态 -1。 */
+    return -9; /* -EBADF */
   }
   int newfd = thread_add_fd(current, fd);
 #ifdef DEBUG_SYS_FN

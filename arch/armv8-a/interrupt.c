@@ -225,9 +225,12 @@ void* sync_handler(interrupt_context_t* ic) {
           break;
         }
       }
-      kprintf("sync: illegal insn ec=%x esr=%lx pc=%lx sp=%lx x8=%lx\n", ec,
-              esr, ic->pc, ic->sp, ic->x8);
-      context_dump_interrupt(ic);
+      /* 【不要在这里 dump 寄存器】udf 大多是程序主动试探（OpenSSL 的
+       * OPENSSL_cpuid_setup 在启动时连发几十次），每次 context_dump_interrupt
+       * 会把 pc/psr/sp/lr/x0~x29 全打一遍，串口直接刷爆（实测 sshd 启动刷了
+       * 上百屏，真正的日志全被淹没）。这里只留一行摘要；完整 dump 交给
+       * exception_on_undef 的「没有 handler」分支（那是真的出错了）。 */
+      kprintf("sync: illegal insn ec=%x esr=%lx pc=%lx\n", ec, esr, ic->pc);
       ic->no = EX_UNDEF;
       break;
     case ESR_ELx_EC_DABT_LOW:
