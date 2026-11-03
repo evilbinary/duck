@@ -413,6 +413,7 @@ int sys_getppid();
 int sys_dup(int oldfd);
 
 int sys_dup2(int oldfd, int newfd);
+int sys_dup3(int oldfd, int newfd, int flags);
 int sys_readdir(int fd, int index, void* dirent);
 /* 【地址按字长】brk 的语义就是"堆顶地址"，用 int/u32 承接在 64 位机过 2GB
  * 会变负（实测 1GB 堆区实验：shell 起来即卡死）。参数/返回用 vaddr_t：

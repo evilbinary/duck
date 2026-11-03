@@ -159,7 +159,16 @@ void sys_fn_init() {
   syscall_table[SYS_GETPID] = &sys_getpid;
   syscall_table[SYS_GETPPID] = &sys_getppid;
   syscall_table[SYS_DUP] = &sys_dup;
+  /* 【绝对不能再注册 SYS_DUP2】在 ARM64 分支里 SYS_DUP2 被定义成 23（和
+   * SYS_DUP 同号），注册它会**覆盖**上面的 sys_dup —— 于是用户态调
+   * dup(fd) 实际执行 dup2(fd, 垃圾newfd)，行为完全错乱。实测 sshd 的
+   * sanitise_stdfd 因此陷入 dup 死循环（ps 里 calls 全是 23，CPU 持续占满）。
+   * aarch64 只有 dup(23) 和 dup3(24)，musl 的 dup2() 编译成 dup3。 */
+#if defined(ARM64)
+  syscall_table[SYS_DUP3] = &sys_dup3;
+#else
   syscall_table[SYS_DUP2] = &sys_dup2;
+#endif
   /* 【aarch64】dup3=24：aarch64 无 dup2，musl dup2() 走 dup3(fd,newfd,flags)。
    * 忽略 flags（O_CLOEXEC 语义没有），行为等同 dup2。 */
   syscall_table[24] = &sys_dup2;
